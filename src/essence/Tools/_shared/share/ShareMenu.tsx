@@ -23,19 +23,14 @@ export type ShareMenuProps = {
 /** Gap between the trigger's bottom edge and the dropdown, in px. */
 const MENU_GAP_PX = 4
 
-/**
- * Names the trigger's action. The trigger shows only its glyph, so this text
- * reaches the reader as the tooltip and the accessible name rather than as
- * on-screen copy.
- */
+/** Names the glyph-only trigger, as its tooltip and its accessible name. */
 const TRIGGER_LABEL = 'Share map'
 
 type MenuPosition = { top: number; right: number }
 
 /**
  * Presentational share control: an icon trigger that opens a dropdown (copy
- * link / export PNG / export PDF), so it sits equally well among a row of map
- * control glyphs or alone in a panel. Pure — all behaviour comes in via props.
+ * link / export PNG / export PDF). Pure — all behaviour comes in via props.
  * The trigger renders in place (positioned by the host layout); the transient
  * dropdown is portaled to document.body so an overflow-clipping ancestor (like
  * a float panel card) can't cut it off, anchored under the trigger's
@@ -148,8 +143,6 @@ export function ShareMenu({
                 aria-haspopup="menu"
                 aria-expanded={open}
                 aria-controls={open ? menuId : undefined}
-                // The glyph alone carries the meaning, so the button has to be
-                // named for assistive tech and for hover.
                 title={TRIGGER_LABEL}
                 aria-label={TRIGGER_LABEL}
                 onClick={handleTriggerClick}

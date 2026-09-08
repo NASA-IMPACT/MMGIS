@@ -3,26 +3,21 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { MMGISMapControlAdapter } from '../MMGISMapControlAdapter'
 import { mount, click } from '../../_shared/__tests__/reactHarness'
 
-// The share trigger's glyph is an SVG the webpack build routes through @svgr,
-// which exports it as `ReactComponent`; vitest treats the file as a plain
-// asset, so that export is missing. Nothing here asserts on the glyph, so the
-// module stands in as a component that draws nothing.
+// The webpack build routes the trigger's glyph through @svgr, which exports it
+// as `ReactComponent`; vitest treats the file as a plain asset, so that export
+// is missing. Nothing here asserts on the glyph.
 vi.mock('../../_shared/share/share-map.svg', () => ({
     ReactComponent: () => null,
 }))
 
 /**
- * The adapter's only input is `tool:getVars`, which hands back the mission
- * JSON's `variables` object verbatim — any field may be any JSON type. So the
- * cases here feed the bus the shapes a config author can actually produce and
- * assert on what the bar renders. The action button is the field that has to
- * survive that: MapControlTool mounts this adapter with no error boundary, so
- * a value the adapter treats as text without checking takes the whole bar down
- * — search, basemaps, measure, zoom and share included.
+ * `tool:getVars` hands back the mission JSON's `variables` verbatim, so these
+ * cases feed the bus the shapes a config author can produce and assert on what
+ * the bar renders. The adapter mounts with no error boundary, so a value it
+ * treats as text without checking takes the whole bar down.
  *
  * Clicking is asserted through `window.open`, the seam an `https://` action
- * ends at. The other action forms belong to resolveAction and are covered in
- * its own spec.
+ * ends at; the other action forms are covered in resolveAction's own spec.
  */
 
 const LINK = 'https://example.com/analysis'
@@ -103,8 +98,6 @@ describe('MMGISMapControlAdapter action button', () => {
             expect(
                 mounted.container.querySelector('.blocks-map-control__bar'),
             ).not.toBeNull()
-            // An action is only ever a string, so every other type reads as
-            // unset rather than being coerced into one.
             expect(actionButton(mounted.container)).toBeNull()
 
             await mounted.unmount()
@@ -130,9 +123,6 @@ describe('MMGISMapControlAdapter action button', () => {
         const { container, unmount } = await mount(<MMGISMapControlAdapter />)
 
         const button = actionButton(container)!
-        // The configured text names the button everywhere a reader meets it;
-        // the action string is wiring and belongs in neither the tooltip nor
-        // the accessible name.
         expect(button.getAttribute('aria-label')).toBe('Draw')
         expect(button.getAttribute('title')).toBe('Draw')
         expect(button.outerHTML).not.toContain('plugins:show:DrawTool')
@@ -151,18 +141,12 @@ describe('MMGISMapControlAdapter action button', () => {
 })
 
 /**
- * The icon is configured across four fields a config author fills in by hand:
- * a source naming which of three inputs supplies the glyph, and the three
- * inputs themselves — an uploaded file, a link to one, and an icon-font name.
- *
- * So what matters here is which field a given combination draws from, that an
- * uploaded file is pointed at the path the mission actually serves it from,
- * that the font name arrives on the element as a class the stylesheet can draw
- * (the spellings the icon set documents are not that class, and core owns the
- * mapping), and that anything unusable leaves the button in the same state as
- * a mission that configured no icon at all — saying so on the console, since
- * an icon that silently never appears is indistinguishable from one the author
- * forgot to fill in.
+ * The icon is configured across four fields: a source naming which of three
+ * inputs supplies the glyph, and the three inputs themselves. What matters is
+ * which field a given combination draws from, that an uploaded file is pointed
+ * at the path the mission serves it from, that a font name arrives as a class
+ * the stylesheet can draw, and that anything unusable warns and leaves the
+ * button as if no icon were configured.
  */
 describe('MMGISMapControlAdapter action button icon', () => {
     const fontIcon = (container: HTMLElement) =>
@@ -180,8 +164,8 @@ describe('MMGISMapControlAdapter action button icon', () => {
         withVars({
             actionButtonLink: LINK,
             actionButtonIconSource: 'upload',
-            // What the upload endpoint stores: a path relative to the mission
-            // directory, which the browser cannot fetch as written.
+            // What the upload endpoint stores: a mission-relative path, which
+            // the browser cannot fetch as written.
             actionButtonIconUpload: 'MapControl/uploads/ab12.svg',
             actionButtonIconUrl: 'https://example.com/other.svg',
             actionButtonIconMdi: 'poll',
@@ -266,8 +250,6 @@ describe('MMGISMapControlAdapter action button icon', () => {
         })
         const { container, unmount } = await mount(<MMGISMapControlAdapter />)
 
-        // A half-finished configuration draws the icon it visibly has rather
-        // than nothing at all.
         expect(fontIcon(container)?.getAttribute('class')).toBe(
             'mdi mdi-poll blocks-map-control__btn-icon',
         )
@@ -298,8 +280,7 @@ describe('MMGISMapControlAdapter action button icon', () => {
         const { container, unmount } = await mount(<MMGISMapControlAdapter />)
 
         expect(fontIcon(container)).not.toBeNull()
-        // A glyph already names the action, so the generic fallback wording
-        // would only crowd it.
+        // A glyph already names the action, so no fallback wording joins it.
         expect(actionButton(container)?.textContent).toBe('')
 
         await unmount()
@@ -341,8 +322,7 @@ describe('MMGISMapControlAdapter action button icon', () => {
         const { container, unmount } = await mount(<MMGISMapControlAdapter />)
 
         expect(anyIcon(container)).toBeNull()
-        // Nothing was asked for, so nothing is wrong — an empty icon config is
-        // the common case and must stay quiet.
+        // An empty icon config is the common case and must stay quiet.
         expect(warn).not.toHaveBeenCalled()
 
         await unmount()

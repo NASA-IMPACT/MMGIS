@@ -1,21 +1,12 @@
-// Turns the action button's icon config — an author's choice between an
-// uploaded file, a link to one, and a named icon-font glyph — into the single
-// value the bar draws from.
-//
-// Same failure posture as the rest of the bar's config reading: an admin writes
-// this JSON by hand through the Configure page, so a half-finished or mistyped
-// entry degrades to a loud warning and a button without an icon, never to a
-// throw.
+// Turns the action button's icon config into the single value the bar draws
+// from. A half-finished or mistyped entry warns and yields no icon; it never
+// throws.
 
 import type { ActionIcon } from './types'
 
 const TAG = '[MapControl]'
 
-/**
- * The icon fields as they sit in a mission's tool variables. Every one is
- * optional and every one is text: `source` names which of the three inputs the
- * author filled in, and the other three carry the inputs themselves.
- */
+/** The icon fields as they sit in a mission's tool variables: optional text. */
 export type ActionIconConfig = {
     source?: string
     upload?: string
@@ -29,12 +20,8 @@ function text(value: string | undefined): string | null {
 }
 
 /**
- * Which of the configured inputs supplies the icon.
- *
- * `source` says which one the author meant; when it names an input that was
- * left empty, or is missing entirely, the first input that does hold something
- * wins. That keeps a half-finished configuration drawing the icon it visibly
- * has rather than nothing at all.
+ * Which configured input supplies the icon: the one `source` names, or — when
+ * that one is empty or `source` is unset — the first input holding anything.
  */
 function pick(
     config: ActionIconConfig
@@ -62,10 +49,8 @@ function pick(
 
 /**
  * The icon the bar should draw, or null for a button that gets none.
- *
- * `toIconClass` turns an icon name into the class attribute to put on the
- * element. It is passed in rather than imported because the accepted spellings
- * and the stylesheet that backs them belong to the host, not to this library.
+ * `toIconClass` maps an icon name to the class attribute for it; the host owns
+ * which spellings that accepts.
  */
 export function resolveActionIcon(
     config: ActionIconConfig,

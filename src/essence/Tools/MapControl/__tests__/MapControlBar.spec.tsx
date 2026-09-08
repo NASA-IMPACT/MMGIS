@@ -5,12 +5,9 @@ import type { ActionIcon } from '../lib/types'
 import { mount } from '../../_shared/__tests__/reactHarness'
 
 /**
- * The action button is the one control on the bar whose whole existence is a
- * prop decision, so these cases drive it from props alone — no host, no
- * `window.mmgisAPI` — and assert on the markup a stylesheet keys off: the
- * presence of the button, the classes it carries and its accessible name. Those
- * are the parts a mission author never sees but every mission depends on, and
- * they have exactly one definition apiece in the component.
+ * The action button driven from props alone — no host, no `window.mmgisAPI` —
+ * asserting on the markup the stylesheet keys off: the button's presence, its
+ * classes and its accessible name.
  */
 
 /** The two icon forms the bar draws, already resolved as a host hands them in. */
@@ -23,7 +20,6 @@ const actionButton = (container: HTMLElement) =>
 const actionLabel = (container: HTMLElement) =>
     container.querySelector('.blocks-map-control__btn-label')
 
-/** The glyph inside the action button, whichever form it took. */
 const actionIconMark = (container: HTMLElement) =>
     container.querySelector('.blocks-map-control__btn-icon')
 
@@ -44,8 +40,6 @@ describe('MapControlBar action button', () => {
             <MapControlBar actionLabel="Analyze area" actionIcon={MDI_ICON} />,
         )
 
-        // Label and icon alone configure nothing: a mission without a
-        // configured action gets a bar with no action button at all.
         expect(actionButton(container)).toBeNull()
 
         await unmount()
@@ -71,7 +65,6 @@ describe('MapControlBar action button', () => {
         )
 
         const button = actionButton(container)!
-        // Source order is the drawn order: the glyph leads the text.
         expect(button.firstElementChild).toBe(actionIconMark(container))
         expect(actionLabel(container)?.textContent).toBe('Run statistics')
         expect(button.getAttribute('aria-label')).toBe('Run statistics')
@@ -87,8 +80,7 @@ describe('MapControlBar action button', () => {
 
         const button = actionButton(container)!
         expect(actionIconMark(container)).not.toBeNull()
-        // No label element and no text: the bar supplies no wording of its own
-        // for a button the host configured as a glyph.
+        // The bar supplies no wording of its own for a glyph-only button.
         expect(actionLabel(container)).toBeNull()
         expect(button.textContent).toBe('')
         expect(button.querySelector('i')?.className).toBe(
@@ -103,8 +95,6 @@ describe('MapControlBar action button', () => {
             <MapControlBar onActionClick={() => {}} actionIcon={MDI_ICON} />,
         )
 
-        // The wide slot exists to give a label room, so a button without one
-        // stays square instead of stretching across the row.
         const button = actionButton(container)!
         expect(button.className).toContain('blocks-map-control__btn--action-glyph')
         expect(button.parentElement?.className).not.toContain(
@@ -120,12 +110,12 @@ describe('MapControlBar action button', () => {
         )
 
         const button = actionButton(container)!
-        // Nothing inside the button is readable — the glyph is aria-hidden —
-        // so the fallback name is all a screen reader has to announce it by.
+        // The glyph is aria-hidden, so the fallback name is all a screen reader
+        // has to announce the button by.
         const name = button.getAttribute('aria-label')
         expect(name).toBeTruthy()
         expect(button.getAttribute('title')).toBe(name)
-        // It is a name, not content: it never reaches the markup as text.
+        // It is a name, not content.
         expect(button.textContent).toBe('')
 
         await unmount()
@@ -151,9 +141,6 @@ describe('MapControlBar action button', () => {
         )
 
         const mark = actionIconMark(container) as HTMLElement
-        // A mask filled with currentColor, rather than an `img` or inline
-        // markup: the glyph reads white on the primary fill and matches the
-        // label, and an uploaded SVG is never parsed as a document.
         expect(mark.tagName).toBe('SPAN')
         expect(
             mark.classList.contains('blocks-map-control__btn-icon--image'),
@@ -173,10 +160,8 @@ describe('MapControlBar action button', () => {
         )
 
         const mark = actionIconMark(container) as HTMLElement
-        // The src sits inside a quoted url() in an inline style. The quote that
-        // would close it is encoded, so the value stays one url and cannot go
-        // on to add declarations of its own; anything else it holds is inert
-        // text inside that url.
+        // The quote that would close the url() is encoded, so the value stays
+        // one url and cannot go on to add declarations of its own.
         const declaration = mark.style.maskImage
         expect(declaration.startsWith('url("')).toBe(true)
         expect(declaration.endsWith('")')).toBe(true)

@@ -36,25 +36,11 @@ export type MapControlBarProps = {
     // Geocode search
     onSearchSelect?: (result: GeocodeResult) => void
 
-    // Action button
-    /**
-     * Text rendered inside the action button, which also serves as its tooltip
-     * and accessible name — so it should read as the action itself. Left unset
-     * the button draws its glyph alone; the host owns any wording to fall back
-     * on, since the bar has no idea what the action does.
-     */
+    // Action button — onActionClick is what makes it render
+    /** Button text, doubling as its tooltip and accessible name. */
     actionLabel?: string
-    /**
-     * Glyph drawn ahead of the label — either an icon-font class or an image
-     * the bar paints as a silhouette. Left unset the button draws its label
-     * alone.
-     */
+    /** Glyph drawn ahead of the label. */
     actionIcon?: ActionIcon
-    /**
-     * Invoked when the action button is clicked. Supplying it is what makes the
-     * button render, matching how the bar gates its other features on the host
-     * providing their handlers. What the action does belongs to the host.
-     */
     onActionClick?: () => void
 
     /**
@@ -65,28 +51,16 @@ export type MapControlBarProps = {
     endSlot?: React.ReactNode
 }
 
-/**
- * The class holding the glyph's box. Both icon forms carry it, so an icon-font
- * glyph and an image are drawn at the same size — and the image, being a mask
- * with no intrinsic size, has a box at all.
- */
+/** Sizes the glyph's box; both icon forms carry it, so both draw alike. */
 const ACTION_ICON_CLASS = 'blocks-map-control__btn-icon'
 
-/**
- * The action button's accessible name where no label is configured, leaving
- * only a glyph on screen. Generic on purpose: the bar knows the control is the
- * row's action and nothing more about it.
- */
+/** Names a glyph-only button, the bar knowing nothing more about the action. */
 const ACTION_FALLBACK_NAME = 'Action'
 
 /**
- * The action button's glyph.
- *
- * An image is painted as a CSS mask rather than an `img` or inline markup.
- * That buys two things at once: the glyph takes its color from the button, so
- * one file reads correctly against the primary fill and matches the label
- * beside it through every hover and active state, and an uploaded SVG is never
- * parsed as a document, so script embedded in one cannot run.
+ * The action button's glyph. An image is painted as a CSS mask, so it takes the
+ * button's color through every state and an uploaded SVG is never parsed as a
+ * document that could run script.
  */
 function ActionIconMark({ icon }: { icon: ActionIcon }) {
     if (icon.kind === 'mdi')
@@ -97,10 +71,8 @@ function ActionIconMark({ icon }: { icon: ActionIcon }) {
             />
         )
 
-    // CSS.escape isn't enough here — the value sits inside a url() in an inline
-    // style. Quoting the url and encoding the characters that could close it is
-    // what holds the value to being one url: nothing it contains can end the
-    // string early and go on to write declarations of its own.
+    // The src sits inside a quoted url() in an inline style. Encoding what could
+    // close that url holds the value to one url, unable to add declarations.
     const src = icon.src.replace(/["'()\\\s]/g, encodeURIComponent)
     return (
         <span
@@ -175,9 +147,7 @@ export function MapControlBar({
     const hasStyles = basemapStyles.length > 0
     const hasZoom = Boolean(onZoomIn && onZoomOut)
 
-    // A glyph-only button carries no text, so the name falls back to a generic
-    // one rather than leaving the control unnamed. title matches it, so the
-    // tooltip and the accessible name never disagree.
+    // A glyph-only button carries no text, so it would otherwise go unnamed.
     const actionName = actionLabel || ACTION_FALLBACK_NAME
 
     function toggleBasemap() {
@@ -256,16 +226,10 @@ export function MapControlBar({
                     </div>
                 )}
                 {endSlot}
-                {/* Built from the same __group and __btn classes as the icon
-                    buttons, so it sits in the row at their height. --wide
-                    hands the slot the row's free width; --action fills the
-                    button in the theme's primary and sizes it from its
-                    contents rather than as a square. It draws whatever it was
-                    handed — glyph, label, or both. */}
+                {/* Built from the bar's __group and __btn classes, so it sits in
+                    the row at their height. Only a labelled button claims the
+                    row's free width; a glyph alone stays square. */}
                 {onActionClick && (
-                    /* The slot only claims the row's free width when there is a
-                       label to spend it on; a glyph on its own sizes like the
-                       bar's other icon buttons. */
                     <div
                         className={`blocks-map-control__group${actionLabel ? ' blocks-map-control__group--wide' : ''}`}
                     >

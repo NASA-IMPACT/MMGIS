@@ -37,9 +37,7 @@
     }
 
     /* Groups grow by one unit per button they hold, so every button in the bar
-       widens at the same rate and they all stay equal to each other. The one
-       exception is the --wide slot, which is meant to take the row's free
-       width rather than share it; it states why below. */
+       widens at the same rate and they all stay equal to each other. */
     &__group {
         display: flex;
         flex-direction: row;
@@ -53,23 +51,14 @@
             flex-grow: 2;
         }
 
-        /* The slot holding the bar's action button. Its grow factor is large
-           enough to dominate the handful of one- and two-unit icon groups
-           beside it, so the free width lands here and they stay near their
-           36px floor. Carrying the arrangement as a ratio keeps it right per
-           line: the icon groups on a line the action button did not land on
-           divide that line between them, and a bar with no action button
-           divides every line evenly.
-
-           max-width holds the slot inside the bar. Its basis is its button's
-           content and the slot does not shrink below it, so a long configured
-           label would otherwise give the slot a hypothetical width past the
-           bar's own — which wrapping cannot rescue, since a line holding one
-           un-shrinkable item overflows it — and the panel's card would clip the
-           row. Clamped, the button shrinks and its label ellipses instead.
-
-           The white the other groups paint is left to the button here: it would
-           otherwise show at the corners of the button's rounded primary fill. */
+        /* The action button's slot: its grow factor dominates the one- and
+           two-unit icon groups, so the row's free width lands here. max-width
+           holds it inside the bar — the slot does not shrink below its button's
+           content, so a long label would give it a width past the bar's own,
+           which wrapping cannot rescue since a line holding one un-shrinkable
+           item overflows. Clamped, the label ellipses instead. Transparent
+           because the white the other groups paint would show at the corners of
+           the button's rounded fill. */
         &--wide {
             flex-grow: 100;
             max-width: 100%;
@@ -120,17 +109,12 @@
     }
 
     /* The bar's action button, filled in the theme's primary so it reads as the
-       row's one call to action rather than another glyph. The fill occupies the
-       surface &__btn's resting, :hover and :focus-visible states tint, so each
-       is restated here — at the same specificity and after the rule it stands
-       in for, so source order is what carries it — alongside a :active shade
-       for the press, which the icon buttons have no equivalent of.
+       row's one call to action. The fill occupies the surface &__btn's resting,
+       :hover and :focus-visible states tint, so each is restated here — same
+       specificity, later in source order, which is what carries them.
 
-       Content-sized rather than square: the basis follows the contents while
-       the 36px floor and the row's 36px height stay as &__btn states them, so a
-       button holding a lone glyph still fills a box the size of the bar's icon
-       buttons. It shrinks, which is what carries the slot's clamp down to the
-       label. */
+       Content-sized rather than square, keeping &__btn's 36px floor and height.
+       It shrinks, which carries the slot's clamp down to the label. */
     &__btn--action {
         flex-basis: auto;
         flex-shrink: 1;
@@ -139,19 +123,17 @@
         border-radius: var(--theme-radius-sm, 2px);
         background: var(--theme-color-primary, #1c67e3);
         color: var(--theme-color-white, #ffffff);
-        /* A button does not inherit the bar's font family on its own, so the
-           label would otherwise render in the UA's default face. */
+        /* A button does not inherit the bar's font family on its own. */
         font-family: inherit;
         font-size: var(--theme-font-size-2xs, 0.87rem);
         font-weight: var(--theme-font-weight-bold, 700);
         line-height: var(--theme-line-height-1, 1);
-        /* Holds the label on one line: a wrapped label would push past the
-           36px box, and the bar wraps the whole group instead. */
+        /* A wrapped label would push past the 36px box; the bar wraps the whole
+           group instead. */
         white-space: nowrap;
 
-        /* A glyph with no label beside it fills the bar's square button box
-           rather than a text button's wider one, so it lines up with the icon
-           buttons it sits among. */
+        /* A glyph with no label beside it keeps the square box of the bar's
+           other icon buttons. */
         &-glyph {
             flex-basis: 36px;
             padding: 0;
@@ -166,26 +148,19 @@
             background: var(--theme-color-primary-darker, #082c6b);
         }
 
-        /* The bar's ring is the primary color, which is the color this button
-           is filled with and so invisible on it; the ring is drawn in white and
-           inset over the fill instead. --theme-color-accent-cool is no
-           alternative — it resolves to the primary color as well. */
+        /* The bar's primary-colored ring is invisible on this button's primary
+           fill, so the ring is drawn in white and inset over it. */
         &:focus-visible {
             outline: var(--theme-border-width-md, 2px) solid var(--theme-color-white, #ffffff);
             outline-offset: -2px;
         }
     }
 
-    /* The action button's glyph, in a box stated outright rather than left to
-       the icon's own metrics: the image form is a mask, which has no intrinsic
-       size and would draw at nothing without one. Stating it on the class both
-       forms carry is also what makes an uploaded file and an icon-font glyph
-       the same size. Sized a step above the label so the glyph reads as the
-       leading mark rather than as another character of the text.
-
-       font-size drives the icon-font form, which draws its glyph at the
-       element's own size; line-height holds that glyph's line box to the same
-       square, since the button's own line-height would otherwise size it. */
+    /* The action button's glyph, in an 18px box stated outright: the image form
+       is a mask, which has no intrinsic size and would draw at nothing without
+       one. Stating it on the class both forms carry also draws an uploaded file
+       and an icon-font glyph at the same size. font-size drives the icon-font
+       form; line-height holds its line box to the same square. */
     &__btn-icon {
         flex: none;
         display: block;
@@ -193,14 +168,12 @@
         height: 18px;
         font-size: 18px;
         line-height: 1;
-        /* The glyph is drawn in currentColor, so it takes the button's white
-           against the primary fill and follows it through every state. */
         color: inherit;
     }
 
     /* A configured image is painted as a mask filled with the button's own
-       color, so one file reads correctly on the primary fill and matches the
-       label beside it. The `mask-image` itself is set inline, per mission. */
+       color, so one file reads on the primary fill and matches the label beside
+       it. The `mask-image` itself is set inline, per mission. */
     &__btn-icon--image {
         background-color: currentColor;
         mask-repeat: no-repeat;
@@ -211,10 +184,9 @@
         -webkit-mask-size: contain;
     }
 
-    /* The action button's text. It ellipses rather than holding its full width,
-       so a long configured label narrows the button instead of pushing the row
-       past the bar. min-width is what lets it: a flex item does not shrink
-       below its content without one, so the ellipsis would never engage. */
+    /* The action button's text, ellipsed so a long label narrows the button
+       instead of pushing the row past the bar. min-width is what lets it: a
+       flex item does not shrink below its content without one. */
     &__btn-label {
         min-width: 0;
         overflow: hidden;
@@ -235,14 +207,11 @@
     &__share {
         display: flex;
         align-items: center;
-        /* An icon slot, sized like a single-button &__group: it grows by the
-           same one unit, so its glyph stays equal to every other icon button in
-           the bar, and it never shrinks, so a row too narrow to hold it sends
-           it to the next one.
-
-           The cap is for the case where that next row holds nothing else: a
-           lone item on a flex line takes the whole line, which would draw this
-           slot as a bar-wide white box behind a single 16px glyph. */
+        /* Sized like a single-button &__group: grows by one unit, never
+           shrinks, so a row too narrow to hold it sends it to the next one.
+           The cap is for when that next row holds nothing else — a lone item
+           on a flex line takes the whole line, drawing this as a bar-wide white
+           box behind a single 16px glyph. */
         flex: 1 0 auto;
         max-width: 50%;
         background: var(--theme-color-white, #ffffff);
@@ -253,8 +222,7 @@
             width: 100%;
         }
 
-        /* The trigger spans the slot and carries the bar's 36px button floor.
-           The floor sits here rather than on the slot for the reason &__btn
+        /* The floor sits on the trigger, not the slot, for the reason &__btn
            gives: the slot is measured from the trigger's content, and a 16px
            glyph alone would size it below the bar's other icon buttons. */
         &.shareExport-tool-host .share-menu__trigger {

@@ -45,24 +45,20 @@ type ToolVars = {
 
 const COPIED_RESET_MS = 1800
 
-// What the action button says when the mission configured neither text nor an
-// icon, so the control is never an empty box.
+// What the action button says when the mission configured neither text nor icon.
 const ACTION_FALLBACK_LABEL = 'Analyze area'
 
 const isFalsy = (v: unknown) =>
     v === false || v === 'false' || v === 0 || v === '0'
 
-// Tool vars come from mission JSON, so any field may be any JSON type, and only
-// a string is meaningful for these. Every other type — and a whitespace-only
-// string — reads as unset rather than being coerced, so a mistyped value costs
-// one feature rather than throwing through a bar that has no error boundary.
+// A mission JSON field may hold any JSON type. Non-strings read as unset rather
+// than being coerced, since the bar mounts with no error boundary.
 const asText = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
 
 /**
- * Points an uploaded icon at the file the mission actually serves. The upload
- * field stores a path relative to the mission directory
- * ("MapControl/uploads/<uuid>.svg"); an absolute or root-relative value is
- * already complete and passes through.
+ * Points an uploaded icon at the file the mission serves: the upload field
+ * stores a path relative to the mission directory. An absolute or root-relative
+ * value is already complete and passes through.
  */
 function withResolvedIcon(
     icon: ActionIcon | null,
@@ -81,8 +77,7 @@ export function MMGISMapControlAdapter() {
     const copiedTimer = useRef<number | null>(null)
     const vars = useMMGISToolVars<ToolVars>('mapcontrol')
 
-    // Uploaded icons are stored mission-relative, so the bar needs the
-    // mission's path before it can draw them.
+    // Uploaded icons are stored mission-relative, so drawing one needs the path.
     const [missionPath, setMissionPath] = useState<string | null>(null)
     const refreshMissionPath = useCallback(async () => {
         setMissionPath(await mmgisGetMissionPath())
@@ -138,14 +133,9 @@ export function MMGISMapControlAdapter() {
     const showZoom = !isFalsy(vars.showZoom)
     const showShare = !isFalsy(vars.showShare)
 
-    // The action button appears only for a mission that configured a link;
-    // every other mission gets a bar without it.
     const actionLink = asText(vars.actionButtonLink)
     const actionText = asText(vars.actionButtonText)
-    // Which of the icon fields a mission meant is the library's to work out;
-    // which icon-font spellings it may write is core's, which is what
-    // resolveIconClass is passed in for. Memoized because an unusable value
-    // warns, and share and basemap state re-render this often.
+    // Memoized so an unusable value warns once per config rather than per render.
     const actionIcon = useMemo(
         () =>
             withResolvedIcon(
@@ -169,8 +159,6 @@ export function MMGISMapControlAdapter() {
         ]
     )
 
-    // What the link means — an external URL, a panel/plugin request, a custom
-    // event — is resolveAction's business; the adapter only forwards it.
     const handleActionClick = useCallback(() => {
         resolveAction(actionLink)
     }, [actionLink])
@@ -204,8 +192,8 @@ export function MMGISMapControlAdapter() {
             onRemoveMeasureLabel={showMeasure ? removeMeasureLabel : undefined}
             onSetCursor={showMeasure ? setCursor : undefined}
             onSearchSelect={showSearch ? flyToResult : undefined}
-            // A configured glyph stands on its own, so only a button with
-            // neither text nor icon falls back to generic wording.
+            // A glyph names the action on its own; only a bare button needs
+            // the fallback wording.
             actionLabel={
                 actionText || (actionIcon ? undefined : ACTION_FALLBACK_LABEL)
             }
@@ -213,12 +201,9 @@ export function MMGISMapControlAdapter() {
             onActionClick={actionLink ? handleActionClick : undefined}
             endSlot={
                 showShare ? (
-                    // shareExport-tool-host scopes the component's tokens, which
-                    // is where the trigger's grey glyph comes from;
-                    // blocks-map-control__share gives it the bar's icon-button
-                    // surface — white, square-cornered and held to the bar's
-                    // button size — so it sits alongside the bar's other icon
-                    // buttons.
+                    // shareExport-tool-host scopes the component's tokens;
+                    // blocks-map-control__share gives the trigger the bar's
+                    // icon-button surface and size.
                     <div className="shareExport-tool-host blocks-map-control__share">
                         <ShareMenu
                             formats={{ png: true, pdf: true }}

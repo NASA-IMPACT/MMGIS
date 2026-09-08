@@ -2,7 +2,7 @@
     "defaultIcon": "layers",
     "description": "Floating map control bar: basemap switcher, search, measure, zoom, share, and a configurable action button.",
     "descriptionFull": {
-        "title": "A floating horizontal toolbar rendered over the map. The basemap switcher, search, measure, zoom and share controls each have their own toggle; the action button appears whenever Button Link is set."
+        "title": "A floating horizontal toolbar rendered over the map. Basemap switcher, search, measure, zoom and share each have their own toggle; the action button appears whenever Button Link is set."
     },
     "hasVars": true,
     "name": "MapControl",
@@ -71,12 +71,12 @@
             },
             {
                 "name": "Action Button",
-                "description": "Configure an optional action button displayed at the end of the control bar.",
+                "description": "An optional action button at the end of the control bar.",
                 "components": [
                     {
                         "field": "variables.actionButtonText",
                         "name": "Button Text",
-                        "description": "Text shown on the action button. With an icon configured, leaving this empty shows the glyph on its own; with neither text nor an icon, the button reads 'Analyze area'. The button is shown whenever Button Link is set.",
+                        "description": "Text shown on the action button. Left empty, a configured icon shows on its own; with neither text nor icon the button reads 'Analyze area'.",
                         "type": "text",
                         "width": 6
                     },
@@ -91,12 +91,12 @@
             },
             {
                 "name": "Action Button Icon",
-                "description": "An optional glyph shown ahead of the button text. Pick where it comes from, then fill in the matching field; an icon is drawn in the button's own color whichever source it came from.",
+                "description": "An optional glyph shown ahead of the button text. Pick a source, then fill in the matching field. Any icon is drawn in the button's own color.",
                 "components": [
                     {
                         "field": "variables.actionButtonIconSource",
                         "name": "Icon Source",
-                        "description": "Which of the three fields beside this one supplies the glyph. If the named field is left empty, the first of the three that is filled in supplies it instead.",
+                        "description": "Which of the three fields beside this one supplies the glyph. If the named field is empty, the first one that is filled in supplies it instead.",
                         "type": "dropdown",
                         "width": 3,
                         "options": ["upload", "link", "mdi"]
