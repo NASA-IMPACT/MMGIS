@@ -202,6 +202,8 @@ const AOITool = {
             })
             subscribe('plugin:fetch-stats:analysisReady', () => {
                 this._setState({ analysisStatus: 'idle' })
+                // Step aside so the results card takes this slot in the panel.
+                mmgisSetPluginState('AOITool', 'hidden').catch(() => { })
             })
             subscribe('plugin:fetch-stats:analysisSkipped', ({ reason } = {}) => {
                 this._showAnalysisError(this._messageForSkipReason(reason))
