@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useMemo } from 'react'
 import { navigateLayer } from '../../utils/layerNavigation'
 import type { LayerNavigation } from '../../utils/layerNavigation'
 import { TimeMode } from '../../types'
@@ -70,14 +70,25 @@ export const LayerNavControls: React.FC<LayerNavControlsProps> = ({
     timeMode,
     onNavigate
 }) => {
+    // Where each control leads, held until one of the answers can change. The
+    // current time moves with every frame of a scrubber drag and every
+    // playback tick, and each of those renders every row of the sidebar.
+    const targets = useMemo(
+        () =>
+            ACTIONS.map(({ action }) =>
+                navigateLayer(navigation, from, action, timeMode)
+            ),
+        [navigation, from, timeMode]
+    )
+
     return (
         <div
             className="layer-nav-controls"
             role="group"
             aria-label={`${displayName} date navigation`}
         >
-            {ACTIONS.map(({ action, name, path }) => {
-                const target = navigateLayer(navigation, from, action, timeMode)
+            {ACTIONS.map(({ action, name, path }, i) => {
+                const target = targets[i]
                 const label = `${displayName}: ${name}`
 
                 return (

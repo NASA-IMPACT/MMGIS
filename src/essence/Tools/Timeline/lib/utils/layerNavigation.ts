@@ -14,7 +14,11 @@ export interface LayerNavigation {
     kind: 'sparse' | 'periodic'
     /** Sparse only: one stop per listed day, sorted ascending, deduplicated. */
     stops?: Date[]
-    /** Periodic extent, or the first and last stop of a sparse layer. */
+    /**
+     * The extent a periodic layer's controls move through. A sparse layer
+     * carries its first and last stop here to describe the span it covers;
+     * its controls move between the stops themselves.
+     */
     start: Date
     end: Date
 }
@@ -24,12 +28,14 @@ export interface LayerNavigation {
  * the layer is not time-enabled, or its configuration names no instant the
  * timeline could move to.
  *
- * The configuration is read exactly as the timeline reads it for drawing, so a
- * layer that draws one box gets one stop. Listed days must be written as ISO
- * 8601, give or take the whitespace a comma-separated list picks up; unreadable
- * ones are dropped rather than guessed at, and a list with nothing readable in
- * it leaves the layer navigating its extent instead. The extent either side is
- * read leniently, since configs carry values in looser formats.
+ * Listed days are read the way the timeline reads them for drawing, so the
+ * stops line up with the boxes the row shows — with the one difference that a
+ * day listed twice is a single stop, where drawing gives each listing its own
+ * box and the two land exactly on top of each other. Days must be written as
+ * ISO 8601, give or take the whitespace a comma-separated list picks up;
+ * unreadable ones are dropped rather than guessed at, and a list with nothing
+ * readable in it leaves the layer navigating its extent instead. The extent
+ * either side is read leniently, since configs carry values in looser formats.
  *
  * Both halves of the extent are configured independently, so a layer often
  * names one bound and leaves the other open. The open side is completed from
@@ -127,7 +133,12 @@ function navigateSparseLayer(
         case 'next':
             return stops.find((stop) => stop.getTime() > at) ?? null
         case 'prev':
-            return stops.filter((stop) => stop.getTime() < at).pop() ?? null
+            // Scanned from the far end rather than filtered: the answer is the
+            // first stop the scan meets, and a row asks on every frame of a
+            // drag, for a layer that can list a stop a day over years.
+            for (let i = stops.length - 1; i >= 0; i--)
+                if (stops[i].getTime() < at) return stops[i]
+            return null
     }
 }
 

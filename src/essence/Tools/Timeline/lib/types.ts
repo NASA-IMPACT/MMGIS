@@ -22,5 +22,5 @@ export interface LayerTimeData {
     // instant to move to carries none, which is how its row goes without
     // navigation controls rather than by anything asking what kind of layer
     // it is.
-    navigation?: LayerNavigation
+    navigation?: LayerNavigation | null
 }
