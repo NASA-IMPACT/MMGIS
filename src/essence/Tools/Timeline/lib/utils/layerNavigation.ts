@@ -1,6 +1,6 @@
 import moment from 'moment'
 import type { TimeMode } from '../types'
-import { resolveLayerExtent, stepTime } from './timeUtils'
+import { resolveLayerExtent, resolveListedDays, stepTime } from './timeUtils'
 import type { LayerTimeConfig } from './timeUtils'
 
 /**
@@ -21,11 +21,10 @@ export interface LayerNavigation {
  * The navigation model for a layer, or null when there is nothing to navigate:
  * the layer is not time-enabled, or names no instant to move to.
  *
- * Listed days must be ISO 8601, give or take surrounding whitespace;
- * unreadable ones are dropped, and a list with nothing readable in it leaves
- * the layer navigating its extent. A stop sits on the day's last UTC instant:
- * the current time is assigned to each layer as `layer.time.end`, so a stop at
- * midnight would close the query window before the day's data fell inside it.
+ * A list with nothing readable in it leaves the layer navigating its extent.
+ * A stop sits on the day's last UTC instant: the current time is assigned to
+ * each layer as `layer.time.end`, so a stop at midnight would close the query
+ * window before the day's data fell inside it.
  *
  * An unconfigured bound is completed from the timeline's window, so the
  * controls move through the span the layer's bar is drawn over.
@@ -41,27 +40,9 @@ export function resolveLayerNavigation(
 ): LayerNavigation | null {
     if (!time || time.enabled !== true) return null
 
-    const listed = Array.isArray(time.dataDates)
-        ? time.dataDates
-        : typeof time.dataDates === 'string'
-        ? [time.dataDates]
-        : []
-
-    // Several instants on one day are one day of data, and so one stop. The
-    // set collapses them in one pass, for a layer that can list a stop a day
-    // over years.
-    const stops = [
-        ...new Set(
-            listed
-                .map((date) =>
-                    moment.utc(String(date).trim(), moment.ISO_8601, true)
-                )
-                .filter((day) => day.isValid())
-                .map((day) => day.endOf('day').valueOf())
-        ),
-    ]
-        .sort((a, b) => a - b)
-        .map((stop) => new Date(stop))
+    const stops = resolveListedDays(time).map((day) =>
+        day.clone().endOf('day').toDate()
+    )
 
     if (stops.length > 0)
         return {

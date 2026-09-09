@@ -38,6 +38,24 @@ describe('resolveLayerTimeRanges', () => {
         expect(ranges).toHaveLength(2)
     })
 
+    test('draws a day listed more than once as one box', () => {
+        // Two boxes on one day would stack, and the pair would read darker
+        // than its neighbours through the bars' shared opacity.
+        const ranges = resolve({
+            enabled: true,
+            dataDates: [
+                '2020-03-04T01:00:00Z',
+                '2020-03-04T18:30:00Z',
+                '2020-07-19',
+            ],
+        })
+
+        expect(ranges.map((range) => range.label)).toEqual([
+            '2020-03-04',
+            '2020-07-19',
+        ])
+    })
+
     test('covers a listed day from its first to its last UTC instant', () => {
         const [range] = resolve({
             enabled: true,

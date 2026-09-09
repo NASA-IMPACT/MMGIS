@@ -228,6 +228,23 @@ describe('TimelineAdapter layer navigation', () => {
         })
     })
 
+    test('a step back onto an earlier stop opens the window past that day\'s midnight', () => {
+        // The stop the current time steps back to is the one before the
+        // window, so the press both moves and widens.
+        act(() => {
+            navButton('previous date')!.click()
+        })
+
+        const { startTime, currentTime } = requests()[0].payload as {
+            startTime: string
+            currentTime: string
+        }
+        expect(currentTime).toBe(BEFORE_WINDOW)
+        expect(new Date(startTime).getTime()).toBeLessThanOrEqual(
+            new Date(BEFORE_WINDOW_DAY_START).getTime()
+        )
+    })
+
     test('the help popover says the layer rows carry controls', () => {
         act(() => {
             container
