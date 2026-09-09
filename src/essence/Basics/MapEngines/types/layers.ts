@@ -16,6 +16,21 @@ export interface LayerOptions {
     interactive?: boolean
     visible?: boolean
     style?: Record<string, unknown>
+    /**
+     * The layer's legend rows (`L_.layers.data[<layer>]._legend`). Rows flagged
+     * `styleMatching` double as a style specification, colouring each feature
+     * from one of its property values; see LegendStyle. With no legend, or none
+     * carrying such rows, the engine styles from `style` alone.
+     */
+    legend?: unknown
+    /**
+     * Whether the mission configures a legend at all, including one still
+     * being fetched. Distinct from `legend` above, which is the legend once it
+     * has arrived: a `legend:` CSV path routinely lands after the layer is
+     * built, and a vector tile layer has to know at build time — see the
+     * `vectortile` case in buildDeckLayer.
+     */
+    legendConfigured?: boolean
     metadata?: Record<string, unknown>
 }
 

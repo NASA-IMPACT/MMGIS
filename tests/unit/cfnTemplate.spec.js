@@ -127,6 +127,17 @@ test.describe('renderCfnTemplate', () => {
         expect(body).not.toContain(PASSWORD)
     })
 
+    // A CloudFront Function serves the LIVE stage, so a republish that only
+    // changes the baked password converges the stack while every request
+    // keeps meeting the old credentials. AutoPublish promotes the new code to
+    // LIVE as part of the update.
+    test('publishes the auth function to the live stage on every update', () => {
+        const template = JSON.parse(renderCfnTemplate({ password: PASSWORD }))
+        expect(
+            template.Resources.DashboardAuthFunction.Properties.AutoPublish
+        ).toBe(true)
+    })
+
     test('auth function returns 401 with a www-authenticate challenge', () => {
         const code = renderAuthFunctionCode(PASSWORD)
         expect(code).toContain('statusCode: 401')
@@ -170,5 +181,16 @@ test.describe('renderCfnTemplate', () => {
             'DistributionDomainName',
             'DistributionId',
         ])
+    })
+
+    test('the bucket is left unnamed (naming it would REPLACE it, minting a new domain)', () => {
+        const template = JSON.parse(renderCfnTemplate({ password: PASSWORD }))
+        // A named bucket makes UpdateStack REPLACE it, and a replaced bucket
+        // drops the distribution's origin — the one thing a published dashboard
+        // must never change. (Resource renames are already caught by the
+        // "expected resources" test, which addresses each by its logical ID.)
+        expect(
+            template.Resources.DashboardBucket.Properties
+        ).not.toHaveProperty('BucketName')
     })
 })

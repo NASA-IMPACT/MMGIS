@@ -9,12 +9,18 @@ export interface LayerTimelineProps {
     height: number
 }
 
+// Drawn thickness of a range bar, independent of the row height that sidebar
+// chrome also sets, so the chart stays as light as rows grow.
+const BAR_THICKNESS = 9
+
 export const LayerTimeline: React.FC<LayerTimelineProps> = ({
     layer,
     xScale,
     y,
     height,
 }) => {
+    const barY = y + (height - BAR_THICKNESS) / 2
+
     return (
         <g className="layer-timeline">
             {/* Time range bars */}
@@ -27,9 +33,9 @@ export const LayerTimeline: React.FC<LayerTimelineProps> = ({
                     <rect
                         key={index}
                         x={x1}
-                        y={y + 4}
+                        y={barY}
                         width={width}
-                        height={height - 6}
+                        height={BAR_THICKNESS}
                         /* Set as a style, not a fill attribute, so a var() colour resolves */
                         style={{ fill: layer.color }}
                         opacity={0.85}
@@ -39,7 +45,9 @@ export const LayerTimeline: React.FC<LayerTimelineProps> = ({
                         <title>
                             {layer.displayName}
                             {'\n'}
-                            {range.start.toISOString()} to {range.end.toISOString()}
+                            {range.label
+                                ? range.label
+                                : `${range.start.toISOString()} to ${range.end.toISOString()}`}
                         </title>
                     </rect>
                 )

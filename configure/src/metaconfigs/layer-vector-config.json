@@ -525,6 +525,13 @@
               "description": "How often new data is added, as an ISO 8601 duration (e.g., P1D for daily, P7D for weekly, P1M for monthly). When set, the data end time snaps back to the most recent date that actually has data. Leave empty for continuous or irregular data. An unreadable value is ignored.",
               "type": "text",
               "width": 4
+            },
+            {
+              "field": "time.dataDates",
+              "name": "Data Dates",
+              "description": "Optional. For layers with data on only a scattered handful of days rather than continuously across the extent above. A comma-separated list of the days data is available on, in UTC. Format: YYYY-MM-DD (e.g., 2020-03-04, 2020-07-19). The timeline draws one box per listed day instead of a single bar spanning the extent. Leave empty for a layer with continuous coverage. Day granularity only; times of day are ignored.",
+              "type": "textarray",
+              "width": 12
             }
           ]
         }

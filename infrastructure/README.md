@@ -36,7 +36,7 @@ infrastructure/
 ├── ecs/*.json                         # recipe source (provenance; see below)
 ├── iam/*.json                         # recipe source (provenance)
 ├── cloudfront-admin.json              # recipe source (provenance)
-├── cloudfront-function.js             # canonical password-gate Function reference
+├── cloudfront-function.js             # source of the password-gate Function
 └── s3-asset-bucket.json               # recipe source (provenance)
 ```
 
@@ -53,9 +53,10 @@ IAM roles.
 are the recipe JSONs the Terraform module was translated from — every attribute
 value in them is production-tested. They are **kept in place**: they document
 where each Terraform value came from.
-`cloudfront-function.js` is still load-bearing as the canonical reference the
-publish generator (`scripts/lib/cfn-template.js`) is kept in sync with (see
-`tests/unit/infrastructure.spec.js`). Nothing here is applied directly anymore.
+`cloudfront-function.js` is different: it is the deployed source, not
+provenance — the publish generator (`scripts/lib/cfn-template.js`) reads and
+templates it at render time (see `tests/unit/infrastructure.spec.js`).
+Nothing else here is applied directly anymore.
 One deliberate divergence: the recipes inject all five `DB_*` keys from an
 app-shaped DB secret (`<DB_SECRET_ARN>`) that the module has since retired —
 `DB_PASS` now comes straight from the RDS-managed master secret, and
@@ -270,6 +271,21 @@ it from the real login password (the full note lives in
   calls use. The admin task role holds `iam:PassRole` on both publish role ARNs
   — without it `RunTask` fails with an opaque AccessDenied that never mentions
   PassRole.
+- **Publish tasks are tracked by ARN, and the Deployments page locks on it.**
+  The publish and update routes record each ECS task's ARN on its row
+  (`settings.publish_task_arn`), and the task records its own at startup from
+  the container metadata endpoint. Every list read asks `ecs:DescribeTasks`
+  whether an in-flight row's task is still alive: Update is refused (409 with a
+  `reason`) while the row is provisioning, updating, deleting or deleted;
+  Delete is refused only while the task is confirmed alive (a task that starts
+  to find its row already claimed by a Delete stops before touching AWS);
+  Publish refuses a second dashboard for a mission unless the request is
+  forced. A task ECS reports as stopped or missing flips its row to `failed`
+  with the stop reason on that read. The admin task role therefore holds
+  `ecs:DescribeTasks` on `task/<cluster>/*` in all three layers (the module's
+  and the recipe's `DescribePublishTasks` statement, and the boundary). The
+  check fails open: a denied or unanswered call leaves the row in flight and
+  the page reports the task as `unknown` with the error.
 - **CloudFront origin details are load-bearing.** The admin origin `DomainName`
   must be the on.aws endpoint (it satisfies the ALB cert's SNI and its
   host-header rule; the raw ALB DNS name would miss it), with the
@@ -287,6 +303,12 @@ it from the real login password (the full note lives in
   the service ARN); and the CLI rejects `--cluster` on
   `update-express-gateway-service` (ARN-only) — the workflow already resolves
   the ARN first.
+- **Serving a published dashboard from a customer's own domain.** When a team
+  wants a dashboard to appear under a path on their own domain, hand them
+  [`../docs/infrastructure/serving-a-dashboard-from-your-domain.md`](../docs/infrastructure/serving-a-dashboard-from-your-domain.md).
+  Nothing is configured on our side — the customer's own CloudFront forwards
+  the request and declares the path. After an edge-function change, an
+  existing dashboard picks it up via a republish (the `update` action).
 
 ## Placeholders in the recipe JSON
 

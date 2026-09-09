@@ -1,13 +1,20 @@
 // Holds all layer data
+import { isStaticBuild } from '../../../pre/capabilities'
+import { compileLegendStyle } from './LegendStyle'
 import F_ from '../Formulae_/Formulae_'
 import Description from '../../Ancillary/Description'
 import Search from '../../Ancillary/Search'
 import Attributions from '../../Ancillary/Attributions'
+import CursorInfo from '../../Ancillary/CursorInfo'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
 import { resolveTemporalExtent } from '../TimeControl_/layerTimePolicy'
-import { isRasterTileLayerType } from '../MapEngines/types/engine'
+import {
+    isRasterTileLayerType,
+    MAP_ENGINE,
+    toCanonicalLayerType,
+} from '../MapEngines/types/engine'
 import {
     getActiveTileLevel,
     getTileLevelUrl,
@@ -29,6 +36,14 @@ let _providerCleanups = []
 // Resolved at call time so an open-ended "now" is fresh on every ask.
 const temporalExtentFor = (uuid) =>
     resolveTemporalExtent(L_.layers.data[uuid]?.time)
+
+/**
+ * Canonical layer types whose deck.gl builders read the legend as a style
+ * specification. Others carry a legend purely for display. Membership is
+ * tested through toCanonicalLayerType, which folds each deck.gl class name
+ * onto its MMGIS type.
+ */
+const LEGEND_STYLED = new Set(['vector', 'vectortile'])
 
 /**
  * What a layer's COG colormap supports: whether it has one to draw a legend
@@ -207,6 +222,29 @@ async function refreshTileLayer(uuid, updateOptions) {
         console.error(`layers:refresh failed for "${uuid}"`, err)
         return false
     }
+}
+
+/**
+ * Brings a layer just switched on up to the current time.
+ *
+ * TimeControl reloads only layers that are switched on, so time steps taken
+ * while a layer is off pass it by and it would otherwise draw with the range
+ * it was last shown with.
+ *
+ * Through `reloadLayer` rather than the raster tile pipeline, because that is
+ * the only path resolving time for a vector or vectortile layer. Guarded on
+ * the layer actually being behind, which also keeps this to once per toggle:
+ * some layer types pass two show paths, and `reloadLayer` stamps
+ * `time.current` so the second finds the layer current.
+ *
+ * @param {object} s - Layer config.
+ */
+async function catchUpLayerTime(s) {
+    if (s.time?.enabled !== true) return
+    if (s.time.current === L_.TimeControl_.currentTime) return
+
+    // evenIfOff: the layer is still recorded as off while the toggle runs.
+    await L_.TimeControl_.reloadLayer(s, true)
 }
 
 const L_ = {
@@ -688,6 +726,45 @@ const L_ = {
             return `${baseUrl}/collections/${collectionName}/preview?assets=asset${bandsParam}${resamplingParam}`
         }
     },
+    /**
+     * Rebuild a layer that was built before its legend arrived.
+     *
+     * A legend given as a `legend:` CSV path is fetched asynchronously, so it
+     * routinely lands after the layer has been made. Leaflet does not care —
+     * it re-reads the legend for every feature it styles — but deck.gl
+     * compiles the legend into the layer's style accessors when the layer is
+     * built, so a layer built without one stays flat forever. Without this the
+     * same configuration would draw a ramp on Leaflet and flat colour on
+     * deck.gl, which issue #345 explicitly rules out.
+     *
+     * Only rebuilds when there is something to gain: the deck.gl engine, a
+     * layer type that reads the legend, a legend that actually specifies
+     * styling rather than just legend rows to display, and a layer that is
+     * already built and on. A layer that is not yet built reads the legend
+     * itself when it is.
+     *
+     * @param {string} name - A key of `L_.layers.data`.
+     */
+    applyLateLegendStyling: function (name) {
+        if (L_.Map_?.engine?.engineType !== MAP_ENGINE.DECKGL) return
+
+        const layerObj = L_.layers.data[name]
+        if (layerObj == null) return
+        if (!LEGEND_STYLED.has(toCanonicalLayerType(layerObj.type))) return
+
+        // A plain display legend compiles to nothing, and most legends are
+        // exactly that. Rebuilding every layer that has one would be a lot of
+        // needless work on every mission load.
+        if (compileLegendStyle(layerObj._legend) == null) return
+
+        // `false` means the layer was never built; refreshLayer would turn it
+        // on as a side effect, so leave anything not currently rendered alone.
+        const built = L_.layers.layer[name]
+        if (!built || typeof built !== 'object') return
+        if (L_.layers.on[name] !== true) return
+
+        L_.Map_.refreshLayer(layerObj)
+    },
     getUrl: function (type, url, layerData) {
         let wasCOG = false
 
@@ -714,6 +791,7 @@ const L_ = {
         }
         if (
             type === 'tile' &&
+            !isStaticBuild() &&
             ((layerData && layerData.throughTileServer === true) ||
                 wasCOG === true)
         ) {
@@ -731,6 +809,16 @@ const L_ = {
         }
         return nextUrl
     },
+    /**
+     * A layer's rank in the engine's draw order: first in `_layersOrdered`
+     * draws on top. One derivation, shared by creation and re-ordering.
+     *
+     * @param {string} name - Layer UUID.
+     * @returns {number}
+     */
+    layerZIndex: function (name) {
+        return L_._layersOrdered.length + 1 - L_._layersOrdered.indexOf(name)
+    },
     //Takes in config layer obj
     //Toggles a layer on and off and accounts for sublayers
     //Takes in a config layer object
@@ -747,22 +835,34 @@ const L_ = {
         if (L_.layers.on[s.name] === true) on = true
         else on = false
 
-        await L_.toggleLayerHelper(
-            s,
-            on,
-            ignoreToggleStateChange,
-            null,
-            skipOrderedBringToFront
-        )
+        // toggleLayerHelper already logs the specific failure; if it
+        // rejects, don't tell subscribers the toggle succeeded when the
+        // layer never built, but still resync the UI below like normal
+        let toggled = true
+        try {
+            await L_.toggleLayerHelper(
+                s,
+                on,
+                ignoreToggleStateChange,
+                null,
+                skipOrderedBringToFront
+            )
+        } catch (e) {
+            toggled = false
+        }
 
-        Object.keys(L_._onLayerToggleSubscriptions).forEach((k) => {
-            L_._onLayerToggleSubscriptions[k](s.name, !on)
-        })
+        if (toggled) {
+            Object.keys(L_._onLayerToggleSubscriptions).forEach((k) => {
+                L_._onLayerToggleSubscriptions[k](s.name, !on)
+            })
 
-        Object.keys(L_._onSpecificLayerToggleSubscriptions).forEach((k) => {
-            const subs = L_._onSpecificLayerToggleSubscriptions[k]
-            if (subs.layer === s.name) subs.func(s.name, !on)
-        })
+            Object.keys(L_._onSpecificLayerToggleSubscriptions).forEach(
+                (k) => {
+                    const subs = L_._onSpecificLayerToggleSubscriptions[k]
+                    if (subs.layer === s.name) subs.func(s.name, !on)
+                }
+            )
+        }
 
         // Always reupdate layer infos at the end to keep them in sync
         Description.updateInfo()
@@ -771,6 +871,8 @@ const L_ = {
         if (typeof Attributions !== 'undefined' && Attributions.update) {
             Attributions.update()
         }
+
+        if (!toggled) return
 
         // Deselect active feature if its layer is being turned off
         if (L_.activeFeature && L_.activeFeature.layerName === s.name && on) {
@@ -811,17 +913,8 @@ const L_ = {
                             $('.drawToolContextMenuHeaderClose').click()
                         } catch (err) {}
                     }
-                    if (
-                        L_.Map_.engine &&
-                        L_.Map_.engine.engineType !== 'leaflet'
-                    ) {
-                        L_.Map_.engine.updateLayer(
-                            L_.Map_.nativeLayer(L_.layers.layer[s.name]),
-                            { visible: false }
-                        )
-                    } else {
-                        L_.Map_.rmNotNull(L_.layers.layer[s.name])
-                    }
+                    CursorInfo.hide(true)
+                    L_.Map_.engine.setLayerVisibility(s.name, false)
                     if (L_.layers.attachments[s.name]) {
                         for (let sub in L_.layers.attachments[s.name]) {
                             switch (L_.layers.attachments[s.name][sub].type) {
@@ -905,11 +998,7 @@ const L_ = {
                                                     sub
                                                 ].layer
                                             ),
-                                            L_._layersOrdered.length +
-                                                1 -
-                                                L_._layersOrdered.indexOf(
-                                                    s.name
-                                                )
+                                            L_.layerZIndex(s.name)
                                         )
                                         break
                                     case 'labels':
@@ -941,11 +1030,7 @@ const L_ = {
                                                     sub
                                                 ].layer
                                             ),
-                                            L_._layersOrdered.length +
-                                                1 -
-                                                L_._layersOrdered.indexOf(
-                                                    s.name
-                                                )
+                                            L_.layerZIndex(s.name)
                                         )
                                         break
                                 }
@@ -953,20 +1038,10 @@ const L_ = {
                         }
                     }
 
-                    const nativeLayer = L_.Map_.nativeLayer(L_.layers.layer[s.name])
-                    if (L_.Map_.engine.engineType !== 'leaflet') {
-                        if (!L_.Map_.engine.updateLayer(nativeLayer, { visible: true })) {
-                            L_.Map_.engine.addLayer(nativeLayer)
-                        }
-                    } else {
-                        L_.Map_.engine.addLayer(nativeLayer)
-                    }
-                    L_.Map_.engine.setLayerZIndex(
-                        L_.Map_.nativeLayer(L_.layers.layer[s.name]),
-                        L_._layersOrdered.length +
-                            1 -
-                            L_._layersOrdered.indexOf(s.name)
-                    )
+                    // Before showing, not after: a layer that is behind still
+                    // holds the URL it was built with, placeholders and all.
+                    await catchUpLayerTime(s)
+                    L_.Map_.engine.setLayerVisibility(s.name, true)
                 }
 
                 if (s.type === 'tile') {
@@ -1026,16 +1101,22 @@ const L_ = {
                     if (['streamlines', 'particles'].includes(s.kind)) {
                         L_.Map_.rmNotNull(L_.layers.layer[s.name])
                     }
-                    await L_.Map_.makeLayer(s, true, null, null, true)
+                    try {
+                        await L_.Map_.makeLayer(s, true, null, null, true)
+                    } catch (e) {
+                        // makeLayer already logged this; rethrow so
+                        // toggleLayer doesn't report the toggle as
+                        // successful to its subscribers when the layer
+                        // never built
+                        throw e
+                    }
                     Description.updateInfo()
                     L_.Map_.engine.addLayer(
                         L_.Map_.nativeLayer(L_.layers.layer[s.name])
                     )
                     L_.Map_.engine.setLayerZIndex(
                         L_.Map_.nativeLayer(L_.layers.layer[s.name]),
-                        L_._layersOrdered.length +
-                            1 -
-                            L_._layersOrdered.indexOf(s.name)
+                        L_.layerZIndex(s.name)
                     )
                 } else {
                     let hadToMake = false
@@ -1043,7 +1124,15 @@ const L_ = {
                         L_.layers.layer[s.name] === false &&
                         globeOnly != true
                     ) {
-                        await L_.Map_.makeLayer(s, true, null, null, true)
+                        try {
+                            await L_.Map_.makeLayer(s, true, null, null, true)
+                        } catch (e) {
+                            // makeLayer already logged this; rethrow so
+                            // toggleLayer doesn't report the toggle as
+                            // successful to its subscribers when the layer
+                            // never built
+                            throw e
+                        }
                         Description.updateInfo()
                         hadToMake = true
                     }
@@ -1069,20 +1158,10 @@ const L_ = {
                                         }
                                     })
                             }
-                            const nativeLayer = L_.Map_.nativeLayer(L_.layers.layer[s.name])
-                            if (L_.Map_.engine.engineType !== 'leaflet') {
-                                if (!L_.Map_.engine.updateLayer(nativeLayer, { visible: true })) {
-                                    L_.Map_.engine.addLayer(nativeLayer)
-                                }
-                            } else {
-                                L_.Map_.engine.addLayer(nativeLayer)
-                            }
-                            L_.Map_.engine.setLayerZIndex(
-                                L_.Map_.nativeLayer(L_.layers.layer[s.name]),
-                                L_._layersOrdered.length +
-                                    1 -
-                                    L_._layersOrdered.indexOf(s.name)
-                            )
+                            // Before showing, not after: a layer that is behind still
+                            // holds the URL it was built with, placeholders and all.
+                            await catchUpLayerTime(s)
+                            L_.Map_.engine.setLayerVisibility(s.name, true)
                         }
 
                         if (s.type === 'image') {
@@ -1266,9 +1345,7 @@ const L_ = {
                         )
                         L_.Map_.engine.setLayerZIndex(
                             L_.Map_.nativeLayer(sublayer.layer),
-                            L_._layersOrdered.length +
-                                1 -
-                                L_._layersOrdered.indexOf(layerName)
+                            L_.layerZIndex(layerName)
                         )
                         break
                     case 'labels':
@@ -1281,9 +1358,7 @@ const L_ = {
                         )
                         L_.Map_.engine.setLayerZIndex(
                             L_.Map_.nativeLayer(sublayer.layer),
-                            L_._layersOrdered.length +
-                                1 -
-                                L_._layersOrdered.indexOf(layerName)
+                            L_.layerZIndex(layerName)
                         )
                         L_.setSublayerOpacity(layerName, sublayerName)
                         break
@@ -1403,24 +1478,17 @@ const L_ = {
                                 }
                             }
                         }
-                        engine.addLayer(
-                            L_.Map_.nativeLayer(
-                                L_.layers.layer[L_.layers.dataFlat[i].name]
-                            )
+                        // By uuid, so the engine acts on the instance it
+                        // holds rather than the object built at creation,
+                        // which may since have been refreshed.
+                        engine.setLayerVisibility(
+                            L_.layers.dataFlat[i].name,
+                            true
                         )
-                        // Rank every layer the same way toggleLayerHelper does,
-                        // so the stack follows z-index order at start instead of
-                        // element order and a later toggle re-sorts against
-                        // ranks that are already assigned.
+                        // Re-ranked because this also runs after a re-order.
                         engine.setLayerZIndex(
-                            L_.Map_.nativeLayer(
-                                L_.layers.layer[L_.layers.dataFlat[i].name]
-                            ),
-                            L_._layersOrdered.length +
-                                1 -
-                                L_._layersOrdered.indexOf(
-                                    L_.layers.dataFlat[i].name
-                                )
+                            L_.layers.dataFlat[i].name,
+                            L_.layerZIndex(L_.layers.dataFlat[i].name)
                         )
 
                         // Ensure video layers start muted when added to map
@@ -1609,10 +1677,23 @@ const L_ = {
             null,
             null,
             stopLoops
-        )
+        ).catch((e) => {
+            console.error(
+                `ERROR - addGeoJSONData: Failed to make layer ${layer._layerName}`,
+                e
+            )
+        })
 
         if (initialOn) {
-            L_.toggleLayerHelper(L_.layers.data[layer._layerName], false)
+            L_.toggleLayerHelper(
+                L_.layers.data[layer._layerName],
+                false
+            ).catch((e) => {
+                console.error(
+                    `ERROR - addGeoJSONData: Failed to make layer ${layer._layerName}`,
+                    e
+                )
+            })
             L_.layers.on[layer._layerName] = true
         }
         //L_.syncSublayerData(layer._layerName)
@@ -3457,7 +3538,15 @@ const L_ = {
 
                 const initialOn = L_.layers.on[layerName]
                 if (initialOn) {
-                    L_.toggleLayerHelper(L_.layers.data[layerName], false)
+                    L_.toggleLayerHelper(
+                        L_.layers.data[layerName],
+                        false
+                    ).catch((e) => {
+                        console.error(
+                            `ERROR - appendLineString: Failed to make layer ${layerName}`,
+                            e
+                        )
+                    })
                     L_.layers.on[layerName] = true
                 }
 
@@ -3592,9 +3681,7 @@ const L_ = {
 
                             if (sub === 'image_overlays') {
                                 subUpdateLayers[sub].layer.setZIndex(
-                                    L_._layersOrdered.length +
-                                        1 -
-                                        L_._layersOrdered.indexOf(layerName)
+                                    L_.layerZIndex(layerName)
                                 )
                             }
                         }
@@ -3631,7 +3718,16 @@ const L_ = {
                 await L_.toggleLayerHelper(s, true, true, true)
                 // Toggle the layer so its drawn in the globe
                 // turn on
-                if (!onlyClear) await L_.toggleLayerHelper(s, false, true, true)
+                if (!onlyClear) {
+                    try {
+                        await L_.toggleLayerHelper(s, false, true, true)
+                    } catch (e) {
+                        console.error(
+                            `ERROR - globeLithoLayerHelper: Failed to make layer ${s.display_name}/${s.name}`,
+                            e
+                        )
+                    }
+                }
             }
         }
     },
@@ -3703,7 +3799,15 @@ const L_ = {
 
             for (let i = 0; i < layersOrdered.length; i++) {
                 // Add layer
-                await L_.Map_.makeLayer(L_.layers.data[layersOrdered[i]])
+                try {
+                    await L_.Map_.makeLayer(L_.layers.data[layersOrdered[i]])
+                } catch (e) {
+                    console.error(
+                        `ERROR - addLayerToLayersData: Failed to make layer ${layersOrdered[i]}`,
+                        e
+                    )
+                    continue
+                }
                 L_.addVisible(L_.Map_, [layersOrdered[i]])
             }
         }
@@ -4458,6 +4562,7 @@ async function parseConfig(configData, urlOnLayers) {
                             return function (data) {
                                 data = F_.csvToJSON(data)
                                 L_.layers.data[name]._legend = data
+                                L_.applyLateLegendStyling(name)
                             }
                         })(d[i].name)
                     )

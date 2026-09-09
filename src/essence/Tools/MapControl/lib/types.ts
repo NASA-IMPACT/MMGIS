@@ -24,4 +24,10 @@ export type MapSubscribeHandlers = {
     onMouseMove: (e: LatLng) => void
 }
 
+// The action button's icon: `src` is a URL the browser can fetch as given,
+// `className` a finished class attribute rather than an icon name.
+export type ActionIcon =
+    | { kind: 'image'; src: string }
+    | { kind: 'mdi'; className: string }
+
 /** Pixel point relative to the map container. */

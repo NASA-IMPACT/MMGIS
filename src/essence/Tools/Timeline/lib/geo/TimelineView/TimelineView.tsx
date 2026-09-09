@@ -7,6 +7,8 @@ import type { TimeMode, LayerTimeData } from '../../types'
 import { generateTimeTicks, formatDateByMode, clampDate, stepTime } from '../../utils/timeUtils'
 import moment from 'moment'
 import { LayerTimeline } from '../LayerTimeline/LayerTimeline'
+import { LayerNavControls } from '../LayerNavControls/LayerNavControls'
+import type { LayerNavigation } from '../../utils/layerNavigation'
 
 export interface TimelineViewProps {
     startTime: Date
@@ -18,6 +20,12 @@ export interface TimelineViewProps {
     onCurrentTimeChange: (time: Date) => void
     /** Live time while the scrubber is being dragged, for display only. */
     onCurrentTimePreview?: (time: Date) => void
+    /**
+     * The instant a layer row's navigation controls lead to, with the model it
+     * came from. Separate from `onCurrentTimeChange`, which clamps to the
+     * timeline's window: a layer's data may sit outside the window shown.
+     */
+    onLayerNavigate: (target: Date, navigation: LayerNavigation) => void
     onResetZoomReady?: (resetZoomFn: () => void) => void
 }
 
@@ -29,6 +37,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     layers,
     onCurrentTimeChange,
     onCurrentTimePreview,
+    onLayerNavigate,
     onResetZoomReady,
 }) => {
     const containerRef = useRef<HTMLDivElement>(null)
@@ -44,7 +53,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     const [zoomTransform, setZoomTransform] = useState(zoomIdentity)
 
     const axisHeight = 24 // Space for the bottom axis
-    const layerBarHeight = 15
+    const layerBarHeight = 20 // Row pitch, shared by the sidebar item and the SVG row
     const topBarHeight = 24 // Space for top axis
     const markerSize = 18 // Rendered size of the scrubber marker
 
@@ -283,6 +292,15 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                             <div className="layer-item" key={layer.name} style={{ height: layerBarHeight, flexShrink: 0 }}>
                                 <span className="layer-color-dot" style={{ backgroundColor: layer.color }}></span>
                                 <span className="layer-name">{layer.displayName}</span>
+                                {layer.navigation && (
+                                    <LayerNavControls
+                                        displayName={layer.displayName}
+                                        navigation={layer.navigation}
+                                        from={currentTime}
+                                        timeMode={timeMode}
+                                        onNavigate={onLayerNavigate}
+                                    />
+                                )}
                             </div>
                         ))}
                     </div>

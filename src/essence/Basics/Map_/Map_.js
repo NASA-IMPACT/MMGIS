@@ -27,6 +27,7 @@ import {
     syncTileFormatToConfig,
 } from '../Layers_/tileLayerSource'
 import { makeDeckCOGRefresher } from '../Layers_/deckCOGRefresher'
+import { handOffLayerToEngine } from '../Layers_/engineLayerHandoff'
 import { Kinds } from '../../../pre/tools'
 import DataShaders from '../../Ancillary/DataShaders'
 import calls from '../../../pre/calls'
@@ -700,11 +701,7 @@ let Map_ = {
                 L_.layers.data[L_._layersOrdered[hasIndex[i]]].type === 'image'
             ) {
                 L_.layers.layer[L_._layersOrdered[hasIndex[i]]].setZIndex(
-                    L_._layersOrdered.length +
-                        1 -
-                        L_._layersOrdered.indexOf(
-                            L_._layersOrdered[hasIndex[i]]
-                        )
+                    L_.layerZIndex(L_._layersOrdered[hasIndex[i]])
                 )
                 L_.layers.layer[L_._layersOrdered[hasIndex[i]]].clearCache()
                 L_.layers.layer[L_._layersOrdered[hasIndex[i]]].redraw()
@@ -717,11 +714,7 @@ let Map_ = {
         // They're separate because its better to only change the raster z-index
         for (let i = 0; i < hasIndexRaster.length; i++) {
             L_.layers.layer[L_._layersOrdered[hasIndexRaster[i]]].setZIndex(
-                L_._layersOrdered.length +
-                    1 -
-                    L_._layersOrdered.indexOf(
-                        L_._layersOrdered[hasIndexRaster[i]]
-                    )
+                L_.layerZIndex(L_._layersOrdered[hasIndexRaster[i]])
             )
         }
 
@@ -767,16 +760,29 @@ let Map_ = {
                 // Original
                 if (L_._layersBeingMade[layerObj.name] !== true) {
                     // makeLayer now handles all layer swapping internally for refresh operations
+                    const wasOn = L_.layers.on[layerObj.name]
                     L_.layers.on[layerObj.name] = true
-                    await makeLayer(
-                        layerObj,
-                        true,
-                        null,
-                        null,
-                        null,
-                        stopLoops,
-                        true
-                    )
+                    try {
+                        await makeLayer(
+                            layerObj,
+                            true,
+                            null,
+                            null,
+                            null,
+                            stopLoops,
+                            true
+                        )
+                    } catch (e) {
+                        console.error(
+                            `ERROR - refreshLayer: Failed to make layer ${layerObj.display_name}/${layerObj.name}`,
+                            e
+                        )
+                        // the layer never actually built, so don't leave it
+                        // marked on
+                        L_.layers.on[layerObj.name] = wasOn
+                        if (typeof cb === 'function') cb()
+                        return false
+                    }
                     L_.addVisible(Map_, [layerObj.name])
 
                     L_.enforceVisibilityCutoffs()
@@ -927,10 +933,36 @@ let Map_ = {
 }
 
 //Takes an array of layer objects and makes them map layers
+/**
+ * Hand a layer that has just been built to the main map's engine, in the
+ * state the mission configured it. See handOffLayerToEngine. Layers that were
+ * never built — a header, a globe-only model, a failed load — are ignored
+ * there.
+ *
+ * Main map only: `Map_.engine` is always the main map's, so a secondary ctx
+ * would collide with its entry under the same uuid.
+ */
+function handOffToEngine(layerObj, ctx) {
+    if (ctx.default !== true) return
+    handOffLayerToEngine(
+        Map_.engine,
+        layerObj.name,
+        Map_.nativeLayer(ctx.layerRegistry.layer[layerObj.name]),
+        L_.layerZIndex(layerObj.name),
+        ctx.layerRegistry.on[layerObj.name] === true
+    )
+}
+
 function makeLayers(layersObj) {
     //Make each layer (backwards to maintain draw order)
     for (var i = layersObj.length - 1; i >= 0; i--) {
-        makeLayer(layersObj[i])
+        const layerObj = layersObj[i]
+        makeLayer(layerObj).catch((e) => {
+            console.error(
+                `ERROR - makeLayers: Failed to make layer ${layerObj.display_name}/${layerObj.name}`,
+                e
+            )
+        })
     }
 }
 //Takes the layer object and makes it a map layer
@@ -950,17 +982,16 @@ async function makeLayer(
         layerRegistry: L_.layers,
         default: true,
     }
-    return new Promise(async (resolve, reject) => {
-        const layerName = L_.asLayerUUID(layerObj.name)
-        if (forceMake !== true && L_._layersBeingMade[layerName] === true) {
-            console.error(
-                `ERROR - makeLayer: Cannot make layer ${layerObj.display_name}/${layerObj.name} as it's already being made!`
-            )
-            resolve(false)
-            return
-        } else {
-            L_._layersBeingMade[layerName] = true
-        }
+    const layerName = L_.asLayerUUID(layerObj.name)
+    if (forceMake !== true && L_._layersBeingMade[layerName] === true) {
+        console.error(
+            `ERROR - makeLayer: Cannot make layer ${layerObj.display_name}/${layerObj.name} as it's already being made!`
+        )
+        return false
+    } else {
+        L_._layersBeingMade[layerName] = true
+    }
+    try {
         //Decide what kind of layer it is
         //Headers do not need to be made
         if (layerObj.type != 'header') {
@@ -986,7 +1017,7 @@ async function makeLayer(
                     )
                     break
                 case 'tile':
-                    makeTileLayer(layerObj, mapContext)
+                    await makeTileLayer(layerObj, mapContext)
                     break
                 case 'vectortile':
                     makeVectorTileLayer(layerObj, mapContext)
@@ -1027,19 +1058,23 @@ async function makeLayer(
                     break
                 case 'TileLayer':
                 case 'BitmapLayer':
-                    makeTileLayer(layerObj, mapContext)
+                    await makeTileLayer(layerObj, mapContext)
                     break
                 case 'MVTLayer':
                     makeVectorTileLayer(layerObj, mapContext)
                     break
                 case 'PointCloudLayer':
                 case 'Tile3DLayer':
-                    makeTileLayer(layerObj, mapContext)
+                    await makeTileLayer(layerObj, mapContext)
                     break
                 default:
                     console.warn('Unknown layer type: ' + layerObj.type)
             }
         }
+
+        // Every builder above is awaited, so the layer exists by now. Image
+        // and video finish on their own schedule and hand off themselves.
+        handOffToEngine(layerObj, mapContext)
 
         // release hold on layer
         L_._layersBeingMade[layerName] = false
@@ -1048,8 +1083,20 @@ async function makeLayer(
             Filtering.updateGeoJSON(layerObj.name)
             Filtering.triggerFilter(layerObj.name)
         }
-        resolve(true)
-    })
+        return true
+    } catch (e) {
+        console.error(
+            `ERROR - makeLayer: Failed to make layer ${layerObj.display_name}/${layerObj.name}`,
+            e
+        )
+        // release hold on layer so it can be remade
+        L_._layersBeingMade[layerName] = false
+        // count this layer as done (unsuccessfully) so a failed layer
+        // doesn't stall allLayersLoaded()/essenceFina() for the mission
+        L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
+        allLayersLoaded()
+        throw e
+    }
 }
 
 //Default is onclick show full properties and onhover show 1st property
@@ -1356,6 +1403,12 @@ async function makeVectorLayer(
                         opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
                         style: layerObj.style || {},
                         variables: layerObj.variables || {},
+                        // The legend doubles as a style specification, so
+                        // the engine needs it to colour features by property
+                        // value. A layer legended from a `legend:` CSV path
+                        // fetches it after the layer is built, so that layer
+                        // gets no legend styling until it is next rebuilt.
+                        legend: L_.layers.data[layerObj.name]?._legend,
                         interactive: true,
                     }
                 )
@@ -1792,19 +1845,6 @@ async function makeTileLayer(layerObj, mapContext = null) {
         variables: layerObj.variables || {},
     })
 
-    // The engine addresses layers by id; a Leaflet layer MMGIS built itself
-    // carries none until registered, so without this refreshLayer cannot find
-    // it and time reload silently stops working. Guarded to the main map: a
-    // secondary ctx has its own map/registry, and registering here would
-    // collide with the main map's entry under the same uuid. The `?.` is
-    // needed because only the deck branch above assumes Map_.engine is set.
-    if (ctx.default === true) {
-        Map_.engine?.registerLayer(
-            layerObj.name,
-            ctx.layerRegistry.layer[layerObj.name]
-        )
-    }
-
     // Add to map
     if (ctx.default != true) {
         ctx.layerRegistry.layer[layerObj.name].addTo(ctx.map)
@@ -1903,6 +1943,16 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
             maxNativeZoom: parseInt(layerObj.maxNativeZoom),
             maxZoom: parseInt(layerObj.maxZoom),
             style: layerObj.style || {},
+            // The legend doubles as a style specification; see makeVectorLayer
+            // for the caveat on legends fetched from a `legend:` CSV path.
+            legend: L_.layers.data[layerObj.name]?._legend,
+            // Whether one is configured at all, which the builder needs even
+            // when the legend itself has not arrived yet: a vector tile layer
+            // settles its tile decoding format the first time deck.gl
+            // initialises it and never revisits it.
+            legendConfigured: Boolean(
+                layerObj.legend ?? layerObj.variables?.legend
+            ),
             interactive: true,
             nativeOptions: {
                 autoHighlight: layerObj.style?.hoverHighlight === true,
@@ -2374,12 +2424,14 @@ function makeImageLayer(layerObj, mapContext = null) {
             L_.layers.layer[layerObj.name].clearCache()
 
             L_.layers.layer[layerObj.name].setZIndex(
-                L_._layersOrdered.length +
-                    1 -
-                    L_._layersOrdered.indexOf(layerObj.name)
+                L_.layerZIndex(layerObj.name)
             )
 
             L_.setLayerOpacity(layerObj.name, L_.layers.opacity[layerObj.name])
+
+            // Here, not in makeLayer: this builder finishes after that
+            // hand-off has already run.
+            handOffToEngine(layerObj, ctx)
 
             L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
             allLayersLoaded()
@@ -2472,12 +2524,14 @@ function makeVideoLayer(layerObj, mapContext = null) {
         }
 
         L_.layers.layer[layerObj.name].setZIndex(
-            L_._layersOrdered.length +
-                1 -
-                L_._layersOrdered.indexOf(layerObj.name)
+            L_.layerZIndex(layerObj.name)
         )
 
         L_.setLayerOpacity(layerObj.name, L_.layers.opacity[layerObj.name])
+
+        // Here, not in makeLayer: this builder finishes after that hand-off
+        // has already run.
+        handOffToEngine(layerObj, ctx)
 
         L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
         allLayersLoaded()

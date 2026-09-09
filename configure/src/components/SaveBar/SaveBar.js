@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { isLeanMode } from "../../core/capabilities";
-import { STATUS } from "../../core/deploymentStatus";
+import { STATUS, TRANSITIONAL_STATUSES } from "../../core/deploymentStatus";
 import { useSelector, useDispatch } from "react-redux";
 import {} from "./SaveBarSlice";
 import { makeStyles } from "@mui/styles";
@@ -94,6 +94,22 @@ export default function SaveBar() {
         const existing = (res?.body?.deployments || []).find(
           (d) => d.mission === mission && d.status !== STATUS.DELETED
         );
+        // A failed row with no stack ARN never got its dashboard, and Update
+        // needs an existing stack; the only way forward is a fresh publish.
+        if (
+          existing != null &&
+          existing.status === STATUS.FAILED &&
+          existing.stack_arn == null
+        ) {
+          setPublishing(false);
+          dispatch(
+            setSnackBarText({
+              text: `'${existing.name}' failed before its dashboard was created. Delete it on the Deployments page and Save & Publish again.`,
+              severity: "warning",
+            })
+          );
+          return;
+        }
         const call = existing != null ? "updateDeployment" : "publishDeployment";
         const data =
           existing != null
@@ -124,6 +140,33 @@ export default function SaveBar() {
           },
           (res) => {
             setPublishing(false);
+            // A refusal names why the dashboard cannot be (re)published
+            // right now: a publish already running, a delete under way, a
+            // deleted row, or a dashboard that appeared since this tab
+            // listed them. When the row it names is still changing (a
+            // publish, update or delete under way), hand it to the watcher
+            // so this tab hears when it finishes; when it is a resting
+            // dashboard that already exists, say how to refresh it.
+            if (res?.reason != null) {
+              const deployment = res?.body?.deployment;
+              const transitional =
+                deployment != null &&
+                TRANSITIONAL_STATUSES.includes(deployment.status);
+              if (transitional)
+                dispatch(
+                  watchDeployment({
+                    id: deployment.id,
+                    name: deployment.name,
+                    status: deployment.status,
+                  })
+                );
+              const text =
+                res.reason === "exists" && !transitional
+                  ? `${res.message} Click Save & Publish again to update it.`
+                  : res.message;
+              dispatch(setSnackBarText({ text, severity: "warning" }));
+              return;
+            }
             dispatch(
               setSnackBarText({
                 text: res?.message || "Failed to publish.",

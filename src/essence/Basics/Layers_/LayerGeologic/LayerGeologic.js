@@ -52,7 +52,8 @@ const LayerGeologic = {
         const mainTag = tag.split('-')[0]
         for (let i = 0; i < geologicJSON[t].groups.length; i++) {
             if (geologicJSON[t].groups[i].definitions[mainTag]) {
-                return '/public' + (geologicJSON[t].groups[i].baseUrl || '')
+                const baseUrl = geologicJSON[t].groups[i].baseUrl
+                return baseUrl ? 'public' + baseUrl : ''
             }
         }
         return ''

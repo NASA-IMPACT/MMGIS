@@ -86,6 +86,15 @@ resource "aws_iam_policy" "ci_role_boundary" {
         Resource = "arn:aws:ecs:${local.region}:${local.account_id}:task-definition/mmgis-${each.key}*"
       },
       {
+        # The admin task reads whether a publish task it started is still
+        # alive. Task ARNs are scoped by cluster; no separator before the * so
+        # the development-scratch cluster also matches.
+        Sid      = "DescribePublishTasks"
+        Effect   = "Allow"
+        Action   = ["ecs:DescribeTasks"]
+        Resource = "arn:aws:ecs:${local.region}:${local.account_id}:task/mmgis-${each.key}*/*"
+      },
+      {
         # Without it the admin task's RunTask fails with an AccessDenied that
         # never mentions PassRole.
         Sid      = "PassRuntimeRolesToEcs"
@@ -107,8 +116,8 @@ resource "aws_iam_policy" "ci_role_boundary" {
         Effect = "Allow"
         Action = [
           "cloudformation:CreateStack",
+          "cloudformation:UpdateStack",
           "cloudformation:DescribeStacks",
-          "cloudformation:DescribeStackEvents",
           "cloudformation:DeleteStack",
         ]
         Resource = "arn:aws:cloudformation:${local.region}:${local.account_id}:stack/mmgis-${each.key}-dashboard-*/*"
@@ -164,11 +173,14 @@ resource "aws_iam_policy" "ci_role_boundary" {
           "cloudfront:CreateInvalidation",
           "cloudfront:CreateFunction",
           "cloudfront:PublishFunction",
+          "cloudfront:UpdateFunction",
           "cloudfront:DescribeFunction",
           "cloudfront:GetFunction",
           "cloudfront:DeleteFunction",
           "cloudfront:CreateOriginAccessControl",
           "cloudfront:GetOriginAccessControl",
+          "cloudfront:GetOriginAccessControlConfig",
+          "cloudfront:UpdateOriginAccessControl",
           "cloudfront:DeleteOriginAccessControl",
         ]
         Resource = [

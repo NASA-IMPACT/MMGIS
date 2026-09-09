@@ -2273,7 +2273,23 @@ function interfaceWithMMGIS(fromInit) {
         if (L_.layers.layer[layerData.name] == null) return
 
         L_.Map_.rmNotNull(L_.layers.layer[layerData.name])
-        await L_.Map_.makeLayer(layerData, true, null, null, true, null, true)
+        try {
+            await L_.Map_.makeLayer(
+                layerData,
+                true,
+                null,
+                null,
+                true,
+                null,
+                true
+            )
+        } catch (e) {
+            console.error(
+                `ERROR - tilelevelselector: Failed to make layer ${layerData.display_name}/${layerData.name}`,
+                e
+            )
+            return
+        }
         if (L_.layers.on[layerData.name]) {
             L_.addVisible(L_.Map_, [layerData.name])
         }

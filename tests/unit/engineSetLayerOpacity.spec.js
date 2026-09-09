@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect, vi } from 'vitest'
 import LeafletAdapter from '../../src/essence/Basics/MapEngines/Adapters/LeafletAdapter.ts'
 import DeckGLAdapter from '../../src/essence/Basics/MapEngines/Adapters/DeckGLAdapter.ts'
 
@@ -110,20 +110,25 @@ describe('DeckGLAdapter.setLayerOpacity', () => {
             expect(adapter.getLayers()).toHaveLength(0)
         })
 
-        test('is a no-op even once the engine holds one, and does not throw', () => {
+        test('is declined by addLayer, with one warning, and nothing throws', () => {
             const adapter = new DeckGLAdapter()
             const velocity = makeTileish()
-            // addLayer keys off layer.id, which a Leaflet object lacks, so the
-            // entry lands under `undefined`. Reproduced rather than endorsed —
-            // what this pins is that reaching such an entry cannot throw
-            // `existing.clone is not a function`.
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
             adapter.addLayer(velocity)
 
+            // Registering it is what used to be fatal: every sync clones
+            // every held layer, so one entry with no `clone` took the whole
+            // map down, not just this layer.
+            expect(adapter.getLayers()).toHaveLength(0)
+            expect(warn).toHaveBeenCalledTimes(1)
             expect(adapter.setLayerOpacity(velocity, 0.3)).toBeUndefined()
             expect(velocity.opacity).toBe(null)
             expect(() =>
                 adapter.updateLayer(velocity, { opacity: 0.3 })
             ).not.toThrow()
+
+            warn.mockRestore()
         })
     })
 

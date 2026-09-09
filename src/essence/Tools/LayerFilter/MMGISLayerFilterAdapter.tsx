@@ -12,12 +12,12 @@ import { applyTheme } from './lib/engine'
 import { toEngineTheme } from './lib/utils/toEngineTheme'
 import { parseCatalog } from './lib/catalog/parseCatalog'
 import { buildRows, type LayerInput } from './lib/catalog/buildRows'
-import { stacBboxToPolygon } from './lib/utils/geo'
+import { stacBboxToPolygon, geometryBounds } from './lib/utils/geo'
 import { buildEntryDisplays } from './lib/utils/entryDisplay'
 import { normalizeThemesConfig } from './lib/normalizeConfig'
 import { interpretThemeSelection } from './lib/utils/themeSelection'
 import type { LayerLike } from './lib/utils/listedUpdates'
-import { mmgisRequest } from '../_shared/adapters/mmgisAPI'
+import { mmgisRequest, mmgisFitBounds } from '../_shared/adapters/mmgisAPI'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 
 // Emitted by the rail plugin, so named after the rail — swap the panel out
@@ -173,8 +173,13 @@ export function MMGISLayerFilterAdapter() {
                     [filterId]: value,
                 },
             }))
+            const isEntryPick = activeTheme?.filters.some((f) => f.id === filterId && f.isEntry)
+            const bounds = isEntryPick
+                ? geometryBounds(catalog.entries.find((e) => e.id === value)?.geometry)
+                : null
+            if (bounds) void mmgisFitBounds(bounds, { padding: 40 })
         },
-        [selectedThemeId],
+        [selectedThemeId, activeTheme, catalog],
     )
 
     return (
