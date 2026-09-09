@@ -1,0 +1,64 @@
+/* A row's navigation controls sit over the end of its layer name rather than
+   beside it. The sidebar is 160px wide and 100px on a narrow screen, so four
+   permanent buttons would leave the names it exists to show no room; they take
+   the space only while the row is the one being worked on, and paint the row's
+   own background over the name they cover. */
+.layer-nav-controls {
+    position: absolute;
+    top: 0;
+    right: 4px;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    padding-left: 4px;
+    background: var(--theme-color-white, #ffffff);
+    /* Hidden by opacity rather than by visibility or display, both of which
+       would take the buttons out of the tab order and leave the feature
+       reachable by mouse alone. */
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+}
+
+/* Revealed by pointer over the row, and by focus reaching any control within
+   it — which is how a keyboard tabbing through the sidebar sees them. */
+.layer-item:hover .layer-nav-controls,
+.layer-item:focus-within .layer-nav-controls {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .layer-nav-controls {
+        transition: none;
+    }
+}
+
+/* Sized to the 20px row: smaller than the header's playback buttons, and
+   styled after them otherwise. */
+.layer-nav-btn {
+    background: transparent;
+    border: none;
+    padding: 0;
+    height: 16px;
+    width: 16px;
+    flex-shrink: 0;
+    cursor: pointer;
+    color: var(--theme-color-base-darker, #3d4551);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s ease;
+}
+
+/* Hover shows the light-grey rectangle only — the icon keeps its colour. */
+.layer-nav-btn:hover:not(:disabled) {
+    background: var(--theme-color-primary-lightest, #e6f4f6);
+}
+
+/* A control the layer's data leaves nowhere to go is inert. */
+.layer-nav-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
