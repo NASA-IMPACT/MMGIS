@@ -199,6 +199,11 @@ describe('LayerNavControls', () => {
     test('keeps a live control reachable by keyboard', () => {
         // The row reveals the controls with opacity so that they stay in the
         // tab order while unrevealed; nothing may take them out of it.
+        //
+        // This reaches the markup only. No stylesheet is applied here, so a
+        // reveal switched to display or visibility -- which would genuinely
+        // drop the buttons out of the tab order -- still passes. Only a real
+        // browser can hold that half of the guarantee.
         render('2020-05-01T00:00:00Z')
         const next = buttons().find(
             (button) =>
