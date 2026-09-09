@@ -206,6 +206,56 @@ test.describe('DashboardConfigValidator', () => {
             });
         });
 
+        test.describe('pinnedTools', () => {
+            const withPinned = (pinnedTools) => ({
+                panelSettings: {
+                    panels: [
+                        {
+                            id: 'panel-1', position: 'left', priority: 1, layoutType: 'stacked',
+                            pinnedTools,
+                            stateConstraints: { allowedStates: ['expanded'], defaultState: 'expanded' }
+                        }
+                    ]
+                }
+            });
+
+            test('accepts a list of tool identifiers', () => {
+                expect(validateModernConfig(withPinned(['MapControl', 'Legend'])).valid).toBe(true);
+            });
+
+            test('accepts an empty list', () => {
+                expect(validateModernConfig(withPinned([])).valid).toBe(true);
+            });
+
+            test('rejects a non-array', () => {
+                const result = validateModernConfig(withPinned('MapControl'));
+                expect(result.valid).toBe(false);
+                expect(result.errors).toContain('Panel[0]: "pinnedTools" must be an array');
+            });
+
+            test('rejects entries that are not tool identifiers', () => {
+                const result = validateModernConfig(withPinned(['MapControl', { name: 'Legend' }]));
+                expect(result.valid).toBe(false);
+                expect(result.errors).toContain('Panel[0]: "pinnedTools" must contain only tool names or IDs');
+            });
+
+            test('accepts pinned tools on a panel position that has no pinned region', () => {
+                const config = {
+                    panelSettings: {
+                        panels: [
+                            {
+                                id: 'panel-1', position: 'top', priority: 1, layoutType: 'stacked',
+                                pinnedTools: ['MapControl'],
+                                stateConstraints: { allowedStates: ['expanded'], defaultState: 'expanded' }
+                            }
+                        ]
+                    }
+                };
+
+                expect(validateModernConfig(config).valid).toBe(true);
+            });
+        });
+
         test('validates tools array correctly', () => {
             const config = {
                 panelSettings: {

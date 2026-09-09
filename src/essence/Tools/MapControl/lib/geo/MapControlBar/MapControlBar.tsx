@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type {
+    ActionIcon,
     BasemapStyle,
     GeocodeResult,
     LatLng,
@@ -35,11 +36,54 @@ export type MapControlBarProps = {
     // Geocode search
     onSearchSelect?: (result: GeocodeResult) => void
 
+    // Action button — onActionClick is what makes it render
+    /** Button text, doubling as its tooltip and accessible name. */
+    actionLabel?: string
+    /** Glyph drawn ahead of the label. */
+    actionIcon?: ActionIcon
+    onActionClick?: () => void
+
     /**
-     * Optional element rendered at the right end of the bar (e.g. a share
-     * control). The bar only places it; look and behavior belong to the host.
+     * Optional element rendered after the bar's built-in controls and before
+     * the action button (e.g. a share control). The bar only places it; look
+     * and behavior belong to the host.
      */
     endSlot?: React.ReactNode
+}
+
+/** Sizes the glyph's box; both icon forms carry it, so both draw alike. */
+const ACTION_ICON_CLASS = 'blocks-map-control__btn-icon'
+
+/** Names a glyph-only button, the bar knowing nothing more about the action. */
+const ACTION_FALLBACK_NAME = 'Action'
+
+/**
+ * The action button's glyph. An image is painted as a CSS mask, so it takes the
+ * button's color through every state and an uploaded SVG is never parsed as a
+ * document that could run script.
+ */
+function ActionIconMark({ icon }: { icon: ActionIcon }) {
+    if (icon.kind === 'mdi')
+        return (
+            <i
+                className={`${icon.className} ${ACTION_ICON_CLASS}`}
+                aria-hidden="true"
+            />
+        )
+
+    // The src sits inside a quoted url() in an inline style. Encoding what could
+    // close that url holds the value to one url, unable to add declarations.
+    const src = icon.src.replace(/["'()\\\s]/g, encodeURIComponent)
+    return (
+        <span
+            className={`${ACTION_ICON_CLASS} ${ACTION_ICON_CLASS}--image`}
+            style={{
+                maskImage: `url("${src}")`,
+                WebkitMaskImage: `url("${src}")`,
+            }}
+            aria-hidden="true"
+        />
+    )
 }
 
 export function MapControlBar({
@@ -55,6 +99,9 @@ export function MapControlBar({
     onRemoveMeasureLabel,
     onSetCursor,
     onSearchSelect,
+    actionLabel,
+    actionIcon,
+    onActionClick,
     endSlot,
 }: MapControlBarProps) {
     const searchBtnRef = useRef<HTMLButtonElement>(null)
@@ -99,6 +146,9 @@ export function MapControlBar({
     const current = activeBasemap ?? (basemapStyles[0] ?? null)
     const hasStyles = basemapStyles.length > 0
     const hasZoom = Boolean(onZoomIn && onZoomOut)
+
+    // A glyph-only button carries no text, so it would otherwise go unnamed.
+    const actionName = actionLabel || ACTION_FALLBACK_NAME
 
     function toggleBasemap() {
         setBasemapOpen((v) => !v)
@@ -176,6 +226,27 @@ export function MapControlBar({
                     </div>
                 )}
                 {endSlot}
+                {/* Built from the bar's __group and __btn classes, so it sits in
+                    the row at their height. Only a labelled button claims the
+                    row's free width; a glyph alone stays square. */}
+                {onActionClick && (
+                    <div
+                        className={`blocks-map-control__group${actionLabel ? ' blocks-map-control__group--wide' : ''}`}
+                    >
+                        <button
+                            type="button"
+                            className={`blocks-map-control__btn blocks-map-control__btn--action${actionLabel ? '' : ' blocks-map-control__btn--action-glyph'}`}
+                            onClick={onActionClick}
+                            title={actionName}
+                            aria-label={actionName}
+                        >
+                            {actionIcon && <ActionIconMark icon={actionIcon} />}
+                            {actionLabel && (
+                                <span className="blocks-map-control__btn-label">{actionLabel}</span>
+                            )}
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Portaled to <body> so the panel clears the floating panel card

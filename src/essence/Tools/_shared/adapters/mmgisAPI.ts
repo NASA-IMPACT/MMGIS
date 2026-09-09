@@ -24,6 +24,9 @@ export type LayerConfig = {
         enabled?: boolean
         dataStartTime?: string
         dataEndTime?: string
+        // The days a sparse layer holds data on, when it holds data on a
+        // scattered few rather than continuously across its extent.
+        dataDates?: string[] | string
         [key: string]: unknown
     }
     [key: string]: unknown

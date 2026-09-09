@@ -1,5 +1,5 @@
 import moment from 'moment'
-import type { TimeMode } from '../types'
+import type { TimeMode, TimeRange } from '../types'
 
 /**
  * Calculate the appropriate time step based on the time mode
@@ -142,4 +142,74 @@ export function clampDate(date: Date, min: Date, max: Date): Date {
     if (date < min) return min
     if (date > max) return max
     return date
+}
+
+/**
+ * The time block of a layer's configuration, as far as the timeline reads it.
+ */
+export interface LayerTimeConfig {
+    enabled?: boolean
+    dataStartTime?: string
+    dataEndTime?: string
+    dataDates?: string[] | string
+}
+
+/**
+ * The spans of the timeline a layer holds data for.
+ *
+ * A layer that carries data continuously is one span, running the length of
+ * its configured extent. A sparse layer — data on a scattered handful of days
+ * rather than throughout — lists those days instead, and gets one whole-day
+ * span each, so the timeline shows the gaps rather than implying coverage the
+ * layer does not have. Listing no days keeps the single continuous span.
+ *
+ * Days are read and bounded in UTC, matching every other instant the plugin
+ * handles; snapping them locally would shift each box off the day it names by
+ * the viewer's offset. A listed day must be written as ISO 8601, give or take
+ * the surrounding whitespace a comma-separated list picks up — anything else
+ * is dropped rather than guessed at, so a mistyped date costs the layer that
+ * box rather than its whole row, and a list with nothing readable in it falls
+ * back to the continuous span. The extent either side of it is read leniently,
+ * since configs carry values in looser formats.
+ */
+export function resolveLayerTimeRanges(
+    time: LayerTimeConfig | undefined,
+    fallbackStart: Date,
+    fallbackEnd: Date
+): TimeRange[] {
+    if (!time || time.enabled !== true)
+        return [{ start: fallbackStart, end: fallbackEnd }]
+
+    const listed = Array.isArray(time.dataDates)
+        ? time.dataDates
+        : typeof time.dataDates === 'string'
+        ? [time.dataDates]
+        : []
+
+    const days = listed
+        .map((date) => moment.utc(String(date).trim(), moment.ISO_8601, true))
+        .filter((day) => day.isValid())
+        .sort((a, b) => a.valueOf() - b.valueOf())
+
+    if (days.length > 0)
+        return days.map((day) => ({
+            start: day.clone().startOf('day').toDate(),
+            end: day.clone().endOf('day').toDate(),
+            label: day.format('YYYY-MM-DD'),
+        }))
+
+    let start = fallbackStart
+    let end = fallbackEnd
+
+    if (time.dataStartTime) {
+        const parsedStart = new Date(time.dataStartTime)
+        if (!isNaN(parsedStart.getTime())) start = parsedStart
+    }
+    if (time.dataEndTime === 'now') end = new Date()
+    else if (time.dataEndTime) {
+        const parsedEnd = new Date(time.dataEndTime)
+        if (!isNaN(parsedEnd.getTime())) end = parsedEnd
+    }
+
+    return [{ start, end }]
 }
