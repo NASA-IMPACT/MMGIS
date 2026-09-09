@@ -31,6 +31,11 @@ export interface LayerNavigation {
  * it leaves the layer navigating its extent instead. The extent either side is
  * read leniently, since configs carry values in looser formats.
  *
+ * Both halves of the extent are configured independently, so a layer often
+ * names one bound and leaves the other open. The open side is completed from
+ * the timeline's own window, the same way the layer's bar is drawn, so the
+ * controls move through exactly the span the row shows.
+ *
  * A stop sits on the day's last UTC instant rather than its first. The current
  * time is assigned to each time-enabled layer as `layer.time.end`, making it
  * the trailing edge of the layer's query window; closing that window at
@@ -40,7 +45,9 @@ export interface LayerNavigation {
  * shift each stop off the day it names by the viewer's offset.
  */
 export function resolveLayerNavigation(
-    time: LayerTimeConfig | undefined
+    time: LayerTimeConfig | undefined,
+    fallbackStart: Date,
+    fallbackEnd: Date
 ): LayerNavigation | null {
     if (!time || time.enabled !== true) return null
 
@@ -68,19 +75,26 @@ export function resolveLayerNavigation(
             end: stops[stops.length - 1],
         }
 
-    const start = time.dataStartTime ? new Date(time.dataStartTime) : null
-    const end =
+    const parsedStart = time.dataStartTime ? new Date(time.dataStartTime) : null
+    const parsedEnd =
         time.dataEndTime === 'now'
             ? new Date()
             : time.dataEndTime
-              ? new Date(time.dataEndTime)
-              : null
+            ? new Date(time.dataEndTime)
+            : null
 
-    // Without both bounds there is no extent to move through.
-    if (!start || isNaN(start.getTime())) return null
-    if (!end || isNaN(end.getTime())) return null
+    const start =
+        parsedStart && !isNaN(parsedStart.getTime()) ? parsedStart : null
+    const end = parsedEnd && !isNaN(parsedEnd.getTime()) ? parsedEnd : null
 
-    return { kind: 'periodic', start, end }
+    // Naming neither bound leaves nothing of the layer's own to move through.
+    if (!start && !end) return null
+
+    return {
+        kind: 'periodic',
+        start: start ?? fallbackStart,
+        end: end ?? fallbackEnd,
+    }
 }
 
 /**

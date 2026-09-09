@@ -20,8 +20,20 @@ import type { LayerNavigation } from '../lib/utils/layerNavigation'
 import type { LayerTimeConfig } from '../lib/utils/timeUtils'
 import type { TimeMode } from '../lib/types'
 
-const resolve = (time: unknown) =>
-    resolveLayerNavigation(time as LayerTimeConfig | undefined)
+/** The timeline's own window, standing in for a bound a layer leaves unset. */
+const windowStart = new Date('2018-01-01T00:00:00Z')
+const windowEnd = new Date('2022-01-01T00:00:00Z')
+
+const resolve = (
+    time: unknown,
+    fallbackStart = windowStart,
+    fallbackEnd = windowEnd
+) =>
+    resolveLayerNavigation(
+        time as LayerTimeConfig | undefined,
+        fallbackStart,
+        fallbackEnd
+    )
 
 const iso = (dates: Date[] | undefined) =>
     (dates ?? []).map((date) => date.toISOString())
@@ -223,13 +235,63 @@ describe('resolveLayerNavigation', () => {
         expect(resolve({ enabled: true })).toBeNull()
     })
 
-    test('gives a layer missing half its extent nothing to navigate', () => {
-        expect(
-            resolve({ enabled: true, dataStartTime: '2020-01-01T00:00:00Z' })
-        ).toBeNull()
-        expect(
-            resolve({ enabled: true, dataEndTime: '2020-12-31T00:00:00Z' })
-        ).toBeNull()
+    test('completes a missing end from the timeline window', () => {
+        // The half the layer leaves unset is the half the timeline draws its
+        // bar over, so the controls cover the span the row shows.
+        const nav = resolve({
+            enabled: true,
+            dataStartTime: '2020-01-01T00:00:00Z',
+        })
+
+        expect(nav?.kind).toBe('periodic')
+        expect(nav?.start.toISOString()).toBe('2020-01-01T00:00:00.000Z')
+        expect(nav?.end.toISOString()).toBe('2022-01-01T00:00:00.000Z')
+    })
+
+    test('completes a missing start from the timeline window', () => {
+        const nav = resolve({
+            enabled: true,
+            dataEndTime: '2020-12-31T00:00:00Z',
+        })
+
+        expect(nav?.kind).toBe('periodic')
+        expect(nav?.start.toISOString()).toBe('2018-01-01T00:00:00.000Z')
+        expect(nav?.end.toISOString()).toBe('2020-12-31T00:00:00.000Z')
+    })
+
+    test('completes an unreadable bound from the timeline window', () => {
+        const nav = resolve({
+            enabled: true,
+            dataStartTime: 'whenever',
+            dataEndTime: '2020-12-31T00:00:00Z',
+        })
+
+        expect(nav?.kind).toBe('periodic')
+        expect(nav?.start.toISOString()).toBe('2018-01-01T00:00:00.000Z')
+        expect(nav?.end.toISOString()).toBe('2020-12-31T00:00:00.000Z')
+    })
+
+    test('leaves a fully configured extent alone', () => {
+        const nav = resolve({
+            enabled: true,
+            dataStartTime: '2020-01-01T00:00:00Z',
+            dataEndTime: '2020-12-31T00:00:00Z',
+        })
+
+        expect(nav?.start.toISOString()).toBe('2020-01-01T00:00:00.000Z')
+        expect(nav?.end.toISOString()).toBe('2020-12-31T00:00:00.000Z')
+    })
+
+    test('leaves a layer listing its days bounded by its stops', () => {
+        // Listed days say where the layer holds data outright, so the window
+        // has nothing to fill in.
+        const nav = resolve({
+            enabled: true,
+            dataDates: ['2020-03-04', '2020-07-19'],
+        })
+
+        expect(nav?.start.toISOString()).toBe('2020-03-04T23:59:59.999Z')
+        expect(nav?.end.toISOString()).toBe('2020-07-19T23:59:59.999Z')
     })
 
     test('gives a layer with an unreadable extent nothing to navigate', () => {
@@ -417,5 +479,39 @@ describe('navigateLayer over a periodic layer', () => {
         expect(goTo(nav, '2015-01-01T00:00:00Z', 'last')).toBe(
             '2020-12-31T00:00:00.000Z'
         )
+    })
+})
+
+describe('navigateLayer over a half-configured layer', () => {
+    test('navigates a layer with only a start across the timeline window', () => {
+        const nav = resolve({
+            enabled: true,
+            dataStartTime: '2020-01-01T00:00:00Z',
+        }) as LayerNavigation
+
+        expect(goTo(nav, '2019-06-15T00:00:00Z', 'next')).toBe(
+            '2020-01-01T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2019-06-15T00:00:00Z', 'prev')).toBeNull()
+        expect(goTo(nav, '2020-05-15T00:00:00Z', 'last')).toBe(
+            '2022-01-01T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2022-01-01T00:00:00Z', 'next')).toBeNull()
+    })
+
+    test('navigates a layer with only an end across the timeline window', () => {
+        const nav = resolve({
+            enabled: true,
+            dataEndTime: '2020-12-31T00:00:00Z',
+        }) as LayerNavigation
+
+        expect(goTo(nav, '2021-06-15T00:00:00Z', 'prev')).toBe(
+            '2020-12-31T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2021-06-15T00:00:00Z', 'next')).toBeNull()
+        expect(goTo(nav, '2020-05-15T00:00:00Z', 'first')).toBe(
+            '2018-01-01T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2018-01-01T00:00:00Z', 'prev')).toBeNull()
     })
 })
