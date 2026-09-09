@@ -30,7 +30,7 @@ This file covers two related but distinct surfaces:
 | `/api/webhooks` | **Keep** | Outbound-event channel: lets external systems react to Config (and future Dashboards) events. Used by features lean keeps. |
 | `/api/testwebhooks` | **Keep** (dev-only) | Already gated on `NODE_ENV === 'development'` regardless of deployment mode. |
 | `/api/shortener` | **Gate (whole module)** | Link shortener not deployed in lean. |
-| `API/Backend/Upload` (`createUploadRouter`, #103) | **Keep — repoint to S3** | `setup.js` mounts a single admin route (`/api/upload`, `ensureAdmin`); `createUploadRouter` is the factory behind it. In lean its storage backend swaps from `Missions/<mission>/...` on disk to the S3 asset bucket, returning a root-relative `/assets/…` path (served same-origin per deployment). Image-only / 5 MB / path-traversal validators unchanged; the validator allows `image/svg+xml` — intentional (trusted admins). The #103 `Upload` module is present on the branch. |
+| `API/Backend/Upload` (`createUploadRouter`, #103) | **Keep — repoint to S3** | `setup.js` mounts a single admin route (`/api/upload`, `ensureAdmin`); `createUploadRouter` is the factory behind it. In lean its storage backend swaps from `Missions/<mission>/...` on disk to the S3 asset bucket, returning a document-relative `assets/<mission>/<subdir>/uploads/<file>` key (no leading slash; served same-origin per deployment, resolved by the caller relative to wherever that deployment's document lives). Image-only / 5 MB / path-traversal validators unchanged; the validator allows `image/svg+xml` — intentional (trusted admins). The #103 `Upload` module is present on the branch. |
 
 Non-`/api/` mounts worth noting:
 

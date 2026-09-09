@@ -1,7 +1,11 @@
 import React, { act } from 'react'
 import { test, expect, vi, beforeEach, afterEach } from 'vitest'
-import { MMGISThemeRailAdapter } from '../MMGISThemeRailAdapter'
+import {
+    MMGISThemeRailAdapter,
+    withResolvedIcons,
+} from '../MMGISThemeRailAdapter'
 import { mount, click } from '../../_shared/__tests__/reactHarness'
+import type { ThemeSummary } from '../lib/types'
 
 // The rail's chrome icon is an SVG imported as a React component, which the
 // webpack build provides through @svgr and vitest has no equivalent for. The
@@ -174,4 +178,22 @@ test('a refused command is reported rather than dropped', async () => {
     )
     warn.mockRestore()
     await unmount()
+})
+
+test('an upload key keeps its slash-less form rather than gaining the mission path', () => {
+    const themes: ThemeSummary[] = [
+        {
+            id: 'a',
+            label: 'A',
+            icon: {
+                kind: 'image',
+                src: 'assets/M/LayerFilterThemes/uploads/x.svg',
+            },
+        },
+    ]
+    const [theme] = withResolvedIcons(themes, 'Missions/M/')
+    expect(theme.icon).toEqual({
+        kind: 'image',
+        src: 'assets/M/LayerFilterThemes/uploads/x.svg',
+    })
 })

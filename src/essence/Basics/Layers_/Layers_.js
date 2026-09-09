@@ -1,4 +1,5 @@
 // Holds all layer data
+import { isStaticBuild } from '../../../pre/capabilities'
 import { compileLegendStyle } from './LegendStyle'
 import F_ from '../Formulae_/Formulae_'
 import Description from '../../Ancillary/Description'
@@ -770,6 +771,7 @@ const L_ = {
         }
         if (
             type === 'tile' &&
+            !isStaticBuild() &&
             ((layerData && layerData.throughTileServer === true) ||
                 wasCOG === true)
         ) {

@@ -345,7 +345,8 @@ var essence = {
         if (
             urlSplit.length == 1 ||
             swapping ||
-            (urlSplit[1] && urlSplit[1].split('=')[0] === 'forcelanding') ||
+            QueryURL.getSingleQueryVariable('forcelanding') !== false ||
+            QueryURL.getSingleQueryVariable('forceLanding') !== false ||
             (urlSplit[1] && urlSplit[1].split('=')[0] === '_preview')
         ) {
             //then no parameters or old ones

@@ -41,8 +41,8 @@ function setS3Client(client) {
 //     (mission-relative).
 //   lean: the file is written to the shared admin asset bucket
 //     (MMGIS_SHARED_ASSET_BUCKET) under assets/<mission>/<subdir>/uploads/
-//     <uuid>.<ext> and the route responds with the root-relative
-//     { status: 'success', path: '/assets/<mission>/<subdir>/uploads/<uuid>.<ext>' }
+//     <uuid>.<ext> and the route responds with that same S3 key, no leading
+//     slash: { status: 'success', path: 'assets/<mission>/<subdir>/uploads/<uuid>.<ext>' }
 //     — served same-origin by the admin's /assets/* CloudFront behavior and,
 //     after publish copies the keys, by each dashboard's own bucket.
 //
@@ -166,7 +166,7 @@ function createUploadRouter(options = {}) {
                             })
                         )
                         .then(() => {
-                            savedRelPath = `/${key}`;
+                            savedRelPath = key;
                             succeed();
                         })
                         .catch((err) =>

@@ -8,7 +8,12 @@ import 'react-pdf/dist/Page/TextLayer.css'
 
 // Setting worker path to worker bundle.
 // react-pdf v9 ships with pdfjs-dist v4 which uses an .mjs worker.
-pdfjs.GlobalWorkerOptions.workerSrc = '/public/workers/pdf.worker.min.mjs'
+// Worker loading needs a full URL - a bare relative string would resolve
+// against the script's own URL, not the page - so absolutize against the base.
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+    'public/workers/pdf.worker.min.mjs',
+    document.baseURI,
+).href
 
 const ReactPDF = (props) => {
     const { pdfPath } = props
