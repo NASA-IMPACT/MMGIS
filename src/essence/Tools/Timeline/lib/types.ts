@@ -6,6 +6,9 @@ export const TIME_MODE_ORDER: TimeMode[] = ['YEAR', 'MONTH', 'DAY', 'HOUR']
 export interface TimeRange {
     start: Date
     end: Date
+    // Set when the span stands for a named period — a single day — so a
+    // tooltip can say the day rather than spell out its first and last instant.
+    label?: string
 }
 
 export interface LayerTimeData {
