@@ -3,7 +3,7 @@
  * Thin wrappers over the @aws-sdk v3 clients used by the Deployments
  * publish flow: CloudFormation stack lifecycle, S3 bundle upload /
  * asset copy / bucket emptying, and the ECS RunTask that starts the
- * publish task.
+ * publish task plus the DescribeTasks that reports whether it is still alive.
  *
  * Clients are created lazily (first call) and can be injected with
  * setClients() so unit tests never touch real AWS.
@@ -15,6 +15,7 @@ const path = require("path");
 const {
   CloudFormationClient,
   CreateStackCommand,
+  UpdateStackCommand,
   DescribeStacksCommand,
   DeleteStackCommand,
 } = require("@aws-sdk/client-cloudformation");
@@ -25,7 +26,11 @@ const {
   ListObjectsV2Command,
   DeleteObjectsCommand,
 } = require("@aws-sdk/client-s3");
-const { ECSClient, RunTaskCommand } = require("@aws-sdk/client-ecs");
+const {
+  ECSClient,
+  RunTaskCommand,
+  DescribeTasksCommand,
+} = require("@aws-sdk/client-ecs");
 const {
   CloudFrontClient,
   CreateInvalidationCommand,
@@ -61,9 +66,17 @@ const TERMINAL_STACK_STATUSES = [
   "DELETE_COMPLETE",
   "DELETE_FAILED",
   "UPDATE_COMPLETE",
+  // Where an update with rollback disabled leaves a stack. Terminal and
+  // permanently stuck: only a ContinueUpdateRollback or a delete moves it,
+  // so waiting on it can only ever burn the timeout.
+  "UPDATE_FAILED",
   "UPDATE_ROLLBACK_COMPLETE",
   "UPDATE_ROLLBACK_FAILED",
 ];
+
+// How long DescribeStacks polling waits between reads, and how long the
+// converge loop pauses after CloudFormation rejects an UpdateStack as busy.
+const DEFAULT_POLL_INTERVAL_MS = 15000;
 
 async function createStack({ stackName, templateBody }) {
   const { cfn } = getClients();
@@ -78,8 +91,145 @@ async function createStack({ stackName, templateBody }) {
   return resp.StackId;
 }
 
-// Returns the Stack object, or null when the stack does not exist.
-// Other errors (credentials, network, throttling) are rethrown.
+// Applies the current template to an existing stack. Returns true when an
+// update started, false when CloudFormation reports there is nothing to
+// change. The no-op arrives as a ValidationError, the SAME error name
+// DescribeStacks uses for "stack does not exist" — so match on the message.
+async function updateStack({ stackName, templateBody }) {
+  const { cfn } = getClients();
+  try {
+    await cfn.send(
+      new UpdateStackCommand({
+        StackName: stackName,
+        TemplateBody: templateBody,
+        Tags: [{ Key: "mmgis:deployment", Value: stackName }],
+      })
+    );
+    return true;
+  } catch (err) {
+    if (
+      err.name === "ValidationError" &&
+      (err.message || "").indexOf("No updates are to be performed") !== -1
+    )
+      return false;
+    throw err;
+  }
+}
+
+// True only for the ValidationError CloudFormation raises when the stack is
+// busy with an operation genuinely IN FLIGHT ("Stack:arn:... is in
+// UPDATE_IN_PROGRESS state and can not be updated."). Two republish clicks
+// start two ECS tasks and the loser lands here — a race to wait out, not a
+// failure. CloudFormation reuses the same "... state and can not be updated"
+// wording for wedged terminal statuses too (UPDATE_ROLLBACK_FAILED,
+// UPDATE_FAILED, DELETE_FAILED), which are delete-only dead ends, NOT another
+// task updating — so key off the status the message names and accept only an
+// *_IN_PROGRESS one. DELETE_IN_PROGRESS is the exception among those: the
+// operation in flight is tearing the stack down, so waiting it out can only
+// end at a stack that no longer exists — it belongs with the delete-only dead
+// ends. Same error NAME as the no-op and does-not-exist cases, so the message
+// stays the only discriminator.
+function isStackBusyError(err) {
+  if (err == null || err.name !== "ValidationError") return false;
+  const named = (err.message || "").match(
+    /is in ([A-Z_]+) state and can not be updated/
+  );
+  return (
+    named != null &&
+    named[1].endsWith("_IN_PROGRESS") &&
+    named[1] !== "DELETE_IN_PROGRESS"
+  );
+}
+
+// The status an in-flight stack operation settles at, for a caller that
+// finds a stack mid-operation and wants to wait it out. A rollback settles
+// at UPDATE_ROLLBACK_COMPLETE: waiting for UPDATE_COMPLETE from an in-flight
+// rollback can only ever throw, even though a stack resting at
+// UPDATE_ROLLBACK_COMPLETE is perfectly reusable. A status that is already
+// terminal maps to whatever its family settles at; waitForStack() resolves on
+// desired-status equality, so a stuck one (UPDATE_FAILED) never matches its
+// unreachable target and still throws on the terminal check before the timeout.
+function settleStatusFor(stackStatus) {
+  if (stackStatus.indexOf("UPDATE_ROLLBACK_") === 0)
+    return "UPDATE_ROLLBACK_COMPLETE";
+  if (stackStatus.indexOf("UPDATE_") === 0) return "UPDATE_COMPLETE";
+  return "CREATE_COMPLETE";
+}
+
+// Statuses a stack can neither be reused at nor driven forward from: it can
+// only be deleted (or, for a couple, have a rollback continued) — never
+// updated in place. The publish task turns one away BEFORE any busy
+// classification, so a permanently-wedged stack is never mistaken for one
+// another task is merely busy updating.
+//   CREATE_FAILED / ROLLBACK_COMPLETE / ROLLBACK_IN_PROGRESS - a failed first
+//     create: CREATE_FAILED is where this code's own createStack (OnFailure:
+//     "DO_NOTHING") stops; the ROLLBACK_* pair is where an out-of-band operator
+//     create stops, and ROLLBACK_IN_PROGRESS pre-empts the ROLLBACK_COMPLETE it
+//     is on its way to.
+//   ROLLBACK_FAILED / UPDATE_ROLLBACK_FAILED / DELETE_FAILED - a rollback or a
+//     delete that itself failed; stuck until an operator intervenes.
+//   UPDATE_FAILED - where an update with rollback disabled stops; moved only by
+//     a ContinueUpdateRollback or a delete, so it can't be updated in place.
+//   DELETE_IN_PROGRESS - a teardown already under way: the bucket and
+//     distribution this run needs are on their way out, so waiting it out can
+//     only ever end at a stack that no longer exists.
+// UPDATE_ROLLBACK_COMPLETE is deliberately absent: a stack resting there has a
+// working bucket/distribution and stays reusable by a publish.
+const UNUSABLE_STACK_STATUSES = [
+  "CREATE_FAILED",
+  "ROLLBACK_COMPLETE",
+  "ROLLBACK_IN_PROGRESS",
+  "ROLLBACK_FAILED",
+  "UPDATE_ROLLBACK_FAILED",
+  "UPDATE_FAILED",
+  "DELETE_FAILED",
+  "DELETE_IN_PROGRESS",
+];
+
+// The error message for a stack found in one of UNUSABLE_STACK_STATUSES.
+// Every message starts with `Stack '<name>' is in <STATUS>`; the guidance
+// after that matches the state:
+//   UPDATE_ROLLBACK_FAILED - the dashboard was live before this republish and
+//     its URL may be hardcoded by a customer, so the console's "Continue
+//     update rollback" (which keeps the URL) comes first and a delete second.
+//   DELETE_FAILED / DELETE_IN_PROGRESS - the row is already `deleting`, so the
+//     publish task's terminal writes skip it and this text only ever reaches
+//     the task log; it is written for that reader. The Deployments page shows
+//     the live stack status, and Delete there retries.
+//   Everything else - a delete and a fresh publish is the only way forward.
+function unusableStackMessage(stackName, stackStatus) {
+  const prefix = `Stack '${stackName}' is in ${stackStatus}`;
+  switch (stackStatus) {
+    case "UPDATE_ROLLBACK_FAILED":
+      return (
+        `${prefix}: open the stack in the CloudFormation console and choose ` +
+        '"Continue update rollback"; once the stack reads ' +
+        "UPDATE_ROLLBACK_COMPLETE, republish and the URL is kept. Deleting " +
+        "the deployment and publishing it again also works but mints a new URL."
+      );
+    case "DELETE_IN_PROGRESS":
+      return (
+        `${prefix}: the deployment is being deleted, so a publish or update ` +
+        "cannot run; let the delete finish first."
+      );
+    case "DELETE_FAILED":
+      return (
+        `${prefix}: the deployment's delete failed, so a publish or update ` +
+        "cannot run; retry the delete first (the usual cause is a bucket " +
+        "that is not empty)."
+      );
+    default:
+      return (
+        `${prefix} and cannot be used — ` +
+        "delete the deployment and publish it again (this mints a new URL)"
+      );
+  }
+}
+
+// Returns the Stack object, or null when the stack does not exist. Only the
+// ValidationError that names a missing stack reads as absence; every other
+// error (credentials, network, throttling, a malformed stack name) is
+// rethrown rather than disguised as "no stack here".
 async function describeStack({ stackName }) {
   const { cfn } = getClients();
   try {
@@ -89,7 +239,7 @@ async function describeStack({ stackName }) {
     return (resp.Stacks && resp.Stacks[0]) || null;
   } catch (err) {
     if (
-      err.name === "ValidationError" ||
+      err.name === "ValidationError" &&
       (err.message || "").indexOf("does not exist") !== -1
     )
       return null;
@@ -97,33 +247,153 @@ async function describeStack({ stackName }) {
   }
 }
 
+// True when a stack's LastUpdatedTime has moved past the one observed
+// before the operation. Absent-then-present counts: CloudFormation only
+// returns the field once a stack has been updated at least once.
+function lastUpdatedAdvanced(current, prior) {
+  if (current == null) return false;
+  if (prior == null) return true;
+  return new Date(current).getTime() > new Date(prior).getTime();
+}
+
 // Polls DescribeStacks until the stack reaches a terminal status.
 // Resolves with the Stack object on success; throws on failure statuses,
 // disappearance, or timeout.
+//
+// `prior` is the { status, lastUpdatedTime } read immediately BEFORE the
+// operation being waited on (pass it after an UpdateStack; the create path
+// has nothing to pass). DescribeStacks is eventually consistent, so an early
+// poll can still return the pre-operation state — and when that status IS
+// `desiredStatus` (the ordinary republish of a stack resting at
+// UPDATE_COMPLETE) status equality alone would resolve on a stack that has
+// not started converging. A read is stale only while it matches `prior` on
+// BOTH fields: an advanced LastUpdatedTime is positive proof this operation
+// landed, so no transition has to be caught mid-flight.
 async function waitForStack({
   stackName,
   desiredStatus = "CREATE_COMPLETE",
-  pollIntervalMs = 15000,
+  prior = null,
+  pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
   timeoutMs = 30 * 60 * 1000,
 }) {
   const startedAt = Date.now();
+  // CloudFormation usually puts the failure reason on the IN_PROGRESS
+  // rollback status and leaves the terminal one empty, so remember the last
+  // reason seen rather than reading only the status we throw on. Skip the
+  // boilerplate "User Initiated" CloudFormation stamps on *_IN_PROGRESS
+  // statuses, so it can't get attached to a later terminal failure message.
+  let lastReason = null;
   for (;;) {
     const stack = await describeStack({ stackName });
     if (stack == null)
       throw new Error(
         `Stack '${stackName}' does not exist (deleted or never created)`
       );
-    if (stack.StackStatus === desiredStatus) return stack;
-    if (TERMINAL_STACK_STATUSES.indexOf(stack.StackStatus) !== -1)
-      throw new Error(
-        `Stack '${stackName}' reached terminal status '${stack.StackStatus}'` +
-          (stack.StackStatusReason ? `: ${stack.StackStatusReason}` : "")
-      );
+    const stale =
+      prior != null &&
+      stack.StackStatus === prior.status &&
+      !lastUpdatedAdvanced(stack.LastUpdatedTime, prior.lastUpdatedTime);
+    if (!stale) {
+      if (stack.StackStatusReason && stack.StackStatusReason !== "User Initiated")
+        lastReason = stack.StackStatusReason;
+      if (stack.StackStatus === desiredStatus) return stack;
+      if (TERMINAL_STACK_STATUSES.indexOf(stack.StackStatus) !== -1)
+        throw new Error(
+          `Stack '${stackName}' reached terminal status '${stack.StackStatus}'` +
+            (lastReason ? `: ${lastReason}` : "")
+        );
+    }
     if (Date.now() - startedAt > timeoutMs)
       throw new Error(
-        `Timed out waiting for stack '${stackName}' to reach '${desiredStatus}' (last status '${stack.StackStatus}')`
+        `Timed out waiting for stack '${stackName}' to reach '${desiredStatus}' (last status '${stack.StackStatus}')` +
+          (lastReason ? `: ${lastReason}` : "")
       );
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+}
+
+// Converges `templateBody` onto an existing stack via UpdateStack and waits
+// for our update to finish. Returns the converged Stack, or the stack as it
+// stands when there is nothing to update.
+//
+// Callers must first turn away the delete-only dead-end statuses (see
+// UNUSABLE_STACK_STATUSES above), so an isStackBusyError here is
+// only ever a concurrent republish. On that race we wait the other task's
+// operation out and retry our OWN UpdateStack, so this run's template — not
+// merely the winner's — converges; `maxBusyRetries` bounds the wait.
+async function convergeStackUpdate({
+  stackName,
+  templateBody,
+  maxBusyRetries = 10,
+  log = () => {},
+  // Forwarded to the waitForStack calls and used to pace the busy retry
+  // (production takes the defaults — tests inject a tiny interval).
+  pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
+  timeoutMs,
+}) {
+  for (let attempt = 0; ; attempt++) {
+    // The stack as it stands immediately before our own UpdateStack: it is the
+    // `prior` for the converge wait, and it is what a no-op converge returns.
+    // Read per attempt, so a stack that was still being created when this run
+    // started is reported at the state our update actually meets.
+    const preUpdate = await describeStack({ stackName });
+    if (preUpdate == null)
+      throw new Error(
+        `Stack '${stackName}' does not exist (deleted or never created)`
+      );
+    let started;
+    try {
+      started = await updateStack({ stackName, templateBody });
+    } catch (err) {
+      if (!isStackBusyError(err)) throw err;
+      if (attempt >= maxBusyRetries)
+        throw new Error(
+          `Stack '${stackName}' stayed busy after ${maxBusyRetries + 1} ` +
+            "UpdateStack attempts — another operation may be stuck; try again shortly."
+        );
+      // DescribeStacks is eventually consistent, so a read taken the instant
+      // CloudFormation rejects an UpdateStack as busy can still show the
+      // pre-operation status — which would settle the wait below on the spot
+      // and spin the loop through its whole retry budget in no time. One poll
+      // interval of quiet first, so the wait reads the operation in flight.
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+      const current = (await describeStack({ stackName })) || preUpdate;
+      log(
+        `Stack '${stackName}' is busy with another operation ` +
+          `(${current.StackStatus}); waiting for it to settle, then retrying.`
+      );
+      // No `prior`: nothing this run has started yet, so every read is real. A
+      // stale/early wake is safe — the retry's UpdateStack simply throws busy
+      // again and we wait once more.
+      await waitForStack({
+        stackName,
+        desiredStatus: settleStatusFor(current.StackStatus),
+        pollIntervalMs,
+        timeoutMs,
+      });
+      continue;
+    }
+    // "No updates are to be performed" — the template already converged.
+    if (!started) {
+      log(`Stack '${stackName}' is already up to date.`);
+      return preUpdate;
+    }
+    log(`Updating stack '${stackName}'...`);
+    // Our own update is in flight. `prior` (the pre-update read) stops an
+    // eventually-consistent pre-op DescribeStacks from resolving the wait
+    // early; desiredStatus UPDATE_COMPLETE makes a rollback settling at
+    // UPDATE_ROLLBACK_COMPLETE hit the terminal-status throw rather than be
+    // reported as a successful publish.
+    return await waitForStack({
+      stackName,
+      desiredStatus: "UPDATE_COMPLETE",
+      prior: {
+        status: preUpdate.StackStatus,
+        lastUpdatedTime: preUpdate.LastUpdatedTime,
+      },
+      pollIntervalMs,
+      timeoutMs,
+    });
   }
 }
 
@@ -388,6 +658,9 @@ async function runPublishTask({ deploymentId, action }) {
     new RunTaskCommand({
       cluster,
       taskDefinition,
+      // The SDK reuses the same input on retry, so ECS returns the
+      // already-started task instead of starting a second one.
+      clientToken: `${deploymentId}-${action}-${Date.now()}`,
       launchType: "FARGATE",
       count: 1,
       networkConfiguration: {
@@ -422,13 +695,87 @@ async function runPublishTask({ deploymentId, action }) {
   return (resp.tasks && resp.tasks[0] && resp.tasks[0].taskArn) || null;
 }
 
+// Publish task liveness as reported by ECS DescribeTasks.
+const TASK_STATE = Object.freeze({
+  ALIVE: "alive",
+  STOPPED: "stopped",
+  MISSING: "missing",
+});
+
+// What ECS knows about how a stopped task ended, as one line: the stop
+// reason and code, then the first container's exit code and reason.
+function stoppedTaskDetail(task) {
+  const parts = [];
+  if (task.stoppedReason) parts.push(task.stoppedReason);
+  if (task.stopCode) parts.push(task.stopCode);
+  const container = (task.containers || [])[0];
+  if (container != null) {
+    if (container.exitCode != null) parts.push(`exit code ${container.exitCode}`);
+    if (container.reason) parts.push(container.reason);
+  }
+  return parts.length > 0 ? parts.join("; ") : "no stop reason reported";
+}
+
+// The cluster a task ARN belongs to. A task ARN is
+// `arn:aws:ecs:<region>:<account>:task/<cluster>/<id>`, and the task can only
+// be described in that cluster; MMGIS_PUBLISH_ECS_CLUSTER stands in for the
+// older `task/<id>` form, which names none.
+function clusterOfTaskArn(taskArn) {
+  const parts = taskArn.split("/");
+  return parts.length >= 3 ? parts[1] : requireEnv("MMGIS_PUBLISH_ECS_CLUSTER");
+}
+
+// Reads the live state of a publish task started by runPublishTask, keyed by
+// the ARN it returned. Resolves { state, detail }:
+//   alive   - any lastStatus other than STOPPED (PROVISIONING, PENDING,
+//             ACTIVATING, RUNNING, DEACTIVATING, STOPPING, DEPROVISIONING);
+//             detail is that status.
+//   stopped - the task has exited; detail says how (stoppedTaskDetail).
+//   missing - ECS no longer has a record of the task. ECS forgets a stopped
+//             task about an hour after it stops and reports that as a
+//             failures[] entry with reason MISSING, not as an error.
+// Every other outcome (credentials, network, a denied DescribeTasks, a
+// failure with another reason) throws, so a caller can tell an answered
+// question from an unanswered one.
+async function describePublishTask({ taskArn }) {
+  const cluster = clusterOfTaskArn(taskArn);
+  const { ecs } = getClients();
+  const resp = await ecs.send(
+    new DescribeTasksCommand({ cluster, tasks: [taskArn] })
+  );
+  const task = (resp.tasks || [])[0];
+  if (task == null) {
+    const failure = (resp.failures || [])[0];
+    if (failure != null && failure.reason === "MISSING")
+      return {
+        state: TASK_STATE.MISSING,
+        detail: "ECS no longer has a record of the task",
+      };
+    throw new Error(
+      `ECS DescribeTasks failed: ${
+        failure != null
+          ? `${failure.reason || "unknown"}${failure.detail ? ` (${failure.detail})` : ""}`
+          : "no task in the response"
+      }`
+    );
+  }
+  if (task.lastStatus !== "STOPPED")
+    return { state: TASK_STATE.ALIVE, detail: task.lastStatus };
+  return { state: TASK_STATE.STOPPED, detail: stoppedTaskDetail(task) };
+}
+
 module.exports = {
   getClients,
   setClients,
-  TERMINAL_STACK_STATUSES,
   createStack,
+  updateStack,
+  isStackBusyError,
+  settleStatusFor,
+  UNUSABLE_STACK_STATUSES,
+  unusableStackMessage,
   describeStack,
   waitForStack,
+  convergeStackUpdate,
   getStackOutputs,
   deleteStack,
   contentTypeForFile,
@@ -440,4 +787,6 @@ module.exports = {
   emptyBucket,
   requireEnv,
   runPublishTask,
+  TASK_STATE,
+  describePublishTask,
 };

@@ -271,6 +271,21 @@ it from the real login password (the full note lives in
   calls use. The admin task role holds `iam:PassRole` on both publish role ARNs
   — without it `RunTask` fails with an opaque AccessDenied that never mentions
   PassRole.
+- **Publish tasks are tracked by ARN, and the Deployments page locks on it.**
+  The publish and update routes record each ECS task's ARN on its row
+  (`settings.publish_task_arn`), and the task records its own at startup from
+  the container metadata endpoint. Every list read asks `ecs:DescribeTasks`
+  whether an in-flight row's task is still alive: Update is refused (409 with a
+  `reason`) while the row is provisioning, updating, deleting or deleted;
+  Delete is refused only while the task is confirmed alive (a task that starts
+  to find its row already claimed by a Delete stops before touching AWS);
+  Publish refuses a second dashboard for a mission unless the request is
+  forced. A task ECS reports as stopped or missing flips its row to `failed`
+  with the stop reason on that read. The admin task role therefore holds
+  `ecs:DescribeTasks` on `task/<cluster>/*` in all three layers (the module's
+  and the recipe's `DescribePublishTasks` statement, and the boundary). The
+  check fails open: a denied or unanswered call leaves the row in flight and
+  the page reports the task as `unknown` with the error.
 - **CloudFront origin details are load-bearing.** The admin origin `DomainName`
   must be the on.aws endpoint (it satisfies the ALB cert's SNI and its
   host-header rule; the raw ALB DNS name would miss it), with the
@@ -292,7 +307,8 @@ it from the real login password (the full note lives in
   wants a dashboard to appear under a path on their own domain, hand them
   [`../docs/infrastructure/serving-a-dashboard-from-your-domain.md`](../docs/infrastructure/serving-a-dashboard-from-your-domain.md).
   Nothing is configured on our side — the customer's own CloudFront forwards
-  the request and declares the path.
+  the request and declares the path. After an edge-function change, an
+  existing dashboard picks it up via a republish (the `update` action).
 
 ## Placeholders in the recipe JSON
 

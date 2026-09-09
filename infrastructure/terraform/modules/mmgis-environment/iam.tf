@@ -99,7 +99,7 @@ resource "aws_iam_role_policy" "admin_exec" {
 # ── Admin task role (runtime container code) ──
 resource "aws_iam_role" "admin_task" {
   name                 = "${local.name_prefix}-admin-task"
-  description          = "Runtime role for the ${local.admin_family} container: RunTask + PassRole of the publish roles, dashboard stack read/delete + teardown, admin asset upload. Lean deployment only."
+  description          = "Runtime role for the ${local.admin_family} container: RunTask + PassRole of the publish roles, DescribeTasks on the cluster's publish tasks, dashboard stack read/delete + teardown, admin asset upload. Lean deployment only."
   assume_role_policy   = local.ecs_tasks_assume_role
   permissions_boundary = var.permissions_boundary
 }
@@ -115,6 +115,16 @@ resource "aws_iam_role_policy" "admin_task" {
         Effect   = "Allow"
         Action   = ["ecs:RunTask"]
         Resource = "arn:aws:ecs:${local.region}:${local.account_id}:task-definition/${local.publish_family}:*"
+      },
+      {
+        # The Deployments backend asks ECS whether a publish task it started
+        # is still alive: that answer gates Update and Delete on the row and
+        # reconciles a task that died before reporting. Task ARNs are
+        # cluster-scoped, so the grant pins this environment's cluster.
+        Sid      = "DescribePublishTasks"
+        Effect   = "Allow"
+        Action   = ["ecs:DescribeTasks"]
+        Resource = "arn:aws:ecs:${local.region}:${local.account_id}:task/${local.cluster_name}/*"
       },
       {
         # Because the admin calls RunTask and hands the publish task its two
@@ -264,7 +274,7 @@ resource "aws_iam_role_policy" "publish_exec" {
 # ── Publish task role (runtime container code) ──
 resource "aws_iam_role" "publish_task" {
   name                 = "${local.name_prefix}-publish-task"
-  description          = "Runtime role for the ${local.publish_family} container (scripts/publish-static.js): create/describe/delete the ${local.dashboard_prefix}* stacks and their S3/CloudFront resources, read the shared asset bucket, and read the RDS master secret at connection time to track rotation. No rds-db:connect (password auth). Lean deployment only."
+  description          = "Runtime role for the ${local.publish_family} container (scripts/publish-static.js): create/describe/update/delete the ${local.dashboard_prefix}* stacks and their S3/CloudFront resources, read the shared asset bucket, and read the RDS master secret at connection time to track rotation. No rds-db:connect (password auth). Lean deployment only."
   assume_role_policy   = local.ecs_tasks_assume_role
   permissions_boundary = var.permissions_boundary
 }
@@ -280,8 +290,8 @@ resource "aws_iam_role_policy" "publish_task" {
         Effect = "Allow"
         Action = [
           "cloudformation:CreateStack",
+          "cloudformation:UpdateStack",
           "cloudformation:DescribeStacks",
-          "cloudformation:DescribeStackEvents",
           "cloudformation:DeleteStack",
         ]
         Resource = "arn:aws:cloudformation:${local.region}:${local.account_id}:stack/${local.dashboard_prefix}*/*"
@@ -313,6 +323,7 @@ resource "aws_iam_role_policy" "publish_task" {
         Action = [
           "cloudfront:CreateDistribution",
           "cloudfront:GetDistribution",
+          "cloudfront:GetDistributionConfig",
           "cloudfront:UpdateDistribution",
           "cloudfront:DeleteDistribution",
           "cloudfront:TagResource",
@@ -328,6 +339,7 @@ resource "aws_iam_role_policy" "publish_task" {
         Action = [
           "cloudfront:CreateFunction",
           "cloudfront:PublishFunction",
+          "cloudfront:UpdateFunction",
           "cloudfront:DescribeFunction",
           "cloudfront:DeleteFunction",
           "cloudfront:GetFunction",
@@ -343,6 +355,8 @@ resource "aws_iam_role_policy" "publish_task" {
         Action = [
           "cloudfront:CreateOriginAccessControl",
           "cloudfront:GetOriginAccessControl",
+          "cloudfront:GetOriginAccessControlConfig",
+          "cloudfront:UpdateOriginAccessControl",
           "cloudfront:DeleteOriginAccessControl",
         ]
         Resource = "arn:aws:cloudfront::${local.account_id}:origin-access-control/*"

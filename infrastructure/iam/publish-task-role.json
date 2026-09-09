@@ -2,7 +2,7 @@
   "Type": "AWS::IAM::Role",
   "Properties": {
     "RoleName": "mmgis-publish-task-role",
-    "Description": "Runtime role for the mmgis-publish container code (scripts/publish-static.js): create/describe/delete the mmgis-dashboard-* CloudFormation stacks and the S3/CloudFront resources CloudFormation manages on its behalf, and read the shared asset bucket to copy mission assets. The dashboards password arrives as the MMGIS_DASHBOARDS_PASSWORD env var via the EXECUTION role's secrets[] injection \u2014 the container code never reads Secrets Manager at runtime. No rds-db:connect \u2014 the code uses password auth (DB_USER/DB_PASS). Lean deployment only.",
+    "Description": "Runtime role for the mmgis-publish container code (scripts/publish-static.js): create/describe/update/delete the mmgis-dashboard-* CloudFormation stacks and the S3/CloudFront resources CloudFormation manages on its behalf, and read the shared asset bucket to copy mission assets. The dashboards password arrives as the MMGIS_DASHBOARDS_PASSWORD env var via the EXECUTION role's secrets[] injection \u2014 the container code never reads Secrets Manager at runtime. No rds-db:connect \u2014 the code uses password auth (DB_USER/DB_PASS). Lean deployment only.",
     "AssumeRolePolicyDocument": {
       "Version": "2012-10-17",
       "Statement": [
@@ -32,8 +32,8 @@
               "Effect": "Allow",
               "Action": [
                 "cloudformation:CreateStack",
+                "cloudformation:UpdateStack",
                 "cloudformation:DescribeStacks",
-                "cloudformation:DescribeStackEvents",
                 "cloudformation:DeleteStack"
               ],
               "Resource": "arn:aws:cloudformation:<REGION>:<ACCOUNT_ID>:stack/mmgis-dashboard-*/*"
@@ -67,6 +67,7 @@
               "Action": [
                 "cloudfront:CreateDistribution",
                 "cloudfront:GetDistribution",
+                "cloudfront:GetDistributionConfig",
                 "cloudfront:UpdateDistribution",
                 "cloudfront:DeleteDistribution",
                 "cloudfront:TagResource",
@@ -82,6 +83,7 @@
               "Action": [
                 "cloudfront:CreateFunction",
                 "cloudfront:PublishFunction",
+                "cloudfront:UpdateFunction",
                 "cloudfront:DescribeFunction",
                 "cloudfront:DeleteFunction",
                 "cloudfront:GetFunction",
@@ -97,6 +99,8 @@
               "Action": [
                 "cloudfront:CreateOriginAccessControl",
                 "cloudfront:GetOriginAccessControl",
+                "cloudfront:GetOriginAccessControlConfig",
+                "cloudfront:UpdateOriginAccessControl",
                 "cloudfront:DeleteOriginAccessControl"
               ],
               "Resource": "arn:aws:cloudfront::<ACCOUNT_ID>:origin-access-control/*"

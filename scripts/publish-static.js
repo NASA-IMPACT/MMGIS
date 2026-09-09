@@ -7,15 +7,30 @@
  * Driven by environment:
  *   MMGIS_DEPLOYMENT_ID     - the deployments row to publish (required)
  *   MMGIS_DEPLOYMENT_ACTION - "publish" (default) creates the CloudFormation
- *                       stack first; "update" reuses the existing stack
- *                       and just re-bakes + re-uploads (same URL).
+ *                       stack when none exists yet, or waits for an existing
+ *                       one to settle (a previous attempt may have created
+ *                       it, or an earlier "update" may still be converging
+ *                       it); "update" converges an existing stack's
+ *                       infrastructure to the current template via
+ *                       UpdateStack — including re-baking the current
+ *                       dashboards password into the auth Function — then
+ *                       re-bakes + re-uploads the bundle (same URL).
  *
- * Flow: read the mission config from Postgres → apply bake guards → bake
- * via bakeStaticConfig → build themes + static webpack bundle
- * (SERVER=static) → CreateStack + poll to CREATE_COMPLETE
- * (publish only) → same-key copy the mission's assets from the shared
- * admin bucket → upload the bundle → mark the row `published`.
- * Any failure marks the row `failed` with last_error.
+ * Flow: render the stack template and read the stack, so a bad password or
+ * an unusable stack is answered before the long steps → read the mission
+ * config from Postgres → apply bake guards → bake via bakeStaticConfig →
+ * build themes + static webpack bundle (SERVER=static) →
+ * CreateStack/UpdateStack + poll to the terminal status → same-key copy the
+ * mission's assets from the shared admin bucket → upload the bundle → mark
+ * the row `published`.
+ * Any failure marks the row `failed` with last_error. Both terminal writes
+ * skip a row a Delete has already claimed, and a task that finds its row
+ * already claimed by a Delete when it starts stops before touching AWS.
+ *
+ * On ECS the task first records its own ARN on the row (from the container
+ * metadata endpoint ECS injects as ECS_CONTAINER_METADATA_URI_V4), so the
+ * admin can ask ECS whether it is still alive; a local run has no such
+ * endpoint and skips the step.
  */
 
 require("dotenv").config();
@@ -24,6 +39,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const Sequelize = require("sequelize");
 
 const rootDir = path.join(__dirname, "..");
 
@@ -34,7 +50,7 @@ const { applyTimeBakeGuard } = require("./lib/bake-guards");
 const DEPLOYMENT_ID = process.env.MMGIS_DEPLOYMENT_ID || process.argv[2];
 const ACTION = process.env.MMGIS_DEPLOYMENT_ACTION || process.argv[3] || "publish";
 
-const { requireEnv } = provision;
+const { requireEnv, UNUSABLE_STACK_STATUSES, unusableStackMessage } = provision;
 
 function log(message) {
   console.log(`[publish-static] ${message}`);
@@ -96,6 +112,28 @@ async function buildBakedConfig(mission) {
   };
 }
 
+// Records this task's own ECS task ARN on the row, so a row whose task dies
+// before its terminal write can still be reconciled against ECS. The admin
+// that started the task records the ARN too; this write covers the window
+// before that one lands and the case where it never does. Best-effort: a
+// failure here only logs, a metadata endpoint that does not answer within
+// five seconds counts as one, and a run outside ECS (no endpoint) skips it.
+async function registerOwnTaskArn(Deployments, deploymentId) {
+  const metadataUri = process.env.ECS_CONTAINER_METADATA_URI_V4;
+  if (metadataUri == null || metadataUri === "") return;
+  try {
+    const resp = await fetch(`${metadataUri}/task`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    const taskArn = (await resp.json()).TaskARN;
+    if (taskArn == null) throw new Error("task metadata carries no TaskARN");
+    await Deployments.recordPublishTaskArn(deploymentId, taskArn);
+    log(`Registered this task as ${taskArn}.`);
+  } catch (err) {
+    log(`Could not register this task's ARN (${err.message}); continuing.`);
+  }
+}
+
 async function main() {
   if (DEPLOYMENT_ID == null || DEPLOYMENT_ID === "")
     throw new Error("MMGIS_DEPLOYMENT_ID is required (env or first argument)");
@@ -107,18 +145,69 @@ async function main() {
   if (deployment == null)
     throw new Error(`Deployment row ${DEPLOYMENT_ID} not found`);
 
+  await registerOwnTaskArn(Deployments, deployment.id);
+
+  // Scopes this task's terminal writes to a row the delete flow has not
+  // claimed. A Delete raised while this task runs moves the row to `deleting`
+  // and tears the stack down behind us; that row's next status is `deleted`,
+  // decided by the delete flow, not by however this task happens to end.
+  const liveRowWhere = (id) => ({
+    id,
+    status: {
+      [Sequelize.Op.notIn]: [
+        Deployments.STATUS.DELETING,
+        Deployments.STATUS.DELETED,
+      ],
+    },
+  });
+
   try {
+    // A Delete raised between the admin's request and this task's first
+    // line has already claimed the row and is tearing its stack down; this
+    // task must not create or converge a stack behind it.
+    await deployment.reload();
+    if (
+      deployment.status === Deployments.STATUS.DELETING ||
+      deployment.status === Deployments.STATUS.DELETED
+    )
+      throw new Error(
+        `Deployment row ${deployment.id} is ${deployment.status}, not publishing`
+      );
+
     const mission = deployment.mission;
     const stackName =
       deployment.stack_name || stackNameForDeployment(deployment.id);
 
-    // 1. Bake the mission config into the bundle
+    // 1. Preflight the stack and the template, before the minutes-long bake
+    //    and build: a missing password, a missing stack or a wedged one is a
+    //    verdict this run can reach in seconds, and reaching it late costs the
+    //    whole build for an answer that never depended on it.
+    const templateBody = renderCfnTemplate({
+      password: requireEnv("MMGIS_DASHBOARDS_PASSWORD"),
+    });
+    // Idempotent re-run: a previous attempt may have created the stack (or a
+    // prior update converged it) — reuse it instead of dying on
+    // CloudFormation's AlreadyExistsException.
+    const existing = await provision.describeStack({ stackName });
+    // A stack in a dead-end state gets guidance matched to that state, never
+    // a wait and never a busy misclassification.
+    if (
+      existing != null &&
+      UNUSABLE_STACK_STATUSES.indexOf(existing.StackStatus) !== -1
+    )
+      throw new Error(unusableStackMessage(stackName, existing.StackStatus));
+    if (ACTION === "update" && existing == null)
+      throw new Error(
+        `Stack '${stackName}' does not exist — publish before updating`
+      );
+
+    // 2. Bake the mission config into the bundle
     log(`Baking mission '${mission}' for deployment ${deployment.id}...`);
     const baked = await buildBakedConfig(mission);
     const { bakeStaticConfig } = require("../API/updateTools");
     bakeStaticConfig(baked);
 
-    // 2. Build the static bundle. Theme assets (dist/) are baked into the
+    // 3. Build the static bundle. Theme assets (dist/) are baked into the
     // image at image-build time (the deploy workflow runs build:themes before
     // docker build), and build-assets.sh needs tools absent from the slim
     // runtime image (rsync) — so only build themes when they're missing.
@@ -132,39 +221,52 @@ async function main() {
       SERVER: "static",
     });
 
-    // 3. Provision (publish) or look up (update) the dashboard stack
+    // 4. Provision (publish) or converge (update) the dashboard stack
     let stack;
     if (ACTION === "publish") {
-      // Idempotent re-run: a previous attempt may have created the stack
-      // and failed later (e.g. mid-upload) — reuse it instead of dying on
-      // CloudFormation's AlreadyExistsException.
-      const existing = await provision.describeStack({ stackName });
+      // Publish only needs a working bucket, so it never runs UpdateStack: it
+      // either creates the stack, or waits for whatever the existing one is
+      // doing to settle. A stack already RESTING at its settle target
+      // (CREATE_COMPLETE / UPDATE_COMPLETE / UPDATE_ROLLBACK_COMPLETE) resolves
+      // on the first poll — status already matches, no `prior`, no pre-sleep.
       if (existing == null) {
-        const templateBody = renderCfnTemplate({
-          password: requireEnv("MMGIS_DASHBOARDS_PASSWORD"),
-        });
         log(`Creating stack '${stackName}'...`);
         await provision.createStack({ stackName, templateBody });
+        stack = await provision.waitForStack({ stackName });
       } else {
         log(
-          `Stack '${stackName}' already exists (${existing.StackStatus}); skipping CreateStack.`
+          `Stack '${stackName}' already exists (${existing.StackStatus}); waiting for it to settle.`
         );
+        stack = await provision.waitForStack({
+          stackName,
+          desiredStatus: provision.settleStatusFor(existing.StackStatus),
+        });
       }
-      stack = await provision.waitForStack({ stackName });
       log(`Stack '${stackName}' reached ${stack.StackStatus}.`);
     } else {
-      stack = await provision.describeStack({ stackName });
-      if (stack == null)
-        throw new Error(
-          `Stack '${stackName}' does not exist — publish before updating`
-        );
+      log(
+        `Converging stack '${stackName}' to the current template — this ` +
+          "re-bakes the current dashboards password into the auth Function."
+      );
+      // Converge OUR OWN template through provision's single retry loop: it
+      // runs UpdateStack, waits out any concurrent operation (a double
+      // republish race) and retries our own update, and waits for OUR update
+      // to reach UPDATE_COMPLETE — a rollback throws rather than passing as
+      // success. The preflight above already rejected the delete-only dead-end
+      // statuses, so a busy error inside can only be a genuinely in-flight op.
+      stack = await provision.convergeStackUpdate({
+        stackName,
+        templateBody,
+        log,
+      });
+      log(`Stack '${stackName}' reached ${stack.StackStatus}.`);
     }
     const outputs = provision.getStackOutputs(stack);
     const bucket = outputs.BucketName;
     if (bucket == null)
       throw new Error(`Stack '${stackName}' has no BucketName output`);
 
-    // 4. Same-key copy the mission's assets from the shared admin bucket
+    // 5. Same-key copy the mission's assets from the shared admin bucket
     //    so document-relative assets/<mission>/… references resolve
     //    against the dashboard's document base (the customer prefix,
     //    when one is configured, included). Copied assets inherit the
@@ -197,7 +299,7 @@ async function main() {
       log("MMGIS_SHARED_ASSET_BUCKET not set; skipping mission asset copy.");
     }
 
-    // 4.5 Interpolate the Pug placeholders in the built index. In server
+    // 5.5 Interpolate the Pug placeholders in the built index. In server
     // mode Express renders build/index.pug per request, filling globals
     // like FORCE_CONFIG_PATH and MAIN_MISSION; a dashboard has no server,
     // so bake the static equivalents here (unknown placeholders become
@@ -262,7 +364,7 @@ async function main() {
     );
     log("Interpolated static globals into index.html.");
 
-    // 5. Upload the bundle. The static index references ./build/... and
+    // 6. Upload the bundle. The static index references ./build/... and
     // public/... — the same paths Express mounts in server mode — so the
     // bucket must mirror that layout: the webpack output under build/,
     // the repo's public/ assets under public/, and index.html at the
@@ -300,7 +402,7 @@ async function main() {
       `Uploaded ${uploadedBuild} build and ${uploadedPublic} public file(s) to ${bucket}.`
     );
 
-    // 5.5 Bust the CDN so the refreshed bundle/config/assets serve
+    // 6.5 Bust the CDN so the refreshed bundle/config/assets serve
     // immediately — the distribution caches aggressively, and only the
     // hashed bundle filenames are naturally cache-safe. A brand-new
     // distribution has nothing cached, so doing this unconditionally
@@ -313,32 +415,36 @@ async function main() {
       log("Created CloudFront invalidation (/*).");
     }
 
-    // 6. Terminal row update
+    // 7. Terminal row update
     const cloudfrontUrl =
       outputs.DistributionDomainName != null
         ? `https://${outputs.DistributionDomainName}`
         : deployment.cloudfront_url;
-    await deployment.update({
-      status: Deployments.STATUS.PUBLISHED,
-      stack_arn: stack.StackId,
-      stack_name: stackName,
-      cloudfront_url: cloudfrontUrl,
-      last_error: null,
-      settings: {
-        ...(deployment.settings || {}),
-        bucket,
-        distributionId: outputs.DistributionId,
+    await Deployments.update(
+      {
+        status: Deployments.STATUS.PUBLISHED,
+        stack_arn: stack.StackId,
+        stack_name: stackName,
+        cloudfront_url: cloudfrontUrl,
+        last_error: null,
+        settings: {
+          ...(deployment.settings || {}),
+          bucket,
+          distributionId: outputs.DistributionId,
+        },
       },
-    });
+      { where: liveRowWhere(deployment.id) }
+    );
     log(`Deployment ${deployment.id} published at ${cloudfrontUrl}.`);
   } catch (err) {
     console.error(err);
-    await deployment
-      .update({
+    await Deployments.update(
+      {
         status: Deployments.STATUS.FAILED,
         last_error: err.message || String(err),
-      })
-      .catch(() => {});
+      },
+      { where: liveRowWhere(deployment.id) }
+    ).catch(() => {});
     throw err;
   }
 }
