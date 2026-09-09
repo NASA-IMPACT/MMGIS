@@ -44,7 +44,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     const [zoomTransform, setZoomTransform] = useState(zoomIdentity)
 
     const axisHeight = 24 // Space for the bottom axis
-    const layerBarHeight = 15
+    const layerBarHeight = 20
     const topBarHeight = 24 // Space for top axis
     const markerSize = 18 // Rendered size of the scrubber marker
 

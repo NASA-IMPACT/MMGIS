@@ -37,15 +37,15 @@ describe('LayerTimeline', () => {
         container.remove()
     })
 
-    const render = (layer: LayerTimeData) => {
+    const render = (layer: LayerTimeData, y = 0, height = 20) => {
         act(() => {
             root.render(
                 <svg>
                     <LayerTimeline
                         layer={layer}
                         xScale={xScale}
-                        y={0}
-                        height={20}
+                        y={y}
+                        height={height}
                     />
                 </svg>
             )
@@ -115,5 +115,42 @@ describe('LayerTimeline', () => {
         )
 
         expect(Number(rect.getAttribute('width'))).toBeGreaterThanOrEqual(2)
+    })
+
+    /**
+     * The sidebar row is sized to fit the transport buttons it carries, which
+     * is taller than the bar itself wants to be — a bar that scaled with its
+     * row would make every chart look heavier for no reason. The bar's
+     * thickness is fixed, and it stays centred in whatever row it's given.
+     */
+    test('keeps the same bar thickness centred whether the row is 15px or 20px', () => {
+        const range = { start: new Date('2020-03-04T00:00:00Z'), end: new Date('2020-07-19T00:00:00Z') }
+
+        // React reuses the same host <rect> across renders on one root, so
+        // each row height must be read out before the next render overwrites it.
+        const [shortRowRect] = render(layerWith([range]), 0, 15)
+        const shortHeight = Number(shortRowRect.getAttribute('height'))
+        const shortY = Number(shortRowRect.getAttribute('y'))
+
+        const [tallRowRect] = render(layerWith([range]), 0, 20)
+        const tallHeight = Number(tallRowRect.getAttribute('height'))
+        const tallY = Number(tallRowRect.getAttribute('y'))
+
+        expect(shortHeight).toBe(9)
+        expect(tallHeight).toBe(9)
+
+        // Centred: the gap above the bar equals the gap below it.
+        expect(shortY).toBeCloseTo((15 - shortHeight) / 2)
+        expect(tallY).toBeCloseTo((20 - tallHeight) / 2)
+    })
+
+    test('centres the bar within a row offset from the SVG origin', () => {
+        const range = { start: new Date('2020-03-04T00:00:00Z'), end: new Date('2020-07-19T00:00:00Z') }
+
+        const [rect] = render(layerWith([range]), 100, 20)
+
+        const height = Number(rect.getAttribute('height'))
+        expect(height).toBe(9)
+        expect(Number(rect.getAttribute('y'))).toBeCloseTo(100 + (20 - height) / 2)
     })
 })
