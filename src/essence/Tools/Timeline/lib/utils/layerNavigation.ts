@@ -1,6 +1,6 @@
 import moment from 'moment'
 import type { TimeMode } from '../types'
-import { stepTime } from './timeUtils'
+import { resolveLayerExtent, stepTime } from './timeUtils'
 import type { LayerTimeConfig } from './timeUtils'
 
 /**
@@ -75,25 +75,84 @@ export function resolveLayerNavigation(
             end: stops[stops.length - 1],
         }
 
-    const parsedStart = time.dataStartTime ? new Date(time.dataStartTime) : null
-    const parsedEnd =
-        time.dataEndTime === 'now'
-            ? new Date()
-            : time.dataEndTime
-            ? new Date(time.dataEndTime)
-            : null
-
-    const start =
-        parsedStart && !isNaN(parsedStart.getTime()) ? parsedStart : null
-    const end = parsedEnd && !isNaN(parsedEnd.getTime()) ? parsedEnd : null
+    const { start, end, hasOwnBound } = resolveLayerExtent(
+        time,
+        fallbackStart,
+        fallbackEnd
+    )
 
     // Naming neither bound leaves nothing of the layer's own to move through.
-    if (!start && !end) return null
+    if (!hasOwnBound) return null
 
-    return {
-        kind: 'periodic',
-        start: start ?? fallbackStart,
-        end: end ?? fallbackEnd,
+    return { kind: 'periodic', start, end }
+}
+
+/**
+ * A sparse layer's half of `navigateLayer`: data sits only on its stops, so
+ * moving lands on the nearest stop the other side of the current time,
+ * however far away it is — one press reaches a layer whose data sits months
+ * from where the timeline is. Stepping is strict about the current instant,
+ * so a press from an instant already sitting on a stop moves off it rather
+ * than stalling there. Jumping to an outermost stop the current time already
+ * sits on is nowhere to go either, for the reason `navigateLayer` documents.
+ */
+function navigateSparseLayer(
+    stops: Date[],
+    from: Date,
+    action: 'first' | 'prev' | 'next' | 'last'
+): Date | null {
+    if (stops.length === 0) return null
+
+    const at = from.getTime()
+    const firstStop = stops[0]
+    const lastStop = stops[stops.length - 1]
+
+    switch (action) {
+        case 'first':
+            return firstStop.getTime() === at ? null : firstStop
+        case 'last':
+            return lastStop.getTime() === at ? null : lastStop
+        case 'next':
+            return stops.find((stop) => stop.getTime() > at) ?? null
+        case 'prev':
+            return stops.filter((stop) => stop.getTime() < at).pop() ?? null
+    }
+}
+
+/**
+ * A periodic layer's half of `navigateLayer`: data runs throughout the
+ * extent, so moving inside it steps by the timeline's own granularity — the
+ * same step the global buttons take — and stops short at the extent's edge
+ * rather than stepping past the data. One press from outside the extent
+ * reaches its near edge, so a layer whose data lies well away from the
+ * current time is one press away too. Jumping to an edge the current time
+ * already sits on is nowhere to go either, for the reason `navigateLayer`
+ * documents.
+ */
+function navigatePeriodicLayer(
+    start: Date,
+    end: Date,
+    from: Date,
+    action: 'first' | 'prev' | 'next' | 'last',
+    mode: TimeMode
+): Date | null {
+    const at = from.getTime()
+    const startMs = start.getTime()
+    const endMs = end.getTime()
+
+    switch (action) {
+        case 'first':
+            return at === startMs ? null : start
+        case 'last':
+            return at === endMs ? null : end
+        case 'next':
+            if (at < startMs) return start
+            if (at >= endMs) return null
+            return new Date(Math.min(stepTime(from, mode, 1).getTime(), endMs))
+        case 'prev':
+            if (at > endMs) return end
+            if (at <= startMs) return null
+            return new Date(Math.max(stepTime(from, mode, -1).getTime(), startMs))
     }
 }
 
@@ -102,20 +161,13 @@ export function resolveLayerNavigation(
  * null when that control has nowhere to go — the signal a layer row draws it
  * disabled.
  *
- * A sparse layer holds data only on its stops, so moving lands on the nearest
- * stop the other side of the current time, however far away it is: one press
- * reaches a layer whose data sits months from where the timeline is. Stepping
- * is strict about the current instant, so a press from an instant already
- * sitting on a stop moves off it rather than stalling there.
- *
- * A periodic layer holds data throughout its extent, so moving inside it steps
- * by the timeline's own granularity — the same step the global buttons take —
- * and stops short at the extent's edge rather than stepping past the data. One
- * press from outside the extent reaches its near edge, so a layer whose data
- * lies well away from the current time is one press away too.
+ * Dispatches to `navigateSparseLayer` or `navigatePeriodicLayer` by
+ * `nav.kind`; see those for how each model moves. `mode` is read only by the
+ * periodic side, which steps by the timeline's own granularity — a sparse
+ * layer moves between its own stops regardless of mode.
  *
  * Jumping to an outermost instant the current time already sits on is nowhere
- * to go as well. That instant is where the previous press left the timeline, so
+ * to go. That instant is where the previous press left the timeline, so
  * repeating it would re-commit the time already held while the control went on
  * looking live; null instead draws it inert, and leaves every control's inert
  * rule the one question of whether this function returns an instant.
@@ -126,42 +178,7 @@ export function navigateLayer(
     action: 'first' | 'prev' | 'next' | 'last',
     mode: TimeMode
 ): Date | null {
-    const at = from.getTime()
-
-    if (nav.kind === 'sparse') {
-        const stops = nav.stops ?? []
-        if (stops.length === 0) return null
-
-        const firstStop = stops[0]
-        const lastStop = stops[stops.length - 1]
-
-        switch (action) {
-            case 'first':
-                return firstStop.getTime() === at ? null : firstStop
-            case 'last':
-                return lastStop.getTime() === at ? null : lastStop
-            case 'next':
-                return stops.find((stop) => stop.getTime() > at) ?? null
-            case 'prev':
-                return stops.filter((stop) => stop.getTime() < at).pop() ?? null
-        }
-    }
-
-    const start = nav.start.getTime()
-    const end = nav.end.getTime()
-
-    switch (action) {
-        case 'first':
-            return at === start ? null : nav.start
-        case 'last':
-            return at === end ? null : nav.end
-        case 'next':
-            if (at < start) return nav.start
-            if (at >= end) return null
-            return new Date(Math.min(stepTime(from, mode, 1).getTime(), end))
-        case 'prev':
-            if (at > end) return nav.end
-            if (at <= start) return null
-            return new Date(Math.max(stepTime(from, mode, -1).getTime(), start))
-    }
+    return nav.kind === 'sparse'
+        ? navigateSparseLayer(nav.stops ?? [], from, action)
+        : navigatePeriodicLayer(nav.start, nav.end, from, action, mode)
 }

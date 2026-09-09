@@ -155,6 +155,52 @@ export interface LayerTimeConfig {
 }
 
 /**
+ * A layer's extent as resolved from its own configuration, with either bound
+ * missing or unreadable completed from the supplied fallback.
+ */
+export interface ResolvedLayerExtent {
+    start: Date
+    end: Date
+    /**
+     * Whether `dataStartTime` or `dataEndTime` named a bound that parsed. A
+     * layer that names neither has nothing of its own in `start`/`end` — both
+     * values are the fallback verbatim.
+     */
+    hasOwnBound: boolean
+}
+
+/**
+ * A layer's `dataStartTime`/`dataEndTime` extent, read the one way every
+ * caller needs it: `dataEndTime` of `'now'` resolves to the current instant,
+ * and a bound that is absent or fails to parse is completed from the supplied
+ * fallback rather than left unset. The extent is read leniently, since
+ * configs carry values in looser formats than ISO 8601.
+ */
+export function resolveLayerExtent(
+    time: LayerTimeConfig | undefined,
+    fallbackStart: Date,
+    fallbackEnd: Date
+): ResolvedLayerExtent {
+    const parsedStart = time?.dataStartTime ? new Date(time.dataStartTime) : null
+    const parsedEnd =
+        time?.dataEndTime === 'now'
+            ? new Date()
+            : time?.dataEndTime
+            ? new Date(time.dataEndTime)
+            : null
+
+    const start =
+        parsedStart && !isNaN(parsedStart.getTime()) ? parsedStart : null
+    const end = parsedEnd && !isNaN(parsedEnd.getTime()) ? parsedEnd : null
+
+    return {
+        start: start ?? fallbackStart,
+        end: end ?? fallbackEnd,
+        hasOwnBound: start !== null || end !== null,
+    }
+}
+
+/**
  * The spans of the timeline a layer holds data for.
  *
  * A layer that carries data continuously is one span, running the length of
@@ -198,18 +244,6 @@ export function resolveLayerTimeRanges(
             label: day.format('YYYY-MM-DD'),
         }))
 
-    let start = fallbackStart
-    let end = fallbackEnd
-
-    if (time.dataStartTime) {
-        const parsedStart = new Date(time.dataStartTime)
-        if (!isNaN(parsedStart.getTime())) start = parsedStart
-    }
-    if (time.dataEndTime === 'now') end = new Date()
-    else if (time.dataEndTime) {
-        const parsedEnd = new Date(time.dataEndTime)
-        if (!isNaN(parsedEnd.getTime())) end = parsedEnd
-    }
-
+    const { start, end } = resolveLayerExtent(time, fallbackStart, fallbackEnd)
     return [{ start, end }]
 }
