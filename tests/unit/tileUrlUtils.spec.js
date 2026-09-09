@@ -319,6 +319,31 @@ describe('tileUrlUtils', () => {
             expect(new URL(url).searchParams.get('datetime'))
                 .toBe('2024-03-01T00:00:00Z/2024-03-04T00:00:00Z')
         })
+        test('keeps a datetime the url template already carries', () => {
+            const opts = buildTileUrlOptions(
+                {
+                    time: {
+                        enabled: true,
+                        format: '%Y-%m-%d',
+                        start: '2012-01-19T00:00:00Z',
+                        end: '2026-08-12T00:00:00Z',
+                    },
+                },
+                'titiler-url')
+            const url = compileTileUrl(
+                'https://t/{z}/{x}/{y}@1x?assets=coherence&datetime={time}T00:00:00Z/{time}T23:59:59Z',
+                opts)
+            expect(new URL(url).searchParams.getAll('datetime'))
+                .toEqual(['2026-08-12T00:00:00Z/2026-08-12T23:59:59Z'])
+        })
+        test('appends datetime when the template only has other params', () => {
+            const opts = buildTileUrlOptions(
+                { time: { enabled: true, start: '2024-03-01T00:00:00Z', end: '2024-03-04T00:00:00Z' } },
+                'titiler-url')
+            const url = compileTileUrl('https://t/{z}/{x}/{y}@1x?assets=coherence', opts)
+            expect(new URL(url).searchParams.getAll('datetime'))
+                .toEqual(['2024-03-01T00:00:00Z/2024-03-04T00:00:00Z'])
+        })
     })
 
     describe('compileTileUrl — never re-formats', () => {

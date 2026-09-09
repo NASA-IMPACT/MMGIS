@@ -39,7 +39,9 @@ export const LayerTimeline: React.FC<LayerTimelineProps> = ({
                         <title>
                             {layer.displayName}
                             {'\n'}
-                            {range.start.toISOString()} to {range.end.toISOString()}
+                            {range.label
+                                ? range.label
+                                : `${range.start.toISOString()} to ${range.end.toISOString()}`}
                         </title>
                     </rect>
                 )

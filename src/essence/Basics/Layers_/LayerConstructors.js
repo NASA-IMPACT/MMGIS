@@ -7,143 +7,11 @@ import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import { parseExtendedGeoJSON, getCoordProperties } from './ExtendedGeoJSON'
+import { compileLegendStyle, resolveLegendStyle } from './LegendStyle'
 
 import { centroid } from '@turf/turf'
 
 let L = window.L
-
-// Helper function to interpolate between two colors using RGB
-function interpolateColor(color1, color2, factor) {
-    if (!color1 || !color2) return color1 || color2
-
-    // Ensure factor is between 0 and 1
-    factor = Math.max(0, Math.min(1, factor))
-
-    // Convert colors to RGB if they're hex
-    const rgb1 = hexToRgb(color1) || parseRgb(color1) || parseCSSColor(color1)
-    const rgb2 = hexToRgb(color2) || parseRgb(color2) || parseCSSColor(color2)
-
-    if (!rgb1 || !rgb2) return color1 // Fallback if color parsing fails
-
-    // Interpolate each RGB component
-    const r = Math.round(rgb1.r + (rgb2.r - rgb1.r) * factor)
-    const g = Math.round(rgb1.g + (rgb2.g - rgb1.g) * factor)
-    const b = Math.round(rgb1.b + (rgb2.b - rgb1.b) * factor)
-
-    return `rgb(${r}, ${g}, ${b})`
-}
-
-// Enhanced function to interpolate between multiple colors using color stops
-function interpolateMultipleColors(colorStops, value, minValue, maxValue) {
-    if (!colorStops || colorStops.length === 0) return null
-    if (colorStops.length === 1) return colorStops[0].color
-
-    // Normalize the value to 0-1 range
-    const normalizedValue =
-        maxValue === minValue ? 0 : (value - minValue) / (maxValue - minValue)
-
-    // Clamp the normalized value
-    const clampedValue = Math.max(0, Math.min(1, normalizedValue))
-
-    // If we're at the extremes, return the boundary colors
-    if (clampedValue === 0) return colorStops[0].color
-    if (clampedValue === 1) return colorStops[colorStops.length - 1].color
-
-    // Find the two color stops that bracket our value
-    for (let i = 0; i < colorStops.length - 1; i++) {
-        const currentStop = colorStops[i]
-        const nextStop = colorStops[i + 1]
-
-        if (
-            clampedValue >= currentStop.position &&
-            clampedValue <= nextStop.position
-        ) {
-            // Calculate the local factor between these two stops
-            const stopRange = nextStop.position - currentStop.position
-            const localFactor =
-                stopRange === 0
-                    ? 0
-                    : (clampedValue - currentStop.position) / stopRange
-
-            // Interpolate between the two colors
-            return interpolateColor(
-                currentStop.color,
-                nextStop.color,
-                localFactor
-            )
-        }
-    }
-
-    // Fallback (shouldn't reach here)
-    return colorStops[colorStops.length - 1].color
-}
-
-// Helper function to convert hex color to RGB
-function hexToRgb(hex) {
-    if (!hex || typeof hex !== 'string') return null
-
-    // Remove # if present
-    hex = hex.replace('#', '')
-
-    // Handle 3-character hex
-    if (hex.length === 3) {
-        hex = hex
-            .split('')
-            .map((char) => char + char)
-            .join('')
-    }
-
-    if (hex.length !== 6) return null
-
-    const r = parseInt(hex.substr(0, 2), 16)
-    const g = parseInt(hex.substr(2, 2), 16)
-    const b = parseInt(hex.substr(4, 2), 16)
-
-    return isNaN(r) || isNaN(g) || isNaN(b) ? null : { r, g, b }
-}
-
-// Helper function to parse rgb() color strings
-function parseRgb(color) {
-    if (!color || typeof color !== 'string') return null
-
-    const match = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/)
-    if (!match) return null
-
-    return {
-        r: parseInt(match[1]),
-        g: parseInt(match[2]),
-        b: parseInt(match[3]),
-    }
-}
-
-// Helper function to parse CSS color strings to RGB using browser's built-in capability
-function parseCSSColor(color) {
-    if (!color || typeof color !== 'string') return null
-
-    // Use a temporary element to parse the color
-    const tempElem = document.createElement('div')
-    tempElem.style.color = color
-
-    // Append to body temporarily to get computed style
-    document.body.appendChild(tempElem)
-    const computedColor = window.getComputedStyle(tempElem).color
-    document.body.removeChild(tempElem)
-
-    // If the browser couldn't parse it, computed color will be empty
-    if (!computedColor || computedColor === '') return null
-
-    // Try to parse rgb() or rgba() format
-    const rgbMatch = computedColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
-    if (rgbMatch) {
-        return {
-            r: parseInt(rgbMatch[1]),
-            g: parseInt(rgbMatch[2]),
-            b: parseInt(rgbMatch[3]),
-        }
-    }
-
-    return null
-}
 
 const tooltipProto = L.Tooltip.prototype
 const tooltipProto_setPosition = tooltipProto._setPosition
@@ -200,6 +68,22 @@ export const constructVectorLayer = (
     if (layerObj.style.radiusProp != null && layerObj.style.radiusProp !== '')
         rad = `prop:${layerObj.style.radiusProp}`
 
+    // A layer's legend is not necessarily available yet: a `legend:` CSV path
+    // is fetched after the layer is built, so it has to be re-read on every
+    // feature. Compiling is memoised on the legend array's identity, which
+    // only changes when the legend is replaced wholesale, so re-reading costs
+    // a lookup rather than a regroup and re-sort per feature.
+    let memoisedLegendData
+    let memoisedCompiledLegend = null
+    const compiledLegend = () => {
+        const legendData = L_.layers.data[layerObj.name]?._legend
+        if (legendData !== memoisedLegendData) {
+            memoisedLegendData = legendData
+            memoisedCompiledLegend = compileLegendStyle(legendData)
+        }
+        return memoisedCompiledLegend
+    }
+
     let leafletLayerObject = {
         style: function (feature, preferredStyle) {
             if (preferredStyle) {
@@ -226,170 +110,18 @@ export const constructVectorLayer = (
                         : rad
             }
 
-            // Check for legend-based property styling (takes priority over configured styles but not over feature.properties.style)
-            const legendData = L_.layers.data[layerObj.name]?._legend
-            if (legendData && Array.isArray(legendData)) {
-                // Group legend entries by property name for gradient interpolation
-                const propertyGroups = {}
-                for (let legendEntry of legendData) {
-                    if (
-                        legendEntry.styleMatching &&
-                        legendEntry.propertyName &&
-                        legendEntry.propertyValue !== undefined
-                    ) {
-                        if (!propertyGroups[legendEntry.propertyName]) {
-                            propertyGroups[legendEntry.propertyName] = []
-                        }
-                        propertyGroups[legendEntry.propertyName].push(
-                            legendEntry
-                        )
-                    }
-                }
-
-                // Process each property group
-                for (let propertyName in propertyGroups) {
-                    const featureValue = feature.properties[propertyName]
-                    const entries = propertyGroups[propertyName]
-
-                    // Check if this should use continuous interpolation
-                    const isNumericValue = typeof featureValue === 'number'
-
-                    // Only get entries that are marked as continuous
-                    const continuousEntries = entries.filter(
-                        (entry) => entry.shape === 'continuous'
-                    )
-
-                    const numericEntries = continuousEntries
-                        .map((entry) => ({
-                            ...entry,
-                            numericValue: parseFloat(entry.propertyValue),
-                        }))
-                        .filter((entry) => !isNaN(entry.numericValue))
-                        .sort((a, b) => a.numericValue - b.numericValue)
-
-                    const shouldUseContinuous =
-                        isNumericValue && numericEntries.length >= 2
-
-                    if (shouldUseContinuous) {
-                        // Use gradient interpolation for continuous numeric values
-                        // Find min and max values for normalization
-                        const minValue = numericEntries[0].numericValue
-                        const maxValue =
-                            numericEntries[numericEntries.length - 1]
-                                .numericValue
-
-                        // Create color stops for fill colors
-                        const fillColorStops = numericEntries
-                            .filter((entry) => entry.color)
-                            .map((entry) => ({
-                                position:
-                                    maxValue === minValue
-                                        ? 0
-                                        : (entry.numericValue - minValue) /
-                                          (maxValue - minValue),
-                                color: entry.color,
-                            }))
-
-                        // Create color stops for stroke colors
-                        const strokeColorStops = numericEntries
-                            .filter((entry) => entry.strokecolor || entry.color)
-                            .map((entry) => ({
-                                position:
-                                    maxValue === minValue
-                                        ? 0
-                                        : (entry.numericValue - minValue) /
-                                          (maxValue - minValue),
-                                color: entry.strokecolor || entry.color,
-                            }))
-
-                        // Interpolate colors using the enhanced multi-color function
-                        if (fillColorStops.length >= 1) {
-                            const interpolatedFillColor =
-                                fillColorStops.length === 1
-                                    ? fillColorStops[0].color
-                                    : interpolateMultipleColors(
-                                          fillColorStops,
-                                          featureValue,
-                                          minValue,
-                                          maxValue
-                                      )
-
-                            if (interpolatedFillColor) {
-                                fiC = interpolatedFillColor
-                            }
-                        }
-
-                        if (strokeColorStops.length >= 1) {
-                            const interpolatedStrokeColor =
-                                strokeColorStops.length === 1
-                                    ? strokeColorStops[0].color
-                                    : interpolateMultipleColors(
-                                          strokeColorStops,
-                                          featureValue,
-                                          minValue,
-                                          maxValue
-                                      )
-
-                            if (interpolatedStrokeColor) {
-                                col = interpolatedStrokeColor
-                            }
-                        }
-
-                        break // Found styling, stop processing other properties
-                    } else {
-                        // Use exact matching for discrete values (strings, booleans, or entries not marked as continuous)
-                        let exactMatch = null
-                        // Only check entries that are not marked as continuous
-                        const discreteEntries = entries.filter(
-                            (entry) => entry.shape !== 'continuous'
-                        )
-
-                        for (let entry of discreteEntries) {
-                            let matches = false
-                            if (
-                                typeof featureValue === 'string' &&
-                                typeof entry.propertyValue === 'string'
-                            ) {
-                                matches = featureValue === entry.propertyValue
-                            } else if (
-                                typeof featureValue === 'number' &&
-                                !isNaN(parseFloat(entry.propertyValue))
-                            ) {
-                                matches =
-                                    featureValue ===
-                                    parseFloat(entry.propertyValue)
-                            } else if (typeof featureValue === 'boolean') {
-                                matches =
-                                    featureValue ===
-                                    (entry.propertyValue === 'true' ||
-                                        entry.propertyValue === true)
-                            } else {
-                                matches =
-                                    String(featureValue) ===
-                                    String(entry.propertyValue)
-                            }
-
-                            if (matches) {
-                                exactMatch = entry
-                                break
-                            }
-                        }
-
-                        if (exactMatch) {
-                            if (exactMatch.color) {
-                                fiC = exactMatch.color
-                            }
-                            if (exactMatch.strokecolor) {
-                                col = exactMatch.strokecolor
-                            }
-                            if (exactMatch.color && !exactMatch.strokecolor) {
-                                col = exactMatch.color
-                            }
-                            break // Found styling, stop processing other properties
-                        }
-                    }
-                }
-            }
+            // Legend-driven styling wins over the layer's configured style,
+            // but not over a style carried on the feature itself (handled by
+            // the branch below). Resolved into locals rather than written back
+            // onto `col`/`fiC`: those are closure variables shared by every
+            // feature, so assigning to them leaked one feature's legend colour
+            // into the next feature's fallback.
+            const legendStyle = resolveLegendStyle(
+                compiledLegend(),
+                feature.properties
+            )
+            const resolvedCol = legendStyle?.color ?? col
+            const resolvedFiC = legendStyle?.fillColor ?? fiC
 
             if (feature.properties.hasOwnProperty('style')) {
                 let className = layerObj.uuid
@@ -405,12 +137,14 @@ export const constructVectorLayer = (
             } else {
                 // Priority to prop, prop.color, then style color.
                 var finalCol =
-                    col != null && col.toLowerCase().substring(0, 4) === 'prop'
-                        ? F_.parseColor(feature.properties[col.substring(5)]) ||
-                          '#FFF'
+                    resolvedCol != null &&
+                    resolvedCol.toLowerCase().substring(0, 4) === 'prop'
+                        ? F_.parseColor(
+                              feature.properties[resolvedCol.substring(5)]
+                          ) || '#FFF'
                         : feature.style && feature.style.stroke != null
                         ? feature.style.stroke
-                        : col
+                        : resolvedCol
                 var finalOpa =
                     opa != null && opa.toLowerCase().substring(0, 4) === 'prop'
                         ? feature.properties[opa.substring(5)] || '1'
@@ -425,12 +159,14 @@ export const constructVectorLayer = (
                         : wei
                 if (!isNaN(parseInt(finalWei))) finalWei = parseInt(finalWei)
                 var finalFiC =
-                    fiC != null && fiC.toLowerCase().substring(0, 4) === 'prop'
-                        ? F_.parseColor(feature.properties[fiC.substring(5)]) ||
-                          '#000'
+                    resolvedFiC != null &&
+                    resolvedFiC.toLowerCase().substring(0, 4) === 'prop'
+                        ? F_.parseColor(
+                              feature.properties[resolvedFiC.substring(5)]
+                          ) || '#000'
                         : feature.style && feature.style.fill != null
                         ? feature.style.fill
-                        : fiC
+                        : resolvedFiC
                 var finalFiO =
                     fiO != null && fiO.toLowerCase().substring(0, 4) === 'prop'
                         ? feature.properties[fiO.substring(5)] || '1'

@@ -338,14 +338,6 @@
         border-radius: var(--theme-radius-lg, 8px);
     }
 
-    &__results-label {
-        color: var(--theme-color-base-dark, #565c65);
-        font-size: var(--theme-font-size-3xs, 12px);
-        font-weight: var(--theme-font-weight-semibold, 600);
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-    }
-
     // "N entries match" line above the entry picker.
     &__countline {
         display: flex;
@@ -358,9 +350,7 @@
 
     &__count {
         color: var(--theme-color-primary, #0e7482);
-        font-size: var(--theme-font-size-xl, 1.5rem);
         font-weight: var(--theme-font-weight-bold, 700);
-        line-height: 1;
     }
 
     &__clear {

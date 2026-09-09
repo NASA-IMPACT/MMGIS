@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import ChartJS from 'chart.js/auto'
 import './ChartComponent.css'
 import {
@@ -6,6 +6,8 @@ import {
     AssetStats,
     ResultCard,
     cardsFromAnalysisData,
+    cardKey,
+    cardLabel,
     emptyLayers,
     buildHistogramBins,
     formatStat,
@@ -22,6 +24,9 @@ export function ChartComponent({ analysisData, onClose }: ChartComponentProps) {
     const cards = cardsFromAnalysisData(analysisData)
     const empties = emptyLayers(analysisData)
     const isIdle = !analysisData
+    const [pickedKey, setPickedKey] = useState('')
+    // A pick that no longer exists (new results arrived) falls back to the first card.
+    const picked = cards.find((card) => cardKey(card) === pickedKey) ?? cards[0]
 
     return (
         <div className="chart-tool" role="region" aria-label="Analysis results">
@@ -57,12 +62,24 @@ export function ChartComponent({ analysisData, onClose }: ChartComponentProps) {
                             </p>
                         )}
 
-                        {cards.map((card) => (
-                            <ResultCardView
-                                key={`${card.layerName}__${card.assetName}`}
-                                card={card}
-                            />
-                        ))}
+                        {cards.length > 1 && (
+                            <label className="chart-tool__picker">
+                                <span className="chart-tool__picker-label">Layer</span>
+                                <select
+                                    className="chart-tool__picker-select"
+                                    value={cardKey(picked)}
+                                    onChange={(e) => setPickedKey(e.target.value)}
+                                >
+                                    {cards.map((card) => (
+                                        <option key={cardKey(card)} value={cardKey(card)}>
+                                            {cardLabel(card, cards)}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                        )}
+
+                        {picked && <ResultCardView key={cardKey(picked)} card={picked} />}
 
                         {empties.map((layerName) => (
                             <EmptyCard key={`empty__${layerName}`} layerName={layerName} />
