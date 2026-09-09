@@ -25,7 +25,7 @@ export interface TimelineViewProps {
      * holds data where it holds it, which may be outside the window the
      * timeline currently shows.
      */
-    onLayerNavigate?: (target: Date) => void
+    onLayerNavigate: (target: Date) => void
     onResetZoomReady?: (resetZoomFn: () => void) => void
 }
 
@@ -298,7 +298,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                         navigation={layer.navigation}
                                         from={currentTime}
                                         timeMode={timeMode}
-                                        onNavigate={(target) => onLayerNavigate?.(target)}
+                                        onNavigate={onLayerNavigate}
                                     />
                                 )}
                             </div>

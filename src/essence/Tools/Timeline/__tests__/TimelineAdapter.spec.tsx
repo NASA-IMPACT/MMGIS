@@ -88,3 +88,160 @@ describe('TimelineAdapter compare hand-off', () => {
         })
     })
 })
+
+/**
+ * Where a layer row's navigation controls put the timeline.
+ *
+ * A layer holds data where it holds it, so reaching that data can mean leaving
+ * the window on screen. What is covered here is that the window follows the
+ * target out instead of clamping it back in, and that it moves only the edge
+ * that has to move.
+ */
+
+// jsdom has no ResizeObserver; the timeline view constructs one to follow the
+// width of the chart area. The stub never reports a size, leaving the view on
+// the starting width it lays the SVG out with.
+class NoopResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+}
+
+// Data on three scattered days: one before the window, one inside it, one
+// past its end — so first/next/last each land somewhere different relative to
+// the window. A stop closes the day it names.
+const BEFORE_WINDOW = '2023-11-05T23:59:59.999Z'
+const INSIDE_WINDOW = '2024-06-20T23:59:59.999Z'
+const PAST_WINDOW = '2025-03-20T23:59:59.999Z'
+
+const LAYER_CONFIGS = {
+    sparse: {
+        name: 'sparse',
+        display_name: 'Rover Images',
+        time: {
+            enabled: true,
+            dataDates: ['2023-11-05', '2024-06-20', '2025-03-20'],
+        },
+    },
+    basemap: {
+        name: 'basemap',
+        display_name: 'Basemap',
+        time: { enabled: false },
+    },
+}
+
+describe('TimelineAdapter layer navigation', () => {
+    let container: HTMLElement
+    let root: Root
+    let emits: Emit[]
+    let originalResizeObserver: unknown
+
+    beforeEach(async () => {
+        emits = []
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+        ;(window as unknown as { mmgisAPI: unknown }).mmgisAPI = {
+            request: async (name: string) => {
+                if (name === 'time:isEnabled') return true
+                if (name === 'time:getStart') return START
+                if (name === 'time:getEnd') return END
+                if (name === 'time:getCurrent') return CURRENT
+                if (name === 'tool:getVars') return {}
+                if (name === 'layers:getAllConfigs') return LAYER_CONFIGS
+                if (name === 'layers:getVisible')
+                    return { sparse: true, basemap: true }
+                return null
+            },
+            hasHandler: () => true,
+            on: () => () => {},
+            emit: (event: string, payload?: unknown) => {
+                emits.push({ event, payload })
+            },
+        }
+
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+        await act(async () => {
+            root.render(<TimelineAdapter />)
+        })
+        // The layer configs arrive a request later than the first render.
+        await act(async () => {})
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        delete (window as { mmgisAPI?: unknown }).mmgisAPI
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver
+    })
+
+    const navButton = (name: string) =>
+        container.querySelector<HTMLButtonElement>(
+            `[aria-label="Rover Images: ${name}"]`
+        )
+
+    const requests = () => emits.filter((e) => e.event === 'time:changeRequested')
+
+    test('gives the rows of layers that carry dates their own controls', () => {
+        expect(navButton('next date')).not.toBeNull()
+        // Nothing of the basemap's own to move through.
+        expect(
+            container.querySelector('[aria-label^="Basemap:"]')
+        ).toBeNull()
+    })
+
+    test('a target inside the window commits it and leaves the window be', () => {
+        act(() => {
+            navButton('next date')!.click()
+        })
+
+        expect(requests()).toHaveLength(1)
+        expect(requests()[0].payload).toEqual({
+            startTime: new Date(START).toISOString(),
+            endTime: new Date(END).toISOString(),
+            currentTime: INSIDE_WINDOW,
+        })
+    })
+
+    test('a target past the end widens the end onto it, and only the end', () => {
+        act(() => {
+            navButton('last date')!.click()
+        })
+
+        expect(requests()[0].payload).toEqual({
+            startTime: new Date(START).toISOString(),
+            endTime: PAST_WINDOW,
+            currentTime: PAST_WINDOW,
+        })
+    })
+
+    test('a target before the start widens the start onto it, and only the start', () => {
+        act(() => {
+            navButton('first date')!.click()
+        })
+
+        expect(requests()[0].payload).toEqual({
+            startTime: BEFORE_WINDOW,
+            endTime: new Date(END).toISOString(),
+            currentTime: BEFORE_WINDOW,
+        })
+    })
+
+    test('the help popover says the layer rows carry controls', () => {
+        act(() => {
+            container
+                .querySelector<HTMLButtonElement>(
+                    '[aria-label="Timeline controls help"]'
+                )!
+                .click()
+        })
+
+        expect(
+            document.querySelector('.timeline-info-tooltip-content')?.textContent
+        ).toMatch(/layer/i)
+    })
+})
