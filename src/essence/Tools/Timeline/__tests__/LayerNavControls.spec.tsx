@@ -44,12 +44,14 @@ describe('LayerNavControls', () => {
     let container: HTMLElement
     let root: Root
     let committed: Date[]
+    let reported: LayerNavigation[]
 
     beforeEach(() => {
         container = document.createElement('div')
         document.body.appendChild(container)
         root = createRoot(container)
         committed = []
+        reported = []
     })
 
     afterEach(() => {
@@ -70,7 +72,10 @@ describe('LayerNavControls', () => {
                     navigation={navigation}
                     from={new Date(from)}
                     timeMode={timeMode}
-                    onNavigate={(date) => committed.push(date)}
+                    onNavigate={(date, navigation) => {
+                        committed.push(date)
+                        reported.push(navigation)
+                    }}
                 />,
             )
         })
@@ -164,6 +169,13 @@ describe('LayerNavControls', () => {
             '2020-03-04T23:59:59.999Z',
             '2020-11-02T23:59:59.999Z',
         ])
+    })
+
+    test('reports the model beside the instant, so a window knows what it opens onto', () => {
+        render('2020-05-01T00:00:00Z')
+        press('MODIS Daily: next date')
+
+        expect(reported).toEqual([SPARSE])
     })
 
     test('stays silent when a control with nowhere to go is pressed', () => {

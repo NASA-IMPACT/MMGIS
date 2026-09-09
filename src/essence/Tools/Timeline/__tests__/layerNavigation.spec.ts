@@ -14,6 +14,7 @@ vi.hoisted(() => {
 import {
     navigateLayer,
     resolveLayerNavigation,
+    revealStart,
 } from '../lib/utils/layerNavigation'
 import type { LayerNavigation } from '../lib/utils/layerNavigation'
 import type { LayerTimeConfig } from '../lib/utils/timeUtils'
@@ -701,5 +702,29 @@ describe('resolveLayerNavigation over a self-contradictory extent', () => {
         ])
         expect(warn).not.toHaveBeenCalled()
         warn.mockRestore()
+    })
+})
+
+describe('revealStart', () => {
+    test('opens a window onto the whole day a sparse stop closes', () => {
+        const nav = sparseNav('2023-11-05')
+        expect(revealStart(nav, nav.stops![0]).toISOString()).toBe(
+            '2023-11-05T00:00:00.000Z'
+        )
+    })
+
+    test('takes the day in UTC, not the timezone the process runs in', () => {
+        // 19:00 in New York on the 5th is already the 6th in UTC. Snapping
+        // locally would open the window a day early.
+        const nav = sparseNav('2023-11-06')
+        expect(revealStart(nav, new Date('2023-11-06T00:30:00Z')).toISOString()).toBe(
+            '2023-11-06T00:00:00.000Z'
+        )
+    })
+
+    test('meets a periodic target exactly, its bar running inward from it', () => {
+        const nav = periodicNav('2020-01-01T00:00:00Z', '2021-01-01T00:00:00Z')
+        const target = new Date('2020-01-01T00:00:00Z')
+        expect(revealStart(nav, target)).toEqual(target)
     })
 })

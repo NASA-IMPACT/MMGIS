@@ -105,6 +105,9 @@ class NoopResizeObserver {
 // Three scattered days — one before the window, one inside, one past its end
 // — so first/next/last each land differently against it.
 const BEFORE_WINDOW = '2023-11-05T23:59:59.999Z'
+// The window opens on the whole of the day a backwards stop names, so the bar
+// drawn over that day sits inside the chart rather than against its left edge.
+const BEFORE_WINDOW_DAY_START = '2023-11-05T00:00:00.000Z'
 const INSIDE_WINDOW = '2024-06-20T23:59:59.999Z'
 const PAST_WINDOW = '2025-03-20T23:59:59.999Z'
 
@@ -213,13 +216,13 @@ describe('TimelineAdapter layer navigation', () => {
         })
     })
 
-    test('a target before the start widens the start onto it, and only the start', () => {
+    test('a target before the start opens the start onto its whole day, and only the start', () => {
         act(() => {
             navButton('first date')!.click()
         })
 
         expect(requests()[0].payload).toEqual({
-            startTime: BEFORE_WINDOW,
+            startTime: BEFORE_WINDOW_DAY_START,
             endTime: new Date(END).toISOString(),
             currentTime: BEFORE_WINDOW,
         })

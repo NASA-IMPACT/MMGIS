@@ -8,6 +8,7 @@ import { generateTimeTicks, formatDateByMode, clampDate, stepTime } from '../../
 import moment from 'moment'
 import { LayerTimeline } from '../LayerTimeline/LayerTimeline'
 import { LayerNavControls } from '../LayerNavControls/LayerNavControls'
+import type { LayerNavigation } from '../../utils/layerNavigation'
 
 export interface TimelineViewProps {
     startTime: Date
@@ -20,11 +21,11 @@ export interface TimelineViewProps {
     /** Live time while the scrubber is being dragged, for display only. */
     onCurrentTimePreview?: (time: Date) => void
     /**
-     * The instant a layer row's navigation controls lead to. Separate from
-     * `onCurrentTimeChange`, which clamps to the timeline's window: a layer's
-     * data may sit outside the window currently shown.
+     * The instant a layer row's navigation controls lead to, with the model it
+     * came from. Separate from `onCurrentTimeChange`, which clamps to the
+     * timeline's window: a layer's data may sit outside the window shown.
      */
-    onLayerNavigate: (target: Date) => void
+    onLayerNavigate: (target: Date, navigation: LayerNavigation) => void
     onResetZoomReady?: (resetZoomFn: () => void) => void
 }
 

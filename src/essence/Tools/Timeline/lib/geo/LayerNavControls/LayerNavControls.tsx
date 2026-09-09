@@ -16,8 +16,12 @@ export interface LayerNavControlsProps {
     from: Date
     /** The timeline's granularity, the step a periodic layer moves by. */
     timeMode: TimeMode
-    /** Given the instant the pressed control leads to. */
-    onNavigate: (target: Date) => void
+    /**
+     * Given the instant the pressed control leads to, and the model it came
+     * from — which says whether that instant stands for a whole day or for
+     * itself, and so how far a window must open to show it.
+     */
+    onNavigate: (target: Date, navigation: LayerNavigation) => void
 }
 
 /** The global playback controls' transport glyphs, in the same 24-unit space. */
@@ -86,7 +90,7 @@ export const LayerNavControls: React.FC<LayerNavControlsProps> = ({
                         type="button"
                         className="layer-nav-btn"
                         onClick={() => {
-                            if (target) onNavigate(target)
+                            if (target) onNavigate(target, navigation)
                         }}
                         title={label}
                         aria-label={label}

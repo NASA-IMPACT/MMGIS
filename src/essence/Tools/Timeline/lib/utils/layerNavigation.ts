@@ -103,6 +103,20 @@ export function resolveLayerNavigation(
 }
 
 /**
+ * The earliest instant the timeline's window must include for what a target
+ * lands on to be visible in the chart. A sparse stop sits on its day's last
+ * instant, so a window opening there meets the trailing edge of that day's
+ * box and leaves the whole of it off screen; the day has to be inside. A
+ * periodic layer's bounds are instants rather than spans, and its bar runs
+ * inward from them, so the window meets them exactly.
+ */
+export function revealStart(nav: LayerNavigation, target: Date): Date {
+    return nav.kind === 'sparse'
+        ? moment.utc(target).startOf('day').toDate()
+        : target
+}
+
+/**
  * The sparse half of `navigateLayer`. Moving lands on the nearest stop the
  * other side of the current time, however far away, so one press reaches data
  * sitting months from the timeline. Comparisons are strict, so a press from an

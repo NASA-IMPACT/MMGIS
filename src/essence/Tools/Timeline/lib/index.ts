@@ -11,4 +11,5 @@ export { TimelineView, type TimelineViewProps } from './geo/TimelineView/Timelin
 // Shared domain types
 export { TIME_MODE_ORDER } from './types'
 export type { TimeMode, TimeRange, LayerTimeData } from './types'
+export { revealStart } from './utils/layerNavigation'
 export type { LayerNavigation } from './utils/layerNavigation'

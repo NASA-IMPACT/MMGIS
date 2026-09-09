@@ -29,7 +29,8 @@ import {
     clampDate,
     resolveLayerTimeRanges,
 } from './lib/utils/timeUtils'
-import { resolveLayerNavigation } from './lib/utils/layerNavigation'
+import { resolveLayerNavigation, revealStart } from './lib/utils/layerNavigation'
+import type { LayerNavigation } from './lib/utils/layerNavigation'
 import './Timeline.css'
 
 /** The wire shape of both 'time:changeRequested' and 'time:changed'. */
@@ -134,13 +135,19 @@ export const TimelineAdapter: React.FC = () => {
     /**
      * Commits the instant a layer row's controls lead to, widening the window
      * to reach it. A layer's data need not sit inside the window on screen, so
-     * the target is committed as given rather than clamped back in, and
-     * whichever edge it falls outside moves onto it exactly.
+     * the target is committed as given rather than clamped back in.
+     *
+     * The window opens to `revealStart` rather than to the target: a sparse
+     * target is a day's last instant, and a window starting there would meet
+     * the trailing edge of that day's bar and leave the whole of it off the
+     * left of the chart. Forwards needs no such allowance, since a bar ends on
+     * the instant its day does.
      */
     const handleLayerNavigate = useCallback(
-        (target: Date) => {
+        (target: Date, navigation: LayerNavigation) => {
+            const reach = revealStart(navigation, target)
             const start =
-                target < startTimeRef.current ? target : startTimeRef.current
+                reach < startTimeRef.current ? reach : startTimeRef.current
             const end = target > endTimeRef.current ? target : endTimeRef.current
             requestTime(start, end, target)
         },
