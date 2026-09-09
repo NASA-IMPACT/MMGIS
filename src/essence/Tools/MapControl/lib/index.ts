@@ -4,8 +4,12 @@ export { BasemapPanel, type BasemapPanelProps } from './geo/BasemapPanel/Basemap
 export { SearchPanel, type SearchPanelProps } from './geo/SearchPanel/SearchPanel'
 export { FloatingPopover, type FloatingPopoverProps } from './FloatingPopover'
 
+// Config readers
+export { resolveActionIcon, type ActionIconConfig } from './resolveActionIcon'
+
 // Shared domain types
 export type {
+    ActionIcon,
     LatLng,
     BasemapStyle,
     GeocodeResult,

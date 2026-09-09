@@ -47,29 +47,37 @@
     box-sizing: border-box;
 }
 
+// Centers the trigger in whatever width the host gives the control, so a tool
+// card that fills a panel region holds the glyph in its middle rather than
+// pinned to the leading edge. Block-level also keeps the control free of the
+// below-baseline space an inline box adds, which would leave a card built
+// around the square trigger taller than it is wide.
 .share-menu {
     position: relative;
-    display: inline-block;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 // The hosting tool card provides the chrome (background and border), so the
 // trigger itself is chromeless — a bordered button inside the card reads as a
-// double border.
+// double border. Holding a glyph and nothing else, it centers that glyph in a
+// 36px square; a host lining the trigger up with its own controls restates the
+// box from its own stylesheet, where the more specific selector wins.
 .share-menu__trigger {
     display: inline-flex;
     align-items: center;
-    gap: var(--se-space-2);
+    justify-content: center;
+    width: 36px;
     height: 36px;
-    padding: 0 var(--se-space-3);
+    padding: 0;
     background: transparent;
     color: var(--se-fg);
     border: 0;
     border-radius: var(--se-radius-md);
     cursor: pointer;
     font: inherit;
-    font-weight: 600;
     line-height: 1;
-    white-space: nowrap;
     transition: background-color 0.15s ease, color 0.15s ease;
 
     &:hover {

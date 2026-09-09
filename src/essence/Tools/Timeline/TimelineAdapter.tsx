@@ -24,7 +24,11 @@ import {
     type TimeMode,
     type LayerTimeData
 } from './lib'
-import { stepTime, clampDate } from './lib/utils/timeUtils'
+import {
+    stepTime,
+    clampDate,
+    resolveLayerTimeRanges,
+} from './lib/utils/timeUtils'
 import './Timeline.css'
 
 /** The wire shape of both 'time:changeRequested' and 'time:changed'. */
@@ -186,37 +190,20 @@ export const TimelineAdapter: React.FC = () => {
 
                 if (!visibleLayers?.[layerName]) return
 
-                let start = startTime
-                let end = endTime
-                let color = 'var(--theme-color-base, #71767a)' // default grey
-
-                if (layer.time && layer.time.enabled) {
-                    const timeConfig = layer.time
-
-                    if (timeConfig.dataStartTime) {
-                        const parsedStart = new Date(timeConfig.dataStartTime)
-                        if (!isNaN(parsedStart.getTime())) {
-                            start = parsedStart
-                        }
-                    }
-                    if (timeConfig.dataEndTime) {
-                        const parsedEnd = timeConfig.dataEndTime === 'now' ? new Date() : new Date(timeConfig.dataEndTime)
-                        if (!isNaN(parsedEnd.getTime())) {
-                            end = parsedEnd
-                        }
-                    }
-
-                    // Time-enabled layers stand out in the theme's secondary colour
-                    color = 'var(--theme-color-secondary, #c91b6e)'
-                }
+                // Time-enabled layers stand out in the theme's secondary colour
+                const color = layer.time?.enabled
+                    ? 'var(--theme-color-secondary, #c91b6e)'
+                    : 'var(--theme-color-base, #71767a)'
 
                 newLayers.push({
                     name: layerName,
                     displayName: layer.display_name || layer.name || layerName,
                     color: color,
-                    timeRanges: [
-                        { start, end }
-                    ]
+                    timeRanges: resolveLayerTimeRanges(
+                        layer.time,
+                        startTime,
+                        endTime
+                    ),
                 })
             })
 

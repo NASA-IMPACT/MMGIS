@@ -1,6 +1,7 @@
 import { ToolOrientation, ToolMetadata } from '../ToolController_/types/tool';
-import { PanelPosition, PanelState, PanelLayoutType, PANEL_STATE, FLOAT_POSITIONS } from './types/layout';
+import { PanelPosition, PanelState, PanelLayoutType, PANEL_STATE, FLOAT_POSITIONS, PINNABLE_POSITIONS } from './types/layout';
 import {
+    AddToolOptions,
     PanelConfig,
     PanelStateObject,
     PanelManager as PanelManagerInterface,
@@ -50,6 +51,7 @@ class PanelManager implements PanelManagerInterface {
             config: config,
             containerId: `panel-${config.id}`,
             tools: new Map(),
+            pinnedToolIds: [],
         };
 
         this.panels.set(config.id, stateObj);
@@ -89,10 +91,12 @@ class PanelManager implements PanelManagerInterface {
      *
      * @param panelId ID of the panel to add tool to
      * @param toolMetadata Tool metadata (orientation, compatibility, etc.)
+     * @param options Placement options — `{ pinned: true }` puts the tool in
+     *                the panel's pinned region, where a panel supports one
      * @throws Error if tool is incompatible with panel
      * @throws Error if panel is at max capacity
      */
-    addToolToPanel(panelId: string, toolMetadata: ToolMetadata): void {
+    addToolToPanel(panelId: string, toolMetadata: ToolMetadata, options: AddToolOptions = {}): void {
         const panel = this.panels.get(panelId);
         if (!panel) {
             throw new Error(`Panel with ID ${panelId} not found`);
@@ -108,6 +112,13 @@ class PanelManager implements PanelManagerInterface {
         }
 
         panel.tools.set(toolMetadata.id, toolMetadata);
+
+        // Pinned tools stay ordinary members of `tools` — they count towards
+        // capacity and appear in the icon tray like any other. The id list only
+        // records where they render.
+        if (options.pinned && this.canPinTools(panelId) && !panel.pinnedToolIds.includes(toolMetadata.id)) {
+            panel.pinnedToolIds.push(toolMetadata.id);
+        }
 
         // Automatically set active tool if in focused state and this is the first tool
         if (panel.state === PANEL_STATE.FOCUSED && panel.tools.size === 1) {
@@ -136,6 +147,7 @@ class PanelManager implements PanelManagerInterface {
 
         // Remove tool from map
         panel.tools.delete(toolId);
+        panel.pinnedToolIds = panel.pinnedToolIds.filter(id => id !== toolId);
 
         // Handle active tool adjustment
         if (panel.activeToolId === toolId) {
@@ -168,6 +180,56 @@ class PanelManager implements PanelManagerInterface {
         if (!panel) return [];
 
         return Array.from(panel.tools.values());
+    }
+
+    /**
+     * Whether the panel can take another tool. A panel without a `maxTools`
+     * capability is unbounded.
+     */
+    hasCapacity(panelId: string): boolean {
+        const panel = this.panels.get(panelId);
+        if (!panel) return false;
+
+        const maxTools = panel.config.capabilities?.maxTools;
+        return maxTools === undefined || panel.tools.size < maxTools;
+    }
+
+    /**
+     * Whether this panel supports a pinned region. Pinning holds tools above a
+     * scrolling stack, which only means something where the stack runs
+     * vertically — so left and right panels, not the horizontal edges or floats.
+     */
+    canPinTools(panelId: string): boolean {
+        const panel = this.panels.get(panelId);
+        if (!panel) return false;
+
+        return PINNABLE_POSITIONS.has(panel.config.position);
+    }
+
+    /**
+     * Tool metadata for the panel's pinned tools, in render order.
+     */
+    getPinnedToolsForPanel(panelId: string): ToolMetadata[] {
+        const panel = this.panels.get(panelId);
+        if (!panel) return [];
+
+        return panel.pinnedToolIds
+            .map(id => panel.tools.get(id))
+            .filter(Boolean) as ToolMetadata[];
+    }
+
+    /**
+     * Tool metadata for everything the panel scrolls — every tool that isn't
+     * pinned, in assignment order.
+     */
+    getScrollingToolsForPanel(panelId: string): ToolMetadata[] {
+        const panel = this.panels.get(panelId);
+        if (!panel) return [];
+
+        if (panel.pinnedToolIds.length === 0) return Array.from(panel.tools.values());
+
+        const pinned = new Set(panel.pinnedToolIds);
+        return Array.from(panel.tools.values()).filter(tool => !pinned.has(tool.id));
     }
 
     /**

@@ -235,6 +235,19 @@ export function applyCogFieldsToUrl(url: string, layerObj: Record<string, unknow
 }
 
 /**
+ * True when a URL's query string already carries `name`.
+ *
+ * @param {string} url
+ * @param {string} name - Query parameter name
+ * @returns {boolean}
+ */
+function hasQueryParam(url: string, name: string): boolean {
+    const qIdx = url.indexOf('?')
+    if (qIdx === -1) return false
+    return new URLSearchParams(url.slice(qIdx + 1)).has(name)
+}
+
+/**
  * Compiles a full tile URL from a template plus layer options.
  *
  * Substitutes {time}, {starttime}, {endtime} and {customtime.N}, and injects
@@ -291,7 +304,13 @@ export function compileTileUrl(url: string, options: Record<string, any>): strin
         if (endTimeStr) {
             datetime = startTimeStr ? `${startTimeStr}/${endTimeStr}` : `../${endTimeStr}`
         }
-        if (datetime != null) {
+        // A template that spells out its own `datetime` — say a per-day window
+        // built from `{time}` — keeps it. Appending a second one would leave two
+        // `datetime` params on the request, and a server that resolves a repeated
+        // scalar to the last value would silently use the injected range instead
+        // of the configured one. Same rule the COG params follow in
+        // applyCogFieldsToUrl: what the URL already declares wins.
+        if (datetime != null && !hasQueryParam(nextUrl, 'datetime')) {
             nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}datetime=${datetime}`
         }
 
