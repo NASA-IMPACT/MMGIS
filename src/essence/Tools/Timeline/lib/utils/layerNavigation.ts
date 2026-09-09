@@ -1,14 +1,7 @@
 import moment from 'moment'
+import type { TimeMode } from '../types'
+import { stepTime } from './timeUtils'
 import type { LayerTimeConfig } from './timeUtils'
-
-/**
- * How often a periodic layer carries data, as a step the navigation controls
- * move by.
- */
-export interface LayerCadence {
-    unit: moment.unitOfTime.DurationConstructor
-    value: number
-}
 
 /**
  * Where a layer's navigation controls can put the timeline's current time.
@@ -24,8 +17,6 @@ export interface LayerNavigation {
     /** Periodic extent, or the first and last stop of a sparse layer. */
     start: Date
     end: Date
-    /** Periodic only, and only once the layer config carries it. */
-    cadence?: LayerCadence
 }
 
 /**
@@ -82,12 +73,72 @@ export function resolveLayerNavigation(
         time.dataEndTime === 'now'
             ? new Date()
             : time.dataEndTime
-            ? new Date(time.dataEndTime)
-            : null
+              ? new Date(time.dataEndTime)
+              : null
 
     // Without both bounds there is no extent to move through.
     if (!start || isNaN(start.getTime())) return null
     if (!end || isNaN(end.getTime())) return null
 
     return { kind: 'periodic', start, end }
+}
+
+/**
+ * Where a layer's first/previous/next/last control puts the current time, or
+ * null when that control has nowhere to go — the signal a layer row draws it
+ * disabled.
+ *
+ * A sparse layer holds data only on its stops, so moving lands on the nearest
+ * stop the other side of the current time, however far away it is: one press
+ * reaches a layer whose data sits months from where the timeline is. Stepping
+ * is strict about the current instant, so a press from an instant already
+ * sitting on a stop moves off it rather than stalling there.
+ *
+ * A periodic layer holds data throughout its extent, so moving inside it steps
+ * by the timeline's own granularity — the same step the global buttons take —
+ * and stops short at the extent's edge rather than stepping past the data. One
+ * press from outside the extent reaches its near edge, so a layer whose data
+ * lies well away from the current time is one press away too.
+ */
+export function navigateLayer(
+    nav: LayerNavigation,
+    from: Date,
+    action: 'first' | 'prev' | 'next' | 'last',
+    mode: TimeMode
+): Date | null {
+    const at = from.getTime()
+
+    if (nav.kind === 'sparse') {
+        const stops = nav.stops ?? []
+        if (stops.length === 0) return null
+
+        switch (action) {
+            case 'first':
+                return stops[0]
+            case 'last':
+                return stops[stops.length - 1]
+            case 'next':
+                return stops.find((stop) => stop.getTime() > at) ?? null
+            case 'prev':
+                return stops.filter((stop) => stop.getTime() < at).pop() ?? null
+        }
+    }
+
+    const start = nav.start.getTime()
+    const end = nav.end.getTime()
+
+    switch (action) {
+        case 'first':
+            return nav.start
+        case 'last':
+            return nav.end
+        case 'next':
+            if (at < start) return nav.start
+            if (at >= end) return null
+            return new Date(Math.min(stepTime(from, mode, 1).getTime(), end))
+        case 'prev':
+            if (at > end) return nav.end
+            if (at <= start) return null
+            return new Date(Math.max(stepTime(from, mode, -1).getTime(), start))
+    }
 }

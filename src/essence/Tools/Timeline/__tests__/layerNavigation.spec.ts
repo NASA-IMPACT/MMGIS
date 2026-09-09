@@ -12,14 +12,43 @@ vi.hoisted(() => {
     process.env.TZ = 'America/New_York'
 })
 
-import { resolveLayerNavigation } from '../lib/utils/layerNavigation'
+import {
+    navigateLayer,
+    resolveLayerNavigation,
+} from '../lib/utils/layerNavigation'
+import type { LayerNavigation } from '../lib/utils/layerNavigation'
 import type { LayerTimeConfig } from '../lib/utils/timeUtils'
+import type { TimeMode } from '../lib/types'
 
 const resolve = (time: unknown) =>
     resolveLayerNavigation(time as LayerTimeConfig | undefined)
 
 const iso = (dates: Date[] | undefined) =>
     (dates ?? []).map((date) => date.toISOString())
+
+/** A sparse model whose stops close the listed days, as the resolver builds. */
+const sparseNav = (...days: string[]): LayerNavigation => {
+    const stops = days.map((day) => new Date(`${day}T23:59:59.999Z`))
+    return {
+        kind: 'sparse',
+        stops,
+        start: stops[0],
+        end: stops[stops.length - 1],
+    }
+}
+
+const periodicNav = (start: string, end: string): LayerNavigation => ({
+    kind: 'periodic',
+    start: new Date(start),
+    end: new Date(end),
+})
+
+const goTo = (
+    nav: LayerNavigation,
+    from: string,
+    action: 'first' | 'prev' | 'next' | 'last',
+    mode: TimeMode = 'DAY'
+) => navigateLayer(nav, new Date(from), action, mode)?.toISOString() ?? null
 
 describe('resolveLayerNavigation', () => {
     test('gives a layer with no time configuration nothing to navigate', () => {
@@ -212,14 +241,181 @@ describe('resolveLayerNavigation', () => {
             })
         ).toBeNull()
     })
+})
 
-    test('leaves the cadence unset until the layer config carries one', () => {
-        const nav = resolve({
-            enabled: true,
-            dataStartTime: '2020-01-01T00:00:00Z',
-            dataEndTime: '2020-12-31T00:00:00Z',
-        })
+describe('navigateLayer over a sparse layer', () => {
+    const nav = sparseNav(
+        '2020-01-02',
+        '2020-03-04',
+        '2020-07-19',
+        '2020-11-02'
+    )
+    const single = sparseNav('2020-03-04')
 
-        expect(nav?.cadence).toBeUndefined()
+    test('moves to the stop that follows the current time', () => {
+        expect(goTo(nav, '2020-05-01T00:00:00Z', 'next')).toBe(
+            '2020-07-19T23:59:59.999Z'
+        )
+    })
+
+    test('moves to the stop that precedes the current time', () => {
+        expect(goTo(nav, '2020-05-01T00:00:00Z', 'prev')).toBe(
+            '2020-03-04T23:59:59.999Z'
+        )
+    })
+
+    test('reaches into the layer from before every stop', () => {
+        expect(goTo(nav, '2019-06-15T00:00:00Z', 'next')).toBe(
+            '2020-01-02T23:59:59.999Z'
+        )
+    })
+
+    test('reaches back into the layer from months past its last stop', () => {
+        // One press, however far the current time sits from the data.
+        expect(goTo(nav, '2021-06-15T00:00:00Z', 'prev')).toBe(
+            '2020-11-02T23:59:59.999Z'
+        )
+    })
+
+    test('moves off a stop the current time already sits on', () => {
+        expect(goTo(nav, '2020-03-04T23:59:59.999Z', 'next')).toBe(
+            '2020-07-19T23:59:59.999Z'
+        )
+        expect(goTo(nav, '2020-03-04T23:59:59.999Z', 'prev')).toBe(
+            '2020-01-02T23:59:59.999Z'
+        )
+    })
+
+    test('has nowhere to go beyond either end', () => {
+        expect(goTo(nav, '2020-11-02T23:59:59.999Z', 'next')).toBeNull()
+        expect(goTo(nav, '2021-06-15T00:00:00Z', 'next')).toBeNull()
+        expect(goTo(nav, '2020-01-02T23:59:59.999Z', 'prev')).toBeNull()
+        expect(goTo(nav, '2019-06-15T00:00:00Z', 'prev')).toBeNull()
+    })
+
+    test('jumps to the outermost stops whatever the current time', () => {
+        expect(goTo(nav, '2020-05-01T00:00:00Z', 'first')).toBe(
+            '2020-01-02T23:59:59.999Z'
+        )
+        expect(goTo(nav, '2020-05-01T00:00:00Z', 'last')).toBe(
+            '2020-11-02T23:59:59.999Z'
+        )
+        expect(goTo(nav, '2025-01-01T00:00:00Z', 'first')).toBe(
+            '2020-01-02T23:59:59.999Z'
+        )
+    })
+
+    test('bounds a layer holding a single day by that one stop', () => {
+        expect(goTo(single, '2020-05-01T00:00:00Z', 'first')).toBe(
+            '2020-03-04T23:59:59.999Z'
+        )
+        expect(goTo(single, '2020-05-01T00:00:00Z', 'last')).toBe(
+            '2020-03-04T23:59:59.999Z'
+        )
+        expect(goTo(single, '2020-01-01T00:00:00Z', 'next')).toBe(
+            '2020-03-04T23:59:59.999Z'
+        )
+        expect(goTo(single, '2020-03-04T23:59:59.999Z', 'next')).toBeNull()
+        expect(goTo(single, '2020-05-01T00:00:00Z', 'prev')).toBe(
+            '2020-03-04T23:59:59.999Z'
+        )
+        expect(goTo(single, '2020-03-04T23:59:59.999Z', 'prev')).toBeNull()
+    })
+
+    test('lands on stops rather than stepping by the timeline granularity', () => {
+        // The gaps between stops are the layer's, not the axis unit's, so the
+        // same press lands in the same place at every mode.
+        const modes: TimeMode[] = ['YEAR', 'MONTH', 'DAY', 'HOUR']
+        for (const mode of modes) {
+            expect(goTo(nav, '2020-05-01T00:00:00Z', 'next', mode)).toBe(
+                '2020-07-19T23:59:59.999Z'
+            )
+            expect(goTo(nav, '2020-05-01T00:00:00Z', 'prev', mode)).toBe(
+                '2020-03-04T23:59:59.999Z'
+            )
+        }
+    })
+})
+
+describe('navigateLayer over a periodic layer', () => {
+    const nav = periodicNav('2020-01-01T00:00:00Z', '2020-12-31T00:00:00Z')
+
+    test('reaches the near edge of the extent from outside it', () => {
+        expect(goTo(nav, '2019-06-15T00:00:00Z', 'next')).toBe(
+            '2020-01-01T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2021-06-15T00:00:00Z', 'prev')).toBe(
+            '2020-12-31T00:00:00.000Z'
+        )
+    })
+
+    test('has nowhere to go beyond either edge', () => {
+        expect(goTo(nav, '2020-12-31T00:00:00Z', 'next')).toBeNull()
+        expect(goTo(nav, '2021-06-15T00:00:00Z', 'next')).toBeNull()
+        expect(goTo(nav, '2020-01-01T00:00:00Z', 'prev')).toBeNull()
+        expect(goTo(nav, '2019-06-15T00:00:00Z', 'prev')).toBeNull()
+    })
+
+    test('steps by the timeline granularity inside the extent', () => {
+        expect(goTo(nav, '2020-05-15T12:00:00Z', 'next', 'HOUR')).toBe(
+            '2020-05-15T13:00:00.000Z'
+        )
+        expect(goTo(nav, '2020-05-15T12:00:00Z', 'next', 'DAY')).toBe(
+            '2020-05-16T12:00:00.000Z'
+        )
+        expect(goTo(nav, '2020-05-15T12:00:00Z', 'next', 'MONTH')).toBe(
+            '2020-06-15T12:00:00.000Z'
+        )
+        expect(goTo(nav, '2020-05-15T12:00:00Z', 'prev', 'HOUR')).toBe(
+            '2020-05-15T11:00:00.000Z'
+        )
+        expect(goTo(nav, '2020-05-15T12:00:00Z', 'prev', 'DAY')).toBe(
+            '2020-05-14T12:00:00.000Z'
+        )
+        expect(goTo(nav, '2020-05-15T12:00:00Z', 'prev', 'MONTH')).toBe(
+            '2020-04-15T12:00:00.000Z'
+        )
+    })
+
+    test('steps in UTC across a local daylight-saving boundary', () => {
+        // The process runs behind UTC, where a local day either side of the
+        // spring change is 23 hours long; stepping locally would drift the
+        // clock this lands on.
+        expect(goTo(nav, '2020-03-07T12:00:00Z', 'next', 'DAY')).toBe(
+            '2020-03-08T12:00:00.000Z'
+        )
+        expect(goTo(nav, '2020-03-09T12:00:00Z', 'prev', 'DAY')).toBe(
+            '2020-03-08T12:00:00.000Z'
+        )
+    })
+
+    test('clamps a step that would overshoot the extent', () => {
+        expect(goTo(nav, '2020-12-15T00:00:00Z', 'next', 'MONTH')).toBe(
+            '2020-12-31T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2020-05-15T00:00:00Z', 'next', 'YEAR')).toBe(
+            '2020-12-31T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2020-01-15T00:00:00Z', 'prev', 'MONTH')).toBe(
+            '2020-01-01T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2020-05-15T00:00:00Z', 'prev', 'YEAR')).toBe(
+            '2020-01-01T00:00:00.000Z'
+        )
+    })
+
+    test('jumps to the edges of the extent whatever the current time', () => {
+        expect(goTo(nav, '2020-05-15T00:00:00Z', 'first')).toBe(
+            '2020-01-01T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2020-05-15T00:00:00Z', 'last')).toBe(
+            '2020-12-31T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2025-01-01T00:00:00Z', 'first')).toBe(
+            '2020-01-01T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2015-01-01T00:00:00Z', 'last')).toBe(
+            '2020-12-31T00:00:00.000Z'
+        )
     })
 })
