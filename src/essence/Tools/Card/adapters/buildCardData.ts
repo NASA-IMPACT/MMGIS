@@ -1,5 +1,5 @@
 import type { CardItem } from '../lib/types'
-import { resolveMissionAssetUrl } from '../../../../pre/uploadKey'
+import { resolveMissionAssetUrl } from '../../_shared/content/uploadKey'
 
 // Raw card shape as stored in the tool's config variables.
 export type RawCard = {
@@ -11,7 +11,8 @@ export type RawCard = {
 
 // Turns a stored card image value into the URL the <img> tag should use.
 // Shared with every other tool that renders an uploaded asset — see
-// src/pre/uploadKey.ts for the four shapes a stored value can take.
+// src/essence/Tools/_shared/content/uploadKey.ts for the four shapes a stored
+// value can take.
 export const resolveImageUrl = resolveMissionAssetUrl
 
 // Resolves a stored card link to an href that points where the author meant.
