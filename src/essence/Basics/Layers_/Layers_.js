@@ -815,22 +815,34 @@ const L_ = {
         if (L_.layers.on[s.name] === true) on = true
         else on = false
 
-        await L_.toggleLayerHelper(
-            s,
-            on,
-            ignoreToggleStateChange,
-            null,
-            skipOrderedBringToFront
-        )
+        // toggleLayerHelper already logs the specific failure; if it
+        // rejects, don't tell subscribers the toggle succeeded when the
+        // layer never built, but still resync the UI below like normal
+        let toggled = true
+        try {
+            await L_.toggleLayerHelper(
+                s,
+                on,
+                ignoreToggleStateChange,
+                null,
+                skipOrderedBringToFront
+            )
+        } catch (e) {
+            toggled = false
+        }
 
-        Object.keys(L_._onLayerToggleSubscriptions).forEach((k) => {
-            L_._onLayerToggleSubscriptions[k](s.name, !on)
-        })
+        if (toggled) {
+            Object.keys(L_._onLayerToggleSubscriptions).forEach((k) => {
+                L_._onLayerToggleSubscriptions[k](s.name, !on)
+            })
 
-        Object.keys(L_._onSpecificLayerToggleSubscriptions).forEach((k) => {
-            const subs = L_._onSpecificLayerToggleSubscriptions[k]
-            if (subs.layer === s.name) subs.func(s.name, !on)
-        })
+            Object.keys(L_._onSpecificLayerToggleSubscriptions).forEach(
+                (k) => {
+                    const subs = L_._onSpecificLayerToggleSubscriptions[k]
+                    if (subs.layer === s.name) subs.func(s.name, !on)
+                }
+            )
+        }
 
         // Always reupdate layer infos at the end to keep them in sync
         Description.updateInfo()
@@ -839,6 +851,8 @@ const L_ = {
         if (typeof Attributions !== 'undefined' && Attributions.update) {
             Attributions.update()
         }
+
+        if (!toggled) return
 
         // Deselect active feature if its layer is being turned off
         if (L_.activeFeature && L_.activeFeature.layerName === s.name && on) {
@@ -1067,7 +1081,15 @@ const L_ = {
                     if (['streamlines', 'particles'].includes(s.kind)) {
                         L_.Map_.rmNotNull(L_.layers.layer[s.name])
                     }
-                    await L_.Map_.makeLayer(s, true, null, null, true)
+                    try {
+                        await L_.Map_.makeLayer(s, true, null, null, true)
+                    } catch (e) {
+                        // makeLayer already logged this; rethrow so
+                        // toggleLayer doesn't report the toggle as
+                        // successful to its subscribers when the layer
+                        // never built
+                        throw e
+                    }
                     Description.updateInfo()
                     L_.Map_.engine.addLayer(
                         L_.Map_.nativeLayer(L_.layers.layer[s.name])
@@ -1082,7 +1104,15 @@ const L_ = {
                         L_.layers.layer[s.name] === false &&
                         globeOnly != true
                     ) {
-                        await L_.Map_.makeLayer(s, true, null, null, true)
+                        try {
+                            await L_.Map_.makeLayer(s, true, null, null, true)
+                        } catch (e) {
+                            // makeLayer already logged this; rethrow so
+                            // toggleLayer doesn't report the toggle as
+                            // successful to its subscribers when the layer
+                            // never built
+                            throw e
+                        }
                         Description.updateInfo()
                         hadToMake = true
                     }
@@ -1627,10 +1657,23 @@ const L_ = {
             null,
             null,
             stopLoops
-        )
+        ).catch((e) => {
+            console.error(
+                `ERROR - addGeoJSONData: Failed to make layer ${layer._layerName}`,
+                e
+            )
+        })
 
         if (initialOn) {
-            L_.toggleLayerHelper(L_.layers.data[layer._layerName], false)
+            L_.toggleLayerHelper(
+                L_.layers.data[layer._layerName],
+                false
+            ).catch((e) => {
+                console.error(
+                    `ERROR - addGeoJSONData: Failed to make layer ${layer._layerName}`,
+                    e
+                )
+            })
             L_.layers.on[layer._layerName] = true
         }
         //L_.syncSublayerData(layer._layerName)
@@ -3475,7 +3518,15 @@ const L_ = {
 
                 const initialOn = L_.layers.on[layerName]
                 if (initialOn) {
-                    L_.toggleLayerHelper(L_.layers.data[layerName], false)
+                    L_.toggleLayerHelper(
+                        L_.layers.data[layerName],
+                        false
+                    ).catch((e) => {
+                        console.error(
+                            `ERROR - appendLineString: Failed to make layer ${layerName}`,
+                            e
+                        )
+                    })
                     L_.layers.on[layerName] = true
                 }
 
@@ -3647,7 +3698,16 @@ const L_ = {
                 await L_.toggleLayerHelper(s, true, true, true)
                 // Toggle the layer so its drawn in the globe
                 // turn on
-                if (!onlyClear) await L_.toggleLayerHelper(s, false, true, true)
+                if (!onlyClear) {
+                    try {
+                        await L_.toggleLayerHelper(s, false, true, true)
+                    } catch (e) {
+                        console.error(
+                            `ERROR - globeLithoLayerHelper: Failed to make layer ${s.display_name}/${s.name}`,
+                            e
+                        )
+                    }
+                }
             }
         }
     },
@@ -3719,7 +3779,15 @@ const L_ = {
 
             for (let i = 0; i < layersOrdered.length; i++) {
                 // Add layer
-                await L_.Map_.makeLayer(L_.layers.data[layersOrdered[i]])
+                try {
+                    await L_.Map_.makeLayer(L_.layers.data[layersOrdered[i]])
+                } catch (e) {
+                    console.error(
+                        `ERROR - addLayerToLayersData: Failed to make layer ${layersOrdered[i]}`,
+                        e
+                    )
+                    continue
+                }
                 L_.addVisible(L_.Map_, [layersOrdered[i]])
             }
         }

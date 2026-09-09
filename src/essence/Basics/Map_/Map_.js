@@ -760,16 +760,29 @@ let Map_ = {
                 // Original
                 if (L_._layersBeingMade[layerObj.name] !== true) {
                     // makeLayer now handles all layer swapping internally for refresh operations
+                    const wasOn = L_.layers.on[layerObj.name]
                     L_.layers.on[layerObj.name] = true
-                    await makeLayer(
-                        layerObj,
-                        true,
-                        null,
-                        null,
-                        null,
-                        stopLoops,
-                        true
-                    )
+                    try {
+                        await makeLayer(
+                            layerObj,
+                            true,
+                            null,
+                            null,
+                            null,
+                            stopLoops,
+                            true
+                        )
+                    } catch (e) {
+                        console.error(
+                            `ERROR - refreshLayer: Failed to make layer ${layerObj.display_name}/${layerObj.name}`,
+                            e
+                        )
+                        // the layer never actually built, so don't leave it
+                        // marked on
+                        L_.layers.on[layerObj.name] = wasOn
+                        if (typeof cb === 'function') cb()
+                        return false
+                    }
                     L_.addVisible(Map_, [layerObj.name])
 
                     L_.enforceVisibilityCutoffs()
@@ -943,7 +956,13 @@ function handOffToEngine(layerObj, ctx) {
 function makeLayers(layersObj) {
     //Make each layer (backwards to maintain draw order)
     for (var i = layersObj.length - 1; i >= 0; i--) {
-        makeLayer(layersObj[i])
+        const layerObj = layersObj[i]
+        makeLayer(layerObj).catch((e) => {
+            console.error(
+                `ERROR - makeLayers: Failed to make layer ${layerObj.display_name}/${layerObj.name}`,
+                e
+            )
+        })
     }
 }
 //Takes the layer object and makes it a map layer
@@ -963,17 +982,16 @@ async function makeLayer(
         layerRegistry: L_.layers,
         default: true,
     }
-    return new Promise(async (resolve, reject) => {
-        const layerName = L_.asLayerUUID(layerObj.name)
-        if (forceMake !== true && L_._layersBeingMade[layerName] === true) {
-            console.error(
-                `ERROR - makeLayer: Cannot make layer ${layerObj.display_name}/${layerObj.name} as it's already being made!`
-            )
-            resolve(false)
-            return
-        } else {
-            L_._layersBeingMade[layerName] = true
-        }
+    const layerName = L_.asLayerUUID(layerObj.name)
+    if (forceMake !== true && L_._layersBeingMade[layerName] === true) {
+        console.error(
+            `ERROR - makeLayer: Cannot make layer ${layerObj.display_name}/${layerObj.name} as it's already being made!`
+        )
+        return false
+    } else {
+        L_._layersBeingMade[layerName] = true
+    }
+    try {
         //Decide what kind of layer it is
         //Headers do not need to be made
         if (layerObj.type != 'header') {
@@ -1065,8 +1083,20 @@ async function makeLayer(
             Filtering.updateGeoJSON(layerObj.name)
             Filtering.triggerFilter(layerObj.name)
         }
-        resolve(true)
-    })
+        return true
+    } catch (e) {
+        console.error(
+            `ERROR - makeLayer: Failed to make layer ${layerObj.display_name}/${layerObj.name}`,
+            e
+        )
+        // release hold on layer so it can be remade
+        L_._layersBeingMade[layerName] = false
+        // count this layer as done (unsuccessfully) so a failed layer
+        // doesn't stall allLayersLoaded()/essenceFina() for the mission
+        L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
+        allLayersLoaded()
+        throw e
+    }
 }
 
 //Default is onclick show full properties and onhover show 1st property
