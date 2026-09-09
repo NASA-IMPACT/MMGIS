@@ -162,11 +162,16 @@ export interface ResolvedLayerExtent {
     start: Date
     end: Date
     /**
-     * Whether `dataStartTime` or `dataEndTime` named a bound that parsed. A
-     * layer that names neither has nothing of its own in `start`/`end` — both
-     * values are the fallback verbatim.
+     * Whether `dataStartTime` named a bound that parsed. False leaves `start`
+     * the fallback verbatim.
      */
-    hasOwnBound: boolean
+    hasOwnStart: boolean
+    /**
+     * Whether `dataEndTime` named a bound that parsed. False leaves `end` the
+     * fallback verbatim. A layer with neither flag set has nothing of its own
+     * in the extent at all.
+     */
+    hasOwnEnd: boolean
 }
 
 /**
@@ -196,7 +201,8 @@ export function resolveLayerExtent(
     return {
         start: start ?? fallbackStart,
         end: end ?? fallbackEnd,
-        hasOwnBound: start !== null || end !== null,
+        hasOwnStart: start !== null,
+        hasOwnEnd: end !== null,
     }
 }
 

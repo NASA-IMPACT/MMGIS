@@ -554,3 +554,105 @@ describe('navigateLayer over a half-configured layer', () => {
         expect(goTo(nav, '2018-01-01T00:00:00Z', 'prev')).toBeNull()
     })
 })
+
+describe('navigateLayer over a layer whose data lies outside the window', () => {
+    /** A month-long window, with neither layer below holding any of it. */
+    const monthStart = new Date('2024-01-01T00:00:00Z')
+    const monthEnd = new Date('2024-02-01T00:00:00Z')
+
+    const endedBeforeWindow = () =>
+        resolve(
+            { enabled: true, dataEndTime: '2020-12-31T00:00:00Z' },
+            monthStart,
+            monthEnd
+        ) as LayerNavigation
+
+    const startsAfterWindow = () =>
+        resolve(
+            { enabled: true, dataStartTime: '2030-01-01T00:00:00Z' },
+            monthStart,
+            monthEnd
+        ) as LayerNavigation
+
+    test('holds a layer that ended before the window to the instant it names', () => {
+        // Completing the open start from a window that begins after the
+        // layer's end would run the extent backwards, and the controls would
+        // move through a span the layer holds no data for.
+        const nav = endedBeforeWindow()
+
+        expect(nav.start.toISOString()).toBe('2020-12-31T00:00:00.000Z')
+        expect(nav.end.toISOString()).toBe('2020-12-31T00:00:00.000Z')
+    })
+
+    test('holds a layer that starts after the window to the instant it names', () => {
+        const nav = startsAfterWindow()
+
+        expect(nav.start.toISOString()).toBe('2030-01-01T00:00:00.000Z')
+        expect(nav.end.toISOString()).toBe('2030-01-01T00:00:00.000Z')
+    })
+
+    test('reaches back to a layer that ended before the window, and no further', () => {
+        const nav = endedBeforeWindow()
+
+        expect(goTo(nav, '2024-01-15T00:00:00Z', 'first')).toBe(
+            '2020-12-31T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2024-01-15T00:00:00Z', 'prev')).toBe(
+            '2020-12-31T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2024-01-15T00:00:00Z', 'last')).toBe(
+            '2020-12-31T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2024-01-15T00:00:00Z', 'next')).toBeNull()
+    })
+
+    test('reaches forward to a layer that starts after the window, and no further', () => {
+        const nav = startsAfterWindow()
+
+        expect(goTo(nav, '2024-01-15T00:00:00Z', 'first')).toBe(
+            '2030-01-01T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2024-01-15T00:00:00Z', 'next')).toBe(
+            '2030-01-01T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2024-01-15T00:00:00Z', 'last')).toBe(
+            '2030-01-01T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2024-01-15T00:00:00Z', 'prev')).toBeNull()
+    })
+
+    test('goes inert in every direction from the one instant it knows', () => {
+        // The direction the layer leaves unconfigured names no instant at all,
+        // so it is inert rather than pointing into the window.
+        const ended = endedBeforeWindow()
+        const starts = startsAfterWindow()
+
+        for (const action of ['first', 'prev', 'next', 'last'] as const) {
+            expect(goTo(ended, '2020-12-31T00:00:00Z', action)).toBeNull()
+            expect(goTo(starts, '2030-01-01T00:00:00Z', action)).toBeNull()
+        }
+    })
+
+    test('stays reachable once a press has widened the window onto the layer', () => {
+        // Moving onto the layer's end widens the timeline window back to it,
+        // and the row re-resolves against the wider window: the extent is a
+        // single instant either way, reachable from anywhere else in the
+        // window and inert only while the current time sits on it.
+        const nav = resolve(
+            { enabled: true, dataEndTime: '2020-12-31T00:00:00Z' },
+            new Date('2020-12-31T00:00:00Z'),
+            monthEnd
+        ) as LayerNavigation
+
+        expect(nav.start.toISOString()).toBe('2020-12-31T00:00:00.000Z')
+        expect(nav.end.toISOString()).toBe('2020-12-31T00:00:00.000Z')
+        expect(goTo(nav, '2022-06-15T00:00:00Z', 'first')).toBe(
+            '2020-12-31T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2022-06-15T00:00:00Z', 'prev')).toBe(
+            '2020-12-31T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2020-12-31T00:00:00Z', 'prev')).toBeNull()
+        expect(goTo(nav, '2020-12-31T00:00:00Z', 'next')).toBeNull()
+    })
+})

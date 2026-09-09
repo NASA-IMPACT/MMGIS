@@ -34,7 +34,10 @@ export interface LayerNavigation {
  * Both halves of the extent are configured independently, so a layer often
  * names one bound and leaves the other open. The open side is completed from
  * the timeline's own window, the same way the layer's bar is drawn, so the
- * controls move through exactly the span the row shows.
+ * controls move through exactly the span the row shows — except where the
+ * window lies wholly the far side of the configured bound, when the extent
+ * closes on that bound instead of running backwards through a span the layer
+ * has no data for.
  *
  * A stop sits on the day's last UTC instant rather than its first. The current
  * time is assigned to each time-enabled layer as `layer.time.end`, making it
@@ -75,14 +78,23 @@ export function resolveLayerNavigation(
             end: stops[stops.length - 1],
         }
 
-    const { start, end, hasOwnBound } = resolveLayerExtent(
+    const { start, end, hasOwnStart, hasOwnEnd } = resolveLayerExtent(
         time,
         fallbackStart,
         fallbackEnd
     )
 
     // Naming neither bound leaves nothing of the layer's own to move through.
-    if (!hasOwnBound) return null
+    if (!hasOwnStart && !hasOwnEnd) return null
+
+    // A window that lies wholly to one side of the layer's single configured
+    // bound would complete the open side past it, running the extent backwards
+    // and sending a control into a span the layer holds no data for. The
+    // layer names one instant there and the window names none, so the extent
+    // closes on that instant: it stays reachable, and the open direction is
+    // inert rather than pointing somewhere the layer never had data.
+    if (!hasOwnStart && start > end) return { kind: 'periodic', start: end, end }
+    if (!hasOwnEnd && end < start) return { kind: 'periodic', start, end: start }
 
     return { kind: 'periodic', start, end }
 }
