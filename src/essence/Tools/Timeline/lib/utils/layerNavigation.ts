@@ -43,12 +43,19 @@ export function resolveLayerNavigation(
         ? [time.dataDates]
         : []
 
-    const stops = listed
-        .map((date) => moment.utc(String(date).trim(), moment.ISO_8601, true))
-        .filter((day) => day.isValid())
-        .map((day) => day.endOf('day').valueOf())
-        // Several instants on one day are one day of data, and so one stop.
-        .filter((stop, i, all) => all.indexOf(stop) === i)
+    // Several instants on one day are one day of data, and so one stop. The
+    // set collapses them in one pass, for a layer that can list a stop a day
+    // over years.
+    const stops = [
+        ...new Set(
+            listed
+                .map((date) =>
+                    moment.utc(String(date).trim(), moment.ISO_8601, true)
+                )
+                .filter((day) => day.isValid())
+                .map((day) => day.endOf('day').valueOf())
+        ),
+    ]
         .sort((a, b) => a - b)
         .map((stop) => new Date(stop))
 
