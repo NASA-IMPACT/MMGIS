@@ -108,7 +108,7 @@ test.describe('buildPreviewSrc', () => {
 test.describe('ASSETS_UPLOAD_KEY stays identical across both bundles', () => {
     const SOURCES = [
         'configure/src/core/upload.js',
-        'src/pre/uploadKey.ts',
+        'src/essence/Tools/_shared/content/uploadKey.ts',
     ]
 
     test('both sources declare the same regex literal', () => {

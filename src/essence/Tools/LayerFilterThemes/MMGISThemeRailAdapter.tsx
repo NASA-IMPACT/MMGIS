@@ -12,7 +12,7 @@ import {
     mmgisShowPanel,
     type PanelInfo,
 } from '../_shared/adapters/mmgisAPI'
-import { resolveMissionAssetUrl } from '../../../pre/uploadKey'
+import { resolveMissionAssetUrl } from '../_shared/content/uploadKey'
 import type { ThemeSummary } from './lib/types'
 
 // This plugin's own broadcast — named after the rail, not the panel, so a
@@ -61,8 +61,9 @@ function resolveTogglePanel(
  * field stores either a mission-relative path
  * ("LayerFilterThemes/uploads/<uuid>.svg") or a lean-mode upload key
  * ("assets/<mission>/LayerFilterThemes/uploads/<uuid>.svg"); a link the author
- * pasted is already complete and passes through. src/pre/uploadKey.ts knows
- * every shape, so the rail resolves through it rather than testing its own.
+ * pasted is already complete and passes through.
+ * src/essence/Tools/_shared/content/uploadKey.ts knows every shape, so the
+ * rail resolves through it rather than testing its own.
  */
 export function withResolvedIcons(
     themes: ThemeSummary[],
