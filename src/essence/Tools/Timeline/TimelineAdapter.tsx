@@ -241,7 +241,8 @@ export const TimelineAdapter: React.FC = () => {
                     navigation: resolveLayerNavigation(
                         layer.time,
                         startTime,
-                        endTime
+                        endTime,
+                        layerName
                     ),
                 })
             })

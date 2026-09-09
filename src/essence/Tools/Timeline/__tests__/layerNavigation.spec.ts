@@ -26,12 +26,14 @@ const windowEnd = new Date('2022-01-01T00:00:00Z')
 const resolve = (
     time: unknown,
     fallbackStart = windowStart,
-    fallbackEnd = windowEnd
+    fallbackEnd = windowEnd,
+    layerName?: string
 ) =>
     resolveLayerNavigation(
         time as LayerTimeConfig | undefined,
         fallbackStart,
-        fallbackEnd
+        fallbackEnd,
+        layerName
     )
 
 const iso = (dates: Date[] | undefined) =>
@@ -643,5 +645,61 @@ describe('navigateLayer over a layer whose data lies outside the window', () => 
         )
         expect(goTo(nav, '2020-12-31T00:00:00Z', 'prev')).toBeNull()
         expect(goTo(nav, '2020-12-31T00:00:00Z', 'next')).toBeNull()
+    })
+})
+
+describe('resolveLayerNavigation over a self-contradictory extent', () => {
+    const inverted = {
+        enabled: true,
+        dataStartTime: '2021-01-01T00:00:00Z',
+        dataEndTime: '2020-01-01T00:00:00Z',
+    }
+
+    test('gives a layer whose end precedes its start nothing to navigate', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        expect(resolve(inverted)).toBeNull()
+        warn.mockRestore()
+    })
+
+    test('names the layer and both bounds in the warning it raises', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        resolve(inverted, windowStart, windowEnd, 'rover_images')
+
+        expect(warn).toHaveBeenCalledTimes(1)
+        const message = warn.mock.calls[0][0] as string
+        expect(message).toContain('rover_images')
+        expect(message).toContain('2021-01-01T00:00:00.000Z')
+        expect(message).toContain('2020-01-01T00:00:00.000Z')
+        warn.mockRestore()
+    })
+
+    test('leaves an extent running the right way round alone and silent', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const nav = resolve({
+            enabled: true,
+            dataStartTime: '2020-01-01T00:00:00Z',
+            dataEndTime: '2021-01-01T00:00:00Z',
+        })
+
+        expect(nav?.kind).toBe('periodic')
+        expect(warn).not.toHaveBeenCalled()
+        warn.mockRestore()
+    })
+
+    test('still holds a layer naming one bound to that bound, without warning', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        // The window sits wholly after the only bound the layer names.
+        const nav = resolve(
+            { enabled: true, dataEndTime: '2015-01-01T00:00:00Z' },
+            windowStart,
+            windowEnd
+        )
+
+        expect(iso([nav!.start, nav!.end])).toEqual([
+            '2015-01-01T00:00:00.000Z',
+            '2015-01-01T00:00:00.000Z',
+        ])
+        expect(warn).not.toHaveBeenCalled()
+        warn.mockRestore()
     })
 })

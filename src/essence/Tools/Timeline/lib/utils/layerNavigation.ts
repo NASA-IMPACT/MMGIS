@@ -29,11 +29,15 @@ export interface LayerNavigation {
  *
  * An unconfigured bound is completed from the timeline's window, so the
  * controls move through the span the layer's bar is drawn over.
+ *
+ * `layerName` names the layer in the warning a self-contradictory extent
+ * raises, and is otherwise unread.
  */
 export function resolveLayerNavigation(
     time: LayerTimeConfig | undefined,
     fallbackStart: Date,
-    fallbackEnd: Date
+    fallbackEnd: Date,
+    layerName?: string
 ): LayerNavigation | null {
     if (!time || time.enabled !== true) return null
 
@@ -81,6 +85,19 @@ export function resolveLayerNavigation(
     // names instead, leaving the open direction inert.
     if (!hasOwnStart && start > end) return { kind: 'periodic', start: end, end }
     if (!hasOwnEnd && end < start) return { kind: 'periodic', start, end: start }
+
+    // Both bounds named, and the end before the start: a span the layer cannot
+    // hold data in. Every direction through it contradicts another — first
+    // lands past last, next past prev — so the row goes without controls
+    // rather than carrying four that disagree, and the config is reported.
+    if (start > end) {
+        console.warn(
+            `[Timeline] Layer ${layerName ?? '(unnamed)'} has dataStartTime ` +
+                `(${start.toISOString()}) after dataEndTime ` +
+                `(${end.toISOString()}); its date navigation is switched off.`
+        )
+        return null
+    }
 
     return { kind: 'periodic', start, end }
 }
