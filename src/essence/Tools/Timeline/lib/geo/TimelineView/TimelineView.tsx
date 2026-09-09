@@ -7,6 +7,7 @@ import type { TimeMode, LayerTimeData } from '../../types'
 import { generateTimeTicks, formatDateByMode, clampDate, stepTime } from '../../utils/timeUtils'
 import moment from 'moment'
 import { LayerTimeline } from '../LayerTimeline/LayerTimeline'
+import { LayerNavControls } from '../LayerNavControls/LayerNavControls'
 
 export interface TimelineViewProps {
     startTime: Date
@@ -18,6 +19,13 @@ export interface TimelineViewProps {
     onCurrentTimeChange: (time: Date) => void
     /** Live time while the scrubber is being dragged, for display only. */
     onCurrentTimePreview?: (time: Date) => void
+    /**
+     * The instant a layer row's navigation controls lead to. Kept apart from
+     * `onCurrentTimeChange`, which clamps to the timeline's window: a layer
+     * holds data where it holds it, which may be outside the window the
+     * timeline currently shows.
+     */
+    onLayerNavigate?: (target: Date) => void
     onResetZoomReady?: (resetZoomFn: () => void) => void
 }
 
@@ -29,6 +37,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     layers,
     onCurrentTimeChange,
     onCurrentTimePreview,
+    onLayerNavigate,
     onResetZoomReady,
 }) => {
     const containerRef = useRef<HTMLDivElement>(null)
@@ -283,6 +292,15 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                             <div className="layer-item" key={layer.name} style={{ height: layerBarHeight, flexShrink: 0 }}>
                                 <span className="layer-color-dot" style={{ backgroundColor: layer.color }}></span>
                                 <span className="layer-name">{layer.displayName}</span>
+                                {layer.navigation && (
+                                    <LayerNavControls
+                                        displayName={layer.displayName}
+                                        navigation={layer.navigation}
+                                        from={currentTime}
+                                        timeMode={timeMode}
+                                        onNavigate={(target) => onLayerNavigate?.(target)}
+                                    />
+                                )}
                             </div>
                         ))}
                     </div>

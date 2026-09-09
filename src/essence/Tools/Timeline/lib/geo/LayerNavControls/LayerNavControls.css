@@ -21,6 +21,26 @@
     transition: opacity 0.15s ease;
 }
 
+/* The name keeps the full width of the row and runs on underneath the
+   controls, so their background would otherwise cut it off at a hard vertical
+   edge, mid-glyph. This strip carries that edge out into the name over a few
+   pixels, so the text passes under the controls instead of colliding with
+   them. It fades in and out with them, being drawn inside them. */
+.layer-nav-controls::before {
+    content: '';
+    position: absolute;
+    right: 100%;
+    top: 0;
+    height: 100%;
+    width: 12px;
+    background: linear-gradient(
+        to right,
+        transparent,
+        var(--theme-color-white, #ffffff)
+    );
+    pointer-events: none;
+}
+
 /* Revealed by pointer over the row, and by focus reaching any control within
    it — which is how a keyboard tabbing through the sidebar sees them. */
 .layer-item:hover .layer-nav-controls,
