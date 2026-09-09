@@ -31,6 +31,25 @@ A layer that declares no coverage keeps today's behavior exactly.
 `query`, `velocity`, and the deck.gl equivalents — on both the Leaflet and
 DeckGL engines.
 
+Delivered in two phases:
+
+**Phase 1 — the gate.** The coverage module, the three core gate points, the
+state record and its bus surface, the Layers tool's warning icon and popover,
+and the config changes. Ships the optimization.
+
+**Phase 2 — the Timeline reads from core.** The Timeline plugin drops
+`resolveListedDays` and `resolveLayerExtent` from
+`lib/utils/timeUtils.ts` and takes its spans from `layers:getDataCoverage`.
+`resolveLayerTimeRanges` becomes a thin read of the served spans;
+`resolveLayerNavigation` derives its sparse stops from each span's end and its
+periodic bounds from a continuous span, reading an open bound as the
+`hasOwnStart` / `hasOwnEnd` it computes today (an unconfigured bound arrives as
+`-Infinity` / `Infinity`, which is exactly that information).
+
+Phase 2 is what makes the core the single authority rather than one of two
+opinions, so it is scope, not a nice-to-have. Phase 1 must not ship as the
+permanent arrangement.
+
 **Out of scope**: the 3D globe. `L_.toggleLayerHelper` adds tile and model
 layers to LithoSphere (`L_.Globe_.litho.addLayer`) through a registry that sits
 outside the map-engine abstraction, so the single visibility lever this design
@@ -76,14 +95,24 @@ real bounds unrecoverable.
 Four units, each independently testable:
 
 1. **`layerDataCoverage.js`** — pure. Config in, spans out. No DOM, no engine,
-   no `L_`.
-2. **The gate** — three call sites that ask (1) a yes/no question and act.
-3. **The state record** — one registry on `L_` and one bus event.
-4. **The UI signal** — LayersTool reads the bus event; it never computes
-   coverage itself.
+   no `L_`, no prose.
+2. **The gate** — three core call sites that ask (1) a question and act on it.
+   All gating lives here; nothing outside the core decides whether a layer is
+   requested.
+3. **The state record** — one registry on `L_`, one bus event and one bus
+   request handler. This is the only surface anything outside the core sees.
+4. **The consumers** — the Layers tool renders the warning, the Timeline draws
+   its bars. Neither computes coverage; both read it off the bus.
 
-The dependency runs one way: UI reads state, state is written by the gate, the
-gate calls the pure module. Nothing reads back.
+```
+layerDataCoverage.js  →  the gate  →  L_ registry  →  bus  →  plugins
+      (pure)              (core)        (core)                (read-only)
+```
+
+The dependency runs one way and stops at the bus. Nothing outside `Basics/`
+imports the coverage module, reads `L_` for this state, or re-derives coverage
+from raw layer config. Nothing in the core knows which plugins, if any, are
+listening.
 
 ## 1. Coverage model
 
@@ -148,37 +177,38 @@ gate may only ever suppress on positive evidence of absence; a bug in this
 module must cost a wasted request, never a missing layer.
 
 ```js
-describeDataCoverage(coverage) -> string | null
+resolveCoverageKind(coverage) -> 'continuous' | 'sparse' | null
 ```
 
-The human sentence naming what the layer does hold, for the popover:
+Whether the spans came from a listed set of days or from a single extent.
+A subscriber needs this to word itself correctly — "available on 12 dates"
+against "available 2020-01-01 to 2020-03-01" — and it is not recoverable from
+the spans alone.
 
-- continuous: `Data available 2020-01-01 → 2020-03-01`
-- one open bound: `Data available from 2020-01-01` / `Data available until 2020-03-01`
-- sparse, many days: `Data available on 12 dates, 2020-01-02 → 2020-11-19`
-- sparse, one day: `Data available on 2020-03-04` — the plural form reads
-  wrongly at a count of one, and a single date needs no range after it
-- `null` coverage: `null`
+**The module produces no prose.** No sentence, no date formatting, no
+`describeDataCoverage`. Wording and formatting are presentation: they belong to
+whatever renders them, and a sentence baked into the core is a sentence no
+plugin can restyle, shorten or translate. The core answers *what is true*; a
+plugin decides how to say it.
 
-Dates render as `YYYY-MM-DD` in UTC. Coverage is declared at day granularity
-for sparse layers and read from configs written by hand for continuous ones, so
-a time of day here would be noise or, worse, a local-time shift away from the
-day it names.
-
-It lives beside the resolver so the wording cannot drift from the decision
-that produced it.
-
-### On duplicating the Timeline plugin's parsing
+### The core is the authority on coverage
 
 `resolveListedDays` and `resolveLayerExtent` in
-`src/essence/Tools/Timeline/lib/utils/timeUtils.ts` already implement these
-rules. This module does not import them: the core must not depend on a plugin,
-and inverting the dependency would put a Timeline-shaped module in `Basics/`.
+`src/essence/Tools/Timeline/lib/utils/timeUtils.ts` implement these same rules
+today, because the timeline was the only consumer. Once the core gates requests
+on coverage there are two derivations of one fact, free to disagree — a layer's
+timeline bar could show a day whose tiles the gate suppresses.
 
-The duplication is real and is accepted with a guard: the test suite asserts
-the two implementations agree on a shared table of configs, so a change to one
-that is not mirrored fails. If the plugin boundary later grows a shared
-utilities package, both should move into it.
+The vision settles which wins: **the core derives coverage and serves it;
+plugins read it.** So this is not a duplication to be accepted and policed with
+an agreement test. The plugin's copy is deleted (Phase 2) and the Timeline
+reads spans off the bus like any other consumer.
+
+The precedent is `layers:getCogCapabilities`: the core derives a fact about
+layers — whether a layer has a colormap, whether it can be changed — and serves
+it as structured data, rather than letting each plugin re-derive it from raw
+config. Coverage is the same shape of problem and takes the same shape of
+answer.
 
 ## 2. The gate
 
@@ -193,8 +223,14 @@ The time-change choke point. Immediately after the existing
 ```js
 const mayTouch = evenIfControlled === true || layer.controlled !== true
 const wouldRefresh = mayTouch && (L_.layers.on[layer.name] || evenIfOff)
+const coverage = resolveDataCoverage(layer.time)
 const hasData = layerHasDataInWindow(layer)
-L_.setLayerOutOfDataRange(layer.name, !hasData)
+L_.setLayerDataCoverage(layer.name, {
+    outOfDataRange: !hasData,
+    kind: resolveCoverageKind(coverage),
+    spans: coverage,
+    requestedWindow: parseWindow(layer.time),
+})
 if (!hasData) {
     if (wouldRefresh) layer.time.current = TimeControl.currentTime
     if (mayTouch) Map_.engine?.setLayerVisibility(layer.name, false)
@@ -208,9 +244,9 @@ if (mayTouch)
 `mayTouch` repeats the condition the existing body already applies before every
 write to a layer: a **controlled** layer is driven by an external caller, and a
 reload that is not explicitly allowed to touch it must not move it on or off
-the map either. The state record and the warning icon are still updated for a
-controlled layer — the condition is reported, just not acted on — so the
-Layers tool tells the truth about a layer this gate declines to move.
+the map either. The state record is still published for a controlled layer — the condition is
+reported, just not acted on — so a consumer tells the truth about a layer this
+gate declines to move.
 
 Placing it here, rather than deeper, is what makes it an optimization rather
 than a cosmetic hide: the early return skips `performTimeUrlReplacements`, so a
@@ -245,8 +281,8 @@ while the window sits outside its coverage adds nothing to the map and
 requests nothing. `L_.layers.on[s.name]` still records it as on, and it appears
 the moment the window moves into coverage.
 
-`setLayerOutOfDataRange` is called here too, so the warning icon appears on the
-toggle rather than waiting for the next time change.
+`setLayerDataCoverage` is called here too, so a consumer learns of the state on
+the toggle rather than waiting for the next time change.
 
 ### `Map_.handOffToEngine`
 
@@ -261,11 +297,17 @@ when layers are built. Were that ordering ever to change,
 costing one round of requests that the first `reloadTimeLayers` then corrects
 — degraded, not broken.
 
-## 3. State record
+## 3. State record and the plugin boundary
+
+The core holds the state; everything outside the core reads it over the bus.
+Nothing outside `Basics/` imports `layerDataCoverage.js`, and nothing outside
+`Basics/` reads `L_` for this feature.
+
+### Core state
 
 ```
-L_.layers.outOfDataRange   // uuid -> true
-L_.setLayerOutOfDataRange(name, isOut)
+L_.layers.dataCoverage   // uuid -> LayerDataCoverage
+L_.setLayerDataCoverage(name, coverage)
 ```
 
 Written **only** through the setter, which mirrors `setLayerLoadStatus`:
@@ -277,20 +319,59 @@ emit thousands of identical events.
 Cleared on mission change alongside `L_.layers.loadStatus`, in both places that
 registry is reset (the whole-registry reset and the per-layer delete).
 
-Exposed on the bus:
+### The record served
 
-- `layers:dataRangeChanged` — `{ layerName, outOfDataRange }`
-- `mmgisAPI.provide('layers:isOutOfDataRange', layerUUID)` — that layer's
-  boolean with an argument, the whole name-keyed map without, matching
-  `layers:getLoadStatus`.
+```ts
+type LayerDataCoverage = {
+    // Whether the gate is currently suppressing this layer's requests.
+    outOfDataRange: boolean
+    // 'sparse' from dataDates, 'continuous' from an extent, null when the
+    // layer declares no coverage and is never gated.
+    kind: 'continuous' | 'sparse' | null
+    // Epoch ms. An open bound is -Infinity / Infinity. Null when kind is null.
+    spans: { start: number; end: number }[] | null
+    // The window the layer would request, epoch ms — what the gate compared
+    // the spans against.
+    requestedWindow: { start: number; end: number } | null
+}
+```
 
-The provider is what lets the Timeline plugin, or any marketplace plugin,
-reflect the state without reaching into `L_` — the boundary the vision calls
-for.
+The payload carries **every fact a subscriber needs to render the state**: what
+was asked for, what the layer holds, and the verdict. That completeness is the
+whole point — a thin `{ layerName, outOfDataRange }` payload would send every
+consumer back into `L_` or into the raw config to find the rest, which is
+exactly the coupling the vision forbids.
+
+### The bus surface
+
+| Name | Kind | Payload |
+| --- | --- | --- |
+| `layers:dataCoverageChanged` | event | `{ layerName, ...LayerDataCoverage }` |
+| `layers:getDataCoverage` | request | with a `layerUUID`, that layer's record; without, the whole UUID-keyed map |
+
+Both registered in `Layers_` beside `layers:getCogCapabilities`, whose shape
+they follow deliberately.
+
+A typed wrapper — `mmgisGetLayerDataCoverage(layerUUID?)` and the
+`LayerDataCoverage` type — goes into
+`src/essence/Tools/_shared/adapters/mmgisAPI.ts`, the shared client whose own
+docs state that plugins reach core "only through this shared client — and only
+via the request/provide bus (string-named messages survive a sandbox boundary;
+direct method calls don't)". Marketplace plugins get the same surface the
+in-tree ones do.
+
+### What the core does not do
+
+The core never names the Layers tool, the Timeline, or any other consumer. The
+gate runs and the state is published whether or not anything is listening; a
+mission with no layer list still suppresses the requests. Remove every plugin
+from the build and the optimization still works — that is the test of whether
+this is core-side gating or a tool feature wearing core clothes.
 
 ## 4. UI signal
 
-In `src/essence/Tools/Layers/LayersTool.js`.
+In `src/essence/Tools/Layers/LayersTool.js`. This is a **consumer**: it renders
+the state and computes none of it.
 
 **No dimming.** The row, its checkbox, its label and its other controls are
 untouched.
@@ -310,28 +391,44 @@ across the row; `theme: 'red'`; `allowHTML: true`. Content:
 
 > **No data at this time**
 > `2020-05-04T12:00:00Z`
-> Data available 2020-01-01 → 2020-03-01
+> Data available 2020-01-01 to 2020-03-01
 
-The first line states the condition, the second the instant asked for, the
-third is `describeDataCoverage`. Content is set when the list is built and
-re-set on every `layers:dataRangeChanged`, so the instant named is the instant
-currently being asked for and not the one the row was drawn at.
+The first line states the condition, the second the instant asked for
+(`requestedWindow.end`), the third the coverage. **The tool words and formats
+these itself** from the record's `kind` and `spans` — the core ships facts, not
+sentences:
+
+- `continuous`: `Data available <start> to <end>`, and with an open bound,
+  `Data available from <start>` / `Data available until <end>`
+- `sparse`, several days: `Data available on 12 dates, <first> to <last>`
+- `sparse`, one day: `Data available on 2020-03-04` — the plural reads wrongly
+  at a count of one, and a single date needs no range after it
+
+Dates render `YYYY-MM-DD` in UTC. Sparse coverage is declared at day
+granularity and continuous bounds come from hand-written configs, so a time of
+day would be noise — or, read locally, a shift off the day it names.
+
+**Reading the state.** Both on build and on every update, through the bus:
+
+```js
+window.mmgisAPI.request('layers:getDataCoverage')      // initial sync
+window.mmgisAPI.on('layers:dataCoverageChanged', …)     // live updates
+```
+
+The tool already uses `window.mmgisAPI` for its own `provide` and `emit` calls,
+so this is idiomatic there. It reads `L_` heavily elsewhere — a legacy coupling
+this spec does not try to unwind — but **new** core-reaching goes through the
+bus. A migration that never stops adding to the pile never finishes.
+
+The initial sync covers a layer suppressed before the panel was ever opened;
+without it the icon would appear only on the next time step.
 
 **Lifecycle.** Every other `tippy(...)` call in this file targets a singleton
 element and discards the handle. These are per-row and the list is rebuilt
 often, so the handles are kept in a module-level array and destroyed both
-before a rebuild and in `separateFromMMGIS`. Without that, each rebuild stacks
-another instance on the same icon and the popovers multiply.
-
-**Initial sync.** On build, rows are reconciled against
-`L_.layers.outOfDataRange`, the way the existing loop reconciles
-`L_.layers.refreshFailed`. A layer suppressed before the Layers tool was opened
-shows its icon as soon as the panel is drawn.
-
-The tool subscribes through `window.mmgisAPI.on('layers:dataRangeChanged', …)`
-rather than a `document` event. The existing `layerRefreshStatusChanged`
-listener predates the bus; new listeners should not add to that pattern.
-
+before a rebuild and in `separateFromMMGIS`, alongside the bus unsubscribe
+returned by `on`. Without that, each rebuild stacks another instance on the
+same icon and the popovers multiply.
 ## 5. Configuration
 
 **Rewrite the field descriptions** for `time.dataStartTime`,
@@ -366,16 +463,28 @@ mirroring the structure of the Timeline plugin's `layerTimeRanges.spec.ts`:
 - `layerHasDataInWindow` returns `true` for an unparseable window, a missing
   `layer.time`, and no configured coverage
 
-**Agreement test**: a shared table of configs run through both
-`resolveDataCoverage` and the Timeline plugin's `resolveLayerTimeRanges`,
-asserting the same spans. This is the guard on the accepted duplication.
+**Boundary tests** — the check that this is core-side gating and not a tool
+feature:
+
+- with every consumer removed, an out-of-coverage layer is still suppressed;
+  the gate depends on no plugin being mounted
+- `layers:getDataCoverage` answers with a layer's whole record — verdict, kind,
+  spans, requested window — so a consumer needs no second lookup
+- a lint-level assertion that nothing under `src/essence/Tools/` imports
+  `layerDataCoverage.js`, and that the Layers tool's coverage handling touches
+  no `L_.layers.dataCoverage` directly
+
+**Phase 2 regression test**: the Timeline's bars and navigation stops are
+unchanged across the migration, driven by the same config table that covers the
+resolver — the served spans must reproduce what the plugin drew when it parsed
+the config itself.
 
 **Gate tests**: `reloadLayer` on an out-of-coverage layer calls
 `setLayerVisibility(name, false)`, does **not** call the engine's refresher, and
 does not call `performTimeUrlReplacements`; on a layer returning to coverage it
 restores visibility from `L_.layers.on` and proceeds to refresh; on a
-`controlled` layer without `evenIfControlled` it records the state and emits
-the event but does not call `setLayerVisibility` at all; and it stamps
+`controlled` layer without `evenIfControlled` it publishes the state but does
+not call `setLayerVisibility` at all; and it stamps
 `layer.time.current` on the suppressed path only when the layer is on or
 `evenIfOff` was passed.
 
@@ -405,17 +514,34 @@ correctness: the globe simply keeps today's behavior.
 
 ## Files
 
+### Phase 1 — core
+
 | File | Change |
 | --- | --- |
-| `src/essence/Basics/TimeControl_/layerDataCoverage.js` | new — the pure coverage module |
-| `src/essence/Basics/TimeControl_/__tests__/layerDataCoverage.spec.js` | new — unit and agreement tests |
+| `src/essence/Basics/TimeControl_/layerDataCoverage.js` | new — the pure coverage module: spans, kind, window overlap. No prose. |
+| `src/essence/Basics/TimeControl_/__tests__/layerDataCoverage.spec.js` | new — resolver and overlap unit tests |
 | `src/essence/Basics/TimeControl_/TimeControl.js` | gate in `reloadLayer` |
-| `src/essence/Basics/Layers_/Layers_.js` | `outOfDataRange` registry, setter, bus event, API provider, mission-change cleanup, `toggleLayerHelper` gate |
+| `src/essence/Basics/Layers_/Layers_.js` | `dataCoverage` registry, `setLayerDataCoverage`, `layers:dataCoverageChanged` event, `layers:getDataCoverage` handler, mission-change cleanup, `toggleLayerHelper` gate |
 | `src/essence/Basics/Map_/Map_.js` | `handOffToEngine` visibility gate |
-| `src/essence/Tools/Layers/LayersTool.js` | warning icon, tippy popover, bus subscription, initial sync, instance cleanup |
+
+### Phase 1 — consumers and config
+
+| File | Change |
+| --- | --- |
+| `src/essence/Tools/_shared/adapters/mmgisAPI.ts` | `LayerDataCoverage` type and `mmgisGetLayerDataCoverage` wrapper |
+| `src/essence/Tools/Layers/LayersTool.js` | warning icon, tippy popover, its own wording of the record, bus subscription and initial sync, instance cleanup |
 | `src/essence/Tools/Layers/LayersTool.css` | `.noDataWarning` styling |
 | `configure/src/metaconfigs/layer-tile-config.json` | rewrite field descriptions |
 | `configure/src/metaconfigs/layer-vector-config.json` | rewrite field descriptions |
 | `configure/src/metaconfigs/layer-vectortile-config.json` | add Data Time Extent subsection |
 | `configure/src/metaconfigs/layer-query-config.json` | add Data Time Extent subsection |
 | `configure/src/metaconfigs/layer-velocity-config.json` | add Data Time Extent subsection |
+
+### Phase 2 — Timeline reads from core
+
+| File | Change |
+| --- | --- |
+| `src/essence/Tools/Timeline/lib/utils/timeUtils.ts` | delete `resolveListedDays` and `resolveLayerExtent`; `resolveLayerTimeRanges` reads served spans |
+| `src/essence/Tools/Timeline/lib/utils/layerNavigation.ts` | derive stops and bounds from served spans |
+| `src/essence/Tools/Timeline/TimelineAdapter.tsx` | request coverage, subscribe to `layers:dataCoverageChanged` |
+| `src/essence/Tools/Timeline/__tests__/*` | retarget `layerTimeRanges` / `layerNavigation` specs at the served spans |
