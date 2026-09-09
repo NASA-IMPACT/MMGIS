@@ -100,8 +100,8 @@ describe('LayerTimeline', () => {
 
     /**
      * Zoomed out to a multi-year view a single day is narrower than a pixel.
-     * The boxes are floored to a visible width rather than scaled away, so a
-     * sparse layer still reads as having data on those days.
+     * Boxes are floored to a visible width, so a sparse layer still reads as
+     * having data on those days.
      */
     test('keeps a sub-pixel day visible', () => {
         const [rect] = render(
@@ -118,16 +118,15 @@ describe('LayerTimeline', () => {
     })
 
     /**
-     * The sidebar row is sized to fit the transport buttons it carries, which
-     * is taller than the bar itself wants to be — a bar that scaled with its
-     * row would make every chart look heavier for no reason. The bar's
-     * thickness is fixed, and it stays centred in whatever row it's given.
+     * A row is sized to fit the transport buttons it carries, which is taller
+     * than the bar wants to be. The bar's thickness is fixed rather than
+     * scaled with the row, and it stays centred in whatever row it's given.
      */
     test('keeps the same bar thickness centred whether the row is 15px or 20px', () => {
         const range = { start: new Date('2020-03-04T00:00:00Z'), end: new Date('2020-07-19T00:00:00Z') }
 
         // React reuses the same host <rect> across renders on one root, so
-        // each row height must be read out before the next render overwrites it.
+        // each height is read out before the next render overwrites it.
         const [shortRowRect] = render(layerWith([range]), 0, 15)
         const shortHeight = Number(shortRowRect.getAttribute('height'))
         const shortY = Number(shortRowRect.getAttribute('y'))

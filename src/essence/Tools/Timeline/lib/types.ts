@@ -18,9 +18,8 @@ export interface LayerTimeData {
     displayName: string
     timeRanges: TimeRange[]
     color: string
-    // Where the layer's own row can put the current time. A layer naming no
-    // instant to move to carries none, which is how its row goes without
-    // navigation controls rather than by anything asking what kind of layer
-    // it is.
+    // Where the layer's own row can put the current time. Absent when the
+    // layer names no instant to move to, which is how a row goes without
+    // navigation controls.
     navigation?: LayerNavigation | null
 }

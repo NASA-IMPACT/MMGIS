@@ -3,12 +3,12 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 
 /**
- * How the timeline's sidebar carries a layer's navigation controls: which rows
- * get them, and where a press is delivered.
+ * How the sidebar carries a layer's navigation controls: which rows get them,
+ * and where a press is delivered.
  *
- * The process timezone is pinned behind UTC so that a row resolving its
- * target in local time would surface here as a wrong instant, rather than
- * passing on a UTC host and failing for a viewer in the Americas.
+ * The process timezone is pinned behind UTC, so a row resolving its target
+ * locally surfaces as a wrong instant here rather than passing on a UTC host
+ * and failing for a viewer in the Americas.
  */
 vi.hoisted(() => {
     process.env.TZ = 'America/New_York'
@@ -21,9 +21,8 @@ import type { LayerTimeData, TimeMode } from '../lib/types'
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean })
     .IS_REACT_ACT_ENVIRONMENT = true
 
-// jsdom has no ResizeObserver; the view constructs one to follow the width of
-// the chart area. The stub never reports a size, leaving the view on the
-// starting width it lays the SVG out with.
+// jsdom has no ResizeObserver; the view constructs one to follow the chart
+// area's width. The stub reports no size, leaving the starting width.
 class NoopResizeObserver {
     observe() {}
     unobserve() {}
@@ -113,9 +112,8 @@ describe('TimelineView layer navigation', () => {
         const button = rowButtons(index).find(
             (candidate) => candidate.getAttribute('aria-label') === label,
         )!
-        // Dispatched rather than clicked so that a control disabled in name
-        // only — through aria-disabled, say — would still deliver the event
-        // and be caught.
+        // Dispatched rather than clicked: a control disabled in name only,
+        // through aria-disabled, still delivers the event.
         act(() => {
             button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
         })
@@ -135,8 +133,8 @@ describe('TimelineView layer navigation', () => {
     })
 
     test('leaves a layer with nothing to navigate without controls', () => {
-        // A layer the resolver found no instant for carries no model, and so
-        // opts its row out without the row asking what kind of layer it is.
+        // A layer the resolver found no instant for carries no model, which
+        // is what opts its row out.
         render([
             layer('MODIS Daily', sparseNav('2020-01-02', '2020-11-02')),
             layer('Basemap'),
@@ -157,8 +155,8 @@ describe('TimelineView layer navigation', () => {
     })
 
     test('moves a periodic layer by the granularity the timeline is on', () => {
-        // The step a periodic layer takes is the timeline's own, so the row
-        // only lands a month on from May with the view's mode reaching it.
+        // A periodic layer steps by the timeline's granularity, so the landing
+        // is a month on only because the view is in MONTH mode.
         render(
             [layer('Sea Surface Temperature', {
                 kind: 'periodic',
@@ -176,8 +174,8 @@ describe('TimelineView layer navigation', () => {
     })
 
     test('keeps a layer jump off the scrubber\'s commit path', () => {
-        // The two paths treat the timeline's window differently, so a jump
-        // must not arrive as though the scrubber had been moved.
+        // The two paths treat the window differently, so a jump must not
+        // arrive as though the scrubber had moved.
         render([layer('MODIS Daily', sparseNav('2020-01-02', '2020-11-02'))])
 
         press(0, 'MODIS Daily: first date')
@@ -187,8 +185,8 @@ describe('TimelineView layer navigation', () => {
     })
 
     test('keeps each sidebar row the height of the chart row beside it', () => {
-        // The two columns share one pitch; a row drifting from its bar is how
-        // the sidebar stops naming the layer it sits against.
+        // The two columns share one pitch: a row drifting from its bar leaves
+        // the sidebar naming the wrong layer.
         render([
             layer('MODIS Daily', sparseNav('2020-01-02', '2020-11-02')),
             layer('Basemap'),

@@ -133,13 +133,9 @@ export const TimelineAdapter: React.FC = () => {
 
     /**
      * Commits the instant a layer row's controls lead to, widening the window
-     * to reach it.
-     *
-     * A layer holds data where it holds it, and that need not be inside the
-     * window on screen — so the target is committed as given rather than
-     * clamped back in, and whichever edge it falls outside moves onto it. The
-     * edge lands exactly on the target, which leaves the scrubber flush
-     * against it: the timeline shows where the press took it and no further.
+     * to reach it. A layer's data need not sit inside the window on screen, so
+     * the target is committed as given rather than clamped back in, and
+     * whichever edge it falls outside moves onto it exactly.
      */
     const handleLayerNavigate = useCallback(
         (target: Date) => {
@@ -241,7 +237,7 @@ export const TimelineAdapter: React.FC = () => {
                         endTime
                     ),
                     // Same fallback bounds as the ranges above, so a row
-                    // navigates through exactly the span it draws.
+                    // navigates the span it draws.
                     navigation: resolveLayerNavigation(
                         layer.time,
                         startTime,

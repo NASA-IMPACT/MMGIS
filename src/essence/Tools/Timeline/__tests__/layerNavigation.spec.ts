@@ -1,12 +1,11 @@
 import { describe, test, expect, vi } from 'vitest'
 
 /**
- * The navigation model behind a layer row's first/previous/next/last controls:
- * where moving through a layer's data can land the timeline's current time.
+ * The navigation model behind a layer row's first/previous/next/last controls.
  *
- * The process timezone is pinned behind UTC so that a resolver which snapped
- * days in local time would surface as a wrong day here, rather than passing on
- * a UTC host and failing for a viewer in the Americas.
+ * The process timezone is pinned behind UTC, so a resolver snapping days
+ * locally surfaces as a wrong day here rather than passing on a UTC host and
+ * failing for a viewer in the Americas.
  */
 vi.hoisted(() => {
     process.env.TZ = 'America/New_York'
@@ -88,8 +87,8 @@ describe('resolveLayerNavigation', () => {
     })
 
     test('stops on the last UTC instant of each listed day', () => {
-        // The current time is the trailing edge of a layer's query window, so
-        // a stop at the day's first instant would exclude the day's data.
+        // The current time is the trailing edge of a layer's query window; a
+        // stop at midnight would exclude that day's data.
         const nav = resolve({
             enabled: true,
             dataDates: ['2020-03-04', '2020-07-19'],
@@ -236,8 +235,8 @@ describe('resolveLayerNavigation', () => {
     })
 
     test('completes a missing end from the timeline window', () => {
-        // The half the layer leaves unset is the half the timeline draws its
-        // bar over, so the controls cover the span the row shows.
+        // The same fallback the bar is drawn over, so the controls cover the
+        // span the row shows.
         const nav = resolve({
             enabled: true,
             dataStartTime: '2020-01-01T00:00:00Z',
@@ -283,8 +282,6 @@ describe('resolveLayerNavigation', () => {
     })
 
     test('leaves a layer listing its days bounded by its stops', () => {
-        // Listed days say where the layer holds data outright, so the window
-        // has nothing to fill in.
         const nav = resolve({
             enabled: true,
             dataDates: ['2020-03-04', '2020-07-19'],
@@ -333,7 +330,6 @@ describe('navigateLayer over a sparse layer', () => {
     })
 
     test('reaches back into the layer from months past its last stop', () => {
-        // One press, however far the current time sits from the data.
         expect(goTo(nav, '2021-06-15T00:00:00Z', 'prev')).toBe(
             '2020-11-02T23:59:59.999Z'
         )
@@ -377,8 +373,7 @@ describe('navigateLayer over a sparse layer', () => {
     })
 
     test('has nowhere to jump from the stop it already sits on', () => {
-        // Repeating a jump would re-commit the time the timeline already
-        // holds, leaving the control looking live while doing nothing.
+        // Repeating the jump would re-commit the time already held.
         expect(goTo(nav, '2020-01-02T23:59:59.999Z', 'first')).toBeNull()
         expect(goTo(nav, '2020-11-02T23:59:59.999Z', 'last')).toBeNull()
     })
@@ -401,8 +396,6 @@ describe('navigateLayer over a sparse layer', () => {
     })
 
     test('has nowhere to go at all from the one stop of a single-day layer', () => {
-        // Every direction is the stop the timeline already sits on, so all
-        // four controls draw inert together.
         expect(goTo(single, '2020-03-04T23:59:59.999Z', 'first')).toBeNull()
         expect(goTo(single, '2020-03-04T23:59:59.999Z', 'prev')).toBeNull()
         expect(goTo(single, '2020-03-04T23:59:59.999Z', 'next')).toBeNull()
@@ -410,8 +403,7 @@ describe('navigateLayer over a sparse layer', () => {
     })
 
     test('lands on stops rather than stepping by the timeline granularity', () => {
-        // The gaps between stops are the layer's, not the axis unit's, so the
-        // same press lands in the same place at every mode.
+        // The gaps between stops are the layer's, not the axis unit's.
         const modes: TimeMode[] = ['YEAR', 'MONTH', 'DAY', 'HOUR']
         for (const mode of modes) {
             expect(goTo(nav, '2020-05-01T00:00:00Z', 'next', mode)).toBe(
@@ -474,9 +466,8 @@ describe('navigateLayer over a periodic layer', () => {
     })
 
     test('steps in UTC across a local daylight-saving boundary', () => {
-        // The process runs behind UTC, where a local day either side of the
-        // spring change is 23 hours long; stepping locally would drift the
-        // clock this lands on.
+        // The process runs behind UTC, where the local day of the spring
+        // change is 23 hours long; stepping locally would drift the clock.
         expect(goTo(nav, '2020-03-07T12:00:00Z', 'next', 'DAY')).toBe(
             '2020-03-08T12:00:00.000Z'
         )
@@ -575,9 +566,8 @@ describe('navigateLayer over a layer whose data lies outside the window', () => 
         ) as LayerNavigation
 
     test('holds a layer that ended before the window to the instant it names', () => {
-        // Completing the open start from a window that begins after the
-        // layer's end would run the extent backwards, and the controls would
-        // move through a span the layer holds no data for.
+        // Completing the open start from a window beginning after the layer's
+        // end would run the extent backwards, through a span holding no data.
         const nav = endedBeforeWindow()
 
         expect(nav.start.toISOString()).toBe('2020-12-31T00:00:00.000Z')
@@ -622,8 +612,8 @@ describe('navigateLayer over a layer whose data lies outside the window', () => 
     })
 
     test('goes inert in every direction from the one instant it knows', () => {
-        // The direction the layer leaves unconfigured names no instant at all,
-        // so it is inert rather than pointing into the window.
+        // The unconfigured direction names no instant, so it is inert rather
+        // than pointing into the window.
         const ended = endedBeforeWindow()
         const starts = startsAfterWindow()
 
@@ -634,10 +624,9 @@ describe('navigateLayer over a layer whose data lies outside the window', () => 
     })
 
     test('stays reachable once a press has widened the window onto the layer', () => {
-        // Moving onto the layer's end widens the timeline window back to it,
-        // and the row re-resolves against the wider window: the extent is a
-        // single instant either way, reachable from anywhere else in the
-        // window and inert only while the current time sits on it.
+        // The row re-resolves against the widened window. The extent is a
+        // single instant either way: reachable from anywhere else, inert only
+        // while the current time sits on it.
         const nav = resolve(
             { enabled: true, dataEndTime: '2020-12-31T00:00:00Z' },
             new Date('2020-12-31T00:00:00Z'),

@@ -1,8 +1,7 @@
-/* A row's navigation controls sit over the end of its layer name rather than
-   beside it. The sidebar is 160px wide and 100px on a narrow screen, so four
-   permanent buttons would leave the names it exists to show no room; they take
-   the space only while the row is the one being worked on, and paint the row's
-   own background over the name they cover. */
+/* The controls overlay the end of the layer name rather than sitting beside
+   it: the sidebar is 160px wide, 100px when narrow, so four permanent buttons
+   would leave the names no room. They paint the row's background over the
+   stretch of name they cover, and only while the row is being worked on. */
 .layer-nav-controls {
     position: absolute;
     top: 0;
@@ -13,19 +12,16 @@
     gap: 1px;
     padding-left: 4px;
     background: var(--theme-color-white, #ffffff);
-    /* Hidden by opacity rather than by visibility or display, both of which
-       would take the buttons out of the tab order and leave the feature
-       reachable by mouse alone. */
+    /* Opacity, not visibility or display: those would drop the buttons out of
+       the tab order, leaving the feature reachable by mouse alone. */
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.15s ease;
 }
 
-/* The name keeps the full width of the row and runs on underneath the
-   controls, so their background would otherwise cut it off at a hard vertical
-   edge, mid-glyph. This strip carries that edge out into the name over a few
-   pixels, so the text passes under the controls instead of colliding with
-   them. It fades in and out with them, being drawn inside them. */
+/* The name keeps the row's full width and runs on under the controls, whose
+   background would otherwise cut it mid-glyph at a hard vertical edge. This
+   strip softens that edge over a few pixels, fading in with the controls. */
 .layer-nav-controls::before {
     content: '';
     position: absolute;
@@ -41,8 +37,8 @@
     pointer-events: none;
 }
 
-/* Revealed by pointer over the row, and by focus reaching any control within
-   it — which is how a keyboard tabbing through the sidebar sees them. */
+/* Revealed by a pointer over the row, or by focus reaching any control in it
+   — how a keyboard tabbing through the sidebar sees them. */
 .layer-item:hover .layer-nav-controls,
 .layer-item:focus-within .layer-nav-controls {
     opacity: 1;
@@ -55,10 +51,9 @@
     }
 }
 
-/* Sized to the 20px row: smaller than the header's playback buttons, and
-   styled after them otherwise. The icon takes the row's own text colour
-   rather than the playback buttons' accent, because it sits inline over the
-   layer name and reads as part of that row rather than as a header control. */
+/* Sized to the 20px row and styled after the header's playback buttons, but
+   in the row's own text colour: the icon sits inline over the layer name and
+   reads as part of that row rather than as a header control. */
 .layer-nav-btn {
     background: transparent;
     border: none;
@@ -74,14 +69,14 @@
     transition: background 0.2s ease;
 }
 
-/* Hover shows the light-grey rectangle only — the icon keeps its colour. */
+/* Hover shows the rectangle only; the icon keeps its colour. */
 .layer-nav-btn:hover:not(:disabled):not([aria-disabled='true']) {
     background: var(--theme-color-primary-lightest, #e6f4f6);
 }
 
-/* A control the layer's data leaves nowhere to go is inert. It carries
-   aria-disabled rather than the disabled attribute so that it keeps focus
-   when a keyboard walk exhausts it, so the dimming keys on both. */
+/* A control with nowhere to go is dimmed. It carries aria-disabled rather
+   than the disabled attribute, to keep focus when a keyboard walk exhausts
+   it, so the dimming keys on both. */
 .layer-nav-btn:disabled,
 .layer-nav-btn[aria-disabled='true'] {
     opacity: 0.35;
@@ -89,10 +84,9 @@
 }
 
 /* A pointer that cannot hover has no way to reveal the controls: there is no
-   :hover, and :focus-within cannot stand in for it while the buttons are still
-   pointer-events: none, since a tap has nothing to land on. They stay out on
-   such a device, covering more of the name than they otherwise would, because
-   an unreachable control is worse than a shortened name. */
+   :hover, and a tap cannot raise :focus-within while the buttons are still
+   pointer-events: none. They stay out on such a device, covering more of the
+   name, since an unreachable control is worse than a shortened name. */
 @media (hover: none) {
     .layer-nav-controls {
         opacity: 1;
@@ -100,10 +94,8 @@
     }
 }
 
-/* Four buttons at their full size span almost the whole of the narrow
-   sidebar's row, leaving the name nothing to show even when it is the row
-   being worked on. Tightening the buttons and the fade holds a readable
-   stretch of name open. */
+/* At full size the four buttons span almost the whole of a narrow row.
+   Tightening them and the fade holds a readable stretch of name open. */
 @media (max-width: 768px) {
     .layer-nav-controls {
         padding-left: 2px;

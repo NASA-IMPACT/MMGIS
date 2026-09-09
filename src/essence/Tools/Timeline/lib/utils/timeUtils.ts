@@ -154,32 +154,21 @@ export interface LayerTimeConfig {
     dataDates?: string[] | string
 }
 
-/**
- * A layer's extent as resolved from its own configuration, with either bound
- * missing or unreadable completed from the supplied fallback.
- */
+/** A layer's extent, with either bound completed from the caller's fallback. */
 export interface ResolvedLayerExtent {
     start: Date
     end: Date
-    /**
-     * Whether `dataStartTime` named a bound that parsed. False leaves `start`
-     * the fallback verbatim.
-     */
+    /** False when `start` is the fallback, `dataStartTime` naming no readable bound. */
     hasOwnStart: boolean
-    /**
-     * Whether `dataEndTime` named a bound that parsed. False leaves `end` the
-     * fallback verbatim. A layer with neither flag set has nothing of its own
-     * in the extent at all.
-     */
+    /** False when `end` is the fallback, `dataEndTime` naming no readable bound. */
     hasOwnEnd: boolean
 }
 
 /**
- * A layer's `dataStartTime`/`dataEndTime` extent, read the one way every
- * caller needs it: `dataEndTime` of `'now'` resolves to the current instant,
- * and a bound that is absent or fails to parse is completed from the supplied
- * fallback rather than left unset. The extent is read leniently, since
- * configs carry values in looser formats than ISO 8601.
+ * A layer's `dataStartTime`/`dataEndTime` extent. `dataEndTime` of `'now'`
+ * resolves to the current instant, and a bound that is absent or fails to
+ * parse falls back to the one supplied. Parsing is lenient, since configs
+ * carry these in looser formats than ISO 8601.
  */
 export function resolveLayerExtent(
     time: LayerTimeConfig | undefined,

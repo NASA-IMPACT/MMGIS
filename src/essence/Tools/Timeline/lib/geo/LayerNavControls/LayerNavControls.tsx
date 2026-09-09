@@ -6,13 +6,11 @@ import './LayerNavControls.css'
 
 export interface LayerNavControlsProps {
     /**
-     * The layer's display name. Every control carries it in its accessible
-     * name: four identically shaped buttons repeat on every row of the
-     * sidebar, and the layer is the only thing telling one row's set from
-     * another's when they are read out of their visual context.
+     * Prefixes every control's accessible name. The same four buttons repeat
+     * on every row, so the layer is all that tells one row's set from another's
+     * when they are read out of their visual context.
      */
     displayName: string
-    /** Where this layer's data lets the controls put the current time. */
     navigation: LayerNavigation
     /** The current time each control moves away from. */
     from: Date
@@ -22,10 +20,7 @@ export interface LayerNavControlsProps {
     onNavigate: (target: Date) => void
 }
 
-/**
- * The transport glyphs of the global playback controls, drawn in the same
- * 24-unit space and sized down by the button to sit inside a layer row.
- */
+/** The global playback controls' transport glyphs, in the same 24-unit space. */
 const ACTIONS: {
     action: 'first' | 'prev' | 'next' | 'last'
     name: string
@@ -55,13 +50,8 @@ const ACTIONS: {
 
 /**
  * One layer row's first/previous/next/last controls, moving the timeline's
- * current time through that layer's own data instead of leaving the viewer to
- * find it with the global scrubber.
- *
- * Where a press lands is the navigation model's answer throughout — the row
- * asks for each control's target and does no time arithmetic of its own — so a
- * control is drawn inert on exactly the condition the model reports nowhere to
- * go, and a layer's stops and its extent behave here however they behave there.
+ * current time through that layer's own data. Both the target and the inert
+ * state come from `navigateLayer`; the row does no time arithmetic of its own.
  */
 export const LayerNavControls: React.FC<LayerNavControlsProps> = ({
     displayName,
@@ -70,9 +60,8 @@ export const LayerNavControls: React.FC<LayerNavControlsProps> = ({
     timeMode,
     onNavigate
 }) => {
-    // Where each control leads, held until one of the answers can change. The
-    // current time moves with every frame of a scrubber drag and every
-    // playback tick, and each of those renders every row of the sidebar.
+    // Held across renders: the current time moves with every frame of a
+    // scrubber drag and every playback tick, each of which renders every row.
     const targets = useMemo(
         () =>
             ACTIONS.map(({ action }) =>
@@ -104,9 +93,8 @@ export const LayerNavControls: React.FC<LayerNavControlsProps> = ({
                         // Stated rather than enforced: a browser blurs an
                         // element the moment it is disabled, so a control
                         // pressed until it had nowhere left to go would drop
-                        // the keyboard's focus, and with it the :focus-within
-                        // that reveals the group. The press itself is silenced
-                        // by the handler's own guard.
+                        // focus, and with it the :focus-within revealing the
+                        // group. The handler's guard silences the press.
                         aria-disabled={target === null}
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"

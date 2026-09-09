@@ -270,8 +270,8 @@
     align-items: center;
     padding: 0 10px;
     box-sizing: border-box;
-    /* The containing block for the row's navigation controls, which overlay
-       the end of the layer name rather than taking width from it. */
+    /* Containing block for the row's navigation controls, which overlay the
+       end of the layer name rather than taking width from it. */
     position: relative;
 }
 

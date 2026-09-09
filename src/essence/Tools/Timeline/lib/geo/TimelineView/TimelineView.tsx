@@ -20,10 +20,9 @@ export interface TimelineViewProps {
     /** Live time while the scrubber is being dragged, for display only. */
     onCurrentTimePreview?: (time: Date) => void
     /**
-     * The instant a layer row's navigation controls lead to. Kept apart from
-     * `onCurrentTimeChange`, which clamps to the timeline's window: a layer
-     * holds data where it holds it, which may be outside the window the
-     * timeline currently shows.
+     * The instant a layer row's navigation controls lead to. Separate from
+     * `onCurrentTimeChange`, which clamps to the timeline's window: a layer's
+     * data may sit outside the window currently shown.
      */
     onLayerNavigate: (target: Date) => void
     onResetZoomReady?: (resetZoomFn: () => void) => void
@@ -53,7 +52,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     const [zoomTransform, setZoomTransform] = useState(zoomIdentity)
 
     const axisHeight = 24 // Space for the bottom axis
-    const layerBarHeight = 20 // Row pitch shared by the sidebar item and the SVG row; the drawn bar sets its own thickness
+    const layerBarHeight = 20 // Row pitch, shared by the sidebar item and the SVG row
     const topBarHeight = 24 // Space for top axis
     const markerSize = 18 // Rendered size of the scrubber marker
 

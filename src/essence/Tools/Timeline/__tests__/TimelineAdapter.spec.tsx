@@ -4,11 +4,10 @@ import { createRoot, type Root } from 'react-dom/client'
 import { TimelineAdapter } from '../TimelineAdapter'
 
 /**
- * The timeline's "Compare date" action is a hand-off, not a call: the timeline
- * knows nothing about the Comparison plugin beyond the name of the event it
- * announces, and a mission without that plugin is simply one where nobody
- * listens. What is covered here is that the action is offered at all, that
- * clicking it puts that event on the bus, and that it carries the window.
+ * The "Compare date" action is a hand-off, not a call: the timeline knows the
+ * Comparison plugin only by the name of the event it announces. Covered here:
+ * the action is offered, clicking it puts that event on the bus, and the
+ * event carries the window.
  */
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean })
@@ -90,26 +89,21 @@ describe('TimelineAdapter compare hand-off', () => {
 })
 
 /**
- * Where a layer row's navigation controls put the timeline.
- *
- * A layer holds data where it holds it, so reaching that data can mean leaving
- * the window on screen. What is covered here is that the window follows the
- * target out instead of clamping it back in, and that it moves only the edge
- * that has to move.
+ * Where a layer row's navigation controls put the timeline. Reaching a layer's
+ * data can mean leaving the window on screen, so the window follows the target
+ * out instead of clamping it back in, moving only the edge that has to move.
  */
 
-// jsdom has no ResizeObserver; the timeline view constructs one to follow the
-// width of the chart area. The stub never reports a size, leaving the view on
-// the starting width it lays the SVG out with.
+// jsdom has no ResizeObserver; the view constructs one to follow the chart
+// area's width. The stub reports no size, leaving the starting width.
 class NoopResizeObserver {
     observe() {}
     unobserve() {}
     disconnect() {}
 }
 
-// Data on three scattered days: one before the window, one inside it, one
-// past its end — so first/next/last each land somewhere different relative to
-// the window. A stop closes the day it names.
+// Three scattered days — one before the window, one inside, one past its end
+// — so first/next/last each land differently against it.
 const BEFORE_WINDOW = '2023-11-05T23:59:59.999Z'
 const INSIDE_WINDOW = '2024-06-20T23:59:59.999Z'
 const PAST_WINDOW = '2025-03-20T23:59:59.999Z'

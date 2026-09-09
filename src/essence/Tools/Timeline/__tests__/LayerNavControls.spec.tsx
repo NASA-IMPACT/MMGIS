@@ -3,12 +3,12 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 
 /**
- * A layer row's first/previous/next/last controls: which of them are live,
- * what each one is called, and the instant a press reports.
+ * A layer row's first/previous/next/last controls: which are live, what each
+ * is called, and the instant a press reports.
  *
- * The process timezone is pinned behind UTC so that a control resolving its
- * target in local time would surface here as a wrong instant, rather than
- * passing on a UTC host and failing for a viewer in the Americas.
+ * The process timezone is pinned behind UTC, so a control resolving its target
+ * locally surfaces as a wrong instant here rather than passing on a UTC host
+ * and failing for a viewer in the Americas.
  */
 vi.hoisted(() => {
     process.env.TZ = 'America/New_York'
@@ -86,9 +86,8 @@ describe('LayerNavControls', () => {
         const button = buttons().find(
             (candidate) => candidate.getAttribute('aria-label') === label,
         )!
-        // Dispatched rather than clicked so that a control disabled in name
-        // only — through aria-disabled, say — would still deliver the event
-        // and be caught.
+        // Dispatched rather than clicked: a control disabled in name only,
+        // through aria-disabled, still delivers the event.
         act(() => {
             button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
         })
@@ -106,8 +105,8 @@ describe('LayerNavControls', () => {
     })
 
     test('names its own layer, so rows stay apart in a list of controls', () => {
-        // A sidebar of layers puts four identically shaped buttons on every
-        // row; only the layer's name tells a listener which row they are on.
+        // Every row carries the same four buttons; only the layer's name
+        // tells a listener which row they are on.
         render('2020-05-01T00:00:00Z', SPARSE, 'Sentinel-2 True Color')
 
         expect(labels()).toEqual([
@@ -119,9 +118,8 @@ describe('LayerNavControls', () => {
     })
 
     /**
-     * A control with nowhere to go says so with aria-disabled rather than
-     * carrying the disabled attribute, so that it keeps focus; see the
-     * keyboard test below.
+     * A control with nowhere to go carries aria-disabled rather than the
+     * disabled attribute, so it keeps focus; see the keyboard test below.
      */
     const inert = () =>
         buttons().map(
@@ -135,8 +133,6 @@ describe('LayerNavControls', () => {
     })
 
     test('draws a control with nowhere to go inert', () => {
-        // Sitting on the first stop, both backward controls and the jump to
-        // that same stop lead nowhere.
         render('2020-01-02T23:59:59.999Z')
 
         expect(inert()).toEqual([true, true, false, false])
@@ -179,8 +175,8 @@ describe('LayerNavControls', () => {
     })
 
     test('moves through a periodic layer by the timeline granularity', () => {
-        // The distance a press covers is the navigation model's answer, not
-        // the row's: the same press moves an hour or a day with the mode.
+        // The distance is the model's answer, not the row's: the same press
+        // moves an hour or a day with the mode.
         render(
             '2020-05-15T12:00:00Z',
             periodicNav('2020-01-01T00:00:00Z', '2020-12-31T00:00:00Z'),
@@ -204,13 +200,10 @@ describe('LayerNavControls', () => {
     })
 
     test('keeps a live control reachable by keyboard', () => {
-        // The row reveals the controls with opacity so that they stay in the
-        // tab order while unrevealed; nothing may take them out of it.
-        //
-        // This reaches the markup only. No stylesheet is applied here, so a
-        // reveal switched to display or visibility -- which would genuinely
-        // drop the buttons out of the tab order -- still passes. Only a real
-        // browser can hold that half of the guarantee.
+        // The controls are revealed with opacity, so they stay in the tab
+        // order while unrevealed. This reaches the markup only: with no
+        // stylesheet applied, a reveal switched to display or visibility would
+        // still pass here. Only a real browser holds that half.
         render('2020-05-01T00:00:00Z')
         const next = buttons().find(
             (button) =>
@@ -223,13 +216,10 @@ describe('LayerNavControls', () => {
     })
 
     test('keeps the control a viewer walked to the end of a layer with', () => {
-        // Pressing "next date" repeatedly reaches the last stop, where that
-        // very control has nowhere left to go. A browser blurs an element the
-        // moment it gains the disabled attribute, and the row reveals its
-        // controls on :focus-within, so disabling the pressed control would
-        // drop focus to the document and fade the whole group out from under
-        // the viewer. The control states its inertness instead of enforcing
-        // it, and stays a focusable element.
+        // Pressing "next date" to the last stop leaves that control with
+        // nowhere to go. A browser blurs an element the moment it gains the
+        // disabled attribute, and the row reveals on :focus-within, so
+        // disabling it would fade the group out from under the viewer.
         render('2020-03-04T23:59:59.999Z')
         const next = buttons().find(
             (button) =>

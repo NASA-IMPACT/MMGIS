@@ -9,9 +9,8 @@ export interface LayerTimelineProps {
     height: number
 }
 
-// The drawn thickness of a range bar. It's independent of the row's height
-// (which sidebar buttons and other chrome also share) so the chart doesn't
-// get visually heavier as rows grow to fit more controls.
+// Drawn thickness of a range bar, independent of the row height that sidebar
+// chrome also sets, so the chart stays as light as rows grow.
 const BAR_THICKNESS = 9
 
 export const LayerTimeline: React.FC<LayerTimelineProps> = ({
