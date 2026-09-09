@@ -348,6 +348,15 @@ describe('navigateLayer over a sparse layer', () => {
         )
     })
 
+    test('moves inward from an outermost stop rather than stalling on it', () => {
+        expect(goTo(nav, '2020-01-02T23:59:59.999Z', 'next')).toBe(
+            '2020-03-04T23:59:59.999Z'
+        )
+        expect(goTo(nav, '2020-11-02T23:59:59.999Z', 'prev')).toBe(
+            '2020-07-19T23:59:59.999Z'
+        )
+    })
+
     test('has nowhere to go beyond either end', () => {
         expect(goTo(nav, '2020-11-02T23:59:59.999Z', 'next')).toBeNull()
         expect(goTo(nav, '2021-06-15T00:00:00Z', 'next')).toBeNull()
@@ -367,6 +376,13 @@ describe('navigateLayer over a sparse layer', () => {
         )
     })
 
+    test('has nowhere to jump from the stop it already sits on', () => {
+        // Repeating a jump would re-commit the time the timeline already
+        // holds, leaving the control looking live while doing nothing.
+        expect(goTo(nav, '2020-01-02T23:59:59.999Z', 'first')).toBeNull()
+        expect(goTo(nav, '2020-11-02T23:59:59.999Z', 'last')).toBeNull()
+    })
+
     test('bounds a layer holding a single day by that one stop', () => {
         expect(goTo(single, '2020-05-01T00:00:00Z', 'first')).toBe(
             '2020-03-04T23:59:59.999Z'
@@ -382,6 +398,15 @@ describe('navigateLayer over a sparse layer', () => {
             '2020-03-04T23:59:59.999Z'
         )
         expect(goTo(single, '2020-03-04T23:59:59.999Z', 'prev')).toBeNull()
+    })
+
+    test('has nowhere to go at all from the one stop of a single-day layer', () => {
+        // Every direction is the stop the timeline already sits on, so all
+        // four controls draw inert together.
+        expect(goTo(single, '2020-03-04T23:59:59.999Z', 'first')).toBeNull()
+        expect(goTo(single, '2020-03-04T23:59:59.999Z', 'prev')).toBeNull()
+        expect(goTo(single, '2020-03-04T23:59:59.999Z', 'next')).toBeNull()
+        expect(goTo(single, '2020-03-04T23:59:59.999Z', 'last')).toBeNull()
     })
 
     test('lands on stops rather than stepping by the timeline granularity', () => {
@@ -408,6 +433,15 @@ describe('navigateLayer over a periodic layer', () => {
         )
         expect(goTo(nav, '2021-06-15T00:00:00Z', 'prev')).toBe(
             '2020-12-31T00:00:00.000Z'
+        )
+    })
+
+    test('steps inward from an edge rather than stalling on it', () => {
+        expect(goTo(nav, '2020-01-01T00:00:00Z', 'next')).toBe(
+            '2020-01-02T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2020-12-31T00:00:00Z', 'prev')).toBe(
+            '2020-12-30T00:00:00.000Z'
         )
     })
 
@@ -479,6 +513,11 @@ describe('navigateLayer over a periodic layer', () => {
         expect(goTo(nav, '2015-01-01T00:00:00Z', 'last')).toBe(
             '2020-12-31T00:00:00.000Z'
         )
+    })
+
+    test('has nowhere to jump from the edge it already sits on', () => {
+        expect(goTo(nav, '2020-01-01T00:00:00Z', 'first')).toBeNull()
+        expect(goTo(nav, '2020-12-31T00:00:00Z', 'last')).toBeNull()
     })
 })
 

@@ -113,6 +113,12 @@ export function resolveLayerNavigation(
  * and stops short at the extent's edge rather than stepping past the data. One
  * press from outside the extent reaches its near edge, so a layer whose data
  * lies well away from the current time is one press away too.
+ *
+ * Jumping to an outermost instant the current time already sits on is nowhere
+ * to go as well. That instant is where the previous press left the timeline, so
+ * repeating it would re-commit the time already held while the control went on
+ * looking live; null instead draws it inert, and leaves every control's inert
+ * rule the one question of whether this function returns an instant.
  */
 export function navigateLayer(
     nav: LayerNavigation,
@@ -126,11 +132,14 @@ export function navigateLayer(
         const stops = nav.stops ?? []
         if (stops.length === 0) return null
 
+        const firstStop = stops[0]
+        const lastStop = stops[stops.length - 1]
+
         switch (action) {
             case 'first':
-                return stops[0]
+                return firstStop.getTime() === at ? null : firstStop
             case 'last':
-                return stops[stops.length - 1]
+                return lastStop.getTime() === at ? null : lastStop
             case 'next':
                 return stops.find((stop) => stop.getTime() > at) ?? null
             case 'prev':
@@ -143,9 +152,9 @@ export function navigateLayer(
 
     switch (action) {
         case 'first':
-            return nav.start
+            return at === start ? null : nav.start
         case 'last':
-            return nav.end
+            return at === end ? null : nav.end
         case 'next':
             if (at < start) return nav.start
             if (at >= end) return null
