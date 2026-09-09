@@ -1,3 +1,5 @@
+import type { LayerNavigation } from './utils/layerNavigation'
+
 export type TimeMode = 'YEAR' | 'MONTH' | 'DAY' | 'HOUR'
 
 // Canonical display order, largest granularity first.
@@ -16,4 +18,8 @@ export interface LayerTimeData {
     displayName: string
     timeRanges: TimeRange[]
     color: string
+    // Where the layer's own row can put the current time. Absent when the
+    // layer names no instant to move to, which is how a row goes without
+    // navigation controls.
+    navigation?: LayerNavigation | null
 }

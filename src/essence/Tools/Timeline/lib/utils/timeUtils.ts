@@ -154,6 +154,87 @@ export interface LayerTimeConfig {
     dataDates?: string[] | string
 }
 
+/** A layer's extent, with either bound completed from the caller's fallback. */
+export interface ResolvedLayerExtent {
+    start: Date
+    end: Date
+    /** False when `start` is the fallback, `dataStartTime` naming no readable bound. */
+    hasOwnStart: boolean
+    /** False when `end` is the fallback, `dataEndTime` naming no readable bound. */
+    hasOwnEnd: boolean
+}
+
+/**
+ * A layer's `dataStartTime`/`dataEndTime` extent. `dataEndTime` of `'now'`
+ * resolves to the current instant, and a bound that is absent or fails to
+ * parse falls back to the one supplied. Parsing is lenient, since configs
+ * carry these in looser formats than ISO 8601.
+ */
+export function resolveLayerExtent(
+    time: LayerTimeConfig | undefined,
+    fallbackStart: Date,
+    fallbackEnd: Date
+): ResolvedLayerExtent {
+    const parsedStart = time?.dataStartTime ? new Date(time.dataStartTime) : null
+    const parsedEnd =
+        time?.dataEndTime === 'now'
+            ? new Date()
+            : time?.dataEndTime
+            ? new Date(time.dataEndTime)
+            : null
+
+    const start =
+        parsedStart && !isNaN(parsedStart.getTime()) ? parsedStart : null
+    const end = parsedEnd && !isNaN(parsedEnd.getTime()) ? parsedEnd : null
+
+    return {
+        start: start ?? fallbackStart,
+        end: end ?? fallbackEnd,
+        hasOwnStart: start !== null,
+        hasOwnEnd: end !== null,
+    }
+}
+
+/**
+ * The days a layer lists data on, one moment per day at its first UTC instant,
+ * ascending, with a day listed more than once collapsed to one — several
+ * instants on one day being one day of data. `dataDates` is accepted as a list
+ * or as a single bare string.
+ *
+ * Days are read in UTC, matching every other instant the plugin handles;
+ * reading them locally would shift each off the day it names by the viewer's
+ * offset. A listed day must be written as ISO 8601, give or take the
+ * surrounding whitespace a comma-separated list picks up — anything else is
+ * dropped rather than guessed at, so a mistyped date costs the layer that day
+ * rather than its whole row.
+ *
+ * The one reading of `dataDates`, so what a row navigates through cannot drift
+ * from what its bar draws.
+ */
+export function resolveListedDays(
+    time: LayerTimeConfig | undefined
+): moment.Moment[] {
+    const raw = time?.dataDates
+    const listed = Array.isArray(raw)
+        ? raw
+        : typeof raw === 'string'
+        ? [raw]
+        : []
+
+    return [
+        ...new Set(
+            listed
+                .map((date) =>
+                    moment.utc(String(date).trim(), moment.ISO_8601, true)
+                )
+                .filter((day) => day.isValid())
+                .map((day) => day.startOf('day').valueOf())
+        ),
+    ]
+        .sort((a, b) => a - b)
+        .map((start) => moment.utc(start))
+}
+
 /**
  * The spans of the timeline a layer holds data for.
  *
@@ -161,16 +242,9 @@ export interface LayerTimeConfig {
  * its configured extent. A sparse layer — data on a scattered handful of days
  * rather than throughout — lists those days instead, and gets one whole-day
  * span each, so the timeline shows the gaps rather than implying coverage the
- * layer does not have. Listing no days keeps the single continuous span.
- *
- * Days are read and bounded in UTC, matching every other instant the plugin
- * handles; snapping them locally would shift each box off the day it names by
- * the viewer's offset. A listed day must be written as ISO 8601, give or take
- * the surrounding whitespace a comma-separated list picks up — anything else
- * is dropped rather than guessed at, so a mistyped date costs the layer that
- * box rather than its whole row, and a list with nothing readable in it falls
- * back to the continuous span. The extent either side of it is read leniently,
- * since configs carry values in looser formats.
+ * layer does not have. Listing no readable days keeps the single continuous
+ * span, whose extent is read leniently, since configs carry those bounds in
+ * looser formats than the days.
  */
 export function resolveLayerTimeRanges(
     time: LayerTimeConfig | undefined,
@@ -180,36 +254,15 @@ export function resolveLayerTimeRanges(
     if (!time || time.enabled !== true)
         return [{ start: fallbackStart, end: fallbackEnd }]
 
-    const listed = Array.isArray(time.dataDates)
-        ? time.dataDates
-        : typeof time.dataDates === 'string'
-        ? [time.dataDates]
-        : []
-
-    const days = listed
-        .map((date) => moment.utc(String(date).trim(), moment.ISO_8601, true))
-        .filter((day) => day.isValid())
-        .sort((a, b) => a.valueOf() - b.valueOf())
+    const days = resolveListedDays(time)
 
     if (days.length > 0)
         return days.map((day) => ({
-            start: day.clone().startOf('day').toDate(),
+            start: day.toDate(),
             end: day.clone().endOf('day').toDate(),
             label: day.format('YYYY-MM-DD'),
         }))
 
-    let start = fallbackStart
-    let end = fallbackEnd
-
-    if (time.dataStartTime) {
-        const parsedStart = new Date(time.dataStartTime)
-        if (!isNaN(parsedStart.getTime())) start = parsedStart
-    }
-    if (time.dataEndTime === 'now') end = new Date()
-    else if (time.dataEndTime) {
-        const parsedEnd = new Date(time.dataEndTime)
-        if (!isNaN(parsedEnd.getTime())) end = parsedEnd
-    }
-
+    const { start, end } = resolveLayerExtent(time, fallbackStart, fallbackEnd)
     return [{ start, end }]
 }

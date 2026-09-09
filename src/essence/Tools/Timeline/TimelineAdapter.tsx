@@ -29,6 +29,8 @@ import {
     clampDate,
     resolveLayerTimeRanges,
 } from './lib/utils/timeUtils'
+import { resolveLayerNavigation, revealStart } from './lib/utils/layerNavigation'
+import type { LayerNavigation } from './lib/utils/layerNavigation'
 import './Timeline.css'
 
 /** The wire shape of both 'time:changeRequested' and 'time:changed'. */
@@ -103,17 +105,54 @@ export const TimelineAdapter: React.FC = () => {
         setResetZoomFn(() => fn)
     }, [])
 
-    /** Moves the scrubber and asks core to commit the same instant. */
-    const commitTime = useCallback((next: Date) => {
+    /**
+     * Asks core to commit an instant, within the window given, and moves local
+     * state onto the same payload. All three fields are set here, not just the
+     * instant: core's echo of this commit is the one 'time:changed' skips, so
+     * a window emitted without being set locally would be lost on the way back.
+     */
+    const requestTime = useCallback((start: Date, end: Date, next: Date) => {
+        setStartTime((prev) => preserveIdentity(prev, start))
+        setEndTime((prev) => preserveIdentity(prev, end))
         setCurrentTime((prev) => preserveIdentity(prev, next))
         const payload: TimePayload = {
-            startTime: startTimeRef.current.toISOString(),
-            endTime: endTimeRef.current.toISOString(),
+            startTime: start.toISOString(),
+            endTime: end.toISOString(),
             currentTime: next.toISOString(),
         }
         lastRequestedRef.current = payload
         mmgisEmit('time:changeRequested', payload)
     }, [])
+
+    /** Moves the scrubber and asks core to commit the same instant. */
+    const commitTime = useCallback(
+        (next: Date) => {
+            requestTime(startTimeRef.current, endTimeRef.current, next)
+        },
+        [requestTime]
+    )
+
+    /**
+     * Commits the instant a layer row's controls lead to, widening the window
+     * to reach it. A layer's data need not sit inside the window on screen, so
+     * the target is committed as given rather than clamped back in.
+     *
+     * The window opens to `revealStart` rather than to the target: a sparse
+     * target is a day's last instant, and a window starting there would meet
+     * the trailing edge of that day's bar and leave the whole of it off the
+     * left of the chart. Forwards needs no such allowance, since a bar ends on
+     * the instant its day does.
+     */
+    const handleLayerNavigate = useCallback(
+        (target: Date, navigation: LayerNavigation) => {
+            const reach = revealStart(navigation, target)
+            const start =
+                reach < startTimeRef.current ? reach : startTimeRef.current
+            const end = target > endTimeRef.current ? target : endTimeRef.current
+            requestTime(start, end, target)
+        },
+        [requestTime]
+    )
 
     // Tool variables from the mission config. 'tool:getVars' is registered by
     // Layers_.fina() during mission load, after this tool mounts.
@@ -203,6 +242,14 @@ export const TimelineAdapter: React.FC = () => {
                         layer.time,
                         startTime,
                         endTime
+                    ),
+                    // Same fallback bounds as the ranges above, so a row
+                    // navigates the span it draws.
+                    navigation: resolveLayerNavigation(
+                        layer.time,
+                        startTime,
+                        endTime,
+                        layerName
                     ),
                 })
             })
@@ -477,6 +524,7 @@ export const TimelineAdapter: React.FC = () => {
                         layers={layers}
                         onCurrentTimeChange={handleCurrentTimeChange}
                         onCurrentTimePreview={handleCurrentTimePreview}
+                        onLayerNavigate={handleLayerNavigate}
                         onResetZoomReady={handleResetZoomReady}
                     />
                 )}
@@ -493,7 +541,7 @@ export const TimelineAdapter: React.FC = () => {
             >
                 <div className="timeline-info-tooltip-content">
                     <strong>Timeline Controls</strong>
-                    <p>Scroll to zoom • Drag scrubber to change time • Click to jump</p>
+                    <p>Scroll to zoom • Drag scrubber to change time • Click to jump • Hover a layer to step through its dates</p>
                 </div>
             </FloatingPopover>
         </div>
