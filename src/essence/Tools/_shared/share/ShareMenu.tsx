@@ -23,15 +23,18 @@ export type ShareMenuProps = {
 /** Gap between the trigger's bottom edge and the dropdown, in px. */
 const MENU_GAP_PX = 4
 
+/** Names the glyph-only trigger, as its tooltip and its accessible name. */
+const TRIGGER_LABEL = 'Share map'
+
 type MenuPosition = { top: number; right: number }
 
 /**
- * Presentational share control: a "Share map" trigger that opens a dropdown
- * (copy link / export PNG / export PDF). Pure — all behaviour comes in via
- * props. The trigger renders in place (positioned by the host layout); the
- * transient dropdown is portaled to document.body so an overflow-clipping
- * ancestor (like a float panel card) can't cut it off, anchored under the
- * trigger's bottom-right corner at open time.
+ * Presentational share control: an icon trigger that opens a dropdown (copy
+ * link / export PNG / export PDF). Pure — all behaviour comes in via props.
+ * The trigger renders in place (positioned by the host layout); the transient
+ * dropdown is portaled to document.body so an overflow-clipping ancestor (like
+ * a float panel card) can't cut it off, anchored under the trigger's
+ * bottom-right corner at open time.
  */
 export function ShareMenu({
     formats,
@@ -140,6 +143,8 @@ export function ShareMenu({
                 aria-haspopup="menu"
                 aria-expanded={open}
                 aria-controls={open ? menuId : undefined}
+                title={TRIGGER_LABEL}
+                aria-label={TRIGGER_LABEL}
                 onClick={handleTriggerClick}
             >
                 <ShareMapIcon
@@ -147,7 +152,6 @@ export function ShareMenu({
                     aria-hidden="true"
                     focusable="false"
                 />
-                <span>Share map</span>
             </button>
 
             {open &&
