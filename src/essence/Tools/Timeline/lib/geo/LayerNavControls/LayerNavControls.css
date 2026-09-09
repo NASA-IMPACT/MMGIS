@@ -75,12 +75,15 @@
 }
 
 /* Hover shows the light-grey rectangle only — the icon keeps its colour. */
-.layer-nav-btn:hover:not(:disabled) {
+.layer-nav-btn:hover:not(:disabled):not([aria-disabled='true']) {
     background: var(--theme-color-primary-lightest, #e6f4f6);
 }
 
-/* A control the layer's data leaves nowhere to go is inert. */
-.layer-nav-btn:disabled {
+/* A control the layer's data leaves nowhere to go is inert. It carries
+   aria-disabled rather than the disabled attribute so that it keeps focus
+   when a keyboard walk exhausts it, so the dimming keys on both. */
+.layer-nav-btn:disabled,
+.layer-nav-btn[aria-disabled='true'] {
     opacity: 0.35;
     cursor: default;
 }

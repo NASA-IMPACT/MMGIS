@@ -90,7 +90,13 @@ export const LayerNavControls: React.FC<LayerNavControlsProps> = ({
                         }}
                         title={label}
                         aria-label={label}
-                        disabled={target === null}
+                        // Stated rather than enforced: a browser blurs an
+                        // element the moment it is disabled, so a control
+                        // pressed until it had nowhere left to go would drop
+                        // the keyboard's focus, and with it the :focus-within
+                        // that reveals the group. The press itself is silenced
+                        // by the handler's own guard.
+                        aria-disabled={target === null}
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
                         fill="currentColor" aria-hidden="true" focusable="false">

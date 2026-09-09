@@ -118,13 +118,20 @@ describe('LayerNavControls', () => {
         ])
     })
 
-    const disabled = () =>
-        buttons().map((button) => button.disabled)
+    /**
+     * A control with nowhere to go says so with aria-disabled rather than
+     * carrying the disabled attribute, so that it keeps focus; see the
+     * keyboard test below.
+     */
+    const inert = () =>
+        buttons().map(
+            (button) => button.getAttribute('aria-disabled') === 'true',
+        )
 
     test('leaves every control live from between the layer stops', () => {
         render('2020-05-01T00:00:00Z')
 
-        expect(disabled()).toEqual([false, false, false, false])
+        expect(inert()).toEqual([false, false, false, false])
     })
 
     test('draws a control with nowhere to go inert', () => {
@@ -132,13 +139,13 @@ describe('LayerNavControls', () => {
         // that same stop lead nowhere.
         render('2020-01-02T23:59:59.999Z')
 
-        expect(disabled()).toEqual([true, true, false, false])
+        expect(inert()).toEqual([true, true, false, false])
     })
 
     test('goes inert in every direction on a layer holding one instant', () => {
         render('2020-03-04T23:59:59.999Z', sparseNav('2020-03-04'))
 
-        expect(disabled()).toEqual([true, true, true, true])
+        expect(inert()).toEqual([true, true, true, true])
     })
 
     test('reports the instant the pressed control leads to', () => {
@@ -212,6 +219,29 @@ describe('LayerNavControls', () => {
 
         expect(next.tabIndex).toBe(0)
         next.focus()
+        expect(document.activeElement).toBe(next)
+    })
+
+    test('keeps the control a viewer walked to the end of a layer with', () => {
+        // Pressing "next date" repeatedly reaches the last stop, where that
+        // very control has nowhere left to go. A browser blurs an element the
+        // moment it gains the disabled attribute, and the row reveals its
+        // controls on :focus-within, so disabling the pressed control would
+        // drop focus to the document and fade the whole group out from under
+        // the viewer. The control states its inertness instead of enforcing
+        // it, and stays a focusable element.
+        render('2020-03-04T23:59:59.999Z')
+        const next = buttons().find(
+            (button) =>
+                button.getAttribute('aria-label') === 'MODIS Daily: next date',
+        )!
+        next.focus()
+
+        render('2020-11-02T23:59:59.999Z')
+
+        expect(next.getAttribute('aria-disabled')).toBe('true')
+        expect(next.disabled).toBe(false)
+        expect(next.tabIndex).toBe(0)
         expect(document.activeElement).toBe(next)
     })
 })
