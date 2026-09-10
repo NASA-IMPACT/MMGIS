@@ -1,4 +1,4 @@
-import { test, expect, vi } from 'vitest'
+import { test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { DeckGLAdapter } from '../../src/essence/Basics/MapEngines/Adapters/DeckGLAdapter.ts'
 // Import MAP_ENGINE from the lightweight types module rather than MapEngines/index.ts.
 // index.ts transitively imports LeafletAdapter -> leaflet, which references a global
@@ -1290,6 +1290,48 @@ test.describe('DeckGLAdapter', () => {
         })
     })
 
+    test.describe('camera events', () => {
+        const fullViewState = {
+            longitude: 34,
+            latitude: 12,
+            zoom: 8,
+            bearing: 45,
+            pitch: 30,
+        }
+
+        test('basemap movement syncs the full view state and emits move', () => {
+            const adapter = makeAdapter()
+            adapter._basemap = {
+                getCenter: () => ({ lat: 12, lng: 34 }),
+                getZoom: () => 8,
+                getBearing: () => 45,
+                getPitch: () => 30,
+            }
+            const moves = []
+            adapter.on('move', (state) => moves.push({ ...state }))
+
+            adapter._onBasemapMove()
+
+            expect(adapter._viewState).toEqual(fullViewState)
+            expect(moves).toEqual([fullViewState])
+        })
+
+        test('a programmatic camera jump emits move then moveend', () => {
+            const adapter = makeAdapter()
+            const events = []
+            adapter.on('move', (state) => events.push(['move', { ...state }]))
+            adapter.on('moveend', (state) => events.push(['moveend', { ...state }]))
+
+            adapter.setView({ lat: 20, lng: 10 }, 6)
+
+            // The camera the jump asked for, not whatever the adapter kept:
+            // both frames carry the view the caller named.
+            const jumped = { longitude: 10, latitude: 20, zoom: 6 }
+            expect(events.map(([name]) => name)).toEqual(['move', 'moveend'])
+            events.forEach(([, state]) => expect(state).toMatchObject(jumped))
+        })
+    })
+
     // The props the engine is constructed with are where the adapter's handlers
     // are connected to deck's input. Calling those handlers directly, as the
     // tests above do, says nothing about which function deck ends up calling,
@@ -1360,6 +1402,216 @@ test.describe('DeckGLAdapter', () => {
                 expect(picks).toEqual([])
             })
         }
+
+        test('a click reports the feature deck picked under it', () => {
+            const { adapter, props } = initAdapter(null)
+            const state = { type: 'Feature', properties: { name: 'Utah' } }
+            const clicks = []
+            adapter.on('click', (e) => clicks.push(e.feature))
+
+            props.onClick({
+                ...pickAt(-120, 40),
+                picked: true,
+                object: state,
+                layer: { id: 'states' },
+            })
+
+            expect(clicks).toEqual([state])
+        })
+
+        test('a click on empty map reports no feature', () => {
+            const { adapter, props } = initAdapter(null)
+            const clicks = []
+            adapter.on('click', (e) => clicks.push(e.feature))
+
+            props.onClick(pickAt(-120, 40))
+
+            expect(clicks).toEqual([null])
+        })
+
+        // The popup service subscribes to `click` when a plugin opens a card
+        // from a click, so the click that opened the card would dismiss it
+        // were the fan-out to walk the subscribers the dispatch is adding to.
+        test('a subscriber added during a click hears the next click, not that one', () => {
+            const { adapter, props } = initAdapter(null)
+            const late = []
+            let subscribed = false
+            adapter.on('click', () => {
+                if (subscribed) return
+                subscribed = true
+                adapter.on('click', (e) => late.push(e.latlng))
+            })
+
+            props.onClick(pickAt(-120, 40))
+            expect(late).toEqual([])
+
+            props.onClick(pickAt(-121, 41))
+            expect(late).toEqual([{ lat: 41, lng: -121 }])
+        })
+
+        // A drag or a wheel zoom reaches the adapter only through deck's own
+        // onViewStateChange, once per frame. `move` follows every frame, the
+        // way an anchored consumer needs it to; `moveend` is one event about
+        // the gesture as a whole, so it waits for the camera to stop.
+        test.describe('standalone camera settling', () => {
+            beforeEach(() => vi.useFakeTimers())
+            afterEach(() => vi.useRealTimers())
+
+            const frameAt = (zoom) => ({
+                longitude: 10,
+                latitude: 20,
+                zoom,
+                bearing: 45,
+                pitch: 30,
+            })
+
+            test('every gesture frame is a move, and the gesture settles into one moveend', () => {
+                const { adapter, props } = initAdapter(null)
+                const events = []
+                adapter.on('move', (state) => events.push(['move', { ...state }]))
+                adapter.on('moveend', (state) => events.push(['moveend', { ...state }]))
+
+                const frames = [6, 6.5, 7, 7.5, 8].map(frameAt)
+                frames.forEach((viewState) => props.onViewStateChange({ viewState }))
+
+                expect(events.map(([name]) => name)).toEqual(Array(5).fill('move'))
+                expect(events.map(([, state]) => state)).toEqual(frames)
+                // Anchored consumers read bearing and pitch off the adapter, so
+                // the gesture has to be synced there before `move` goes out.
+                expect(adapter.getViewState()).toEqual({
+                    center: { lat: 20, lng: 10 },
+                    zoom: 8,
+                    bearing: 45,
+                    pitch: 30,
+                })
+
+                vi.advanceTimersByTime(80)
+
+                expect(events.slice(5)).toEqual([['moveend', frames[4]]])
+            })
+
+            // A held drag can pause for as long as the user likes without the
+            // gesture being over, and deck says so through the flags on the frame.
+            // Its end arrives on deck's own prop, and a final camera frame can
+            // follow it with the flags already cleared.
+            test('moveend is held back for as long as deck reports a live gesture', () => {
+                const { adapter, props } = initAdapter(null)
+                const moveEnds = []
+                adapter.on('moveend', (state) => moveEnds.push({ ...state }))
+
+                const dragged = frameAt(9)
+                props.onViewStateChange({
+                    viewState: frameAt(8),
+                    interactionState: { isDragging: true },
+                })
+                props.onViewStateChange({
+                    viewState: dragged,
+                    interactionState: { isDragging: true },
+                })
+                vi.advanceTimersByTime(500)
+
+                expect(moveEnds).toEqual([])
+
+                props.onInteractionStateChange({ isDragging: false })
+                vi.advanceTimersByTime(80)
+
+                expect(moveEnds).toEqual([dragged])
+            })
+
+            // A trackpad wheel burst is a run of short zoom gestures, each of which
+            // deck calls over the moment the fingers pause. The burst is one camera
+            // move to anyone listening, so it settles into one `moveend`.
+            test('a burst of short gestures settles into a single moveend', () => {
+                const { adapter, props } = initAdapter(null)
+                const moveEnds = []
+                adapter.on('moveend', (state) => moveEnds.push({ ...state }))
+
+                const landed = frameAt(7.5)
+                ;[frameAt(6), frameAt(6.5), frameAt(7), landed].forEach((viewState) => {
+                    props.onViewStateChange({
+                        viewState,
+                        interactionState: { isZooming: true, isPanning: true },
+                    })
+                    props.onInteractionStateChange({ isZooming: false, isPanning: false })
+                    vi.advanceTimersByTime(40)
+                })
+
+                expect(moveEnds).toEqual([])
+
+                vi.advanceTimersByTime(80)
+
+                expect(moveEnds).toEqual([landed])
+            })
+
+            // An animated move is deck's transition manager's to run: it reports
+            // every frame with `inTransition` set and clears the flag on its own
+            // prop at the end, which is what the `moveend` follows.
+            test('an animated move emits nothing up front and one moveend when it lands', () => {
+                const { adapter, props } = initAdapter(null)
+                const moveEnds = []
+                adapter.on('moveend', (state) => moveEnds.push({ ...state }))
+
+                adapter.panTo({ lat: 20, lng: 10 }, { duration: 400 })
+
+                expect(moveEnds).toEqual([])
+
+                const landed = frameAt(9)
+                ;[frameAt(7), frameAt(8), landed].forEach((viewState) =>
+                    props.onViewStateChange({
+                        viewState,
+                        interactionState: { inTransition: true },
+                    })
+                )
+                vi.advanceTimersByTime(500)
+
+                expect(moveEnds).toEqual([])
+
+                props.onInteractionStateChange({ inTransition: false })
+                vi.advanceTimersByTime(80)
+
+                expect(moveEnds).toEqual([landed])
+            })
+
+            // A programmatic jump landing while a gesture's `moveend` is still
+            // pending closes the camera out itself, so the jump's own `moveend` is
+            // the only one that goes out.
+            test('a jump landing on a pending gesture reports one moveend', () => {
+                const { adapter, props } = initAdapter(null)
+                const moveEnds = []
+                adapter.on('moveend', (state) => moveEnds.push({ ...state }))
+
+                props.onViewStateChange({
+                    viewState: frameAt(6),
+                    interactionState: { isPanning: true },
+                })
+                props.onInteractionStateChange({ isPanning: false })
+                adapter.setView({ lat: 51, lng: -1 }, 4)
+                vi.advanceTimersByTime(200)
+
+                expect(moveEnds).toHaveLength(1)
+                expect(moveEnds[0]).toMatchObject({ longitude: -1, latitude: 51, zoom: 4 })
+            })
+
+            // An animated jump takes the camera off the gesture too, but hands
+            // it to deck's transition manager rather than landing it, so the
+            // gesture's pending `moveend` is dropped with nothing yet to
+            // replace it.
+            test('an animated jump over a pending gesture reports no moveend', () => {
+                const { adapter, props } = initAdapter(null)
+                const moveEnds = []
+                adapter.on('moveend', (state) => moveEnds.push({ ...state }))
+
+                props.onViewStateChange({
+                    viewState: frameAt(6),
+                    interactionState: { isPanning: true },
+                })
+                props.onInteractionStateChange({ isPanning: false })
+                adapter.panTo({ lat: 51, lng: -1 }, { duration: 400 })
+                vi.advanceTimersByTime(200)
+
+                expect(moveEnds).toEqual([])
+            })
+        })
     })
 
     test.describe('destroy', () => {
@@ -1377,6 +1629,35 @@ test.describe('DeckGLAdapter', () => {
             adapter.destroy()
             adapter.emit('test')
             expect(fired).toBe(false)
+        })
+
+        // A gesture whose `moveend` is still pending has nothing left to fire
+        // into once the adapter is gone, so destroy drops the timer with it.
+        test('drops a moveend a gesture still had pending', () => {
+            vi.useFakeTimers()
+            constructed.deck.length = 0
+            const container = document.createElement('div')
+            container.id = 'deckgl-destroy'
+            document.body.appendChild(container)
+            const adapter = new DeckGLAdapter()
+            adapter.init({
+                containerId: 'deckgl-destroy',
+                center: { lat: 40, lng: -120 },
+                zoom: 5,
+            })
+            const moveEnds = []
+            adapter.on('moveend', (state) => moveEnds.push(state))
+
+            constructed.deck[0].onViewStateChange({
+                viewState: { longitude: 10, latitude: 20, zoom: 6, bearing: 0, pitch: 0 },
+                interactionState: { isPanning: true },
+            })
+            adapter.destroy()
+
+            vi.advanceTimersByTime(200)
+
+            expect(moveEnds).toEqual([])
+            vi.useRealTimers()
         })
     })
 })
