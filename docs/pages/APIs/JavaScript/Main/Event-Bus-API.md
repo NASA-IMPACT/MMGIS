@@ -159,7 +159,7 @@ MMGIS injects a scoped API into each tool the modern layout loads as `this.api`.
 
 The controller mints the handle before the tool's `initialize()` runs and releases it after the tool's `destroy()` returns, unregistering every provider and subscription made through it. Anything a tool registers straight on `window.mmgisAPI` sits outside the handle and stays the tool's own to remove: the React-based tools work that way today, so their requests carry no caller and LayerManager's unprefixed providers outlive a release.
 
-> **Note:** An address comes from a tool's module binding, so no two tools can share one. One tool still cannot run as two instances: the second would answer for the first's events and providers.
+> **Note:** An address comes from a tool's module binding, and two bindings that derive the same address fail the build. One tool still cannot run as two instances: the second would answer for the first's events and providers.
 
 The scoped API is available on `this.api` in your tool's `initialize()` and `make()` functions:
 
