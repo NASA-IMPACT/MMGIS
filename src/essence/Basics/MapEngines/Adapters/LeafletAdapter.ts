@@ -951,7 +951,8 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         const pick = this._pickFeatureAtLatLng(e.latlng)
         e.feature = pick?.feature ?? null
         this._featureClickListener?.(e, pick)
-        this._clickListeners.forEach((listener) => listener(e))
+        // Snapshot: a subscriber added during this click hears the next one.
+        Array.from(this._clickListeners).forEach((listener) => listener(e))
     }
 
     /** Put {@link _onMapClick} on the map, once, for its first subscriber. */
