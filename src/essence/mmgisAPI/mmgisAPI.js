@@ -19,6 +19,10 @@ const events = mitt()
 // Request/Response handler registry for async data retrieval
 const handlers = new Map()
 
+// Token -> plugin address, for the handles mintHandle makes. Module-private: a
+// token proves a request came through a handle; only the address is handed on.
+const tokens = new Map()
+
 var mmgisAPI_ = {
     // Internal event bus access for core modules
     _events: events,
@@ -937,8 +941,10 @@ var mmgisAPI = {
     /**
      * Register a request handler (data provider)
      * @param {string} name - Request name (e.g., 'map:getCenter', 'plugin:info:showFeature')
-     * @param {function} handler - Async handler function that returns data
-     * @returns {function} - Cleanup function to remove the handler
+     * @param {function} handler - Called as `handler(data, context)`, where
+     * `context.caller` is the requesting plugin's address, undefined without a
+     * handle. The context object is always passed.
+     * @returns {function} - Cleanup removing this registration only.
      * @example
      * const cleanup = mmgisAPI.provide('map:getCenter', () => Map_.map.getCenter());
      * // Later: cleanup();
@@ -948,25 +954,34 @@ var mmgisAPI = {
             console.warn(`[mmgisAPI] Handler "${name}" is being replaced`)
         }
         handlers.set(name, handler)
-        return () => handlers.delete(name)
+        // Keyed on the handler: a reloaded plugin registers before the outgoing
+        // one's cleanup runs, and a name-only delete would take it down too.
+        return () => {
+            if (handlers.get(name) === handler) handlers.delete(name)
+        }
     },
 
     /**
      * Make a request to a registered handler
      * @param {string} name - Request name
      * @param {*} data - Request data to pass to the handler
+     * @param {Object} [options] - `options.__token`, the token a handle's own
+     * `request` fills in, resolves to `context.caller`; anything else leaves it
+     * undefined.
      * @returns {Promise<*>} - Promise that resolves to handler's response
      * @throws {Error} - If no handler is registered for the request name
      * @example
      * const center = await mmgisAPI.request('map:getCenter');
      * const layers = await mmgisAPI.request('layers:getVisible');
      */
-    async request(name, data) {
+    async request(name, data, options) {
         const handler = handlers.get(name)
         if (!handler) {
             throw new Error(`[mmgisAPI] No handler for: "${name}"`)
         }
-        return await handler(data)
+        // The address, never the token: identity proof stays inside core. The
+        // context always arrives, so a provider can destructure it either way.
+        return await handler(data, { caller: tokens.get(options?.__token) })
     },
 
     /**
@@ -983,49 +998,76 @@ var mmgisAPI = {
     // ============ PLUGIN-SCOPED API ============
 
     /**
-     * Get a plugin-scoped API for emitting events, providing handlers, and
-     * reading the plugin's tool configuration. Event/handler names are
-     * automatically prefixed with 'plugin:{pluginId}:'.
-     *
-     * For subscribing (on) or requesting (request), use mmgisAPI directly with full paths.
-     *
-     * @param {string} pluginId - Unique plugin identifier (e.g., 'draw', 'info', 'layerManager')
-     * @returns {Object} Scoped API with emit, provide, and getVars methods
-     * @example
-     * const api = mmgisAPI.forPlugin('draw');
-     *
-     * // Emitting/providing (auto-prefixed)
-     * api.provide('getActiveFeature', () => data);  // -> 'plugin:draw:getActiveFeature'
-     * api.emit('featureUpdated', data);             // -> 'plugin:draw:featureUpdated'
-     *
-     * // Reading this plugin's configured tool variables
-     * const vars = api.getVars();                    // -> L_.getToolVars('draw') || {}
-     *
-     * // Subscribing/requesting (use mmgisAPI directly)
-     * mmgisAPI.on('layer:visibilityChange', handler);
-     * mmgisAPI.request('plugin:info:getData');
+     * Get a plugin's bus handle by address. See `mintHandle`.
+     * @param {string} address - Plugin address (e.g., 'draw', 'info', 'aoi')
+     * @returns {Object} The plugin's handle
      */
-    forPlugin(pluginId) {
-        const prefix = `plugin:${pluginId}:`
-
-        // Auto-register this plugin's tool variables as a queryable provider so
-        // any consumer (including sandboxed marketplace plugins, where direct
-        // method calls aren't possible) can read it via the standard request
-        // pattern: `mmgisAPI.request('plugin:{id}:getVars')`. The scoped
-        // `getVars()` below is a sync convenience for the plugin's own code.
-        mmgisAPI.provide(`${prefix}getVars`, () => L_.getToolVars(pluginId) || {})
-
-        return {
-            emit: (event, data) => mmgisAPI.emit(prefix + event, data),
-            provide: (name, handler) => mmgisAPI.provide(prefix + name, handler),
-            getVars: () => L_.getToolVars(pluginId) || {},
-            pluginId,
-            prefix,
-        }
+    forPlugin(address) {
+        return mintHandle(address)
     },
 
     // Formulae_
     utils: { ...F_ },
+}
+
+// `L_.getToolVars` answers a miss with a truthy `{__noVars: true}` marker a
+// plugin would read as configuration, so a miss becomes {} here.
+const readVars = (address) => {
+    const vars = L_.getToolVars(address)
+    return vars && !vars.__noVars ? vars : {}
+}
+
+/**
+ * Mint a plugin's bus handle: `emit` and `provide` prefix names with the
+ * plugin's address, `request` takes a full name and is stamped with the token
+ * minted here, and `release()` hands back everything the handle registered.
+ * @param {string} address - Plugin address (e.g., 'aoi')
+ * @returns {Object} The plugin's handle
+ */
+const mintHandle = (address) => {
+    // A Symbol is the key: it is equal to nothing but itself, so neither a
+    // string an impostor writes nor a Symbol minted elsewhere resolves here.
+    const token = Symbol(address)
+    tokens.set(token, address)
+
+    const prefix = `plugin:${address}:`
+    const cleanups = []
+    let live = true
+    const track = (off) => {
+        cleanups.push(off)
+        return off
+    }
+
+    // Registered at the mint so any consumer — a sandboxed plugin included —
+    // can read this plugin's configuration through the request pattern.
+    track(mmgisAPI.provide(`${prefix}getVars`, () => readVars(address)))
+
+    return {
+        address,
+        prefix,
+        on: (event, handler) => {
+            if (!live) return () => {}
+            return track(mmgisAPI.on(event, handler))
+        },
+        emit: (event, data) => {
+            if (live) mmgisAPI.emit(prefix + event, data)
+        },
+        provide: (name, handler) => {
+            if (!live) return () => {}
+            return track(mmgisAPI.provide(prefix + name, handler))
+        },
+        // Full name, not prefixed: a request addresses another provider.
+        request: (name, data) =>
+            live
+                ? mmgisAPI.request(name, data, { __token: token })
+                : Promise.resolve(null),
+        getVars: () => readVars(address),
+        release: () => {
+            live = false
+            while (cleanups.length) cleanups.pop()()
+            tokens.delete(token)
+        },
+    }
 }
 
 window.mmgisAPI = mmgisAPI
@@ -1052,4 +1094,4 @@ registerCoreProviders(mmgisAPI, {
     getPluginController: () => mmgisAPI_._pluginController,
 })
 
-export { mmgisAPI_, mmgisAPI }
+export { mmgisAPI_, mmgisAPI, mintHandle }

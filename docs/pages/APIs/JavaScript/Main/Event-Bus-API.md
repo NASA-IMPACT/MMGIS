@@ -89,9 +89,9 @@ Register a provider that responds to requests.
 
 **Parameters:**
 - `name` (string): Provider name using namespace:action format
-- `handler` (function): Handler function that returns data (can be async)
+- `handler` (function): Handler function that returns data (can be async). Called as `handler(params, context)`, where `context.caller` is the address of the plugin whose handle made the request. The context object always arrives, so it is safe to destructure; `context.caller` is `undefined` for a request made without a handle.
 
-**Returns:** Cleanup function to remove the provider
+**Returns:** Cleanup function to remove the provider. It removes that registration only — once another provider holds the name, a late cleanup leaves the successor alone.
 
 ```javascript
 // Register a provider in your plugin
@@ -106,13 +106,14 @@ const cleanup = window.mmgisAPI.provide('plugin:myPlugin:getData', (params) => {
 cleanup()
 ```
 
-### `mmgisAPI.request(name, params)`
+### `mmgisAPI.request(name, params, options)`
 
 Request data from a provider.
 
 **Parameters:**
 - `name` (string): Provider name
 - `params` (any): Parameters to pass to the provider
+- `options` (object, optional): How the request is made rather than what it asks for. A plugin's handle fills this in with the token core minted for it, which core resolves to the plugin's address in `context.caller`. Naming yourself here leaves `context.caller` `undefined` — the caller cannot be written by hand.
 
 **Returns:** Promise resolving to the provider's response
 
@@ -154,7 +155,7 @@ anything there right now.
 
 ## Plugin Scoped API
 
-MMGIS automatically injects a scoped API into each tool as `this.api`. This API automatically prefixes event and provider names with `plugin:{pluginId}:`, where `pluginId` is derived from the tool's module name (e.g., `DrawTool` → `draw`).
+MMGIS automatically injects a scoped API into each tool as `this.api`. This API automatically prefixes event and provider names with `plugin:{address}:`, where `address` is derived from the tool's module name (e.g., `DrawTool` → `draw`).
 
 > **Note:** Each plugin must have a unique ID. Multiple instances of the same plugin in a mission are not currently supported. If two plugins share the same ID, their events and providers will collide. This constraint is not currently enforced at runtime but may be in a future version.
 
@@ -189,6 +190,20 @@ window.mmgisAPI.on('plugin:myPlugin:dataUpdated', (data) => {
 })
 ```
 
+### Scoped `on(event, handler)`
+
+Subscribe to an event. Like `request`, names are **not** prefixed — a subscription listens for someone else's event, so it takes the full path.
+
+The handle tracks the subscription, so `release()` drops it along with the plugin's providers. The returned unsubscribe is there for letting one go sooner.
+
+```javascript
+const api = window.mmgisAPI.forPlugin('myPlugin')
+
+const off = api.on('layer:visibilityChange', handleLayerChange)
+
+off() // or leave it to api.release()
+```
+
 ### Scoped `provide(name, handler)`
 
 Register a provider with auto-prefixed name.
@@ -211,6 +226,35 @@ console.log(data.result) // 42
 cleanup()
 ```
 
+### Scoped `request(name, params)`
+
+Request another provider, stamped with this plugin's address. Names are **not** prefixed: a request addresses someone else's provider, so it takes the full name.
+
+```javascript
+const api = window.mmgisAPI.forPlugin('myPlugin')
+
+// The provider is called with ({ input: 21 }, { caller: 'myPlugin' })
+await api.request('plugin:other:getData', { input: 21 })
+```
+
+### Scoped `getVars()`
+
+The plugin's configured tool variables, or `{}` when it has none.
+
+### Scoped `release()`
+
+Hand every registration this handle made back to core — its own `getVars` provider, anything registered through its `provide`, and any subscription made through its `on`. The code that hands a plugin its handle is responsible for calling this when the plugin is torn down, so a reloaded plugin does not leave the previous load's providers answering.
+
+After release the handle is inert: `emit`, `provide` and `on` do nothing, `request` resolves to `null`, and releasing again changes nothing.
+
+```javascript
+const api = window.mmgisAPI.forPlugin('myPlugin')
+api.provide('getData', () => data) // 'plugin:myPlugin:getData'
+
+api.release()
+window.mmgisAPI.hasHandler('plugin:myPlugin:getData') // false
+```
+
 ### Metadata Properties
 
 The scoped API also exposes metadata:
@@ -218,8 +262,8 @@ The scoped API also exposes metadata:
 ```javascript
 const api = window.mmgisAPI.forPlugin('myPlugin')
 
-console.log(api.pluginId) // 'myPlugin'
-console.log(api.prefix)   // 'plugin:myPlugin:'
+console.log(api.address) // 'myPlugin'
+console.log(api.prefix)  // 'plugin:myPlugin:'
 ```
 
 ### Complete Plugin Example
@@ -237,9 +281,9 @@ const MyPluginTool = {
             this.api.provide('setData', (newData) => { this.data = newData })
         )
 
-        // Subscribe to events (use full paths via mmgisAPI)
+        // Subscribe to events (full paths, and released with the handle)
         this._cleanups.push(
-            window.mmgisAPI.on('layer:visibilityChange', this.handleLayerChange.bind(this))
+            this.api.on('layer:visibilityChange', this.handleLayerChange.bind(this))
         )
     },
 
@@ -709,17 +753,19 @@ function initProviders() {
 
 ### 4. Use `this.api` for Auto-Namespacing
 
-Tools have a scoped API automatically injected as `this.api`. Use it for emitting events and providing handlers:
+Tools have a scoped API automatically injected as `this.api`. Use it for everything the plugin does on the bus — emitting and providing are namespaced for you, while subscribing and requesting take full names:
 
 ```javascript
 // In your tool - this.api is auto-injected by ToolController
 this.api.emit('updated', data)           // -> 'plugin:mytool:updated'
 this.api.provide('getData', () => myData) // -> 'plugin:mytool:getData'
 
-// For subscribing/requesting, use mmgisAPI directly with full paths
-window.mmgisAPI.on('layer:visibilityChange', handler)
-window.mmgisAPI.request('plugin:draw:getData')
+// Subscribe and request through the handle too, with full names
+this.api.on('layer:visibilityChange', handler)
+this.api.request('plugin:draw:getData')
 ```
+
+Subscribing through the handle is what releases the subscription with the handle, and requesting through it stamps the request with the plugin's address. The global `window.mmgisAPI` is for code that has no handle.
 
 See [Plugin Scoped API](#plugin-scoped-api) for full details.
 
