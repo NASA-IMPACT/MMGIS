@@ -8,13 +8,20 @@ const { isLean } = require("./Backend/Utils/deploymentMode");
 // on the bus, in the modern controller's registries and in teardown events.
 // toolCanonicalId (src/essence/Basics/ToolController_/ToolMetadataUtils.js)
 // applies the same derivation in the browser, so the build and the frontend
-// agree on what a tool is called. Addresses are unique because bindings are:
-// two bindings sharing one address would have to be the same import name.
+// agree on what a tool is called. Two bindings can derive one address (`Foo`
+// and `FooTool`), so a collision throws here and fails the build.
 function buildToolIds(tools) {
   const ids = {};
+  const claimedBy = new Map();
   for (const t in tools) {
     for (const p in tools[t].paths) {
-      ids[p] = p.replace(/Tool$/, "").toLowerCase();
+      const id = p.replace(/Tool$/, "").toLowerCase();
+      if (claimedBy.has(id) && claimedBy.get(id) !== p)
+        throw new Error(
+          `Tool bindings "${claimedBy.get(id)}" and "${p}" both derive the address "${id}"`
+        );
+      claimedBy.set(id, p);
+      ids[p] = id;
     }
   }
   return ids;

@@ -2490,11 +2490,8 @@ const L_ = {
     getToolVars: function (toolName, withVarsFromLayers, showWarnings) {
         let vars = {}
         for (var i = 0; i < L_.tools.length; i++) {
-            // Matched on the address the tool is known by everywhere else —
-            // the one its bus handle is minted under — so a tool configured
-            // under a display name that is not its address is still reachable.
-            // The lowercased name stays as a fallback for callers that ask by
-            // display name instead.
+            // Matched on the tool's address first, with the lowercased display
+            // name kept as a fallback for callers that ask by that instead.
             if (
                 (toolCanonicalId(L_.tools[i]) === toolName ||
                     (L_.tools[i].hasOwnProperty('name') &&

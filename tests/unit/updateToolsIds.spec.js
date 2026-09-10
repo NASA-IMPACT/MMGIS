@@ -41,6 +41,17 @@ describe('buildToolIds', () => {
         })
     })
 
+    // Dropping a trailing "Tool" lets two bindings land on one address, where
+    // the second would quietly take over the first's events and providers.
+    // The generator throws instead, so the collision fails the build.
+    it('rejects two bindings that derive the same address', () => {
+        expect(() =>
+            buildToolIds({
+                Foo: { paths: { Foo: 'x', FooTool: 'y' } },
+            })
+        ).toThrow(/"Foo" and "FooTool" both derive the address "foo"/)
+    })
+
     // The derivation is written twice — here for the build, and in
     // toolCanonicalId for the browser, which falls back to it for a binding
     // the generated registry does not carry. The two run in different

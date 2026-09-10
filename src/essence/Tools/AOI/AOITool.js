@@ -139,7 +139,6 @@ const AOITool = {
     _reactRoot: null,
     _state: initialState(),
     _cleanups: [],
-    _api: null,
     _analysisErrorTimeout: null,
     _drawKeyHandler: null,
 
@@ -156,9 +155,7 @@ const AOITool = {
 
         // The controller minted this tool's bus handle and injected it before
         // make() ran; handing it back is the controller's job, not destroy()'s.
-        this._api = AOITool.api
-
-        const offSelection = this._api?.provide(
+        const offSelection = this.api?.provide(
             'getCurrentSelection',
             () => this._state.currentAOI
         )
@@ -246,7 +243,6 @@ const AOITool = {
         this.targetId = null
 
         this._state = initialState()
-        this._api = null
         this.made = false
     },
 
@@ -269,7 +265,7 @@ const AOITool = {
      * unset or empty.
      */
     _resolveDrawShapes() {
-        const raw = this._api?.getVars?.()?.drawShapes
+        const raw = this.api?.getVars?.()?.drawShapes
         const list = Array.isArray(raw)
             ? raw
             : typeof raw === 'string'
@@ -585,7 +581,7 @@ const AOITool = {
         }).catch((err) => console.warn('[AOI] failed to add selection layer', err))
 
         this._state.currentAOI = { feature, source, label }
-        this._api?.emit('areaDrawn', { feature, source })
+        this.api?.emit('areaDrawn', { feature, source })
 
         const c = featureCentroid(feature)
         // `view` keeps the tooltip on-screen when the camera does not move; omit
@@ -653,7 +649,7 @@ const AOITool = {
         this._removeSelectionLayer()
         this._hideTooltip()
         this._state.currentAOI = null
-        this._api?.emit('drawingCleared', {})
+        this.api?.emit('drawingCleared', {})
         this._render()
     },
 
@@ -701,12 +697,12 @@ const AOITool = {
     _onAnalyze() {
         const aoi = this._state.currentAOI
         if (!aoi) return
-        this._api?.emit('analysisAOIReady', { feature: aoi.feature })
+        this.api?.emit('analysisAOIReady', { feature: aoi.feature })
         this._hideTooltip()
     },
 
     _onCancel() {
-        this._api?.emit('drawingCancelled', {})
+        this.api?.emit('drawingCancelled', {})
         this._clearSelection()
     },
 
