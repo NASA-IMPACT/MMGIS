@@ -113,7 +113,7 @@ Request data from a provider.
 **Parameters:**
 - `name` (string): Provider name
 - `params` (any): Parameters to pass to the provider
-- `options` (object, optional): How the request is made rather than what it asks for. A plugin's handle fills this in with the token core minted for it, which is what becomes the provider's `context.caller`. Naming yourself here leaves `context.caller` `undefined` — the caller cannot be written by hand.
+- `options` (object, optional): How the request is made rather than what it asks for. A plugin's handle fills this in with the token core minted for it, which core resolves to the plugin's address in `context.caller`. Naming yourself here leaves `context.caller` `undefined` — the caller cannot be written by hand.
 
 **Returns:** Promise resolving to the provider's response
 

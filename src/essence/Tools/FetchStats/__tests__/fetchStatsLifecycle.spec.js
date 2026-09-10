@@ -92,6 +92,17 @@ test('the modern layout, calling both start hooks, still subscribes once', () =>
     expect(subscriptions).toEqual([AOI_READY])
 })
 
+test('a reload subscribes again, once per live start', () => {
+    FetchStatsTool.initialize()
+    FetchStatsTool.destroy()
+    FetchStatsTool.initialize()
+
+    // destroy() clears the started flag, so the reload reaches api.on a
+    // second time. A plugin left flagged as started would sit deaf for the
+    // rest of the session.
+    expect(subscriptions).toEqual([AOI_READY, AOI_READY])
+})
+
 test('an analysis resolving after teardown announces nothing', async () => {
     vi.stubGlobal(
         'fetch',

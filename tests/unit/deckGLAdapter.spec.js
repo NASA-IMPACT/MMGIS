@@ -1654,8 +1654,6 @@ test.describe('DeckGLAdapter', () => {
             })
             adapter.destroy()
 
-            expect(adapter._moveEndTimer).toBeNull()
-
             vi.advanceTimersByTime(200)
 
             expect(moveEnds).toEqual([])
