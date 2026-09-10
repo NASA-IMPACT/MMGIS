@@ -24,6 +24,8 @@ import {
     LinearInterpolator,
     type PickingInfo,
     type Layer,
+    type InteractionState,
+    type ViewStateChangeParameters,
 } from '@deck.gl/core'
 
 import { MapboxOverlay } from '@deck.gl/mapbox'
@@ -224,6 +226,24 @@ const TERRA_DRAW_BOTTOM_LAYER_ID = `${TERRA_DRAW_PREFIX}-polygon`
  */
 const UNRANKED_Z_INDEX = Number.MAX_SAFE_INTEGER
 
+/**
+ * How long the standalone camera has to hold still before `moveend` goes out.
+ * Long enough to swallow the gaps inside a trackpad wheel burst, short enough
+ * that min/maxZoom layer visibility toggles don't visibly lag the gesture.
+ */
+const MOVE_END_SETTLE_MS = 80
+
+/** True while deck holds the camera under a gesture or a running transition. */
+function isCameraBusy(state: InteractionState | undefined): boolean {
+    return !!(
+        state?.isDragging ||
+        state?.isPanning ||
+        state?.isZooming ||
+        state?.isRotating ||
+        state?.inTransition
+    )
+}
+
 function canvasToPngScreenshot(canvas: HTMLCanvasElement): Promise<MapScreenshotResult> {
     return new Promise((resolve, reject) => {
         if (typeof canvas.toBlob !== 'function') {
@@ -316,6 +336,13 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _minZoom = 0
     private _maxZoom = 20
     private _maxBounds: BoundsLike | null = null
+
+    /** Trailing timer the standalone `moveend` is held on. */
+    private _moveEndTimer: ReturnType<typeof setTimeout> | null = null
+    /** A camera change has been reported that no `moveend` has closed yet. */
+    private _movePending = false
+    /** deck's latest word on whether the camera is still moving. */
+    private _cameraBusy = false
 
     private _layers = new Map<string, Layer>()
     /**
@@ -420,10 +447,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _basemapStyle: string | null = null
 
     /**
-     * Bound handler kept as a class field so it can be removed cleanly in {@link destroy}.
-     * Syncs `_viewState` from the basemap and emits the engine-level `'moveend'` event.
+     * Copy the basemap's camera into `_viewState` and re-emit it under
+     * `eventName`, so that {@link projectCoordinates} and
+     * {@link unprojectCoordinates} stay accurate mid-animation and anchored
+     * consumers can track the camera frame by frame.
      */
-    private _onBasemapMoveEnd = (): void => {
+    private _syncViewState = (eventName: 'move' | 'moveend'): void => {
         if (this._sbsSyncing) return
         const center = this._basemap!.getCenter()
         this._viewState = {
@@ -435,28 +464,14 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             pitch: this._basemap!.getPitch(),
         }
         if (this._comparisonEnabled) this._syncComparisonCamera()
-        this._emitEvent('moveend', this._viewState)
+        this._emitEvent(eventName, this._viewState)
     }
 
-    /**
-     * Bound handler kept as a class field for clean removal.
-     * Silently keeps `_viewState` in sync during animations so that
-     * {@link projectCoordinates} and {@link unprojectCoordinates} remain
-     * accurate while the camera is moving.
-     */
-    private _onBasemapMove = (): void => {
-        if (this._sbsSyncing) return
-        const center = this._basemap!.getCenter()
-        this._viewState = {
-            ...this._viewState,
-            longitude: center.lng,
-            latitude: center.lat,
-            zoom: this._basemap!.getZoom(),
-            bearing: this._basemap!.getBearing(),
-            pitch: this._basemap!.getPitch(),
-        }
-        if (this._comparisonEnabled) this._syncComparisonCamera()
-    }
+    /** Bound handler kept as a class field so it can be removed cleanly in {@link destroy}. */
+    private _onBasemapMoveEnd = (): void => this._syncViewState('moveend')
+
+    /** Bound handler kept as a class field for clean removal. */
+    private _onBasemapMove = (): void => this._syncViewState('move')
 
     /**
      * Re-push layers once the basemap style has loaded.
@@ -522,6 +537,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * The adapter must not be used again after this call.
      */
     destroy(): void {
+        this._cancelMoveEnd()
+
         // End a live session the normal way, while its listeners are still
         // attached, so its initiator hears `drawcancel` and stops driving a
         // session that is about to have no engine.
@@ -2073,12 +2090,30 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             controller: true,
             layers: [],
             viewState: this._viewState,
-            onViewStateChange: ({ viewState }: { viewState: DeckViewState }) => {
+            // deck reports an interactive camera change once per frame. Every
+            // one of them goes out as `move`, so anchored consumers track the
+            // gesture; `moveend` waits for the camera to come to rest.
+            onViewStateChange: ({
+                viewState,
+                // deck always sets this; defaulted for a direct call that
+                // carries only a camera frame.
+                interactionState = {},
+            }: ViewStateChangeParameters<DeckViewState>) => {
                 const clamped = this._clampToMaxBounds(viewState)
                 this._viewState = clamped
                 this._deckSetProps({ viewState: clamped })
                 if (this._comparisonEnabled) this._syncComparisonCamera()
-                this._emitEvent('moveend', clamped)
+                this._emitEvent('move', clamped)
+                this._cameraBusy = isCameraBusy(interactionState)
+                this._movePending = true
+                this._scheduleMoveEnd()
+            },
+            // deck's own prop for a gesture or a transition ending. A final
+            // camera frame can follow it with the flags already cleared, and
+            // settles the same way.
+            onInteractionStateChange: (state: InteractionState) => {
+                this._cameraBusy = isCameraBusy(state)
+                this._scheduleMoveEnd()
             },
             onClick: this._onPointerClick,
             onHover: this._onPointerHover,
@@ -2097,8 +2132,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         event?: { srcEvent?: unknown }
     ): void => {
         if (this._drawingShape || this._drawEndClick.owns(event?.srcEvent)) return
-        this._featureClickHandler?.(pickInfoToResult(info))
-        this._emitClick(info)
+        const pick = pickInfoToResult(info)
+        this._featureClickHandler?.(pick)
+        this._emitClick(info, pick.feature)
     }
 
     private _onPointerHover = (info: PickingInfo): void => {
@@ -2187,11 +2223,11 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     /**
-     * Apply a new view state to the `Deck` instance.
-     * Only used in standalone mode; overlay mode drives the camera through the basemap.
-     *
-     * When `options.animate` is absent or false, transition props are cleared so the
-     * camera jumps immediately.
+     * Apply a new view state to the `Deck` instance; standalone mode only, as
+     * overlay mode drives the camera through the basemap. Unless
+     * `options.animate` is set, transition props are cleared and the camera
+     * jumps, reported as `move` then `moveend`. Either way a `moveend` an
+     * interrupted gesture still had pending is dropped.
      */
     private _applyViewState(state: DeckViewState, options?: ViewOptions): void {
         const nextState: DeckViewState = {
@@ -2205,8 +2241,42 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._viewState = nextState
         this._deckSetProps({ viewState: nextState })
         // A zero-duration move raises no `onViewStateChange`, so this is the
-        // only place the comparison surfaces hear about it.
+        // only place the comparison surfaces and anchored consumers hear about
+        // it.
         if (this._comparisonEnabled) this._syncComparisonCamera()
+        this._cancelMoveEnd()
+        if (!nextState.transitionDuration) {
+            this._emitEvent('move', nextState)
+            this._emitEvent('moveend', nextState)
+        }
+    }
+
+    /**
+     * Hold `moveend` back until the standalone camera comes to rest: the timer
+     * re-arms for as long as deck calls the camera busy, so a gesture of any
+     * length settles into one `moveend`, one interval after the last report of
+     * an idle camera. With no `moveend` pending there is nothing to time, so a
+     * bare interaction-state change arms no timer.
+     */
+    private _scheduleMoveEnd(): void {
+        if (!this._movePending) return
+        if (this._moveEndTimer) clearTimeout(this._moveEndTimer)
+        this._moveEndTimer = setTimeout(() => {
+            this._moveEndTimer = null
+            if (this._cameraBusy) {
+                this._scheduleMoveEnd()
+                return
+            }
+            this._movePending = false
+            this._emitEvent('moveend', this._viewState)
+        }, MOVE_END_SETTLE_MS)
+    }
+
+    /** Drop a pending `moveend`, for when the camera has been closed out already. */
+    private _cancelMoveEnd(): void {
+        if (this._moveEndTimer) clearTimeout(this._moveEndTimer)
+        this._moveEndTimer = null
+        this._movePending = false
     }
 
     /**
@@ -2323,10 +2393,21 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._eventListeners.get(name)?.forEach((h) => h(data as PickingInfo))
     }
 
-    private _emitClick(info: PickingInfo): void {
+    /**
+     * Report a click, carrying the feature deck picked under it, or `null`
+     * where the click landed on empty map.
+     */
+    private _emitClick(
+        info: PickingInfo,
+        feature: Record<string, unknown> | null
+    ): void {
         if (!info?.coordinate) return
         this._eventListeners.get('click')?.forEach(
-            (h) => h(this._buildNormalizedPointerEvent(info) as unknown as PickingInfo)
+            (h) =>
+                h({
+                    ...this._buildNormalizedPointerEvent(info),
+                    feature,
+                } as unknown as PickingInfo)
         )
     }
 
