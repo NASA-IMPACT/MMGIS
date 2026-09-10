@@ -141,7 +141,7 @@ describe('a plugin being torn down', () => {
     test("leaves another plugin's card standing", async () => {
         loadTool('CraterTool', 'crater')
         loadTool('DrawTool', 'draw')
-        const { outcome } = await showPopupAs('DrawTool')
+        const { outcome, settled } = await showPopupAs('DrawTool')
         expect(cardCount()).toBe(1)
 
         // The card belongs to a plugin that is still alive to stand behind it,
@@ -151,6 +151,33 @@ describe('a plugin being torn down', () => {
         await flush()
         expect(cardCount()).toBe(1)
         expect(outcome.result).toBeNull()
+
+        // Still a live request rather than one that can never answer: taking
+        // draw down now settles it.
+        expect(ToolControllerModern_.unloadPlugin('draw')).toBe(true)
+        await settled
+        expect(outcome.result).toEqual({ action: 'closed' })
+    })
+
+    test('retracts a card over the bus, and only for the plugin that opened it', async () => {
+        loadTool('CraterTool', 'crater')
+        loadTool('DrawTool', 'draw')
+        const { outcome, settled } = await showPopupAs('CraterTool')
+        expect(cardCount()).toBe(1)
+
+        // Each handle stamps its own address on the request, and the slot
+        // holds crater's card, so draw's hide finds nothing of its own.
+        await expect(
+            toolModules.DrawTool.api.request('map:hidePopup')
+        ).resolves.toBe(false)
+        expect(cardCount()).toBe(1)
+
+        await expect(
+            toolModules.CraterTool.api.request('map:hidePopup')
+        ).resolves.toBe(true)
+        expect(cardCount()).toBe(0)
+        await settled
+        expect(outcome.result).toEqual({ action: 'closed' })
     })
 
     test('a full teardown empties the slot whoever owned it', async () => {

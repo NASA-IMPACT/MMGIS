@@ -2390,7 +2390,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * Dispatch a named event to all registered listeners.
      */
     private _emitEvent(name: string, data?: unknown): void {
-        this._eventListeners.get(name)?.forEach((h) => h(data as PickingInfo))
+        // Snapshot: a subscriber added during this dispatch hears the next event.
+        const handlers = [...(this._eventListeners.get(name) ?? [])]
+        handlers.forEach((h) => h(data as PickingInfo))
     }
 
     /**
@@ -2402,7 +2404,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         feature: Record<string, unknown> | null
     ): void {
         if (!info?.coordinate) return
-        this._eventListeners.get('click')?.forEach(
+        const handlers = [...(this._eventListeners.get('click') ?? [])]
+        handlers.forEach(
             (h) =>
                 h({
                     ...this._buildNormalizedPointerEvent(info),
@@ -2413,7 +2416,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     private _emitMouseMove(info: PickingInfo): void {
         if (!info?.coordinate) return
-        this._eventListeners.get('mousemove')?.forEach(
+        const handlers = [...(this._eventListeners.get('mousemove') ?? [])]
+        handlers.forEach(
             (h) => h(this._buildNormalizedPointerEvent(info) as unknown as PickingInfo)
         )
     }

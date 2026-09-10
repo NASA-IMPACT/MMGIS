@@ -11,36 +11,18 @@ const ANCHOR_GAP = 12
 const VIEWPORT_MARGIN = 8
 
 /**
- * Where a card waits when it has nowhere on screen to be: mid-zoom, once the
- * anchor has panned off the map, and before the engine can project it at all.
- *
- * A transform rather than a `visibility`, which plugin content is free to set
- * back to `visible` on itself, or a `display: none`, which zeroes the box
- * `_reposition` measures to work out where the card goes when it returns.
+ * Where a card waits when it has nowhere on screen to be: mid-zoom, panned off
+ * the map, or not yet projectable. Not a `display: none`, which would zero the
+ * box `_reposition` measures.
  */
 const PARKED = 'translate(-100000px, -100000px)'
 
 /**
- * How plugin content is sanitized: DOMPurify's own defaults — curated upstream
- * and kept current by the caret range the dependency floats on — plus the two
- * capabilities the shape of a card asks it to name outright.
- *
- * What the defaults leave is that an author owns the inside of their card and
- * nothing else. Form controls and a `<canvas>` arrive as inert content, since
- * the contract carries no script, and a `<form>` that tries to submit is
- * stopped at the click by {@link guardNavigation}.
+ * Defaults, plus `<style>` (a card's stylesheet is the page's) and `popover`
+ * (the top layer escapes the card's clipping).
  */
 const POPUP_SANITIZE_CONFIG = {
-    // A card is plain DOM in the app's own document, so a stylesheet inside it
-    // is a stylesheet for the whole page: it can repaint the panels, and it can
-    // write `.mmgis-map-popup { contain: none !important }` and switch off the
-    // containment the card relies on. The defaults strip `<style>` today, and
-    // naming it holds that as the card's own rule rather than a default the
-    // dependency's range is free to move.
     FORBID_TAGS: ['style'],
-    // The one default-passed capability a card cannot contain: a popover
-    // promotes itself into the browser's top layer, above the app's panels and
-    // out of reach of both the card's clipping and its paint containment.
     FORBID_ATTR: ['popover', 'popovertarget'],
 }
 
@@ -48,42 +30,28 @@ interface OpenPopup {
     card: HTMLElement
     engine: IMapEngine
     latlng: { lat: number; lng: number }
-    /**
-     * The address the caller's bus handle stamped on the request, or null from
-     * a caller that has no handle. Only this caller can retract the popup.
-     */
+    /** The address the caller's handle stamped, or null when it had none. */
     owner: string | null
-    /** Settles this popup's request promise with how the popup closed. */
     settle: (result: MapPopupResult) => void
     offClick: () => void
     /** Whatever held focus when the popup opened, to give it back on close. */
     restoreFocus: HTMLElement | null
 }
 
-/** The two button slots a card can render. */
 type ActionSlot = 'primary' | 'secondary'
 
 interface PopupCardOptions {
-    /** Heading, rendered as text. Absent when the request carried none. */
     title?: string
     /** Popup body as the caller wrote it, sanitized on the way in. */
     html?: string
     primaryAction?: MapPopupAction
     secondaryAction?: MapPopupAction
-    /** Called with the slot of the clicked action button. */
     onAction: (action: ActionSlot) => void
-    /** Called when the close control is pressed. */
     onClose: () => void
-    /** Called when Escape is pressed anywhere inside the card. */
     onEscape: () => void
 }
 
-/**
- * Tells one card's heading from the next's. A card on its way out is still in
- * the document while its replacement is built, and the card names itself by
- * pointing at its own heading, so a shared id would name the new card after
- * the old one's.
- */
+/** Keeps a new card's heading id clear of the outgoing card's. */
 let titleCount = 0
 
 function isFiniteNumber(value: unknown): value is number {
@@ -101,16 +69,13 @@ function clampBetween(value: number, lo: number, hi: number): number {
 
 /**
  * Whitespace counts as blank: a label of spaces reads as a filled button with
- * nothing on it, which is the very thing `normalizeAction` exists to refuse.
+ * nothing on it, the very thing `normalizeAction` refuses.
  */
 function isNonBlankString(value: unknown): value is string {
     return typeof value === 'string' && value.trim() !== ''
 }
 
-/**
- * Accept an action only when its label is usable, so a malformed request
- * cannot render a blank button.
- */
+/** Drop an action whose label is unusable: no card renders a blank button. */
 function normalizeAction(
     action: MapPopupAction | undefined,
     field: string
@@ -124,11 +89,6 @@ function normalizeAction(
     return undefined
 }
 
-/**
- * @param slot Which action the button reports when pressed.
- * @param variant Which styling it takes — the slot, except for a lone
- * secondary action; see `buildPopupCard`.
- */
 function buildActionButton(
     label: string,
     slot: ActionSlot,
@@ -152,19 +112,7 @@ function linkTarget(anchor: Element): string | null {
     return anchor.getAttribute('href') ?? anchor.getAttribute('xlink:href')
 }
 
-/**
- * Refuse, in the capture phase, anything that would navigate the app away.
- *
- * A plain `<a href>` in a card takes the map, the session and every other
- * plugin with it, so following one opens a tab of its own instead and the
- * `rel` keeps the app out of reach of wherever it points. `<area href>` is the
- * same link wearing an image map, which the sanitizer passes through. A bare
- * fragment goes nowhere and is left alone.
- *
- * A `<form>` reaches a card whole, `action` and all, and submitting one would
- * navigate away as surely as a link; refusing it here is what leaves the
- * controls inside inert rather than dangerous.
- */
+/** Links and form submits would navigate the app away; links get a tab. */
 function guardNavigation(event: Event): void {
     if (event.type === 'submit') {
         event.preventDefault()
@@ -173,20 +121,17 @@ function guardNavigation(event: Event): void {
     const anchor = (event.target as Element | null)?.closest?.('a, area')
     if (!anchor) return
     const href = linkTarget(anchor)
-    // An empty `href` goes somewhere too: it resolves to the document the app
-    // is running in, so following one reloads the whole app.
+    // An empty `href` reloads the app: it resolves to the app's own document.
     if (href == null || href.startsWith('#')) return
     event.preventDefault()
     window.open(href, '_blank', 'noopener,noreferrer')
 }
 
-/** Build the box the plugin's own markup lives in. */
 function buildContent(html: string): HTMLElement {
     const content = document.createElement('div')
     content.className = 'mmgis-map-popup__content'
     // A fragment rather than a string to re-parse: one parse fewer, and the
-    // only form of the call that survives a Trusted Types policy, which
-    // refuses an assignment to `innerHTML` however clean the markup is.
+    // only form of the call that survives a Trusted Types policy.
     content.appendChild(
         DOMPurify.sanitize(html, {
             ...POPUP_SANITIZE_CONFIG,
@@ -198,28 +143,19 @@ function buildContent(html: string): HTMLElement {
     return content
 }
 
-/**
- * Build the popup card element. Pure view: it renders the given content and
- * reports clicks back through the callbacks, with no knowledge of the event
- * bus, the map, or where the card is positioned.
- */
+/** Build the card: a pure view that reports clicks through its callbacks. */
 function buildPopupCard(options: PopupCardOptions): HTMLElement {
     const card = document.createElement('div')
     card.className = 'mmgis-map-popup'
-    // A dialog rather than a group, so the card announces itself by name when
-    // focus lands on it. No `aria-modal`: the card lays no barrier over the
-    // app and a Tab leaves it the way it leaves any other non-modal dialog.
+    // Announces itself by name when focus lands. No `aria-modal`: the card
+    // lays no barrier over the app. Focusable, but never a Tab stop of its own.
     card.setAttribute('role', 'dialog')
-    // Focusable, but never a Tab stop of its own: opening the popup puts focus
-    // here so the card announces itself before anything in it does.
     card.tabIndex = -1
-    // Parked until a projection lands, so the card never flashes at the
-    // top-left corner before it is positioned.
+    // Parked until a projection lands, so the card never flashes top-left.
     card.style.transform = PARKED
     card.addEventListener('keydown', (event) => {
         if (event.key !== 'Escape') return
-        // The app closes its own things on Escape, and the innermost thing
-        // open is the one the key was meant for.
+        // The innermost thing open owns the key; the app closes its own too.
         event.stopPropagation()
         options.onEscape()
     })
@@ -233,15 +169,12 @@ function buildPopupCard(options: PopupCardOptions): HTMLElement {
     card.appendChild(close)
 
     if (options.title) {
-        // A plain element rather than a heading: a heading level here would be
-        // a guess at an outline the popup knows nothing about.
+        // Not a heading: a level would guess at an outline the card knows not.
         const title = document.createElement('div')
         title.className = 'mmgis-map-popup__title'
         title.id = `mmgis-map-popup-title-${++titleCount}`
         title.textContent = options.title
         card.appendChild(title)
-        // Announced by its heading, so a screen reader reads what a sighted
-        // user reads rather than the generic name below.
         card.setAttribute('aria-labelledby', title.id)
     } else {
         card.setAttribute('aria-label', 'Map popup')
@@ -253,7 +186,6 @@ function buildPopupCard(options: PopupCardOptions): HTMLElement {
     if (primaryAction || secondaryAction) {
         const actions = document.createElement('div')
         actions.className = 'mmgis-map-popup__actions'
-        // The primary action leads the row.
         if (primaryAction) {
             actions.appendChild(
                 buildActionButton(
@@ -265,8 +197,7 @@ function buildPopupCard(options: PopupCardOptions): HTMLElement {
             )
         }
         if (secondaryAction) {
-            // A lone action is the primary one whichever slot it arrived in,
-            // so it takes the primary styling while still reporting its slot.
+            // A lone action takes primary styling, but reports its own slot.
             actions.appendChild(
                 buildActionButton(
                     secondaryAction.label,
@@ -283,30 +214,19 @@ function buildPopupCard(options: PopupCardOptions): HTMLElement {
 }
 
 /**
- * Where a card is mounted: beside the map container, never inside it.
- *
- * The engines listen on the container they were given, so a card inside it
- * would hand the map its own clicks. A sibling is out of that path while still
- * sitting in the map's layer, painting over the map as a positioned box at
- * `z-index: auto`; anything meant to paint over the card carries a level of
- * its own, which is what the panel regions do. A container with no parent — a
- * bare embedding, a test harness — leaves the body as the only host there is.
+ * Beside the map container, never inside it: the engines listen on the
+ * container, so a card inside would hand the map its own clicks. A container
+ * with no parent leaves the body as the only host there is.
  */
 function popupHost(engine: IMapEngine): HTMLElement {
     return engine.getContainer()?.parentElement ?? document.body
 }
 
-/**
- * Stable handler identities, so the engine and window subscriptions made in
- * `show` can be removed again in `hide`.
- */
+/** Stable identities, so `show`'s subscriptions can be removed in `hide`. */
 const reposition = (): void => MapPopup_._reposition()
 const hideForZoom = (): void => MapPopup_._hideForZoom()
 
-/**
- * Core-owned, map-anchored popup. A single popup exists at a time: a fresh
- * request replaces the current one.
- */
+/** Core-owned, map-anchored popup. One at a time: a request replaces it. */
 const MapPopup_ = {
     _open: null as OpenPopup | null,
 
@@ -346,8 +266,7 @@ const MapPopup_ = {
             ? request.title
             : undefined
         const html = isNonBlankString(request.html) ? request.html : undefined
-        // A card is a title, a body, or both: buttons are not content, so a
-        // request holding neither has nothing to show.
+        // A card is a title, a body, or both: buttons are not content.
         if (!title && !html) {
             return Promise.reject(
                 new Error(
@@ -377,11 +296,10 @@ const MapPopup_ = {
                     request.secondaryAction,
                     'secondaryAction'
                 ),
-                // The popup closes before its request is answered, so a
-                // caller that opens its own popup in response keeps it.
+                // Closed before its request is answered, so a caller may
+                // reply by opening one of its own.
                 onAction: (action) => this.hide({ action }),
                 onClose: () => this.hide({ action: 'dismiss' }),
-                // Escape is the keyboard's X, and answers the same way.
                 onEscape: () => this.hide({ action: 'dismiss' }),
             }),
             engine,
@@ -390,22 +308,19 @@ const MapPopup_ = {
             settle,
             offClick: () => {},
             // Read after the replaced popup gave focus back, so a run of
-            // popups restores what held focus before the first of them.
+            // popups restores what held focus before the first.
             restoreFocus: document.activeElement as HTMLElement | null,
         }
 
-        // Recorded before anything is wired, so a failure part-way through can
-        // be unwound by `hide`, leaving nothing subscribed or mounted.
+        // Recorded before anything is wired, so `hide` can unwind a failure.
         this._open = popup
         try {
             popupHost(engine).appendChild(popup.card)
-            // Focus lands on the card rather than a control inside it, so a
-            // screen reader reads the card's own name first.
+            // On the card, not a control inside it: it names itself first.
             popup.card.focus({ preventScroll: true })
             engine.on('move', reposition)
             // `moveend` too: a comparison pane reports a camera only when it
-            // settles, so a card following `move` alone would sit still while
-            // the pane is dragged.
+            // settles, so a card on `move` alone would sit still mid-drag.
             engine.on('moveend', reposition)
             engine.on('zoomstart', hideForZoom)
             engine.on('zoomend', reposition)
@@ -421,8 +336,8 @@ const MapPopup_ = {
             engine.on('click', dismiss)
             popup.offClick = () => engine.off('click', dismiss)
         } catch (err) {
-            // Reject before unwinding, so the request is answered with the
-            // failure rather than with the `closed` of its own teardown.
+            // Reject before unwinding: the failure is the answer, not the
+            // `closed` of the popup's own teardown.
             fail(new Error(`[MapPopup] Could not show the popup: ${err}`))
             this.hide()
             return outcome
@@ -454,10 +369,6 @@ const MapPopup_ = {
             // when the card still held it, so a user who clicked into a panel
             // while it was open is left where they went.
             const hadFocus = open.card.contains(document.activeElement)
-            open.card.parentNode?.removeChild(open.card)
-            if (hadFocus && open.restoreFocus?.isConnected) {
-                open.restoreFocus.focus({ preventScroll: true })
-            }
 
             try {
                 open.engine.off('move', reposition)
@@ -466,33 +377,27 @@ const MapPopup_ = {
                 open.engine.off('zoomend', reposition)
                 open.offClick()
             } catch {
-                // Teardown can run after the engine has been destroyed (the
-                // map is re-initialised), in which case unsubscribing throws.
+                // Unsubscribing throws once the engine has been destroyed.
+            } finally {
+                // After the unsubscribes so nothing here can skip one, in a
+                // `finally` so an engine that threw still loses its card.
+                window.removeEventListener('resize', reposition)
+                open.card.parentNode?.removeChild(open.card)
+                if (hadFocus && open.restoreFocus?.isConnected) {
+                    open.restoreFocus.focus({ preventScroll: true })
+                }
             }
-            window.removeEventListener('resize', reposition)
         } finally {
-            // Answer whatever teardown did, so a throw part-way through cannot
-            // leave the caller waiting on a popup that is already gone. A
-            // rejection raised before the unwind still sticks: the first
-            // settlement is the answer.
+            // Answer whatever teardown did; the first settlement sticks.
             open.settle({ action })
         }
     },
 
     /**
-     * Retract the popup on behalf of `caller`, if the popup is that caller's.
-     *
-     * There is one popup slot, so a plugin asking to hide is really asking to
-     * empty it — and the slot may hold someone else's popup by then. Rather
-     * than make every plugin track that, the core answers only for the popup
-     * the caller opened. Ownership is compared exactly, with "no caller" a
-     * value of its own, so neither side can reach the other's popup. This is
-     * core's own arbitration, not a security boundary: the address is stamped
-     * by the bus handle rather than taken from author code.
-     *
-     * @param caller The address the requesting plugin's handle stamped, if any.
-     * @returns Whether a popup was retracted. Its request still answers
-     * `{ action: 'closed' }`, as it does for any other close.
+     * Retract the popup for `caller`, but only if it is that caller's: one
+     * slot, so core answers for the popup the caller opened, and "no caller"
+     * is its own identity. Returns whether one was retracted; its request
+     * answers `{ action: 'closed' }`, as any other close does.
      */
     hideForCaller(caller?: string | null): boolean {
         if (!this._open) return false
@@ -512,7 +417,6 @@ const MapPopup_ = {
         if (this._open) this._open.card.style.transform = PARKED
     },
 
-    /** Project the anchor to viewport coordinates and move the card there. */
     _reposition(): void {
         const open = this._open
         if (!open) return
@@ -523,39 +427,29 @@ const MapPopup_ = {
             }
             const container = open.engine.getContainer().getBoundingClientRect()
 
-            // The projection is relative to the map container, while the card
-            // is placed by a fixed position and so lives in viewport
-            // coordinates. The anchor is carried across once, here.
+            // Container-relative, while the card is placed by a fixed
+            // position and so lives in viewport coordinates.
             const anchorLeft = container.left + point.x
             const anchorTop = container.top + point.y
             const containerRight = container.left + container.width
             const containerBottom = container.top + container.height
-            // An anchor still on the map keeps its card whole and on screen.
-            // One that has panned off takes its card with it, so the card
-            // leaves the way the map does rather than pinning to an edge it
-            // would never come off again.
+            // An anchor on the map keeps its card on screen; one that has
+            // panned off takes its card with it.
             const onMap =
                 point.x >= 0 &&
                 point.x <= container.width &&
                 point.y >= 0 &&
                 point.y <= container.height
 
-            // Where a card that stays put is allowed to be: the map, cut down
-            // to what of it is on screen. The map alone is not enough — one
-            // scrolled half off screen would take the card with it — and the
-            // viewport alone is not enough either, because the layout lays
-            // positioned panels over the map's edges, which would paint over a
-            // card that spilled past it and swallow its buttons.
+            // Where a card that stays put may be: the map, cut to what of it
+            // is on screen — panels lie over the map's edges. The card is
+            // capped to that room before it is measured, so the height read
+            // back is the capped one, and only on a change.
             const boundsLeft = Math.max(container.left, 0)
             const boundsTop = Math.max(container.top, 0)
             const boundsRight = Math.min(containerRight, window.innerWidth)
             const boundsBottom = Math.min(containerBottom, window.innerHeight)
 
-            // Hold the card to the room the clamps below have to place it in,
-            // so a tall one scrolls its body rather than hanging past an edge
-            // with its actions row under a panel. Set before the card is
-            // measured, so the height read back is the capped one, and only
-            // when it changes, so one reposition dirties the layout once.
             const cap = `${boundsBottom - boundsTop - 2 * VIEWPORT_MARGIN}px`
             if (open.card.style.maxHeight !== cap) {
                 open.card.style.maxHeight = cap
@@ -569,9 +463,8 @@ const MapPopup_ = {
                 above < boundsTop + VIEWPORT_MARGIN
                     ? anchorTop + ANCHOR_GAP
                     : above
-            // A tall card flipped below a low anchor would otherwise hang
-            // past the bottom edge, and nothing scrolls down to it — the
-            // document is pinned — so its actions row would be out of reach.
+            // A card flipped below a low anchor would otherwise hang out of
+            // reach past the bottom edge; the document is pinned.
             const top = onMap
                 ? clampBetween(
                       flipped,
@@ -590,10 +483,9 @@ const MapPopup_ = {
                 : anchorLeft
             const left = center - halfCard
 
-            // Nothing clips the card to the map, so the card hides itself —
-            // and only once its own box has cleared the map entirely, because
-            // an anchor just off the edge still has most of its card on the
-            // map and that is worth reading. It returns when the map pans back.
+            // Nothing clips the card to the map, so it hides itself — once
+            // its box has cleared the map entirely, since an anchor just off
+            // the edge still has a card worth reading.
             if (
                 left >= containerRight ||
                 left + card.width <= container.left ||

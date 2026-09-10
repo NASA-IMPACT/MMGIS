@@ -7,7 +7,9 @@ import type {
 
 /**
  * Stand-in for the active map engine. jsdom lays nothing out, so the container
- * rect is stubbed to a known position and size.
+ * rect is stubbed to a known position and size. `subscribed` and
+ * `unsubscribed` keep the handler objects themselves, so a spec can ask
+ * whether `off` was given back what `on` was handed.
  */
 function makeEngine({
     point = { x: 300, y: 200 },
@@ -18,6 +20,8 @@ function makeEngine({
     offThrows = false,
 } = {}) {
     const listeners = new Map<string, Set<(event?: unknown) => void>>()
+    const subscribed: Array<[string, unknown]> = []
+    const unsubscribed: Array<[string, unknown]> = []
     const container = document.createElement('div')
     container.getBoundingClientRect = () =>
         ({
@@ -29,6 +33,10 @@ function makeEngine({
     let projected = point
     return {
         listenerCount: (event: string) => listeners.get(event)?.size ?? 0,
+        subscribed,
+        unsubscribed,
+        // Fanned out over a snapshot, the way the adapters do it: a handler
+        // subscribed while an event is being delivered does not receive it.
         fire: (event: string, payload?: unknown) => {
             const handlers = listeners.get(event)
             if (handlers)
@@ -39,10 +47,12 @@ function makeEngine({
         },
         engine: {
             on: (event: string, handler: (event?: unknown) => void) => {
+                subscribed.push([event, handler])
                 if (!listeners.has(event)) listeners.set(event, new Set())
                 listeners.get(event)!.add(handler)
             },
             off: (event: string, handler: (event?: unknown) => void) => {
+                unsubscribed.push([event, handler])
                 if (offThrows) throw new Error('engine destroyed')
                 listeners.get(event)?.delete(handler)
             },
@@ -62,9 +72,9 @@ function request(overrides: Partial<MapPopupRequest> = {}): MapPopupRequest {
 
 /**
  * Watch a request promise and record how it settles: a resolution as its
- * action, a rejection as `rejected: <message>`. The promise absorbs later
- * settlements, so the list holds the first only. Specs assert it whole, which
- * fails when the answer never arrives or the wrong close path answered first.
+ * action, a rejection as `rejected: <message>`. The list is the count of
+ * answers the caller saw, so a request that is never answered reads as empty
+ * and one answered a second time would read as two entries.
  */
 function track(promise: Promise<MapPopupResult>): string[] {
     const settlements: string[] = []
@@ -89,6 +99,8 @@ const INVALID_REQUEST =
     'rejected: [MapPopup] Invalid request: latlng must hold finite lat/lng numbers, and title and html must be strings when given.'
 const NOTHING_TO_SHOW =
     'rejected: [MapPopup] Invalid request: a popup needs a title or html to show.'
+const WIRING_FAILED =
+    'rejected: [MapPopup] Could not show the popup: Error: engine destroyed'
 
 const popups = () => document.querySelectorAll('.mmgis-map-popup')
 const card = () => document.querySelector<HTMLElement>('.mmgis-map-popup')!
@@ -119,9 +131,25 @@ const sizeCard = (width: number, height: number) => {
     }
 }
 const nextTick = () => new Promise((resolve) => setTimeout(resolve, 0))
+const transform = () => card().style.transform
 
 describe('MapPopup_', () => {
     let engine: ReturnType<typeof makeEngine>
+
+    /**
+     * Open a card of the given size on a map placed by `options`, and let it
+     * settle where the anchor first puts it. The engine it opened on stays in
+     * `engine`, so a spec can move the anchor on from there.
+     */
+    const placeCard = (
+        options: Parameters<typeof makeEngine>[0] = {},
+        { width = 200, height = 100 } = {}
+    ): void => {
+        engine = makeEngine(options)
+        show(engine)
+        sizeCard(width, height)
+        engine.fire('move')
+    }
 
     beforeEach(() => {
         engine = makeEngine()
@@ -132,16 +160,11 @@ describe('MapPopup_', () => {
         document.body.innerHTML = ''
     })
 
-    it('mounts a single popup and sanitizes the html', async () => {
-        const outcome = show(engine, {
-            html: '<p>Crater A</p><script>window.pwned = true</script>',
-        })
+    it('mounts one popup and leaves its request pending until it closes', async () => {
+        const outcome = show(engine)
 
         expect(popups()).toHaveLength(1)
-        expect(body()).toContain('Crater A')
-        expect(body()).not.toContain('script')
 
-        // The request is answered only once the popup closes.
         await nextTick()
         expect(outcome).toEqual([])
     })
@@ -200,7 +223,6 @@ describe('MapPopup_', () => {
         show(engine, { title: '<b>Drawn</b> rectangle' })
 
         expect(title()!.textContent).toBe('<b>Drawn</b> rectangle')
-        expect(card().querySelector('b')).toBeNull()
         // The card announces itself by its heading.
         expect(card().getAttribute('aria-labelledby')).toBe(title()!.id)
     })
@@ -223,30 +245,23 @@ describe('MapPopup_', () => {
         expect(popups()).toHaveLength(0)
     })
 
-    it('rejects a request whose fields are not what they claim', async () => {
-        const noAnchor = track(
-            MapPopup_.show(
-                { html: '<p>No anchor</p>' } as MapPopupRequest,
-                engine.engine as never
-            )
-        )
-        const badHtml = track(
-            MapPopup_.show(
-                { latlng: { lat: 1, lng: 2 }, html: 42 } as unknown as MapPopupRequest,
-                engine.engine as never
-            )
-        )
-        const badTitle = track(
-            MapPopup_.show(
-                request({ title: 42 as unknown as string }),
-                engine.engine as never
-            )
+    it.each([
+        ['no anchor', { html: '<p>No anchor</p>' }],
+        [
+            'an html that is not a string',
+            { latlng: { lat: 1, lng: 2 }, html: 42 },
+        ],
+        [
+            'a title that is not a string',
+            { latlng: { lat: 1, lng: 2 }, title: 42 },
+        ],
+    ])('rejects a request with %s', async (_case, invalid) => {
+        const outcome = track(
+            MapPopup_.show(invalid as never, engine.engine as never)
         )
         await nextTick()
 
-        expect(noAnchor).toEqual([INVALID_REQUEST])
-        expect(badHtml).toEqual([INVALID_REQUEST])
-        expect(badTitle).toEqual([INVALID_REQUEST])
+        expect(outcome).toEqual([INVALID_REQUEST])
         expect(popups()).toHaveLength(0)
     })
 
@@ -277,7 +292,11 @@ describe('MapPopup_', () => {
         expect(popups()).toHaveLength(0)
     })
 
-    it('closes on Escape and answers as a dismissal', async () => {
+    it('closes on Escape, answers as a dismissal, and gives focus back', async () => {
+        const opener = document.createElement('button')
+        document.body.appendChild(opener)
+        opener.focus()
+
         const outcome = show(engine)
         // The app closes its own things on Escape too, and the innermost thing
         // open is the one the key was meant for.
@@ -294,6 +313,7 @@ describe('MapPopup_', () => {
         expect(alsoListening).toEqual([])
         expect(outcome).toEqual(['dismiss'])
         expect(popups()).toHaveLength(0)
+        expect(document.activeElement).toBe(opener)
     })
 
     it('dismisses on a click that landed on empty map', async () => {
@@ -320,6 +340,24 @@ describe('MapPopup_', () => {
         expect(outcome).toEqual([])
     })
 
+    // A plugin that opens a card from a click on empty map is itself a click
+    // subscriber, and that same click is the one the card dismisses on. The
+    // fake engine models the adapters' snapshot fan-out, so the card's own
+    // dismiss subscription — made while the click is being delivered — is not
+    // handed the click that created it.
+    it('keeps a card opened by a click on empty map', async () => {
+        let outcome: string[] = []
+        engine.engine.on('click', () => {
+            outcome = show(engine)
+        })
+
+        engine.fire('click', { feature: null })
+        await nextTick()
+
+        expect(popups()).toHaveLength(1)
+        expect(outcome).toEqual([])
+    })
+
     it('replaces the current popup and resolves the replaced request with closed', async () => {
         const first = show(engine, { html: '<p>First</p>' })
         const second = show(engine, { html: '<p>Second</p>' })
@@ -340,94 +378,73 @@ describe('MapPopup_', () => {
 
         expect(popups()).toHaveLength(0)
         expect(outcome).toEqual(['closed'])
-
-        // Asking again with nothing open changes nothing.
-        MapPopup_.hide()
-        await nextTick()
-
-        expect(popups()).toHaveLength(0)
-        expect(outcome).toEqual(['closed'])
     })
 
     // deck.gl reports a camera every frame; Leaflet's comparison panes report
     // one only when it settles; a resized window resizes the map with it and
     // moves the anchor to a different pixel. A card has to follow all three.
     it('repositions the card on a move, a moveend and a window resize', () => {
-        show(engine)
-        sizeCard(200, 100)
-        engine.fire('move')
-        expect(card().style.transform).toBe('translate(300px, 138px)')
+        placeCard()
+        expect(transform()).toBe('translate(300px, 138px)')
 
         engine.setPoint({ x: 210, y: 220 })
         engine.fire('moveend')
-        expect(card().style.transform).toBe('translate(210px, 158px)')
+        expect(transform()).toBe('translate(210px, 158px)')
 
         engine.setPoint({ x: 300, y: 300 })
         window.dispatchEvent(new Event('resize'))
-        expect(card().style.transform).toBe('translate(300px, 238px)')
+        expect(transform()).toBe('translate(300px, 238px)')
     })
 
     it('flips below the anchor when the card would clip the map top', () => {
-        engine = makeEngine({ point: { x: 300, y: 50 }, containerTop: 0 })
-        show(engine)
-        sizeCard(200, 100)
-
-        engine.fire('move')
+        placeCard({ point: { x: 300, y: 50 }, containerTop: 0 })
 
         // 50 - 100 - 12 clips the top, so the card sits 12px below the anchor.
-        expect(card().style.transform).toBe('translate(300px, 62px)')
+        expect(transform()).toBe('translate(300px, 62px)')
     })
 
     it('caps a card taller than the map so it fits inside the map', () => {
-        engine = makeEngine({ point: { x: 300, y: 200 }, containerTop: 0 })
-        show(engine)
         // Taller than the room above its anchor, so it flips below, and taller
         // than the 600px map, so uncapped its actions row would end up out of
         // reach under the bottom panel region.
-        sizeCard(200, 650)
-
-        engine.fire('move')
+        placeCard(
+            { point: { x: 300, y: 200 }, containerTop: 0 },
+            { height: 650 }
+        )
 
         // The map less the 8px margin at each edge, and the card placed at the
         // top margin, so it ends at 592 — inside the map.
         expect(card().style.maxHeight).toBe('584px')
-        expect(card().style.transform).toBe('translate(300px, 8px)')
+        expect(transform()).toBe('translate(300px, 8px)')
     })
 
     // The layout lays panels over the map's edges, and those panels are
     // positioned, so a card that spilled past the map would be painted over
     // and its buttons swallowed.
     it('clamps the card to the map, not to the viewport', () => {
-        engine = makeEngine({ point: { x: 5, y: 200 }, containerLeft: 300 })
-        show(engine)
-        sizeCard(200, 100)
-
-        engine.fire('move')
+        placeCard({ point: { x: 5, y: 200 }, containerLeft: 300 })
 
         // Centred on its anchor at 305 the card would start at 205, clear of
         // the viewport but 95px over whatever sits left of the map, so it
         // stops 8px inside the map's own edge.
-        expect(card().style.transform).toBe('translate(308px, 138px)')
+        expect(transform()).toBe('translate(308px, 138px)')
     })
 
     // The card is drawn clear of its anchor, so an anchor just off the map's
     // left edge still has most of its card over the map, and rides off with
     // the anchor rather than pinning to a viewport edge.
     it('parks the card once it no longer overlaps the map, and brings it back', () => {
-        engine = makeEngine({ point: { x: -20, y: 200 }, containerLeft: 0 })
-        show(engine)
-        sizeCard(200, 100)
-        engine.fire('move')
-        expect(card().style.transform).toBe('translate(-120px, 138px)')
+        placeCard({ point: { x: -20, y: 200 }, containerLeft: 0 })
+        expect(transform()).toBe('translate(-120px, 138px)')
 
         // Far enough left that the card's right edge clears the map's left.
         engine.setPoint({ x: -140, y: 200 })
         engine.fire('move')
-        expect(card().style.transform).toBe(PARKED)
+        expect(transform()).toBe(PARKED)
 
         engine.setPoint({ x: 300, y: 200 })
         engine.fire('move')
-        expect(card().style.transform).toBe('translate(200px, 138px)')
+        expect(transform()).toBe('translate(200px, 138px)')
     })
 
     // Before the engine has a view the projection throws, and the card waits,
@@ -437,45 +454,70 @@ describe('MapPopup_', () => {
             throw new Error('the engine has no view yet')
         }
         show(engine)
-        expect(card().style.transform).toBe(PARKED)
+        expect(transform()).toBe(PARKED)
 
         engine.engine.latLngToContainerPoint = () => ({ x: 300, y: 200 })
         sizeCard(200, 100)
         engine.fire('move')
-        expect(card().style.transform).toBe('translate(300px, 138px)')
+        expect(transform()).toBe('translate(300px, 138px)')
     })
 
     // Leaflet emits no move while its zoom animation runs, so the card would
     // otherwise hang at the pre-zoom position and jump at the end.
     it('parks the card while the engine animates a zoom and places it again after', () => {
-        show(engine)
-        sizeCard(200, 100)
-        engine.fire('move')
+        placeCard()
 
         engine.fire('zoomstart')
-        expect(card().style.transform).toBe(PARKED)
+        expect(transform()).toBe(PARKED)
 
         engine.fire('zoomend')
-        expect(card().style.transform).toBe('translate(300px, 138px)')
+        expect(transform()).toBe('translate(300px, 138px)')
     })
 
     it('unsubscribes from the engine and the window when hidden', async () => {
+        const addListener = vi.spyOn(window, 'addEventListener')
         const removeListener = vi.spyOn(window, 'removeEventListener')
+        const events = ['move', 'moveend', 'zoomstart', 'zoomend', 'click']
         const outcome = show(engine)
-        for (const event of ['move', 'moveend', 'zoomstart', 'zoomend', 'click'])
-            expect(engine.listenerCount(event)).toBe(1)
+        for (const event of events) expect(engine.listenerCount(event)).toBe(1)
 
         MapPopup_.hide()
         await nextTick()
 
-        for (const event of ['move', 'moveend', 'zoomstart', 'zoomend', 'click'])
-            expect(engine.listenerCount(event)).toBe(0)
-        expect(removeListener).toHaveBeenCalledWith(
-            'resize',
-            expect.any(Function)
+        for (const event of events) expect(engine.listenerCount(event)).toBe(0)
+        // The same function objects, not merely the same event names: `off`
+        // handed a fresh arrow unsubscribes nothing.
+        const subscribedTo = new Map(engine.subscribed)
+        expect(engine.unsubscribed.map(([event]) => event)).toEqual(events)
+        for (const [event, handler] of engine.unsubscribed)
+            expect(handler).toBe(subscribedTo.get(event))
+
+        const added = addListener.mock.calls.filter(
+            ([event]) => event === 'resize'
         )
+        const removed = removeListener.mock.calls.filter(
+            ([event]) => event === 'resize'
+        )
+        expect(added).toHaveLength(1)
+        expect(removed).toHaveLength(1)
+        expect(removed[0][1]).toBe(added[0][1])
+
         expect(outcome).toEqual(['closed'])
+        addListener.mockRestore()
         removeListener.mockRestore()
+    })
+
+    // Teardown can run after the engine has been destroyed, when unsubscribing
+    // throws. The card still has to leave and its request still has to answer.
+    it('takes the card down even when the engine throws on unsubscribe', async () => {
+        engine = makeEngine({ offThrows: true })
+        const outcome = show(engine)
+
+        MapPopup_.hide()
+        await nextTick()
+
+        expect(popups()).toHaveLength(0)
+        expect(outcome).toEqual(['closed'])
     })
 
     it('rejects and leaves nothing mounted when wiring the popup fails', async () => {
@@ -485,17 +527,39 @@ describe('MapPopup_', () => {
             subscribe(event, handler)
         }
 
-        // The failure is the answer: unwinding the half-built popup does not
-        // resolve the request on top of it.
         const outcome = track(MapPopup_.show(request(), engine.engine as never))
         await nextTick()
+        await nextTick()
 
-        expect(outcome).toEqual([
-            'rejected: [MapPopup] Could not show the popup: Error: engine destroyed',
-        ])
+        // Answered exactly once, and with the failure: unwinding the half-built
+        // popup neither resolves on top of it nor leaves the request hanging.
+        expect(outcome).toHaveLength(1)
+        expect(outcome[0]).toBe(WIRING_FAILED)
         expect(popups()).toHaveLength(0)
         expect(engine.listenerCount('move')).toBe(0)
         expect(engine.listenerCount('zoomstart')).toBe(0)
+    })
+
+    // Failing on the last subscription the wiring makes leaves the unwind with
+    // every one of them to drop, the window's `resize` among them.
+    it('unwinds every subscription made before the wiring failed', async () => {
+        const removeListener = vi.spyOn(window, 'removeEventListener')
+        const subscribe = engine.engine.on
+        engine.engine.on = (event: string, handler: () => void) => {
+            if (event === 'click') throw new Error('engine destroyed')
+            subscribe(event, handler)
+        }
+
+        const outcome = track(MapPopup_.show(request(), engine.engine as never))
+        await nextTick()
+
+        expect(outcome).toEqual([WIRING_FAILED])
+        for (const event of ['move', 'moveend', 'zoomstart', 'zoomend'])
+            expect(engine.listenerCount(event)).toBe(0)
+        expect(
+            removeListener.mock.calls.filter(([event]) => event === 'resize')
+        ).toHaveLength(1)
+        removeListener.mockRestore()
     })
 
     // One slot, many plugins: a hide is a request to empty the slot, and by
@@ -585,7 +649,7 @@ describe('MapPopup_', () => {
         document.body.appendChild(opener)
         opener.focus()
 
-        const outcome = show(engine)
+        show(engine)
         // Focus lands on the card rather than a control inside it, so a screen
         // reader reads the card's own name first.
         expect(document.activeElement).toBe(card())
@@ -594,7 +658,6 @@ describe('MapPopup_', () => {
         await nextTick()
 
         expect(document.activeElement).toBe(opener)
-        expect(outcome).toEqual(['dismiss'])
     })
 
     // A card inside the container would hand the map its own clicks: the

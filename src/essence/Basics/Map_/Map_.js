@@ -335,12 +335,8 @@ let Map_ = {
                 window.mmgisAPI.provide('map:showPopup', (request, { caller }) =>
                     MapPopup_.show(request, engine, caller)
                 ),
-                // Retracting a popup resolves its own request with
-                // `{ action: 'closed' }`, so whoever opened it learns it is
-                // gone. A hide reaches only a popup of the caller's own;
-                // anyone else's finds a popup that is not theirs and answers
-                // false. A plugin's address is its alone, while "no caller" is
-                // one identity shared by everyone without a handle.
+                // A hide reaches only a popup of the caller's own, and
+                // answers false for anyone else's.
                 window.mmgisAPI.provide('map:hidePopup', (_payload, { caller }) =>
                     MapPopup_.hideForCaller(caller)
                 ),
@@ -414,10 +410,8 @@ let Map_ = {
                 })
             )
 
-            // A full layout teardown — a re-render, or the UI going down
-            // whole — leaves nobody to stand behind a card, so the slot is
-            // emptied outright rather than per owner: a card opened without a
-            // handle matches no plugin's teardown and would outlive them all.
+            // A full layout teardown leaves nobody to stand behind a card, so
+            // the slot is emptied outright rather than per owner.
             _providerCleanups.push(
                 window.mmgisAPI.on('plugins:allDestroyed', () => MapPopup_.hide())
             )

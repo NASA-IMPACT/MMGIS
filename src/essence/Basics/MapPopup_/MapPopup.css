@@ -12,11 +12,6 @@
     position: fixed;
     top: 0;
     left: 0;
-    /* A positioned box at `z-index: auto`: it paints in the positioned step,
-       above every non-positioned sibling whatever tree order says, so the
-       card covers the map without asking for a level. Anything the app means
-       to paint over the card — the panel regions, a modal — has to be
-       positioned itself and carry a level of its own. */
     box-sizing: border-box;
     /* Shrink to fit the content: the card is placed by a transform, so it has
        no containing block to resolve a percentage width against. */
@@ -176,7 +171,7 @@
     border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
     background: var(--theme-color-white, #ffffff);
     color: var(--theme-color-ink, #1b1b1b);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 1px 2px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
 }
 
 .mmgis-map-popup__button--secondary:hover {
