@@ -450,10 +450,8 @@ const ToolControllerModern_ = {
      * Destroy a tool instance in a specific container
      *
      * @param {string} targetId - DOM element ID of the tool container
-     * @returns {boolean} True if destroyed successfully. False covers both a
-     * tool whose own destroy() threw and a bus handle whose release did — in
-     * either case the lifecycle registries are still cleared, but something the
-     * tool held was not given back.
+     * @returns {boolean} False when the tool's own destroy() or its handle's
+     * release threw; the lifecycle registries are cleared either way.
      */
     destroyTool: function (targetId) {
         if (!loadedTools.has(targetId)) {
@@ -464,8 +462,7 @@ const ToolControllerModern_ = {
         let destroyed = true
 
         try {
-            // Call destroy() if available. It runs before the handle is taken
-            // back, so a tool can still speak to core while shutting down.
+            // destroy() runs before the handle is taken back, so a tool can still speak to core.
             if (typeof toolInstance.destroy === 'function') {
                 toolInstance.destroy()
             }
@@ -473,8 +470,7 @@ const ToolControllerModern_ = {
             logger.error(`Error destroying tool in container "${targetId}":`, error)
             destroyed = false
         } finally {
-            // Always remove from tracking, even if destroy() threw, so a
-            // misbehaving plugin can't leave stale/zombie lifecycle state
+            // Untracked even if destroy() threw, so no zombie lifecycle state.
             loadedTools.delete(targetId)
 
             // Clean up reverse lookup and hidden state
@@ -483,11 +479,8 @@ const ToolControllerModern_ = {
                 hiddenTools.delete(toolId)
             }
 
-            // Hand back what the minted handle registered — last, and guarded
-            // so a throwing release cannot swallow the teardown announcement
-            // below. The instance is a module singleton, so its `api` is only
-            // cleared while it still points at this load's handle: a reload
-            // that already minted a fresh one keeps it.
+            // Released last and guarded so the teardown announcement below
+            // still runs; a reload's fresher `api` on the singleton is kept.
             if (api) {
                 try {
                     api.release()
@@ -499,12 +492,8 @@ const ToolControllerModern_ = {
             }
         }
 
-        // The teardown is announced on the bus rather than by any direct call,
-        // which is what keeps this controller from knowing anything about the
-        // services plugins reach for. `pluginId` is the tool's address — the
-        // one it spoke to core services under — so a service holding a
-        // resource for this plugin can match the announcement to what it holds
-        // and let go of it, while a surviving plugin's stays untouched.
+        // Announced on the bus, not by direct call, so this controller stays
+        // ignorant of the services that match held resources to `pluginId`.
         mmgisAPI.emit('plugins:destroyed', Object.freeze({ pluginId: toolId }))
 
         if (destroyed) {
@@ -531,11 +520,8 @@ const ToolControllerModern_ = {
         // Clear deferred registry (destroyTool already clears toolIdToTargetId and hiddenTools)
         deferredTools.clear()
 
-        // After the per-tool announcements, one collective signal that the
-        // plugins went down together — what a core service releases a shared
-        // resource on when it holds one for whichever plugin asked. Emitted
-        // only when there were instances to destroy: with nothing loaded,
-        // nothing was held on a plugin's behalf.
+        // One collective signal after the per-tool announcements, for services
+        // holding a resource shared across plugins; nothing loaded, nothing held.
         if (pluginIds.length > 0) {
             mmgisAPI.emit(
                 'plugins:allDestroyed',

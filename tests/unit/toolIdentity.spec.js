@@ -31,6 +31,16 @@ vi.mock('../../src/pre/tools', () => ({
                 calls.push(['destroy', this.api?.address])
             },
         },
+        // Puts a provider up through its handle and then throws, so a test can
+        // see what a load that never finished hands back.
+        FailingTool: {
+            initialize() {
+                this.api.provide('getSelection', () => 'a selection')
+                throw new Error('initialize threw')
+            },
+            make() {},
+            destroy() {},
+        },
         PlainTool: { make: () => {}, destroy: () => {} },
     },
 }))
@@ -109,6 +119,23 @@ describe('a tool the controller loads', () => {
             ['initialize', 'fetchstats'],
             ['make', 'fetchstats'],
         ])
+    })
+
+    test('has its handle taken back when its own load throws part-way', () => {
+        const target = document.createElement('div')
+        target.id = 'failing-target'
+        document.body.appendChild(target)
+
+        const loaded = ToolControllerModern_.loadTool(
+            generateToolMetadata({ name: 'Failing', js: 'FailingTool' }),
+            'failing-target'
+        )
+
+        // No destroyTool will ever come for an instance that never finished
+        // loading, so the failed load itself is what hands the handle back.
+        expect(loaded).toBe(null)
+        expect(mmgisAPI.hasHandler('plugin:failing:getSelection')).toBe(false)
+        expect(toolModules.FailingTool.api).toBe(null)
     })
 
     test('has the providers it put up through that handle answering', async () => {

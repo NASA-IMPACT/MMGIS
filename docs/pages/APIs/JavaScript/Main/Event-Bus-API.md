@@ -155,7 +155,7 @@ anything there right now.
 
 ## Plugin Scoped API
 
-MMGIS injects a scoped API into each tool it loads as `this.api`. This API automatically prefixes event and provider names with `plugin:{address}:`, where `address` is derived at build time from the tool's module binding (e.g., `DrawTool` → `draw`). A tool never mints its own handle — there is no public way to — so a plugin reaches its own and no other's.
+MMGIS injects a scoped API into each tool the modern layout loads as `this.api`. This API automatically prefixes event and provider names with `plugin:{address}:`, where `address` is derived at build time from the tool's module binding (e.g., `DrawTool` → `draw`). A tool never mints its own handle — there is no public way to — so a plugin reaches its own and no other's.
 
 The controller mints the handle before the tool's `initialize()` runs and releases it after the tool's `destroy()` returns, unregistering every provider and subscription made through it. Anything a tool registers straight on `window.mmgisAPI` sits outside the handle and stays the tool's own to remove: the React-based tools work that way today, so their requests carry no caller and LayerManager's unprefixed providers outlive a release.
 

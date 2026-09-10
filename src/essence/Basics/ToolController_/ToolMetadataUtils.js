@@ -522,11 +522,10 @@ export function getValidIconClass(iconClass, toolId) {
 /**
  * The address a configured tool entry answers to: what it is called on the
  * bus, in the modern controller's registries, in the DOM, in teardown events
- * and as the key its configured variables resolve under. `js` names the
- * import binding and nothing else; the build derives the same address from it
- * (buildToolIds in API/updateTools.js), so a registry generated before this
- * export existed still lands on the same string. An entry with no module at
- * all is named after itself.
+ * and as the key its configured variables resolve under. It comes from the
+ * generated registry, or is derived from `js` the way the build derives it
+ * (buildToolIds in API/updateTools.js), or from the entry's own name when
+ * there is no module.
  *
  * @param {Object} toolConfig - Tool configuration entry, read for { js, name }
  * @returns {string} Tool address
