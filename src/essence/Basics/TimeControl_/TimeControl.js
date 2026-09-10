@@ -62,6 +62,42 @@ async function fetchUrlReplacement(r, layer, layerTimeFormat) {
     return replacement
 }
 
+// The window one reload of the time-enabled layers covers. Every commit still
+// moves the clock, the labels and the time:changed broadcast at once; only the
+// tile refetching waits.
+//
+// Play mode ticks as fast as every 100ms and a datepicker commits on each
+// keystroke, and each commit refetches every time-enabled layer's whole
+// tileset. deck.gl aborts the requests still in flight when the next commit
+// lands, but the tile service has already begun answering them.
+const TIME_LAYER_RELOAD_WINDOW_MS = 200
+
+let _timeLayerReloadTimeout = null
+
+/**
+ * Reloads the time-enabled layers once per window, on the times the last
+ * commit in the window left on the layers.
+ *
+ * Trailing edge, one booking at a time: the first commit opens the window and
+ * the ones after it fall in, so a burst reloads once and continuous playback
+ * reloads every window rather than never - a commit never pushes the timer
+ * back. Nothing is queued per commit; reloadTimeLayers reads the layers'
+ * times when it runs, so the reload is always the newest one. The cost is one
+ * window of delay on an isolated change, less than the tile fetch it starts.
+ *
+ * Only this path waits. `TimeControl.reloadTimeLayers` stays immediate and
+ * synchronous for the plugins and tools that call it directly, and is the
+ * flush: it cancels a booked reload, so a direct call is one reload, not one
+ * now and a redundant one a window later.
+ */
+function scheduleTimeLayerReload() {
+    if (_timeLayerReloadTimeout != null) return
+    _timeLayerReloadTimeout = setTimeout(() => {
+        _timeLayerReloadTimeout = null
+        TimeControl.reloadTimeLayers()
+    }, TIME_LAYER_RELOAD_WINDOW_MS)
+}
+
 // Can be either hh:mm:ss or just seconds
 const relativeTimeFormat = new RegExp(
     /^(-?)(?:2[0-3]|[01]?[0-9]):[0-5][0-9]:[0-5][0-9]$/
@@ -86,6 +122,10 @@ var TimeControl = {
         // (e.g. mission swap) can't accumulate stale providers/listeners.
         _providerCleanups.forEach((cleanup) => cleanup())
         _providerCleanups = []
+        // Same for a reload the previous mission's last time change left
+        // booked, which would land on the new mission's layers.
+        clearTimeout(_timeLayerReloadTimeout)
+        _timeLayerReloadTimeout = null
 
         // Register bus handlers before any UI or plugin can emit, so a
         // time:changeRequested is never lost to registration order.
@@ -646,6 +686,11 @@ var TimeControl = {
         return nextUrl
     },
     reloadTimeLayers: function () {
+        // This is the reload a booked one would have performed, on the times
+        // the layers carry right now, so the booking has nothing left to do.
+        clearTimeout(_timeLayerReloadTimeout)
+        _timeLayerReloadTimeout = null
+
         // refresh time enabled layers
         let reloadedLayers = []
         let savedActiveFeature = null
@@ -897,9 +942,10 @@ function timeInputChange(startTime, endTime, currentTime, skipUpdate) {
     })
 
     if (skipUpdate !== true) {
-        // Update layer times and reload
+        // Update layer times and reload. The times (and the labels that
+        // read them) move now; the reload they drive waits for its window.
         TimeControl.updateLayersTime()
-        TimeControl.reloadTimeLayers()
+        scheduleTimeLayerReload()
     }
 }
 
