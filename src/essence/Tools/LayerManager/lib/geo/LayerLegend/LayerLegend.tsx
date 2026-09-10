@@ -13,7 +13,7 @@ import { CategoricalGraphic } from '../CategoricalGraphic/CategoricalGraphic'
 import { ColorRampPicker } from '../ColorRampPicker/ColorRampPicker'
 import { FloatingPopover } from '../../FloatingPopover'
 import { PopoverMenu, type PopoverMenuItem } from '../PopoverMenu'
-import type { Layer } from '../../types'
+import type { Layer, LayerMoveAction } from '../../types'
 
 /**
  * Renders an authored description. Markdown is a host concern — the parser,
@@ -45,6 +45,10 @@ export type LayerLegendProps = {
     onZoomToLayer?: (layerId: string) => void
     canZoomToLayer?: (layerId: string) => Promise<boolean>
     onCompareLayer?: (layerId: string) => void
+    onMoveLayer?: (layerId: string, action: LayerMoveAction) => void
+    /** Where the layer sits in the list shown, for the move items. */
+    isFirst?: boolean
+    isLast?: boolean
 }
 
 export function LayerLegend({
@@ -58,6 +62,9 @@ export function LayerLegend({
     onZoomToLayer,
     canZoomToLayer,
     onCompareLayer,
+    onMoveLayer,
+    isFirst = false,
+    isLast = false,
 }: LayerLegendProps) {
     const {
         id,
@@ -180,6 +187,40 @@ export function LayerLegend({
                       onSelect: () => onCompareLayer(id),
                   } satisfies PopoverMenuItem,
               ]
+            : []),
+        // The list reads top down as the map stacks: up is drawn over more.
+        ...(onMoveLayer
+            ? ([
+                  {
+                      id: 'move-up',
+                      label: 'Move up',
+                      dividerBefore: true,
+                      disabled: isFirst,
+                      title: isFirst ? 'Already at the top' : undefined,
+                      onSelect: () => onMoveLayer(id, 'up'),
+                  },
+                  {
+                      id: 'move-down',
+                      label: 'Move down',
+                      disabled: isLast,
+                      title: isLast ? 'Already at the bottom' : undefined,
+                      onSelect: () => onMoveLayer(id, 'down'),
+                  },
+                  {
+                      id: 'move-to-top',
+                      label: 'Move to top',
+                      disabled: isFirst,
+                      title: isFirst ? 'Already at the top' : undefined,
+                      onSelect: () => onMoveLayer(id, 'top'),
+                  },
+                  {
+                      id: 'move-to-bottom',
+                      label: 'Move to bottom',
+                      disabled: isLast,
+                      title: isLast ? 'Already at the bottom' : undefined,
+                      onSelect: () => onMoveLayer(id, 'bottom'),
+                  },
+              ] satisfies PopoverMenuItem[])
             : []),
     ]
 

@@ -13,6 +13,7 @@ export type LayerLegendListProps = {
     onZoomToLayer?: LayerLegendProps['onZoomToLayer']
     canZoomToLayer?: LayerLegendProps['canZoomToLayer']
     onCompareLayer?: LayerLegendProps['onCompareLayer']
+    onMoveLayer?: LayerLegendProps['onMoveLayer']
 }
 
 export function LayerLegendList({
@@ -26,6 +27,7 @@ export function LayerLegendList({
     onZoomToLayer,
     canZoomToLayer,
     onCompareLayer,
+    onMoveLayer,
 }: LayerLegendListProps) {
     if (!layers || layers.length === 0) {
         return (
@@ -36,10 +38,12 @@ export function LayerLegendList({
     }
     return (
         <div className="blocks-layer-legend-list">
-            {layers.map((layer) => (
+            {layers.map((layer, index) => (
                 <LayerLegend
                     key={layer.id}
                     layer={layer}
+                    isFirst={index === 0}
+                    isLast={index === layers.length - 1}
                     renderDescription={renderDescription}
                     onVisibilityChange={onVisibilityChange}
                     onOpacityChange={onOpacityChange}
@@ -48,6 +52,7 @@ export function LayerLegendList({
                     onZoomToLayer={onZoomToLayer}
                     canZoomToLayer={canZoomToLayer}
                     onCompareLayer={onCompareLayer}
+                    onMoveLayer={onMoveLayer}
                 />
             ))}
         </div>

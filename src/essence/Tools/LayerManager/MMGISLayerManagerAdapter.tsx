@@ -1,7 +1,7 @@
 import React from 'react'
 import { useState, useCallback } from 'react'
 import { LayerManagerPanel } from './lib'
-import type { Layer } from './lib/types'
+import type { Layer, LayerMoveAction } from './lib/types'
 import { useMMGISEvent } from '../_shared/adapters/useMMGISEvent'
 import { useMMGISToolVars } from '../_shared/adapters/useMMGISToolVars'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
@@ -15,6 +15,7 @@ import {
     zoomToLayer,
     compareLayer,
     showAddLayer,
+    moveLayer,
 } from './adapters/handlers'
 import { mmgisGetLayerBounds } from '../_shared/adapters/mmgisAPI'
 
@@ -67,6 +68,15 @@ export function MMGISLayerManagerAdapter() {
     useMMGISEvent('layer:opacityChange', refresh)
     useMMGISEvent('layer:listedChange', refresh)
     useMMGISEvent('layers:listChanged', refresh)
+    useMMGISEvent('layers:orderChanged', refresh)
+
+    // A step moves past the neighbour in this list, not in the full order.
+    const onMoveLayer = useCallback(
+        (id: string, action: LayerMoveAction) => {
+            report('moveLayer', moveLayer(id, action, layers.map((l) => l.id)))
+        },
+        [layers],
+    )
 
     // 'layers:getAll' is registered by Layers_.fina() during mission load.
     // Wait for it before doing the initial refresh, otherwise the adapter
@@ -86,6 +96,7 @@ export function MMGISLayerManagerAdapter() {
             onZoomToLayer={(id) => { report('zoomToLayer', zoomToLayer(id)) }}
             canZoomToLayer={canZoomToLayer}
             onCompareLayer={compareLayer}
+            onMoveLayer={onMoveLayer}
             onAddLayer={showAddLayer}
         />
     )
