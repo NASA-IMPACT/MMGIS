@@ -393,7 +393,7 @@ class OffscreenMapManager {
     /**
      * Reorder layers on the offscreen map to match main map z-index
      *
-     * Uses the same logic as Map_.orderedBringToFront to ensure proper layer ordering.
+     * Uses the same logic as LeafletAdapter.setLayerOrder to ensure proper layer ordering.
      * Vector layers are removed and re-added in order.
      * Tile/raster layers use setZIndex with calculated values.
      *
