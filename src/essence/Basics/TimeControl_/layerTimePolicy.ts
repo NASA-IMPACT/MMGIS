@@ -67,14 +67,21 @@ function addDuration(date: Date, d: Duration, factor: number): Date {
     return out
 }
 
-function toIso(date: Date): string {
+// Durations are unbounded, so date math can land outside the +/-273,790-year
+// range a Date can represent, where toISOString() throws. Every other failure
+// in this module resolves to null and must here too: `layers:getTemporalExtent`
+// resolves every layer in one pass, so one unbounded config would otherwise
+// reject the whole request and leave consumers with no extents at all.
+function toIso(date: Date): string | null {
+    if (isNaN(date.getTime())) return null
     return date.toISOString().split('.')[0] + 'Z'
 }
 
 /**
  * Resolves a data time value — concrete or policy — to an ISO datetime
- * string, or null when the value is absent or unparseable (callers keep
- * their own fallback; a bad value must never break a consumer).
+ * string, or null when the value is absent, unparseable, or resolves
+ * outside the range a Date can represent (callers keep their own
+ * fallback; a bad value must never break a consumer).
  *
  * @param value - `time.dataStartTime` / `time.dataEndTime`.
  * @param options.now - Injectable current moment (tests).
@@ -163,7 +170,12 @@ export function resolveTemporalExtent(
         const cadence = parseISODuration(String(time.interval).trim())
         // A zero cadence ("P0D") parses but cannot step anywhere.
         if (cadence != null && approximateMs(cadence) > 0) {
-            end = toIso(floorToStep(new Date(start), new Date(end), cadence))
+            const snapped = toIso(
+                floorToStep(new Date(start), new Date(end), cadence)
+            )
+            // An out-of-range step leaves the extent unsnapped, exactly as
+            // an unparseable interval does.
+            if (snapped != null) end = snapped
         }
     }
     return { start, end }

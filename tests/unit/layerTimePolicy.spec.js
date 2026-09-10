@@ -40,6 +40,17 @@ describe('layer time policy', () => {
             expect(resolveTimePolicy('now - garbage', { now: NOW })).toBeNull()
         })
 
+        test('an offset past the representable date range resolves to null', () => {
+            // Durations are unbounded; these push the Date past its
+            // +/-273,790-year limit, where toISOString() would throw.
+            expect(
+                resolveTimePolicy('now - P999999999Y', { now: NOW }),
+            ).toBeNull()
+            expect(
+                resolveTimePolicy('now + P20000000000D', { now: NOW }),
+            ).toBeNull()
+        })
+
         test('"now" is the raw current moment — no rounding (veda-ui rule)', () => {
             expect(resolveTimePolicy('now', { now: NOW })).toBe(
                 '2026-08-25T15:42:31Z',
@@ -236,6 +247,37 @@ describe('layer time policy', () => {
                     { now: NOW },
                 ),
             ).toEqual({ start: null, end: '2026-08-25T15:42:31Z' })
+        })
+
+        test('an out-of-range policy nulls only its own end, never throws', () => {
+            // The bulk `layers:getTemporalExtent` handler resolves every
+            // layer in one pass — one unbounded config must not reject it.
+            expect(
+                resolveTemporalExtent(
+                    {
+                        dataStartTime: '2026-01-01T00:00:00Z',
+                        dataEndTime: 'now + P999999999Y',
+                    },
+                    { now: NOW },
+                ),
+            ).toEqual({ start: '2026-01-01T00:00:00Z', end: null })
+        })
+
+        test('a cadence longer than the span floors to the start itself', () => {
+            // The last 1000-year step at or before now is step 0.
+            expect(
+                resolveTemporalExtent(
+                    {
+                        dataStartTime: '2020-01-01T00:00:00Z',
+                        dataEndTime: 'now',
+                        interval: 'P1000Y',
+                    },
+                    { now: NOW },
+                ),
+            ).toEqual({
+                start: '2020-01-01T00:00:00Z',
+                end: '2020-01-01T00:00:00Z',
+            })
         })
 
         test('an absent time block resolves to a null extent', () => {
