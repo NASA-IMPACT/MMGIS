@@ -11,6 +11,7 @@ import {
     mmgisGetTimeEnd,
     mmgisGetTimeCurrent,
     type LayerConfig,
+    mmgisGetTemporalExtents,
 } from '../_shared/adapters/mmgisAPI'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 import {
@@ -216,9 +217,10 @@ export const TimelineAdapter: React.FC = () => {
         let cancelled = false
 
         const fetchLayers = async () => {
-            const [configs, visibleLayers] = await Promise.all([
+            const [configs, visibleLayers, extents] = await Promise.all([
                 mmgisGetLayerConfigs(),
                 mmgisGetVisibleLayers(),
+                mmgisGetTemporalExtents(),
             ])
             if (cancelled || !configs) return
 
@@ -234,19 +236,30 @@ export const TimelineAdapter: React.FC = () => {
                     ? 'var(--theme-color-secondary, #c91b6e)'
                     : 'var(--theme-color-base, #71767a)'
 
+                // Core resolves the authored data times (open-ended "now",
+                // duration offsets, cadence flooring); the resolvers below
+                // read plain timestamps. A bound core could not read stays
+                // as written, so it falls back the way it always has.
+                const extent = extents?.[layerName]
+                const time = layer.time && {
+                    ...layer.time,
+                    dataStartTime: extent?.start ?? layer.time.dataStartTime,
+                    dataEndTime: extent?.end ?? layer.time.dataEndTime,
+                }
+
                 newLayers.push({
                     name: layerName,
                     displayName: layer.display_name || layer.name || layerName,
                     color: color,
                     timeRanges: resolveLayerTimeRanges(
-                        layer.time,
+                        time,
                         startTime,
                         endTime
                     ),
                     // Same fallback bounds as the ranges above, so a row
                     // navigates the span it draws.
                     navigation: resolveLayerNavigation(
-                        layer.time,
+                        time,
                         startTime,
                         endTime,
                         layerName

@@ -3,6 +3,7 @@ import Sortable from 'sortablejs'
 import F_ from '../../Basics/Formulae_/Formulae_'
 import L_ from '../../Basics/Layers_/Layers_'
 import Map_ from '../../Basics/Map_/Map_'
+import { resolveTemporalExtent } from '../../Basics/TimeControl_/layerTimePolicy'
 import ServiceUrls from '../../Basics/ServiceUrls/ServiceUrls'
 
 import DataShaders from '../../Ancillary/DataShaders'
@@ -1849,15 +1850,10 @@ function interfaceWithMMGIS(fromInit) {
         const layerUUID = L_.asLayerUUID(layerName)
         const layerData = L_.layers.data[layerUUID]
 
-        if (
-            layerData &&
-            layerData.time &&
-            layerData.time.dataStartTime &&
-            layerData.time.dataEndTime
-        ) {
-            // Convert ISO strings to timestamps
-            const startTime = new Date(layerData.time.dataStartTime).getTime()
-            const endTime = new Date(layerData.time.dataEndTime).getTime()
+        const extent = resolveTemporalExtent(layerData?.time)
+        if (extent.start != null && extent.end != null) {
+            const startTime = new Date(extent.start).getTime()
+            const endTime = new Date(extent.end).getTime()
 
             // Update TimeUI with the layer's data extent
             TimeUI.updateTimes(startTime, endTime, endTime)
