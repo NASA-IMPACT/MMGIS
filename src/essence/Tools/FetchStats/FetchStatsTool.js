@@ -37,12 +37,18 @@ const FetchStatsTool = {
     MMGISInterface: null,
     _api: null,
     _cleanups: [],
+    made: false,
 
     initialize() {
         this.make(null)
     },
 
     make(targetId) {
+        // The modern layout calls initialize() then make(); the guard makes
+        // the second start a no-op. It discards targetId, which is safe only
+        // because this plugin renders nothing.
+        if (this.made) return
+        this.made = true
         this.MMGISInterface = new interfaceWithMMGIS(this, targetId)
         this._api =
             (typeof window !== 'undefined' &&
@@ -64,9 +70,13 @@ const FetchStatsTool = {
     },
 
     destroy() {
+        this.made = false
         this._cleanups.forEach((fn) => fn())
         this._cleanups = []
         this.MMGISInterface?.separateFromMMGIS()
+        // An analysis already awaiting the network cannot be cancelled, so
+        // dropping the handle is what keeps its remaining emits off the bus.
+        this._api = null
     },
 
     async _getAnalyzableVisibleLayers() {
@@ -92,11 +102,11 @@ const FetchStatsTool = {
 
         const layers = await this._getAnalyzableVisibleLayers()
         if (!layers.length) {
-            this._api.emit('analysisSkipped', { reason: 'no-eligible-layers' })
+            this._api?.emit('analysisSkipped', { reason: 'no-eligible-layers' })
             return
         }
 
-        this._api.emit('analysisProgress', { done: 0, total: layers.length })
+        this._api?.emit('analysisProgress', { done: 0, total: layers.length })
 
         const body = JSON.stringify({
             type: 'Feature',
@@ -110,13 +120,13 @@ const FetchStatsTool = {
                 const displayName = layer.display_name || layer.name
                 const result = await this._postStatsForLayer(layer, body)
                 done += 1
-                this._api.emit('analysisProgress', { done, total: layers.length })
+                this._api?.emit('analysisProgress', { done, total: layers.length })
                 return [displayName, result]
             })
         )
 
         const analysisData = Object.fromEntries(entries)
-        this._api.emit('analysisReady', { analysisData })
+        this._api?.emit('analysisReady', { analysisData })
     },
 
     async _postStatsForLayer(layer, body) {
