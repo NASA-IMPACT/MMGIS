@@ -450,6 +450,8 @@ listing.
 | `map:setView` | `{ center, zoom }` | `true` | Set map view |
 | `map:fitBounds` | `bounds` | `true` | Fit map to bounds |
 | `map:panTo` | `{ lat, lng }` | `true` | Pan map to coordinates |
+| `map:showPopup` | `MapPopupRequest` | `MapPopupResult` | Show a map-anchored popup at a lat/lng, replacing any current popup. Answers only once the popup closes |
+| `map:hidePopup` | none | `boolean` | Retract the caller's own popup, resolving its request with `{ action: 'closed' }`. `false` when the popup showing is someone else's, or there is none |
 
 ```javascript
 // Get current map state
@@ -470,6 +472,48 @@ await window.mmgisAPI.request('map:fitBounds', [
 
 await window.mmgisAPI.request('map:panTo', { lat: 45, lng: -120 })
 ```
+
+#### `map:showPopup`
+
+A map-anchored popup rendered and styled by the core: the plugin sends the content, the core owns the DOM, the theme and the lifecycle. There is a single popup slot and no popup id — a request from any caller replaces the current popup, whose own request then resolves `'closed'`. Nothing about a popup is broadcast on the bus: the outcome travels back on the request's promise, which stays pending for as long as the popup is open.
+
+```javascript
+const api = this.api // injected; address 'crater-info'
+
+// Pending until the popup closes — hold onto it rather than blocking on it.
+const outcome = api.request('map:showPopup', {
+    latlng: { lat: 45, lng: -120 }, // anchor, tracked as the map moves
+    title: 'Crater A',              // heading, rendered as text
+    html: '<p>Diameter: 12 km</p>', // body, sanitized by the core
+    primaryAction: { label: 'Analyze' },
+    secondaryAction: { label: 'Cancel' }
+})
+
+outcome.then(({ action }) => {
+    if (action === 'primary') analyze()
+    else if (action === 'secondary' || action === 'dismiss') clearSelection()
+    // 'closed': replaced or retracted — nothing for this plugin to undo.
+}, showError)
+```
+
+`latlng` is required, and so is one of `title` and `html` — buttons are not content, so a request holding neither is rejected. `title` is rendered as text, never as markup. `primaryAction` and `secondaryAction` each carry a `label` and nothing else; a lone action takes the primary styling whichever field it arrived in, and still answers with its own slot.
+
+The result is `{ action }`:
+
+| `action` | Meaning |
+|----------|---------|
+| `'primary'` | The primary button was pressed |
+| `'secondary'` | The secondary button was pressed |
+| `'dismiss'` | The user dismissed the popup with the X, with Escape, or with a click on empty map. A click that lands on a feature does not dismiss the card |
+| `'closed'` | The popup went away without the user acting on it: another `map:showPopup` replaced it, `map:hidePopup` retracted it, the plugin that opened it was destroyed, or the mission switched |
+
+`html` is sanitized with DOMPurify's defaults before it reaches the DOM. Inline `style` attributes, tables, images and lists survive; a `<style>` block does not, and neither does anything that would run script, reach the browser's top layer, or navigate the app away — a link that goes somewhere opens in a tab of its own.
+
+#### `map:hidePopup`
+
+Retracts the caller's own popup, which resolves its `map:showPopup` request with `{ action: 'closed' }`. Ownership decides who may *retract* a popup, never who may open one: a request made through a plugin's handle carries the plugin's address, and a hide answers `false` when the slot holds someone else's popup or nothing at all. A plugin can therefore call it blind. A request made straight on `mmgisAPI` carries no address, so it opens a popup any other address-less caller can retract.
+
+Core closes a plugin's card when the plugin is destroyed, so retracting in `destroy()` is a courtesy rather than a duty.
 
 ### Layer Providers
 

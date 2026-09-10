@@ -491,6 +491,18 @@ body.ui-is-dragging .ui-modern-grid .ui-panel {
     z-index: 0 !important;
 }
 
+/* The panel regions outrank the centre region: here the map is a grid cell
+   among the panels and claims a level of its own, so whatever the centre
+   region holds — a map-anchored popup card — would otherwise paint over them.
+   One level for all four leaves their order among themselves to the tree. */
+.ui-modern-grid.ui-layout-compact .ui-region-top,
+.ui-modern-grid.ui-layout-compact .ui-region-left,
+.ui-modern-grid.ui-layout-compact .ui-region-right,
+.ui-modern-grid.ui-layout-compact .ui-region-bottom {
+    position: relative;
+    z-index: 20;
+}
+
 .ui-modern-grid.ui-layout-compact .ui-panel {
     margin: 0;
     border-radius: 0;
