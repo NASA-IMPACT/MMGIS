@@ -47,8 +47,8 @@ interface PopupCardOptions {
     primaryAction?: MapPopupAction
     secondaryAction?: MapPopupAction
     onAction: (action: ActionSlot) => void
-    onClose: () => void
-    onEscape: () => void
+    /** The user waving the card away, by the X button or by Escape. */
+    onDismiss: () => void
 }
 
 /** Keeps a new card's heading id clear of the outgoing card's. */
@@ -157,7 +157,7 @@ function buildPopupCard(options: PopupCardOptions): HTMLElement {
         if (event.key !== 'Escape') return
         // The innermost thing open owns the key; the app closes its own too.
         event.stopPropagation()
-        options.onEscape()
+        options.onDismiss()
     })
 
     const close = document.createElement('button')
@@ -165,7 +165,7 @@ function buildPopupCard(options: PopupCardOptions): HTMLElement {
     close.className = 'mmgis-map-popup__close'
     close.setAttribute('aria-label', 'Close')
     close.textContent = '×'
-    close.addEventListener('click', options.onClose)
+    close.addEventListener('click', options.onDismiss)
     card.appendChild(close)
 
     if (options.title) {
@@ -299,8 +299,7 @@ const MapPopup_ = {
                 // Closed before its request is answered, so a caller may
                 // reply by opening one of its own.
                 onAction: (action) => this.hide({ action }),
-                onClose: () => this.hide({ action: 'dismiss' }),
-                onEscape: () => this.hide({ action: 'dismiss' }),
+                onDismiss: () => this.hide({ action: 'dismiss' }),
             }),
             engine,
             latlng: { lat: request.latlng.lat, lng: request.latlng.lng },
@@ -450,7 +449,12 @@ const MapPopup_ = {
             const boundsRight = Math.min(containerRight, window.innerWidth)
             const boundsBottom = Math.min(containerBottom, window.innerHeight)
 
-            const cap = `${boundsBottom - boundsTop - 2 * VIEWPORT_MARGIN}px`
+            // Floored at zero: a map entirely off screen leaves the bounds
+            // inverted, and a negative `max-height` is one the browser drops.
+            const cap = `${Math.max(
+                0,
+                boundsBottom - boundsTop - 2 * VIEWPORT_MARGIN
+            )}px`
             if (open.card.style.maxHeight !== cap) {
                 open.card.style.maxHeight = cap
             }
