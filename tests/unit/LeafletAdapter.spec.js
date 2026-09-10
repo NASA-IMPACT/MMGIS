@@ -881,6 +881,32 @@ test.describe('LeafletAdapter - on / off', () => {
 
         expect(clicks).toEqual([{ lat: 1, lng: 2 }])
     })
+
+    // The popup service subscribes to `click` when a plugin opens a card from
+    // a click, so the click that opened the card would dismiss it were the
+    // fan-out to walk the subscribers the dispatch itself is adding to.
+    test('a subscriber added during a click hears the next click, not that one', () => {
+        const { mockMap } = setupWithLayerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        let mapClick = null
+        mockMap.on = (event, cb) => { if (event === 'click') mapClick = cb }
+
+        const late = []
+        let subscribed = false
+        adapter.on('click', () => {
+            if (subscribed) return
+            subscribed = true
+            adapter.on('click', (e) => late.push(e.latlng))
+        })
+
+        mapClick({ latlng: { lat: 1, lng: 2 } })
+        expect(late).toEqual([])
+
+        mapClick({ latlng: { lat: 3, lng: 4 } })
+        expect(late).toEqual([{ lat: 3, lng: 4 }])
+    })
 })
 
 // ─── the feature a click landed on ───────────────────────────────────────────
