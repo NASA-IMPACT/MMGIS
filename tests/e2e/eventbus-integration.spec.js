@@ -375,14 +375,14 @@ test.describe('Plugin Scoped API (this.api)', () => {
             return {
                 hasEmit: typeof api.emit === 'function',
                 hasProvide: typeof api.provide === 'function',
-                hasPluginId: api.pluginId === 'testPlugin',
+                hasAddress: api.address === 'testPlugin',
                 hasPrefix: api.prefix === 'plugin:testPlugin:',
             }
         })
 
         expect(result.hasEmit).toBe(true)
         expect(result.hasProvide).toBe(true)
-        expect(result.hasPluginId).toBe(true)
+        expect(result.hasAddress).toBe(true)
         expect(result.hasPrefix).toBe(true)
     })
 
