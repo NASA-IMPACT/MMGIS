@@ -478,12 +478,40 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 }) as unknown as Layer
             }
 
+            const tileSize = o.tileSize ?? 256
+
+            // deck.gl reads minZoom and visibleMinZoom off different scales:
+            // minZoom is compared against the tile level it derives from the
+            // view, round(viewport.zoom + log2(512 / tileSize)), while
+            // visibleMinZoom is compared against viewport.zoom itself. So the
+            // floor is converted to view zoom here: round(zoom + offset) <
+            // minZoom is zoom < minZoom - offset - 0.5, Math.round taking .5
+            // upwards. The layer then hides exactly where its first tile level
+            // begins, which is also where Leaflet's minZoom hides it.
+            //
+            // The floor has to be stated: an extent stops deck.gl hiding a
+            // layer below minZoom, and it clamps to minZoom and requests the
+            // tiles instead - the whole footprint's worth, however far out the
+            // view is.
+            const minZoom =
+                typeof o.minZoom === 'number' && Number.isFinite(o.minZoom)
+                    ? o.minZoom
+                    : undefined
+            const visibleMinZoom =
+                minZoom === undefined
+                    ? undefined
+                    : minZoom - Math.log2(512 / tileSize) - 0.5
+
             return new TileLayer({
                 id,
                 data: o.url,
-                tileSize: o.tileSize ?? 256,
+                tileSize,
                 minZoom: o.minZoom,
                 maxZoom: o.maxNativeZoom ?? o.maxZoom,
+                // The layer's own footprint, so deck.gl never asks the tile
+                // service for a tile the layer has no data for.
+                extent: o.extent,
+                visibleMinZoom,
                 opacity: o.opacity ?? 1,
                 getTileData: (tile: { url?: string | null; signal?: AbortSignal }) =>
                     fetchImageTile(tile.url, tile.signal),

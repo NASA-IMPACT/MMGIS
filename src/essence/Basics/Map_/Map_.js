@@ -1,7 +1,7 @@
 import $ from 'jquery'
 import { isStaticBuild } from '../../../pre/capabilities'
 import F_ from '../Formulae_/Formulae_'
-import L_ from '../Layers_/Layers_'
+import L_, { parseBoundingBox } from '../Layers_/Layers_'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
 import { captureVector } from '../Layers_/LayerCapturer'
 import {
@@ -1703,13 +1703,21 @@ async function makeTileLayer(layerObj, mapContext = null) {
 
     syncTileFormatToConfig(layerObj, tileSource)
 
-    let bb = null
-    if (layerObj.hasOwnProperty('boundingBox')) {
-        bb = L.latLngBounds(
-            L.latLng(layerObj.boundingBox[3], layerObj.boundingBox[2]),
-            L.latLng(layerObj.boundingBox[1], layerObj.boundingBox[0])
+    // The layer's footprint, [west, south, east, north], or null: deck.gl gets
+    // it as `extent` and Leaflet as `bounds`, and without it either engine
+    // requests tiles across the whole viewport for a layer covering one
+    // scene, which the tile service answers one 404 at a time.
+    const boundingBox = parseBoundingBox(layerObj.boundingBox)
+    if (layerObj.boundingBox != null && boundingBox == null) {
+        // The layer still loads, unbounded - which is the whole-viewport
+        // fetching the footprint exists to prevent, so say so rather than let
+        // it pass as a configuration that worked.
+        console.warn(
+            `Layer '${layerObj.name}' declares a boundingBox that is not four numbers, so it loads without a footprint:`,
+            layerObj.boundingBox
         )
     }
+
     layerUrl = await TimeControl.performTimeUrlReplacements(
         layerUrl,
         layerObj,
@@ -1760,6 +1768,7 @@ async function makeTileLayer(layerObj, mapContext = null) {
             type: layerObj.type || 'tile',
             url: layerUrl,
             tileformat: tileFormat,
+            extent: boundingBox ?? undefined,
             opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
             minZoom: parseInt(layerObj.minZoom),
             maxNativeZoom: parseInt(layerObj.maxNativeZoom),
@@ -1841,7 +1850,12 @@ async function makeTileLayer(layerObj, mapContext = null) {
         //noWrap: true,
         continuousWorld: true,
         reuseTiles: true,
-        bounds: bb,
+        bounds: boundingBox
+            ? L.latLngBounds(
+                  L.latLng(boundingBox[1], boundingBox[0]),
+                  L.latLng(boundingBox[3], boundingBox[2])
+              )
+            : null,
         variables: layerObj.variables || {},
     })
 

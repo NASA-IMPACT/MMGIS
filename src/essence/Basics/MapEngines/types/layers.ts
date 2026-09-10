@@ -57,6 +57,16 @@ export interface TileLayerOptions extends LayerOptions {
     tileElevation?: number
     /** 'wms' => deck.gl WMSLayer; else a {z}/{x}/{y} url template. */
     tileformat?: string
+    /**
+     * The layer's footprint as `[west, south, east, north]` in lng/lat -
+     * mission configuration's `boundingBox`, unchanged.
+     *
+     * deck.gl requests no tile outside it, so a single-item layer stops
+     * asking the tile service for the rest of the world. Leave it undefined
+     * when the footprint is unknown: a partially-NaN extent clamps every
+     * viewport to NaN and the layer draws nothing.
+     */
+    extent?: [number, number, number, number]
     nativeOptions?: Record<string, unknown>
 }
 

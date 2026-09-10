@@ -6,7 +6,7 @@ import { describe, test, expect, beforeEach, afterAll, vi } from 'vitest'
 // set directly, so a bare stub keeps the graph loadable.
 vi.mock('../../src/essence/Basics/Map_/Map_', () => ({ default: {} }))
 
-const { default: L_ } = await import(
+const { default: L_, parseBoundingBox } = await import(
     '../../src/essence/Basics/Layers_/Layers_.js'
 )
 
@@ -256,5 +256,39 @@ describe('layers:getBounds provider', () => {
                 [45, -100],
             ],
         })
+    })
+})
+
+/**
+ * The same footprint the provider above falls back to, read raw. deck.gl gets
+ * this tuple as a tile layer's `extent` and clamps its tile requests to it, so
+ * both the order and the refusal to return a half-parsed box matter on their
+ * own - the provider's [[south, west], [north, east]] view hides the first and
+ * the engine cannot survive the second.
+ */
+describe('parseBoundingBox', () => {
+    test('keeps configuration order, west-south-east-north', () => {
+        expect(parseBoundingBox([-120, 30, -100, 45])).toEqual([-120, 30, -100, 45])
+    })
+
+    test('reads a footprint written as strings', () => {
+        expect(parseBoundingBox(['-120', '30', '-100', '45'])).toEqual([
+            -120, 30, -100, 45,
+        ])
+    })
+
+    // Not [-120, 30, NaN, 45]: deck.gl intersects the viewport with the
+    // extent, so one NaN corner collapses the whole box and the layer draws
+    // nothing anywhere.
+    test('refuses a box one corner of which does not parse', () => {
+        expect(parseBoundingBox([-120, 30, 'east', 45])).toBeNull()
+    })
+
+    test.each([
+        ['absent', undefined],
+        ['too short', [-120, 30, -100]],
+        ['not an array', { west: -120 }],
+    ])('answers null for a %s footprint', (_label, boundingBox) => {
+        expect(parseBoundingBox(boundingBox)).toBeNull()
     })
 })

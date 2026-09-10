@@ -91,6 +91,25 @@ function titilerUrlFor(layerConfig) {
 }
 
 /**
+ * Mission configuration's `boundingBox` as a `[west, south, east, north]`
+ * tuple of numbers, or null when the layer declares no usable footprint.
+ *
+ * Configuration writes the four values as strings as readily as numbers, and a
+ * half-filled box is a real thing to find in a config. Callers hand the result
+ * to map engines, where a NaN in the tuple is worse than no footprint at all -
+ * deck.gl clamps its viewport against the extent and would draw nothing - so a
+ * box that does not parse whole is refused whole.
+ *
+ * @param {unknown} boundingBox - A layer config's `boundingBox`.
+ * @returns {[number, number, number, number] | null}
+ */
+export function parseBoundingBox(boundingBox) {
+    if (!Array.isArray(boundingBox) || boundingBox.length !== 4) return null
+    const parsed = boundingBox.map((n) => parseFloat(n))
+    return parsed.every(Number.isFinite) ? parsed : null
+}
+
+/**
  * A layer's geographic extent as `[[south, west], [north, east]]` — the
  * `[LatLngLike, LatLngLike]` pair both map engines normalise — or null when no
  * extent can be worked out.
@@ -154,15 +173,13 @@ function layerBoundsFor(uuid) {
 
     // Raster layers carry no geometry of their own. Mission configuration
     // declares their footprint as [west, south, east, north].
-    const boundingBox = L_.layers.data[uuid]?.boundingBox
-    if (Array.isArray(boundingBox) && boundingBox.length === 4) {
-        const [west, south, east, north] = boundingBox.map((n) => parseFloat(n))
-        if ([west, south, east, north].every(Number.isFinite)) {
-            return [
-                [south, west],
-                [north, east],
-            ]
-        }
+    const boundingBox = parseBoundingBox(L_.layers.data[uuid]?.boundingBox)
+    if (boundingBox) {
+        const [west, south, east, north] = boundingBox
+        return [
+            [south, west],
+            [north, east],
+        ]
     }
 
     return null
