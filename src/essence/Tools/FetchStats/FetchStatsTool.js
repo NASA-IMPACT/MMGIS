@@ -36,12 +36,18 @@ const FetchStatsTool = {
     width: 0,
     MMGISInterface: null,
     _cleanups: [],
+    made: false,
 
     initialize() {
         this.make(null)
     },
 
     make(targetId) {
+        // The modern layout calls initialize() then make(); the guard makes
+        // the second start a no-op. It discards targetId, which is safe only
+        // because this plugin renders nothing.
+        if (this.made) return
+        this.made = true
         this.MMGISInterface = new interfaceWithMMGIS(this, targetId)
 
         const api = window.mmgisAPI
@@ -59,6 +65,7 @@ const FetchStatsTool = {
     },
 
     destroy() {
+        this.made = false
         this._cleanups.forEach((fn) => fn())
         this._cleanups = []
         this.MMGISInterface?.separateFromMMGIS()
@@ -86,8 +93,10 @@ const FetchStatsTool = {
         if (!feature?.geometry || !window.mmgisAPI?.request) return
 
         // The tool controller injects this plugin's bus handle before its own
-        // code runs; the classic layout has no controller to do so, and a run
-        // there reports its results to nobody.
+        // code runs and clears it once teardown releases it. The classic
+        // layout has no controller to inject one at all. An analysis already
+        // awaiting the network cannot be cancelled, so in both cases the run
+        // finishes and reports its results to nobody.
         const emit = (event, data) => {
             if (this.api) this.api.emit(event, data)
         }

@@ -941,8 +941,9 @@ var mmgisAPI = {
     /**
      * Register a request handler (data provider)
      * @param {string} name - Request name (e.g., 'map:getCenter', 'plugin:info:showFeature')
-     * @param {function} handler - Called as `handler(data, caller)`, where
-     * `caller` is the requesting plugin's address, absent without a handle.
+     * @param {function} handler - Called as `handler(data, context)`, where
+     * `context.caller` is the requesting plugin's address, undefined without a
+     * handle. The context object is always passed.
      * @returns {function} - Cleanup removing this registration only.
      * @example
      * const cleanup = mmgisAPI.provide('map:getCenter', () => Map_.map.getCenter());
@@ -965,7 +966,8 @@ var mmgisAPI = {
      * @param {string} name - Request name
      * @param {*} data - Request data to pass to the handler
      * @param {Object} [options] - `options.__token`, the token a handle's own
-     * `request` fills in, resolves to the caller; anything else leaves none.
+     * `request` fills in, resolves to `context.caller`; anything else leaves it
+     * undefined.
      * @returns {Promise<*>} - Promise that resolves to handler's response
      * @throws {Error} - If no handler is registered for the request name
      * @example
@@ -977,8 +979,9 @@ var mmgisAPI = {
         if (!handler) {
             throw new Error(`[mmgisAPI] No handler for: "${name}"`)
         }
-        // The address, never the token: identity proof stays inside core.
-        return await handler(data, tokens.get(options?.__token))
+        // The address, never the token: identity proof stays inside core. The
+        // context always arrives, so a provider can destructure it either way.
+        return await handler(data, { caller: tokens.get(options?.__token) })
     },
 
     /**
@@ -1013,10 +1016,9 @@ const readVars = (address) => {
  * @returns {Object} The plugin's handle
  */
 const mintHandle = (address) => {
-    const token =
-        typeof crypto !== 'undefined' && crypto.randomUUID
-            ? crypto.randomUUID()
-            : `${address}-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    // A Symbol is the key: it is equal to nothing but itself, so neither a
+    // string an impostor writes nor a Symbol minted elsewhere resolves here.
+    const token = Symbol(address)
     tokens.set(token, address)
 
     const prefix = `plugin:${address}:`

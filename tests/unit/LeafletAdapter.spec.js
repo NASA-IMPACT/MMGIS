@@ -883,6 +883,84 @@ test.describe('LeafletAdapter - on / off', () => {
     })
 })
 
+// ─── the feature a click landed on ───────────────────────────────────────────
+
+test.describe('LeafletAdapter - the feature a click landed on', () => {
+
+    // The click subscribers and the feature handler are given the same pick,
+    // so a click says by itself whether it landed on anything.
+    function setupClickable() {
+        const { mockMap, mockGeoJSON } = setupWithLayerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        let mapClick = null
+        mockMap.on = (event, cb) => { if (event === 'click') mapClick = cb }
+
+        return {
+            adapter,
+            mockGeoJSON,
+            click: (e) => mapClick(e),
+        }
+    }
+
+    const CLICK = { latlng: { lat: 1, lng: 2 }, containerPoint: { x: 3, y: 4 } }
+
+    test('a click reports the feature under it', () => {
+        const { adapter, mockGeoJSON, click } = setupClickable()
+        const state = { type: 'Feature', properties: { name: 'Utah' } }
+        mockGeoJSON.getBounds = () => ({ contains: () => true })
+        mockGeoJSON.toGeoJSON = () => state
+        adapter.createLayer({
+            id: 'states',
+            type: 'vector',
+            geojson: { type: 'FeatureCollection', features: [] },
+        })
+
+        const clicks = []
+        const picks = []
+        adapter.on('click', (e) => clicks.push(e.feature))
+        adapter.onFeatureClick((result) => picks.push(result.feature))
+        click(CLICK)
+
+        expect(clicks).toEqual([state])
+        expect(picks).toEqual([state])
+    })
+
+    test('a click on empty map reports no feature', () => {
+        const { adapter, click } = setupClickable()
+
+        const clicks = []
+        adapter.on('click', (e) => clicks.push(e.feature))
+        click(CLICK)
+
+        expect(clicks).toEqual([null])
+    })
+
+    // Two subscribers, one pick: the walk over the registered layers is the
+    // expensive part of a click, and it runs once however many handlers are on.
+    test('the layers are walked once for a click both handlers hear', () => {
+        const { adapter, mockGeoJSON, click } = setupClickable()
+        let walks = 0
+        mockGeoJSON.getBounds = () => {
+            walks += 1
+            return { contains: () => true }
+        }
+        mockGeoJSON.toGeoJSON = () => ({ type: 'Feature' })
+        adapter.createLayer({
+            id: 'states',
+            type: 'vector',
+            geojson: { type: 'FeatureCollection', features: [] },
+        })
+
+        adapter.on('click', () => { })
+        adapter.onFeatureClick(() => { })
+        click(CLICK)
+
+        expect(walks).toBe(1)
+    })
+})
+
 // ─── the click a drawing ended on ─────────────────────────────────────────────
 
 test.describe('LeafletAdapter - the click a drawing ended on', () => {
