@@ -5,7 +5,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest'
 // real viewers, so stub the aggregator to keep the import chain parseable.
 vi.mock('../../src/essence/Basics/Viewer_/Viewer_', () => ({ default: {} }))
 
-import { mmgisAPI } from '../../src/essence/mmgisAPI/mmgisAPI'
+import { mmgisAPI, mintHandle } from '../../src/essence/mmgisAPI/mmgisAPI'
 
 const cleanups = []
 
@@ -40,7 +40,7 @@ describe('the caller a request arrives with', () => {
     // any shape through unchanged — an object, a scalar, or none at all.
     it('is the address of the handle the request went through', async () => {
         const calls = recorder('test:stamped')
-        api = mmgisAPI.forPlugin('aoi')
+        api = mintHandle('aoi')
 
         await api.request('test:stamped', { a: 1 })
         await api.request('test:stamped', 'some text')

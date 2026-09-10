@@ -287,7 +287,7 @@ test.describe('handlers', () => {
         await flush()
 
         expect(requests).toEqual([
-            { name: 'plugins:show', params: { pluginId: 'AddTempLayerTool' } },
+            { name: 'plugins:show', params: { pluginId: 'addtemplayer' } },
         ])
         expect(emitCalls).toHaveLength(0)
     })

@@ -155,9 +155,11 @@ anything there right now.
 
 ## Plugin Scoped API
 
-MMGIS automatically injects a scoped API into each tool as `this.api`. This API automatically prefixes event and provider names with `plugin:{address}:`, where `address` is derived from the tool's module name (e.g., `DrawTool` → `draw`).
+MMGIS injects a scoped API into each tool it loads as `this.api`. This API automatically prefixes event and provider names with `plugin:{address}:`, where `address` is derived at build time from the tool's module binding (e.g., `DrawTool` → `draw`). A tool never mints its own handle — there is no public way to — so a plugin reaches its own and no other's.
 
-> **Note:** Each plugin must have a unique ID. Multiple instances of the same plugin in a mission are not currently supported. If two plugins share the same ID, their events and providers will collide. This constraint is not currently enforced at runtime but may be in a future version.
+The controller mints the handle before the tool's `initialize()` runs and releases it after the tool's `destroy()` returns, unregistering every provider and subscription made through it. Anything a tool registers straight on `window.mmgisAPI` sits outside the handle and stays the tool's own to remove: the React-based tools work that way today, so their requests carry no caller and LayerManager's unprefixed providers outlive a release.
+
+> **Note:** An address comes from a tool's module binding, so no two tools can share one. One tool still cannot run as two instances: the second would answer for the first's events and providers.
 
 The scoped API is available on `this.api` in your tool's `initialize()` and `make()` functions:
 
@@ -179,13 +181,13 @@ const MyTool = {
 Emit an event with auto-prefixed name.
 
 ```javascript
-const api = window.mmgisAPI.forPlugin('myPlugin')
+const api = this.api // injected; address 'myplugin'
 
-// This emits 'plugin:myPlugin:dataUpdated'
+// This emits 'plugin:myplugin:dataUpdated'
 api.emit('dataUpdated', { value: 42 })
 
 // Subscribers listen using the full path
-window.mmgisAPI.on('plugin:myPlugin:dataUpdated', (data) => {
+window.mmgisAPI.on('plugin:myplugin:dataUpdated', (data) => {
     console.log(data.value) // 42
 })
 ```
@@ -197,7 +199,7 @@ Subscribe to an event. Like `request`, names are **not** prefixed — a subscrip
 The handle tracks the subscription, so `release()` drops it along with the plugin's providers. The returned unsubscribe is there for letting one go sooner.
 
 ```javascript
-const api = window.mmgisAPI.forPlugin('myPlugin')
+const api = this.api
 
 const off = api.on('layer:visibilityChange', handleLayerChange)
 
@@ -211,15 +213,15 @@ Register a provider with auto-prefixed name.
 **Returns:** Cleanup function
 
 ```javascript
-const api = window.mmgisAPI.forPlugin('myPlugin')
+const api = this.api // injected; address 'myplugin'
 
-// This registers 'plugin:myPlugin:getData'
+// This registers 'plugin:myplugin:getData'
 const cleanup = api.provide('getData', (params) => {
     return { result: params.input * 2 }
 })
 
 // Callers request using the full path
-const data = await window.mmgisAPI.request('plugin:myPlugin:getData', { input: 21 })
+const data = await window.mmgisAPI.request('plugin:myplugin:getData', { input: 21 })
 console.log(data.result) // 42
 
 // Later, remove the provider
@@ -231,9 +233,9 @@ cleanup()
 Request another provider, stamped with this plugin's address. Names are **not** prefixed: a request addresses someone else's provider, so it takes the full name.
 
 ```javascript
-const api = window.mmgisAPI.forPlugin('myPlugin')
+const api = this.api // injected; address 'myplugin'
 
-// The provider is called with ({ input: 21 }, 'myPlugin')
+// The provider is called with ({ input: 21 }, { caller: 'myplugin' })
 await api.request('plugin:other:getData', { input: 21 })
 ```
 
@@ -248,11 +250,11 @@ Hand every registration this handle made back to core — its own `getVars` prov
 After release the handle is inert: `emit`, `provide` and `on` do nothing, `request` resolves to `null`, and releasing again changes nothing.
 
 ```javascript
-const api = window.mmgisAPI.forPlugin('myPlugin')
-api.provide('getData', () => data) // 'plugin:myPlugin:getData'
+const api = this.api // injected; address 'myplugin'
+api.provide('getData', () => data) // 'plugin:myplugin:getData'
 
 api.release()
-window.mmgisAPI.hasHandler('plugin:myPlugin:getData') // false
+window.mmgisAPI.hasHandler('plugin:myplugin:getData') // false
 ```
 
 ### Metadata Properties
@@ -260,10 +262,10 @@ window.mmgisAPI.hasHandler('plugin:myPlugin:getData') // false
 The scoped API also exposes metadata:
 
 ```javascript
-const api = window.mmgisAPI.forPlugin('myPlugin')
+const api = this.api
 
-console.log(api.address) // 'myPlugin'
-console.log(api.prefix)  // 'plugin:myPlugin:'
+console.log(api.address) // 'myplugin'
+console.log(api.prefix)  // 'plugin:myplugin:'
 ```
 
 ### Complete Plugin Example
@@ -386,6 +388,8 @@ window.mmgisAPI.on('legend:made', ({ layerName, legendData }) => {
 |-------|---------|-------------|
 | `panels:changed` | `{ panels }` | Fired whenever the panel layout changes — a panel registered or unregistered, changed state, lost a tool, or was resized — and once with an empty listing when the layout is torn down |
 | `plugins:changed` | `{ plugins }` | Fired whenever a plugin is shown, hidden, loaded or unloaded by command, once after a batch of plugins loads with the layout, and once with an empty listing when the layout is torn down |
+| `plugins:destroyed` | `{ pluginId }` | Fired as one plugin is torn down, after its own `destroy()` has run and its bus handle has been released |
+| `plugins:allDestroyed` | `{ pluginIds }` | Fired once when a layout teardown destroyed at least one plugin, after each plugin's own `plugins:destroyed` |
 
 `panels` carries the same listing [`panels:getAll`](#panel-and-plugin-providers)
 returns, and `plugins` the same listing `plugins:getAll` returns, so there is
@@ -415,6 +419,16 @@ window.mmgisAPI.on('panels:changed', ({ panels }) => {
 A component that seeds from `panels:getAll` and also subscribes to
 `panels:changed` must guard the seed so it cannot overwrite state an event
 has already delivered — the request can resolve after a later event lands.
+
+`plugins:destroyed` and `plugins:allDestroyed` report the teardown itself
+rather than the listing that results from it. Both are signals a core service
+releases shared resources on. `pluginId` is the departing plugin's address —
+the identity it spoke to services under — so a release matched against it
+reaches only what that plugin held, and a surviving plugin's stays put. The
+collective signal releases outright, because with every plugin destroyed the
+resource's owner is among them and no bystander pays for the release. A
+teardown a command asked for is followed by `plugins:changed` carrying the new
+listing.
 
 ### WebSocket Events
 

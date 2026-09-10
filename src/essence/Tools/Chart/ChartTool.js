@@ -2,13 +2,13 @@
  * Chart plugin — MMGIS wrapper.
  *
  * Receiver-only. Subscribes (at module scope) to
- * `plugin:fetch-stats:analysisReady` and renders the per-layer stats payload
+ * `plugin:fetchstats:analysisReady` and renders the per-layer stats payload
  * via ChartComponent.
  *
  *   pluginId: 'chart'
  *
  *   Listens to (module scope, survives Chart's own mount/unmount):
- *     - plugin:fetch-stats:analysisReady    { analysisData: { [layerName]: <stats|null> } }
+ *     - plugin:fetchstats:analysisReady    { analysisData: { [layerName]: <stats|null> } }
  *     - plugin:aoi:analysisAOIReady         { feature } — clears stale data
  *                                                        when a new analysis starts
  *
@@ -34,7 +34,7 @@ let _subscribed = false
 function _onAnalysisReady(payload) {
     _latestAnalysisData = payload?.analysisData ?? null
     if (_instance && _instance._reactRoot) _instance._render()
-    mmgisShowPlugin('ChartTool')
+    mmgisShowPlugin('chart')
         .then((result) => {
             if (!result.ok) {
                 console.warn(`[Chart] showPlugin refused: ${result.reason}`)
@@ -55,7 +55,7 @@ function _subscribeBus() {
     if (_subscribed) return true
     const api = typeof window !== 'undefined' ? window.mmgisAPI : null
     if (!api?.on) return false
-    api.on('plugin:fetch-stats:analysisReady', _onAnalysisReady)
+    api.on('plugin:fetchstats:analysisReady', _onAnalysisReady)
     api.on('plugin:aoi:analysisAOIReady', _onAnalysisStart)
     _subscribed = true
     return true
@@ -124,7 +124,7 @@ const ChartTool = {
     _onClose() {
         // Fully unload (not just hide) so a later analysisReady re-mounts a
         // fresh instance via _onAnalysisReady's showPlugin call.
-        mmgisSetPluginState('ChartTool', 'unloaded')
+        mmgisSetPluginState('chart', 'unloaded')
             .then((result) => {
                 if (!result.ok) {
                     console.warn(`[Chart] unload refused: ${result.reason}`)

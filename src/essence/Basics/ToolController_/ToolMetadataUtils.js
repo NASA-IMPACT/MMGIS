@@ -3,6 +3,7 @@
  */
 
 import DOMPurify from 'dompurify'
+import { toolIds as generatedToolIds } from '../../../pre/tools'
 import { TOOL_ORIENTATION } from './types/tool'
 import { PANEL_POSITION } from '../PanelManager_/types/layout'
 import { createLogger } from '../Logger_/Logger_'
@@ -204,6 +205,12 @@ export function sanitizeToolMetadata(metadata) {
     // Sanitize critical string fields that are used in DOM
     sanitized.id = sanitizeValue(metadata.id, 'id')
     sanitized.name = sanitizeValue(metadata.name, 'text')
+    // generateToolMetadata always sets this, to '' for a config naming no
+    // module. Metadata assembled by hand carries no binding at all and comes
+    // back without the key rather than with an empty one.
+    if (metadata.module !== undefined) {
+        sanitized.module = sanitizeValue(metadata.module, 'id')
+    }
     sanitized.icon = getValidIconClass(metadata.icon, sanitized.id)
 
     // Verify critical fields didn't become empty
@@ -513,6 +520,30 @@ export function getValidIconClass(iconClass, toolId) {
 }
 
 /**
+ * The address a configured tool entry answers to: what it is called on the
+ * bus, in the modern controller's registries, in the DOM, in teardown events
+ * and as the key its configured variables resolve under. `js` names the
+ * import binding and nothing else; the build derives the same address from it
+ * (buildToolIds in API/updateTools.js), so a registry generated before this
+ * export existed still lands on the same string. An entry with no module at
+ * all is named after itself.
+ *
+ * @param {Object} toolConfig - Tool configuration entry, read for { js, name }
+ * @returns {string} Tool address
+ */
+export function toolCanonicalId(toolConfig) {
+    const toolModule = (toolConfig && toolConfig.js) || ''
+    if (toolModule) {
+        const ids = generatedToolIds ?? {}
+        return Object.prototype.hasOwnProperty.call(ids, toolModule)
+            ? ids[toolModule]
+            : toolModule.replace(/Tool$/, '').toLowerCase()
+    }
+    const toolName = (toolConfig && toolConfig.name) || 'Unknown'
+    return toolName.toLowerCase().replace(/\s+/g, '-')
+}
+
+/**
  * Generate tool metadata from tool configuration
  * Consolidates metadata from both root-level (legacy) and nested metadata object.
  * Nested metadata takes precedence over root-level for backward compatibility.
@@ -522,7 +553,8 @@ export function getValidIconClass(iconClass, toolId) {
  */
 export function generateToolMetadata(toolConfig) {
     const toolName = toolConfig.name || 'Unknown'
-    const toolId = toolConfig.js || toolName.toLowerCase().replace(/\s+/g, '-')
+    const toolModule = toolConfig.js || ''
+    const toolId = toolCanonicalId(toolConfig)
 
     // Read metadata from nested object (preferred location)
     const declaredMetadata = toolConfig.metadata || {}
@@ -531,6 +563,7 @@ export function generateToolMetadata(toolConfig) {
     // Nested metadata takes precedence
     const rawMetadata = {
         id: toolId,
+        module: toolModule,
         name: toolName,
         // Icon can be at root as 'defaultIcon' (legacy) or in metadata as 'icon'
         icon: declaredMetadata.icon || toolConfig.icon || toolConfig.defaultIcon || 'cog',

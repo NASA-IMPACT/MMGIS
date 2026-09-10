@@ -483,11 +483,6 @@ let ToolController_ = {
         ToolController_.toolModuleNames.forEach((t) => {
             const tool = ToolController_.toolModules[t]
             if (tool) {
-                // Inject scoped API based on tool name (e.g., "DrawTool" -> "draw")
-                if (window.mmgisAPI && !tool.api) {
-                    const pluginId = t.replace(/Tool$/, '').toLowerCase()
-                    tool.api = window.mmgisAPI.forPlugin(pluginId)
-                }
                 if (typeof tool.initialize === 'function') {
                     tool.initialize()
                 }

@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 // real viewers, so stub the aggregator to keep the import chain parseable.
 vi.mock('../../src/essence/Basics/Viewer_/Viewer_', () => ({ default: {} }))
 
-import { mmgisAPI } from '../../src/essence/mmgisAPI/mmgisAPI'
+import { mmgisAPI, mintHandle } from '../../src/essence/mmgisAPI/mmgisAPI'
 import L_ from '../../src/essence/Basics/Layers_/Layers_'
 
 // Issue #414 - a handle registers providers on a bus that outlives the plugin
@@ -21,7 +21,7 @@ describe('plugin handle release', () => {
         // getToolVars walks the configured tool list; an empty one is the
         // no-vars case every unconfigured plugin is in.
         L_.tools = []
-        api = mmgisAPI.forPlugin('rel-test')
+        api = mintHandle('rel-test')
     })
 
     // The bus is a module singleton, so a handle left registered would answer
@@ -59,7 +59,7 @@ describe('plugin handle release', () => {
     // name alone would unregister the live successor here.
     it('a stale release leaves a successor holding the same name alone', async () => {
         api.provide('answer', () => 1)
-        next = mmgisAPI.forPlugin('rel-test')
+        next = mintHandle('rel-test')
         next.provide('answer', () => 42)
         api.release()
 

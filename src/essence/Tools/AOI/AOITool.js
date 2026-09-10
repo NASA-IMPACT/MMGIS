@@ -3,7 +3,10 @@
  *
  * Pluggable contract (see specs/012-aoi-plugin/plan.md and PLUGIN-DEVELOPMENT-GUIDE.md):
  *
- *   pluginId: 'aoi'
+ *   pluginId: 'aoi' — derived from this plugin's binding at build time. The
+ *   tool controller mints the plugin-scoped bus handle from it and injects it
+ *   as `AOITool.api` before make() runs, which is what prefixes every emit and
+ *   provide below with `plugin:aoi:`.
  *
  *   Emits  (auto-prefixed plugin:aoi:):
  *     - areaDrawn          { feature, source: 'search'|'draw'|'upload'|'inspect' }
@@ -19,9 +22,9 @@
  *     - map:drawstart / drawvertex /
  *       drawcomplete / drawcancel         (engine bus)
  *     - map:featureClick                  (inspect-mode boundary clicks, filtered by layerId)
- *     - plugin:fetch-stats:analysisProgress  { done, total }
- *     - plugin:fetch-stats:analysisReady     { analysisData }
- *     - plugin:fetch-stats:analysisSkipped   { reason }
+ *     - plugin:fetchstats:analysisProgress  { done, total }
+ *     - plugin:fetchstats:analysisReady     { analysisData }
+ *     - plugin:fetchstats:analysisSkipped   { reason }
  *
  *   Requests:
  *     - map:createLayer / map:removeLayer
@@ -52,8 +55,7 @@ import {
 } from './aoiHelpers'
 import { loadBoundaries } from './aoiBoundaryLoader'
 
-// ── Plugin identity / layer ids ────────────────────────────────────────────────
-const PLUGIN_ID = 'aoi'
+// ── Draw shapes / layer ids ───────────────────────────────────────────────────
 const DEFAULT_DRAW_SHAPES = ['polygon', 'rectangle', 'circle']
 const VALID_DRAW_SHAPES = new Set(['point', 'linestring', 'polygon', 'rectangle', 'circle'])
 const SELECTION_LAYER_ID = 'aoi:selection'
@@ -152,13 +154,15 @@ const AOITool = {
         }
         this._reactRoot = createRoot(container)
 
-        this._api =
-            (typeof window !== 'undefined' && window.mmgisAPI?.forPlugin?.(PLUGIN_ID)) ||
-            { emit: () => { }, provide: () => () => { } }
+        // The controller minted this tool's bus handle and injected it before
+        // make() ran; handing it back is the controller's job, not destroy()'s.
+        this._api = AOITool.api
 
-        this._cleanups.push(
-            this._api.provide('getCurrentSelection', () => this._state.currentAOI)
+        const offSelection = this._api?.provide(
+            'getCurrentSelection',
+            () => this._state.currentAOI
         )
+        if (offSelection) this._cleanups.push(offSelection)
 
         this._state.searchLoading = true
         loadBoundaries()
@@ -188,7 +192,7 @@ const AOITool = {
             subscribe('map:drawcomplete',  (e) => this._onDrawComplete(e))
             subscribe('map:drawcancel',    () => this._onDrawCancelEvent())
             subscribe('map:featureClick',  (info) => this._onMapFeatureClick(info))
-            subscribe('plugin:fetch-stats:analysisProgress', ({ done, total }) => {
+            subscribe('plugin:fetchstats:analysisProgress', ({ done, total }) => {
                 if (done === 0) {
                     this._setState({
                         analysisStatus: 'running',
@@ -200,10 +204,10 @@ const AOITool = {
                     this._setState({ analysisDone: done })
                 }
             })
-            subscribe('plugin:fetch-stats:analysisReady', () => {
+            subscribe('plugin:fetchstats:analysisReady', () => {
                 this._setState({ analysisStatus: 'idle' })
             })
-            subscribe('plugin:fetch-stats:analysisSkipped', ({ reason } = {}) => {
+            subscribe('plugin:fetchstats:analysisSkipped', ({ reason } = {}) => {
                 this._showAnalysisError(this._messageForSkipReason(reason))
             })
         }
@@ -304,7 +308,7 @@ const AOITool = {
     },
 
     /**
-     * Map a `plugin:fetch-stats:analysisSkipped.reason` to a user-facing message.
+     * Map a `plugin:fetchstats:analysisSkipped.reason` to a user-facing message.
      * Unknown reasons get a generic fallback.
      */
     _messageForSkipReason(reason) {
@@ -370,7 +374,7 @@ const AOITool = {
     },
 
     _onClose() {
-        mmgisSetPluginState('AOITool', 'unloaded')
+        mmgisSetPluginState('aoi', 'unloaded')
             .then((result) => {
                 if (!result.ok) {
                     console.warn(`[AOI] unload refused: ${result.reason}`)

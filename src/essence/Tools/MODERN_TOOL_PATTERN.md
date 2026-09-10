@@ -168,3 +168,5 @@ If your tool requires specific placement options, add a `metadata` object to you
   }
 }
 ```
+
+The `paths` key names the generated import binding and, with a trailing `Tool` dropped and the rest lowercased, the tool's address (`AOITool` → `aoi`). That address is the tool's identity everywhere but the import — the key its configured `variables` resolve under, the target `plugins:show:aoi` takes, the prefix on the bus handle the controller injects as `this.api` (`plugin:aoi:ready`), and the `pluginId` its teardown announces.
