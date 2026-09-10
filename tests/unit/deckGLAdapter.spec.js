@@ -326,6 +326,51 @@ test.describe('DeckGLAdapter', () => {
                 'draw:preview',
             ])
         })
+
+        test('setLayerOrder ranks held layers top first and syncs once', () => {
+            const adapter = makeAdapter()
+            adapter.addLayer(makeLayer('a'))
+            adapter.addLayer(makeLayer('b'))
+            adapter.addLayer(makeLayer('c'))
+            const sync = vi.spyOn(adapter, '_syncLayers')
+            adapter.setLayerOrder(['c', 'a', 'b'])
+            expect(adapter.getLayers().map((l) => l.id)).toEqual(['b', 'a', 'c'])
+            expect(sync).toHaveBeenCalledTimes(1)
+        })
+
+        test('setLayerOrder skips ids the engine does not hold', () => {
+            const adapter = makeAdapter()
+            adapter.addLayer(makeLayer('a'))
+            adapter.addLayer(makeLayer('b'))
+            adapter.setLayerOrder(['b', 'not-held', 'a'])
+            expect(adapter.getLayers().map((l) => l.id)).toEqual(['a', 'b'])
+        })
+
+        test('setLayerOrder keeps unranked overlays above the ordered stack', () => {
+            const adapter = makeAdapter()
+            adapter.addLayer(makeLayer('aoi:selection'))
+            adapter.addLayer(makeLayer('a'))
+            adapter.addLayer(makeLayer('b'))
+            adapter.setLayerOrder(['b', 'a'])
+            expect(adapter.getLayers().map((l) => l.id)).toEqual([
+                'a',
+                'b',
+                'aoi:selection',
+            ])
+        })
+
+        // A layer handed off after a re-order is ranked with
+        // Layers_.layerZIndex: order.length + 1 - index. It must land in the
+        // slot the order gave it, not tie with a neighbour.
+        test('setLayerOrder ranks agree with a later per-layer rank', () => {
+            const adapter = makeAdapter()
+            adapter.addLayer(makeLayer('a'))
+            adapter.addLayer(makeLayer('c'))
+            adapter.setLayerOrder(['a', 'b', 'c'])
+            adapter.addLayer(makeLayer('b'))
+            adapter.setLayerZIndex('b', 3 + 1 - 1)
+            expect(adapter.getLayers().map((l) => l.id)).toEqual(['c', 'b', 'a'])
+        })
     })
 
     test.describe('event system', () => {

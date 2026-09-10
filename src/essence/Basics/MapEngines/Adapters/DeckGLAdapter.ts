@@ -47,7 +47,7 @@ import type {
     MapInitOptions,
     BasemapOptions,
 } from '../types/view'
-import type { LayerOptions, OverlayOptions, RefreshContext } from '../types/layers'
+import type { LayerOptions, LayerOrderContext, OverlayOptions, RefreshContext } from '../types/layers'
 import type {
     MapEventHandler,
     MapEventOptions,
@@ -1172,6 +1172,17 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     setLayerZIndex(layer: Layer | string, zIndex: number): void {
         const id = resolveLayerId(layer)
         this._layerZIndices.set(id, zIndex)
+        this._sortLayersByZIndex()
+        this._syncLayers()
+    }
+
+    // Same rank formula as Layers_.layerZIndex, so a layer handed off later
+    // lands where this order put its neighbours.
+    setLayerOrder(order: string[], _ctx?: LayerOrderContext): void {
+        const top = order.length + 1
+        order.forEach((id, index) => {
+            if (this._layers.has(id)) this._layerZIndices.set(id, top - index)
+        })
         this._sortLayersByZIndex()
         this._syncLayers()
     }

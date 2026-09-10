@@ -26,6 +26,7 @@ import {
 } from '../types/view'
 import {
     LayerOptions,
+    LayerOrderContext,
     TileLayerOptions,
     MarkerOptions,
     OverlayOptions,
@@ -836,6 +837,56 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         const leafletLayer = typeof layer === 'string' ? this._layers.get(layer) : layer
         if (leafletLayer && typeof leafletLayer.setZIndex === 'function') {
             leafletLayer.setZIndex(zIndex)
+        }
+    }
+
+    /**
+     * Rasters take a z-index. Vectors and images share one pane where DOM
+     * order is the only order, so each one drawn is removed and re-added
+     * bottom first, its on-attachments just before it. Images also get a
+     * z-index and a redraw. Anything else is left where it is.
+     */
+    setLayerOrder(order: string[], ctx: LayerOrderContext = {}): void {
+        if (!this._map) return
+        const info = ctx.layers ?? {}
+        const rank = (id: string) => order.length + 1 - order.indexOf(id)
+        const readd: string[] = []
+        const rasters: string[] = []
+
+        for (let i = order.length - 1; i >= 0; i--) {
+            const id = order[i]
+            const layer = this._layers.get(id)
+            if (!layer || !this._map.hasLayer(layer)) continue
+            const type = info[id]?.type
+            if (type === 'vector' || type === 'image') {
+                if (type === 'vector') {
+                    for (const a of info[id]?.attachments ?? []) {
+                        if (a.layer != null) this._map.removeLayer(a.layer)
+                    }
+                }
+                this._map.removeLayer(layer)
+                readd.push(id)
+            } else if (type === 'tile' || type === 'data') {
+                rasters.push(id)
+            }
+        }
+
+        for (const id of readd) {
+            const layer = this._layers.get(id)
+            for (const a of info[id]?.attachments ?? []) {
+                if (a.on && a.layer != null) this._map.addLayer(a.layer)
+            }
+            this._map.addLayer(layer)
+            if (info[id]?.type === 'image') {
+                if (typeof layer.setZIndex === 'function') layer.setZIndex(rank(id))
+                if (typeof layer.clearCache === 'function') layer.clearCache()
+                if (typeof layer.redraw === 'function') layer.redraw()
+            }
+        }
+
+        for (const id of rasters) {
+            const layer = this._layers.get(id)
+            if (typeof layer.setZIndex === 'function') layer.setZIndex(rank(id))
         }
     }
 
