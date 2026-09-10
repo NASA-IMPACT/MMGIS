@@ -89,7 +89,7 @@ Register a provider that responds to requests.
 
 **Parameters:**
 - `name` (string): Provider name using namespace:action format
-- `handler` (function): Handler function that returns data (can be async). Called as `handler(params, caller)`, where `caller` is the address of the plugin whose handle made the request. It is absent for a request made without a handle, so treat it as optional.
+- `handler` (function): Handler function that returns data (can be async). Called as `handler(params, context)`, where `context.caller` is the address of the plugin whose handle made the request. The context object always arrives, so it is safe to destructure; `context.caller` is `undefined` for a request made without a handle.
 
 **Returns:** Cleanup function to remove the provider. It removes that registration only — once another provider holds the name, a late cleanup leaves the successor alone.
 
@@ -113,7 +113,7 @@ Request data from a provider.
 **Parameters:**
 - `name` (string): Provider name
 - `params` (any): Parameters to pass to the provider
-- `options` (object, optional): How the request is made rather than what it asks for. A plugin's handle fills this in with the token core minted for it, which is what tells the provider who is asking. Naming yourself here gets you no caller at all — the caller cannot be written by hand.
+- `options` (object, optional): How the request is made rather than what it asks for. A plugin's handle fills this in with the token core minted for it, which is what becomes the provider's `context.caller`. Naming yourself here leaves `context.caller` `undefined` — the caller cannot be written by hand.
 
 **Returns:** Promise resolving to the provider's response
 
@@ -233,7 +233,7 @@ Request another provider, stamped with this plugin's address. Names are **not** 
 ```javascript
 const api = window.mmgisAPI.forPlugin('myPlugin')
 
-// The provider is called with ({ input: 21 }, 'myPlugin')
+// The provider is called with ({ input: 21 }, { caller: 'myPlugin' })
 await api.request('plugin:other:getData', { input: 21 })
 ```
 

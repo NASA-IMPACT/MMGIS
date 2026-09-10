@@ -14,8 +14,8 @@ const cleanups = []
 function recorder(name) {
     const calls = []
     cleanups.push(
-        mmgisAPI.provide(name, (data, caller) => {
-            calls.push({ data, caller })
+        mmgisAPI.provide(name, (data, context) => {
+            calls.push({ data, context })
             return true
         })
     )
@@ -47,9 +47,9 @@ describe('the caller a request arrives with', () => {
         await api.request('test:stamped')
 
         expect(calls).toEqual([
-            { data: { a: 1 }, caller: 'aoi' },
-            { data: 'some text', caller: 'aoi' },
-            { data: undefined, caller: 'aoi' },
+            { data: { a: 1 }, context: { caller: 'aoi' } },
+            { data: 'some text', context: { caller: 'aoi' } },
+            { data: undefined, context: { caller: 'aoi' } },
         ])
     })
 
@@ -58,7 +58,12 @@ describe('the caller a request arrives with', () => {
 
         await mmgisAPI.request('test:anonymous', { a: 1 })
 
-        expect(calls).toEqual([{ data: { a: 1 }, caller: undefined }])
+        expect(calls).toHaveLength(1)
+        expect(calls[0].data).toEqual({ a: 1 })
+        // A provider destructures the context without checking for one first,
+        // so the object has to be there even when nobody is named in it.
+        expect(calls[0].context).toBeDefined()
+        expect(calls[0].context.caller).toBeUndefined()
     })
 
     // The whole point of resolving the stamp through a token map core keeps to
@@ -70,7 +75,7 @@ describe('the caller a request arrives with', () => {
         await mmgisAPI.request('test:forged', { a: 2 }, { __token: 'aoi' })
         await mmgisAPI.request('test:forged', { a: 3 }, 'aoi')
 
-        expect(calls.map((c) => c.caller)).toEqual([
+        expect(calls.map((c) => c.context.caller)).toEqual([
             undefined,
             undefined,
             undefined,
