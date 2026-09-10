@@ -184,6 +184,84 @@ export const mmgisGetLayerCogCapabilities = (
     )
 }
 
+/** The unit a listed Data Dates entry names; nothing finer than the hour. */
+export type CoverageUnit = 'year' | 'month' | 'day' | 'hour'
+
+/**
+ * A span of time, epoch milliseconds. An open bound is -Infinity / Infinity.
+ * A span from a listed entry also carries that entry's `unit` and its `at`
+ * timestamp — the entry as written, any part left out filled with its start
+ * — which is where navigation moves the timeline to. An extent's span
+ * carries neither.
+ */
+export type CoverageSpan = {
+    start: number
+    end: number
+    at?: number
+    unit?: CoverageUnit
+}
+
+/**
+ * Whether core is suppressing a layer's requests for lack of data in the
+ * window it would request, and the declared coverage that decided it.
+ * Complete on purpose: a consumer renders this without a second lookup.
+ */
+export type LayerDataCoverage = {
+    outOfDataRange: boolean
+    /** 'sparse' from listed times, 'continuous' from an extent, null when never gated. */
+    kind: 'continuous' | 'sparse' | null
+    /**
+     * What the gate tests against. Sparse: one span per listed entry, each
+     * covering the whole unit it names, ordered by start. Continuous: one
+     * span across the extent.
+     */
+    spans: CoverageSpan[] | null
+    requestedWindow: CoverageSpan | null
+}
+
+/** The wire shape of 'layers:dataCoverageChanged'. */
+export type LayerDataCoverageChange = LayerDataCoverage & { layerName: string }
+
+/**
+ * Data coverage for every layer, keyed by layer UUID.
+ *
+ * Registered as late as mmgisGetLayerConfigs; the same readiness caveat
+ * applies. Null against a core that does not register the handler, in which
+ * case callers fall back to treating every layer as unconstrained.
+ */
+export const mmgisGetDataCoverage = (): Promise<Record<
+    string,
+    LayerDataCoverage
+> | null> => {
+    return mmgisRequestIfProvided<Record<string, LayerDataCoverage>>(
+        'layers:getDataCoverage',
+    )
+}
+
+/**
+ * Data coverage for one layer. Core resolves a display name to its UUID, so
+ * callers holding either identifier get the same answer — unlike indexing
+ * the bulk map, which is UUID-keyed.
+ *
+ * Null when the layer is unknown, or against a core without the handler.
+ */
+export const mmgisGetLayerDataCoverage = (
+    layerUUID: string,
+): Promise<LayerDataCoverage | null> => {
+    return mmgisRequestIfProvided<LayerDataCoverage>(
+        'layers:getDataCoverage',
+        layerUUID,
+    )
+}
+
+/** Follow a layer's coverage state as the time window moves. */
+export const mmgisOnDataCoverageChanged = (
+    handler: (change: LayerDataCoverageChange) => void,
+): EventCleanup =>
+    mmgisOn('layers:dataCoverageChanged', (payload) =>
+        handler(payload as LayerDataCoverageChange),
+    )
+
 /** A geographic extent as `[[south, west], [north, east]]`. */
 export type LayerBounds = [[number, number], [number, number]]
 

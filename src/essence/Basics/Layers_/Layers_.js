@@ -26,6 +26,11 @@ import {
     shouldUseDeckRaster,
     supportsCogTransform,
 } from './tileUrlUtils'
+import {
+    evaluateLayerDataCoverage,
+    isCoverageGated,
+    isSameCoverage,
+} from '../TimeControl_/layerDataCoverage'
 import { bbox } from '@turf/turf'
 import $ from 'jquery'
 
@@ -276,6 +281,16 @@ const L_ = {
         // Name -> { status: 'ok' | 'error', message } as reported by the map
         // engine's request hooks. Written only via L_.setLayerLoadStatus.
         loadStatus: {},
+        // Name -> LayerDataCoverage: whether the layer's requests are being
+        // suppressed for lack of data in the window it would request, and
+        // the declared coverage that decided it. Written only via
+        // L_.setLayerDataCoverage.
+        dataCoverage: {},
+        // Name -> true while the gate holds an on layer off the map. Says
+        // what the engine was told, which the record above does not: a
+        // controlled layer is reported out of range without being moved.
+        // Written only via L_.assessLayerDataCoverage.
+        coverageHidden: {},
     },
     // ===== Private ======
     //Index -> layer name
@@ -540,6 +555,22 @@ const L_ = {
                           null
                         : L_.layers.loadStatus
                 ),
+                // Whether each layer's requests are being suppressed for
+                // lack of data in the window it would request, with the
+                // coverage that decided it. Called with a layer identifier
+                // it answers for that one layer, resolving a name the way
+                // every other layer-keyed provider does; called with none it
+                // returns the whole map, keyed by UUID. Live updates
+                // broadcast as 'layers:dataCoverageChanged'.
+                window.mmgisAPI.provide('layers:getDataCoverage', (layerUUID) => {
+                    if (layerUUID != null) {
+                        const uuid = L_.asLayerUUID(layerUUID)
+                        return uuid == null
+                            ? null
+                            : L_.layers.dataCoverage[uuid] ?? null
+                    }
+                    return L_.layers.dataCoverage
+                }),
                 window.mmgisAPI.provide('tool:getVars', (toolName) => L_.getToolVars(toolName)),
                 window.mmgisAPI.provide('app:isMobile', () => L_.UserInterface_?.isMobile === true),
                 window.mmgisAPI.provide('app:getMissionPath', () => L_.missionPath),
@@ -883,8 +914,11 @@ const L_ = {
     ) {
         if (s.type !== 'header') {
             if (on) {
+                // A layer the gate hid is off the map, but its attachments
+                // are not.
                 if (
-                    L_.Map_.map.hasLayer(L_.layers.layer[s.name]) &&
+                    (L_.Map_.map.hasLayer(L_.layers.layer[s.name]) ||
+                        L_.layers.coverageHidden[s.name] === true) &&
                     globeOnly != true
                 ) {
                     // Only close DrawTool Edit Panel if this is a user-initiated toggle, not a refresh
@@ -1021,7 +1055,10 @@ const L_ = {
                     // Before showing, not after: a layer that is behind still
                     // holds the URL it was built with, placeholders and all.
                     await catchUpLayerTime(s)
-                    L_.Map_.engine.setLayerVisibility(s.name, true)
+                    L_.Map_.engine.setLayerVisibility(
+                        s.name,
+                        L_.assessLayerDataCoverage(s)
+                    )
                 }
 
                 if (s.type === 'tile') {
@@ -1098,6 +1135,10 @@ const L_ = {
                         L_.Map_.nativeLayer(L_.layers.layer[s.name]),
                         L_.layerZIndex(s.name)
                     )
+                    L_.Map_.engine.setLayerVisibility(
+                        s.name,
+                        L_.assessLayerDataCoverage(s)
+                    )
                 } else {
                     let hadToMake = false
                     if (
@@ -1141,7 +1182,10 @@ const L_ = {
                             // Before showing, not after: a layer that is behind still
                             // holds the URL it was built with, placeholders and all.
                             await catchUpLayerTime(s)
-                            L_.Map_.engine.setLayerVisibility(s.name, true)
+                            L_.Map_.engine.setLayerVisibility(
+                                s.name,
+                                L_.assessLayerDataCoverage(s)
+                            )
                         }
 
                         if (s.type === 'image') {
@@ -1460,10 +1504,11 @@ const L_ = {
                         }
                         // By uuid, so the engine acts on the instance it
                         // holds rather than the object built at creation,
-                        // which may since have been refreshed.
+                        // which may since have been refreshed. Gated again
+                        // because this also runs after a re-order.
                         engine.setLayerVisibility(
                             L_.layers.dataFlat[i].name,
-                            true
+                            L_.assessLayerDataCoverage(L_.layers.dataFlat[i])
                         )
                         // Re-ranked because this also runs after a re-order.
                         engine.setLayerZIndex(
@@ -2275,6 +2320,33 @@ const L_ = {
                 status,
                 message,
             })
+    },
+    // A layer's data-coverage record. Always stored — the request handler
+    // serves the freshest window — but announced only when the verdict or
+    // the coverage itself changes: every time step re-evaluates every
+    // time-enabled layer, and a scrubbed timeline would otherwise emit
+    // thousands of identical events.
+    setLayerDataCoverage: function (name, record) {
+        const prev = L_.layers.dataCoverage[name]
+        L_.layers.dataCoverage[name] = record
+        if (isSameCoverage(prev, record)) return
+        if (window.mmgisAPI)
+            window.mmgisAPI.emit('layers:dataCoverageChanged', {
+                layerName: name,
+                ...record,
+            })
+    },
+    // Evaluates a layer against the window it would request, records the
+    // result, and answers whether the layer may show. Asked only where the
+    // engine is then told the answer, so coverageHidden tracks the engine.
+    assessLayerDataCoverage: function (layer, evenIfControlled) {
+        const record = evaluateLayerDataCoverage(layer)
+        L_.setLayerDataCoverage(layer.name, record)
+        const hidden =
+            record.outOfDataRange && isCoverageGated(layer, evenIfControlled)
+        if (hidden) L_.layers.coverageHidden[layer.name] = true
+        else delete L_.layers.coverageHidden[layer.name]
+        return !hidden
     },
     setLayerOpacity: function (name, newOpacity) {
         newOpacity = parseFloat(newOpacity)
@@ -3725,6 +3797,7 @@ const L_ = {
         L_.layers.dataFlat = []
         L_._layersLoaded = []
         L_.layers.loadStatus = {}
+        L_.layers.dataCoverage = {}
 
         await L_.parseConfig(data)
 
@@ -3833,6 +3906,8 @@ const L_ = {
                 delete L_.layers.attachments[layerUUID]
                 delete L_.layers.opacity[layerUUID]
                 delete L_.layers.loadStatus[layerUUID]
+                delete L_.layers.dataCoverage[layerUUID]
+                delete L_.layers.coverageHidden[layerUUID]
             }
         }
     },

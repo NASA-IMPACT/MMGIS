@@ -148,3 +148,36 @@ describe('L_.addVisible layer ranking', () => {
         expect(rankOf('Base')).toBe(2)
     })
 })
+
+/**
+ * addVisible also runs after a re-order and when the remaining layers finish
+ * loading, so it must not resurrect a layer the time gate hid — while still
+ * ranking it, since rank is derived from the configured stack order.
+ */
+describe('L_.addVisible and data coverage', () => {
+    beforeEach(() => {
+        setEngine()
+        L_.layers.dataCoverage = {}
+    })
+
+    test('keeps an on layer with no data in its window off the map, still ranked', () => {
+        setLayers([
+            {
+                name: 'Flood Days',
+                type: 'TileLayer',
+                time: {
+                    enabled: true,
+                    dataDates: ['2020-03-04T14:30:00Z'],
+                    start: '2020-05-01T00:00:00Z',
+                    end: '2020-05-04T00:00:00Z',
+                },
+            },
+        ])
+
+        L_.addVisible(L_.Map_)
+
+        expect(shown()).not.toContain('Flood Days')
+        expect(setLayerVisibility).toHaveBeenCalledWith('Flood Days', false)
+        expect(rankOf('Flood Days')).toBeDefined()
+    })
+})

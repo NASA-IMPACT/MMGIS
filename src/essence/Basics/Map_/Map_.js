@@ -944,12 +944,18 @@ let Map_ = {
  */
 function handOffToEngine(layerObj, ctx) {
     if (ctx.default !== true) return
+    // A layer built while the time window lies outside its declared coverage
+    // is held hidden, so it never fetches. TimeControl.init seeds the window
+    // before Map_.init in both layouts; a builder that hands off before it is
+    // readable gets "has data", costing one round of requests that the first
+    // reload corrects.
+    const on = ctx.layerRegistry.on[layerObj.name] === true
     handOffLayerToEngine(
         Map_.engine,
         layerObj.name,
         Map_.nativeLayer(ctx.layerRegistry.layer[layerObj.name]),
         L_.layerZIndex(layerObj.name),
-        ctx.layerRegistry.on[layerObj.name] === true
+        on && L_.assessLayerDataCoverage(layerObj)
     )
 }
 
@@ -1431,13 +1437,16 @@ async function makeVectorLayer(
                 Map_ // Keep passing Map_ - constructVectorLayer expects this
             )
 
-            // For refresh operations, toggle off old layer and handle seamless swap
+            // For refresh operations, toggle off old layer and handle seamless
+            // swap. A layer the coverage gate hid is off the map, but its
+            // attachments are not, and the toggle is what takes them down.
             let wasOnForRefresh = false
             if (
                 isRefresh &&
                 ctx.layerRegistry.on[layerObj.name] &&
                 ctx.layerRegistry.layer[layerObj.name] &&
-                ctx.map.hasLayer(ctx.layerRegistry.layer[layerObj.name])
+                (ctx.map.hasLayer(ctx.layerRegistry.layer[layerObj.name]) ||
+                    ctx.layerRegistry.coverageHidden[layerObj.name] === true)
             ) {
                 wasOnForRefresh = true
                 L_.toggleLayer(

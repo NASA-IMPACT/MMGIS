@@ -279,3 +279,106 @@ describe('catching a layer up on the time it missed', () => {
         expect(reloadLayer).not.toHaveBeenCalled()
     })
 })
+
+/**
+ * A layer switched on while the timeline sits outside its declared coverage
+ * is recorded as on but never added to the map, so it requests nothing. It
+ * appears the moment the window reaches its data.
+ */
+
+const FLOOD_DAYS = {
+    name: 'Flood Days',
+    type: 'TileLayer',
+    url: 'https://example.com/flood/{time}/{z}/{x}/{y}.png',
+    tileformat: 'wmts',
+    time: {
+        enabled: true,
+        type: 'requery',
+        dataDates: ['2020-03-04T14:30:00Z'],
+        start: '2020-05-01T00:00:00Z',
+        end: '2020-05-04T00:00:00Z',
+    },
+}
+
+describe('turning on a layer with no data in the window', () => {
+    beforeEach(() => {
+        L_.layers.data[FLOOD_DAYS.name] = {
+            ...FLOOD_DAYS,
+            time: { ...FLOOD_DAYS.time },
+        }
+        L_.layers.layer[FLOOD_DAYS.name] = {
+            id: FLOOD_DAYS.name,
+            props: { opacity: 1 },
+        }
+        L_.layers.on[FLOOD_DAYS.name] = false
+        L_.layers.opacity[FLOOD_DAYS.name] = 1
+        L_.layers.dataCoverage = {}
+        L_.layers.coverageHidden = {}
+    })
+
+    test('records it on but leaves it off the map', async () => {
+        await L_.toggleLayerHelper(L_.layers.data[FLOOD_DAYS.name], false)
+
+        expect(L_.layers.on[FLOOD_DAYS.name]).toBe(true)
+        expect(engine.setLayerVisibility).toHaveBeenCalledWith(
+            FLOOD_DAYS.name,
+            false
+        )
+        expect(engine.setLayerVisibility).not.toHaveBeenCalledWith(
+            FLOOD_DAYS.name,
+            true
+        )
+        expect(L_.layers.dataCoverage[FLOOD_DAYS.name].outOfDataRange).toBe(
+            true
+        )
+    })
+
+    test('shows it once the window reaches its data', async () => {
+        L_.layers.data[FLOOD_DAYS.name].time.start = '2020-03-04T14:00:00Z'
+        L_.layers.data[FLOOD_DAYS.name].time.end = '2020-03-04T15:00:00Z'
+
+        await L_.toggleLayerHelper(L_.layers.data[FLOOD_DAYS.name], false)
+
+        expect(engine.setLayerVisibility).toHaveBeenCalledWith(
+            FLOOD_DAYS.name,
+            true
+        )
+    })
+
+    // The gate hides only the parent; its attachments went on the map with
+    // it. Turning it off must still take them down, though the map no
+    // longer holds the parent that the off-path normally checks for.
+    test('turning it off still removes its attachments', async () => {
+        const labels = { type: 'labels', on: true, layer: { off: vi.fn() } }
+        L_.layers.attachments[FLOOD_DAYS.name] = { labels }
+        L_.layers.on[FLOOD_DAYS.name] = true
+        L_.layers.coverageHidden[FLOOD_DAYS.name] = true
+
+        await L_.toggleLayerHelper(L_.layers.data[FLOOD_DAYS.name], true)
+
+        expect(labels.layer.off).toHaveBeenCalled()
+    })
+
+    // A velocity layer is rebuilt on every toggle and added to the map by
+    // its own path, so the gate has to be applied there too.
+    test('a velocity layer is built but kept off the map', async () => {
+        const wind = {
+            ...FLOOD_DAYS,
+            name: 'Wind',
+            type: 'velocity',
+            kind: 'streamlines',
+            time: { ...FLOOD_DAYS.time },
+        }
+        L_.layers.data[wind.name] = wind
+        L_.layers.layer[wind.name] = { id: wind.name }
+        L_.layers.on[wind.name] = false
+        L_.layers.opacity[wind.name] = 1
+        L_.Map_.makeLayer = vi.fn(async () => {})
+
+        await L_.toggleLayerHelper(wind, false)
+
+        expect(engine.addLayer).toHaveBeenCalled()
+        expect(engine.setLayerVisibility).toHaveBeenCalledWith('Wind', false)
+        expect(L_.layers.coverageHidden['Wind']).toBe(true)
+    })
+})
