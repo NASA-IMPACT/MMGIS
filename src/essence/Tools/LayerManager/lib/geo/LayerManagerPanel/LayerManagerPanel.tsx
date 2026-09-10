@@ -19,6 +19,7 @@ export type LayerManagerPanelProps = {
     canZoomToLayer?: LayerLegendListProps['canZoomToLayer']
     onCompareLayer?: LayerLegendListProps['onCompareLayer']
     onMoveLayer?: LayerLegendListProps['onMoveLayer']
+    onReorder?: LayerLegendListProps['onReorder']
     /** Opens the host's "add layer" surface. No handler, no button. */
     onAddLayer?: () => void
 }
@@ -36,6 +37,7 @@ export function LayerManagerPanel({
     canZoomToLayer,
     onCompareLayer,
     onMoveLayer,
+    onReorder,
     onAddLayer,
 }: LayerManagerPanelProps) {
     return (
@@ -73,6 +75,7 @@ export function LayerManagerPanel({
                         canZoomToLayer={canZoomToLayer}
                         onCompareLayer={onCompareLayer}
                         onMoveLayer={onMoveLayer}
+                        onReorder={onReorder}
                     />
                 )}
             </div>

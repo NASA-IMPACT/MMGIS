@@ -16,6 +16,7 @@ import {
     compareLayer,
     showAddLayer,
     moveLayer,
+    dropLayer,
 } from './adapters/handlers'
 import { mmgisGetLayerBounds } from '../_shared/adapters/mmgisAPI'
 
@@ -77,6 +78,12 @@ export function MMGISLayerManagerAdapter() {
         },
         [layers],
     )
+    const onReorder = useCallback(
+        (id: string, toIndex: number) => {
+            report('dropLayer', dropLayer(id, toIndex, layers.map((l) => l.id)))
+        },
+        [layers],
+    )
 
     // 'layers:getAll' is registered by Layers_.fina() during mission load.
     // Wait for it before doing the initial refresh, otherwise the adapter
@@ -97,6 +104,7 @@ export function MMGISLayerManagerAdapter() {
             canZoomToLayer={canZoomToLayer}
             onCompareLayer={compareLayer}
             onMoveLayer={onMoveLayer}
+            onReorder={onReorder}
             onAddLayer={showAddLayer}
         />
     )

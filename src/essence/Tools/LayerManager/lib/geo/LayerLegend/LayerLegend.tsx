@@ -49,6 +49,14 @@ export type LayerLegendProps = {
     /** Where the layer sits in the list shown, for the move items. */
     isFirst?: boolean
     isLast?: boolean
+    /** Wires the grip button to a sortable list; no handle without it. */
+    dragHandle?: DragHandleProps
+}
+
+export type DragHandleProps = {
+    ref: (node: HTMLElement | null) => void
+    attributes: Record<string, unknown>
+    listeners?: Record<string, unknown>
 }
 
 export function LayerLegend({
@@ -65,6 +73,7 @@ export function LayerLegend({
     onMoveLayer,
     isFirst = false,
     isLast = false,
+    dragHandle,
 }: LayerLegendProps) {
     const {
         id,
@@ -289,6 +298,18 @@ export function LayerLegend({
             data-legend-id={id}
         >
             <div className="blocks-layer-legend__header">
+                {dragHandle && (
+                    <button
+                        ref={dragHandle.ref}
+                        type="button"
+                        className="blocks-layer-legend__action-btn blocks-layer-legend__drag-handle"
+                        title="Drag to reorder"
+                        {...dragHandle.attributes}
+                        {...dragHandle.listeners}
+                    >
+                        <span className="blocks-layer-legend__icon blocks-layer-legend__icon--drag-handle" />
+                    </button>
+                )}
                 <div className="blocks-layer-legend__checkbox-wrapper">
                     <input
                         type="checkbox"

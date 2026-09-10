@@ -26,6 +26,16 @@
         background: var(--theme-color-base-dark, #565c65);
     }
 
+    /* The row being dragged rides above its neighbours as they slide. */
+    &__item {
+        position: relative;
+
+        &--dragging {
+            z-index: 1;
+            opacity: 0.85;
+        }
+    }
+
     &__empty {
         padding: var(--theme-spacing-205, 1.25rem);
         text-align: center;
