@@ -288,6 +288,17 @@ export interface IMapEngine<
     /**
      * Subscribe to a map event (click, moveend, zoomend, etc).
      *
+     * Every engine reports `click`, `move` and `moveend`, while `zoomstart`
+     * and `zoomend` are per-engine, so anything that has to follow the view
+     * listens for `move` and `moveend` and treats the zoom pair as a
+     * refinement it may never be given.
+     *
+     * A `click` carries `feature`: the feature picked under the pointer, or
+     * `null` where the click landed on empty map. It is picked the way
+     * {@link onFeatureClick} picks — the topmost feature of the registered
+     * layers wins — so a click says by itself whether it landed on anything,
+     * without a second handler to correlate it with.
+     *
      * Clicks belonging to a drawing session are not reported: neither the ones
      * the session takes as vertices, nor the ones its finishing gesture leaves
      * the engine to deliver once the session is over.

@@ -145,7 +145,9 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      * leave Leaflet with one more `mousemove`/`mouseout` listener than the
      * last.
      */
-    private _featureClickListener: ((e: any) => void) | null = null
+    private _featureClickListener:
+        | ((e: any, pick: FeaturePickResult | null) => void)
+        | null = null
     private _featureHoverMoveListener: ((e: any) => void) | null = null
     private _featureHoverOutListener: (() => void) | null = null
 
@@ -943,7 +945,12 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      */
     private _onMapClick = (e: any): void => {
         if (this._drawingShape || this._drawEndClick.owns(e?.originalEvent)) return
-        this._featureClickListener?.(e)
+        // One pick per click: the feature handler is handed the result, and
+        // the feature itself rides on the event every click subscriber sees,
+        // so a click says by itself whether it landed on anything.
+        const pick = this._pickFeatureAtLatLng(e.latlng)
+        e.feature = pick?.feature ?? null
+        this._featureClickListener?.(e, pick)
         this._clickListeners.forEach((listener) => listener(e))
     }
 
@@ -1028,14 +1035,13 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
 
     /**
      * Register a handler called when the user clicks a rendered feature.
-     * Hangs off the adapter's map click listener; on each click iterates
-     * registered vector layers to find the topmost feature under the cursor.
-     * Returns an unsubscribe function. Replace semantics: calling again
-     * replaces the handler.
+     * Hangs off the adapter's map click listener, which iterates registered
+     * vector layers once per click for the topmost feature under the cursor
+     * and hands the result here. Returns an unsubscribe function. Replace
+     * semantics: calling again replaces the handler.
      */
     onFeatureClick(handler: FeatureInteractionHandler): () => void {
-        const listener = (e: any) => {
-            const result = this._pickFeatureAtLatLng(e.latlng)
+        const listener = (e: any, result: FeaturePickResult | null) => {
             handler({
                 feature: result?.feature ?? null,
                 layerId: result?.layerId,
@@ -1477,9 +1483,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      * polygon features). Falls back to bounds-intersection for single-feature
      * layers or layers without polygons.
      */
-    private _pickFeatureAtLatLng(
-        latlng: any
-    ): { feature: Record<string, unknown>; layerId: string } | null {
+    private _pickFeatureAtLatLng(latlng: any): FeaturePickResult | null {
         const pip = (L as any)?.leafletPip
         const lnglat = [latlng.lng, latlng.lat] as [number, number]
         for (const [id, leafletLayer] of this._layers) {
