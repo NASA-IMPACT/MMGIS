@@ -1429,6 +1429,26 @@ test.describe('DeckGLAdapter', () => {
             expect(clicks).toEqual([null])
         })
 
+        // The popup service subscribes to `click` when a plugin opens a card
+        // from a click, so the click that opened the card would dismiss it
+        // were the fan-out to walk the subscribers the dispatch is adding to.
+        test('a subscriber added during a click hears the next click, not that one', () => {
+            const { adapter, props } = initAdapter(null)
+            const late = []
+            let subscribed = false
+            adapter.on('click', () => {
+                if (subscribed) return
+                subscribed = true
+                adapter.on('click', (e) => late.push(e.latlng))
+            })
+
+            props.onClick(pickAt(-120, 40))
+            expect(late).toEqual([])
+
+            props.onClick(pickAt(-121, 41))
+            expect(late).toEqual([{ lat: 41, lng: -121 }])
+        })
+
         // A drag or a wheel zoom reaches the adapter only through deck's own
         // onViewStateChange, once per frame. `move` follows every frame, the
         // way an anchored consumer needs it to; `moveend` is one event about
