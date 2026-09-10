@@ -491,6 +491,21 @@ body.ui-is-dragging .ui-modern-grid .ui-panel {
     z-index: 0 !important;
 }
 
+/* The panel regions outrank the centre region. The overlay layout gets that
+   ordering for free, with the map a backdrop behind the whole panel layer,
+   but here the map is a grid cell among the panels and claims a level of its
+   own, so the panels have to claim a higher one — otherwise whatever the
+   centre region holds paints over them, including a map-anchored popup card
+   mounted beside the map container. One level for all four leaves their order
+   among themselves to the tree, where it is when none of them is positioned. */
+.ui-modern-grid.ui-layout-compact .ui-region-top,
+.ui-modern-grid.ui-layout-compact .ui-region-left,
+.ui-modern-grid.ui-layout-compact .ui-region-right,
+.ui-modern-grid.ui-layout-compact .ui-region-bottom {
+    position: relative;
+    z-index: 20;
+}
+
 .ui-modern-grid.ui-layout-compact .ui-panel {
     margin: 0;
     border-radius: 0;

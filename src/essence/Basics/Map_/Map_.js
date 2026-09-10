@@ -47,6 +47,7 @@ import {
 } from '../MapEngines/index'
 import { buildDeckLayer, buildDeckCOGLayer } from '../MapEngines/Adapters/DeckGLHelpers'
 import MapComparison from './MapComparison'
+import MapPopup_ from '../MapPopup_/MapPopup_'
 
 import GeoRasterLayer from '../../../external/georaster-layer-for-leaflet/georaster-layer-for-leaflet.ts'
 import georaster from 'georaster'
@@ -328,6 +329,21 @@ let Map_ = {
                     engine.removeOverlay(id)
                     return true
                 }),
+                // Map-anchored popup — a single, core-owned slot. The handler's
+                // promise is the request's, so it stays pending while the popup
+                // is open and answers the caller with how it closed.
+                window.mmgisAPI.provide('map:showPopup', (request, { caller }) =>
+                    MapPopup_.show(request, engine, caller)
+                ),
+                // Retracting a popup resolves its own request with
+                // `{ action: 'closed' }`, so whoever opened it learns it is
+                // gone. A hide reaches only a popup of the caller's own;
+                // anyone else's finds a popup that is not theirs and answers
+                // false. A plugin's address is its alone, while "no caller" is
+                // one identity shared by everyone without a handle.
+                window.mmgisAPI.provide('map:hidePopup', (_payload, { caller }) =>
+                    MapPopup_.hideForCaller(caller)
+                ),
                 window.mmgisAPI.provide('map:setBasemap', (styleName) => {
                     const index = _basemapStyles.findIndex((s) => s.name === styleName)
                     if (index === -1) {
@@ -384,6 +400,27 @@ let Map_ = {
                     return p ? { x: p.x, y: p.y } : null
                 }),
             ]
+
+            // Re-initialising the map runs these cleanups first, so a popup
+            // opened against a previous mission's map never outlives it.
+            _providerCleanups.push(() => MapPopup_.hide())
+
+            // A plugin's card is core's to take down with the plugin: the
+            // plugin is gone before it could retract the card itself, and the
+            // owner check is what leaves a bystander's card standing.
+            _providerCleanups.push(
+                window.mmgisAPI.on('plugins:destroyed', (e) => {
+                    if (e?.pluginId != null) MapPopup_.hideForCaller(e.pluginId)
+                })
+            )
+
+            // A full layout teardown — a re-render, or the UI going down
+            // whole — leaves nobody to stand behind a card, so the slot is
+            // emptied outright rather than per owner: a card opened without a
+            // handle matches no plugin's teardown and would outlive them all.
+            _providerCleanups.push(
+                window.mmgisAPI.on('plugins:allDestroyed', () => MapPopup_.hide())
+            )
 
             // Engine event re-emits — translate adapter events onto the bus
             const reEmit = (engineEvent, busEvent) => {
