@@ -1,12 +1,14 @@
 /**
  * FetchStats plugin — no-UI background plugin.
  *
- * pluginId: 'fetch-stats'
+ * pluginId: 'fetchstats' — derived from this plugin's binding at build time.
+ * The tool controller mints the bus handle from it and injects it as
+ * `FetchStatsTool.api` before initialize() runs.
  *
  * Listens to:
  *   - plugin:aoi:analysisAOIReady   { feature }
  *
- * Emits (auto-prefixed plugin:fetch-stats:):
+ * Emits (auto-prefixed plugin:fetchstats:):
  *   - analysisProgress   { done: number, total: number }
  *   - analysisReady      { analysisData: { [layerDisplayName]: <stats response | null> } }
  *   - analysisSkipped    { reason: 'no-eligible-layers' }
@@ -15,8 +17,6 @@
  *                        Consumers can surface a "toggle on an analysis layer"
  *                        message to the user.
  */
-
-const PLUGIN_ID = 'fetch-stats'
 
 /**
  * Build the statistics POST URL for a layer's `variables.analysis` block.
@@ -35,7 +35,6 @@ const FetchStatsTool = {
     height: 0,
     width: 0,
     MMGISInterface: null,
-    _api: null,
     _cleanups: [],
     made: false,
 
@@ -49,10 +48,6 @@ const FetchStatsTool = {
         if (this.made) return
         this.made = true
         this.MMGISInterface = new interfaceWithMMGIS(this, targetId)
-        this._api =
-            (typeof window !== 'undefined' &&
-                window.mmgisAPI?.forPlugin?.(PLUGIN_ID)) ||
-            {}
 
         const api = window.mmgisAPI
         if (api?.on) {
@@ -73,9 +68,6 @@ const FetchStatsTool = {
         this._cleanups.forEach((fn) => fn())
         this._cleanups = []
         this.MMGISInterface?.separateFromMMGIS()
-        // An analysis already awaiting the network cannot be cancelled, so
-        // dropping the handle is what keeps its remaining emits off the bus.
-        this._api = null
     },
 
     async _getAnalyzableVisibleLayers() {
@@ -99,13 +91,22 @@ const FetchStatsTool = {
     async _runAnalysisForVisibleLayers(feature) {
         if (!feature?.geometry || !window.mmgisAPI?.request) return
 
+        // The tool controller injects this plugin's bus handle before its own
+        // code runs and clears it once teardown releases it. The classic
+        // layout has no controller to inject one at all. An analysis already
+        // awaiting the network cannot be cancelled, so in both cases the run
+        // finishes and reports its results to nobody.
+        const emit = (event, data) => {
+            if (this.api) this.api.emit(event, data)
+        }
+
         const layers = await this._getAnalyzableVisibleLayers()
         if (!layers.length) {
-            this._api?.emit('analysisSkipped', { reason: 'no-eligible-layers' })
+            emit('analysisSkipped', { reason: 'no-eligible-layers' })
             return
         }
 
-        this._api?.emit('analysisProgress', { done: 0, total: layers.length })
+        emit('analysisProgress', { done: 0, total: layers.length })
 
         const body = JSON.stringify({
             type: 'Feature',
@@ -119,13 +120,13 @@ const FetchStatsTool = {
                 const displayName = layer.display_name || layer.name
                 const result = await this._postStatsForLayer(layer, body)
                 done += 1
-                this._api?.emit('analysisProgress', { done, total: layers.length })
+                emit('analysisProgress', { done, total: layers.length })
                 return [displayName, result]
             })
         )
 
         const analysisData = Object.fromEntries(entries)
-        this._api?.emit('analysisReady', { analysisData })
+        emit('analysisReady', { analysisData })
     },
 
     async _postStatsForLayer(layer, body) {

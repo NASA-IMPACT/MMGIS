@@ -5,6 +5,7 @@ import Search from '../../Ancillary/Search'
 import Attributions from '../../Ancillary/Attributions'
 import CursorInfo from '../../Ancillary/CursorInfo'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
+import { toolCanonicalId } from '../ToolController_/ToolMetadataUtils'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
 import { isRasterTileLayerType } from '../MapEngines/types/engine'
@@ -2486,22 +2487,15 @@ const L_ = {
         L_.Map_.resetView(L_.configData.msv.view)
         L_.Globe_.litho.setCenter(L_.configData.msv.view)
     },
-    hasTool: function (toolName) {
-        for (var i = 0; i < L_.tools.length; i++) {
-            if (
-                L_.tools[i].hasOwnProperty('name') &&
-                L_.tools[i].name.toLowerCase() == toolName
-            )
-                return true
-        }
-        return false
-    },
     getToolVars: function (toolName, withVarsFromLayers, showWarnings) {
         let vars = {}
         for (var i = 0; i < L_.tools.length; i++) {
+            // Matched on the tool's address first, with the lowercased display
+            // name kept as a fallback for callers that ask by that instead.
             if (
-                L_.tools[i].hasOwnProperty('name') &&
-                L_.tools[i].name.toLowerCase() == toolName &&
+                (toolCanonicalId(L_.tools[i]) === toolName ||
+                    (L_.tools[i].hasOwnProperty('name') &&
+                        L_.tools[i].name.toLowerCase() == toolName)) &&
                 L_.tools[i].hasOwnProperty('variables')
             ) {
                 vars = L_.tools[i].variables

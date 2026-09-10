@@ -995,17 +995,6 @@ var mmgisAPI = {
         return handlers.has(name)
     },
 
-    // ============ PLUGIN-SCOPED API ============
-
-    /**
-     * Get a plugin's bus handle by address. See `mintHandle`.
-     * @param {string} address - Plugin address (e.g., 'draw', 'info', 'aoi')
-     * @returns {Object} The plugin's handle
-     */
-    forPlugin(address) {
-        return mintHandle(address)
-    },
-
     // Formulae_
     utils: { ...F_ },
 }
@@ -1021,6 +1010,8 @@ const readVars = (address) => {
  * Mint a plugin's bus handle: `emit` and `provide` prefix names with the
  * plugin's address, `request` takes a full name and is stamped with the token
  * minted here, and `release()` hands back everything the handle registered.
+ * Core-internal: the tool controller mints one per tool it loads and injects
+ * it, so a plugin cannot reach another plugin's handle by naming its address.
  * @param {string} address - Plugin address (e.g., 'aoi')
  * @returns {Object} The plugin's handle
  */

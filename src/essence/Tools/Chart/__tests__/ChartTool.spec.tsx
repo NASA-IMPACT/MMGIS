@@ -82,15 +82,15 @@ describe('ChartTool hand-offs', () => {
     })
 
     test('a result with no panel yet asks the loader for one', async () => {
-        fire('plugin:fetch-stats:analysisReady', { analysisData: ANALYSIS_DATA })
+        fire('plugin:fetchstats:analysisReady', { analysisData: ANALYSIS_DATA })
 
         expect(requested('plugins:show')).toEqual([
-            { name: 'plugins:show', params: { pluginId: 'ChartTool' } },
+            { name: 'plugins:show', params: { pluginId: 'chart' } },
         ])
     })
 
     test('the panel it opens renders the result it was handed', async () => {
-        fire('plugin:fetch-stats:analysisReady', { analysisData: ANALYSIS_DATA })
+        fire('plugin:fetchstats:analysisReady', { analysisData: ANALYSIS_DATA })
         await open()
 
         expect(chartProps.analysisData).toEqual(ANALYSIS_DATA)
@@ -99,7 +99,7 @@ describe('ChartTool hand-offs', () => {
     test('a result reaches an open panel in place', async () => {
         await open()
 
-        fire('plugin:fetch-stats:analysisReady', { analysisData: ANALYSIS_DATA })
+        fire('plugin:fetchstats:analysisReady', { analysisData: ANALYSIS_DATA })
 
         expect(chartProps.analysisData).toEqual(ANALYSIS_DATA)
     })
@@ -108,14 +108,14 @@ describe('ChartTool hand-offs', () => {
         await open()
         const before = requested('plugins:show').length
 
-        fire('plugin:fetch-stats:analysisReady', { analysisData: ANALYSIS_DATA })
+        fire('plugin:fetchstats:analysisReady', { analysisData: ANALYSIS_DATA })
 
         expect(requested('plugins:show').length).toBe(before + 1)
     })
 
     test('a new analysis clears stale results without opening the panel', async () => {
         await open()
-        fire('plugin:fetch-stats:analysisReady', { analysisData: ANALYSIS_DATA })
+        fire('plugin:fetchstats:analysisReady', { analysisData: ANALYSIS_DATA })
         const before = requested('plugins:show').length
 
         fire('plugin:aoi:analysisAOIReady', { feature: {} })
@@ -125,7 +125,7 @@ describe('ChartTool hand-offs', () => {
     })
 
     test('closing unloads the plugin so the next result re-mounts a panel', async () => {
-        fire('plugin:fetch-stats:analysisReady', { analysisData: ANALYSIS_DATA })
+        fire('plugin:fetchstats:analysisReady', { analysisData: ANALYSIS_DATA })
         await open()
 
         await act(async () => {
@@ -135,7 +135,7 @@ describe('ChartTool hand-offs', () => {
         expect(requested('plugins:setState')).toEqual([
             {
                 name: 'plugins:setState',
-                params: { pluginId: 'ChartTool', state: 'unloaded' },
+                params: { pluginId: 'chart', state: 'unloaded' },
             },
         ])
     })

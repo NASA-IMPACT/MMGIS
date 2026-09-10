@@ -4,6 +4,29 @@ const path = require("path");
 const logger = require("./logger");
 const { isLean } = require("./Backend/Utils/deploymentMode");
 
+// Module binding (a `paths` key) -> the tool's address: the name it answers to
+// on the bus, in the modern controller's registries and in teardown events.
+// toolCanonicalId (src/essence/Basics/ToolController_/ToolMetadataUtils.js)
+// applies the same derivation in the browser, so the build and the frontend
+// agree on what a tool is called. Two bindings can derive one address (`Foo`
+// and `FooTool`), so a collision throws here and fails the build.
+function buildToolIds(tools) {
+  const ids = {};
+  const claimedBy = new Map();
+  for (const t in tools) {
+    for (const p in tools[t].paths) {
+      const id = p.replace(/Tool$/, "").toLowerCase();
+      if (claimedBy.has(id) && claimedBy.get(id) !== p)
+        throw new Error(
+          `Tool bindings "${claimedBy.get(id)}" and "${p}" both derive the address "${id}"`
+        );
+      claimedBy.set(id, p);
+      ids[p] = id;
+    }
+  }
+  return ids;
+}
+
 function updateTools() {
   let tools = {};
 
@@ -189,6 +212,9 @@ function updateTools() {
   toolConfigs += `export const toolModules = ${JSON.stringify(
     toolModules
   ).replace(/"/g, "")}\n`;
+  toolConfigs += `export const toolIds = ${JSON.stringify(
+    buildToolIds(tools)
+  )}\n`;
   toolConfigs += `export const testModules = ${JSON.stringify(
     testModules
   ).replace(/"/g, "")}\n`;
@@ -383,4 +409,9 @@ function updateComponents() {
     }
 }
 
-module.exports = { updateTools, updateComponents, bakeStaticConfig };
+module.exports = {
+  updateTools,
+  updateComponents,
+  bakeStaticConfig,
+  buildToolIds,
+};

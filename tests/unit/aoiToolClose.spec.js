@@ -19,7 +19,7 @@ test('closing the panel unloads the AOI plugin', () => {
     AOITool._onClose()
 
     expect(request).toHaveBeenCalledWith('plugins:setState', {
-        pluginId: 'AOITool',
+        pluginId: 'aoi',
         state: 'unloaded',
     })
 })

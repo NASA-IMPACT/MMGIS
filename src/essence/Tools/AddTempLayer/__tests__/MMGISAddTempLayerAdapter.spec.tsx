@@ -9,7 +9,7 @@ import { mount, click } from '../../_shared/__tests__/reactHarness'
  * a closed form sitting over the map, without an error anyone would notice.
  */
 
-const TOOL_ID = 'AddTempLayerTool'
+const TOOL_ID = 'addtemplayer'
 
 let request: ReturnType<typeof vi.fn>
 

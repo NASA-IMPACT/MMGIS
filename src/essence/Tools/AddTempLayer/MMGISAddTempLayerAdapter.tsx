@@ -14,7 +14,8 @@ import {
  * Submits become `layers:addLayer` requests (session-only add; lost on reload).
  */
 
-const TOOL_ID = 'AddTempLayerTool'
+/** This plugin's address, derived from its binding at build time. */
+const TOOL_ID = 'addtemplayer'
 
 /**
  * Dismisses this tool, reporting a refusal rather than dropping it: a silent

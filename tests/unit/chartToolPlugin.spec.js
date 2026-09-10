@@ -33,11 +33,11 @@ afterEach(() => {
 
 test('a fresh analysisReady payload asks the bus to show the Chart plugin', async () => {
     await import('../../src/essence/Tools/Chart/ChartTool.js')
-    expect(listeners['plugin:fetch-stats:analysisReady']).toBeTypeOf('function')
+    expect(listeners['plugin:fetchstats:analysisReady']).toBeTypeOf('function')
 
-    listeners['plugin:fetch-stats:analysisReady']({ analysisData: { layerA: {} } })
+    listeners['plugin:fetchstats:analysisReady']({ analysisData: { layerA: {} } })
 
-    expect(request).toHaveBeenCalledWith('plugins:show', { pluginId: 'ChartTool' })
+    expect(request).toHaveBeenCalledWith('plugins:show', { pluginId: 'chart' })
 })
 
 test('closing the panel unloads the Chart plugin', async () => {
@@ -46,7 +46,7 @@ test('closing the panel unloads the Chart plugin', async () => {
     ChartTool._onClose()
 
     expect(request).toHaveBeenCalledWith('plugins:setState', {
-        pluginId: 'ChartTool',
+        pluginId: 'chart',
         state: 'unloaded',
     })
 })

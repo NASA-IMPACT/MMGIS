@@ -45,6 +45,7 @@ afterEach(() => {
     AOITool._removeDrawKeys()
     AOITool._state.isDrawing = false
     document.body.innerHTML = ''
+    delete AOITool.api
     delete window.mmgisAPI
 })
 
@@ -192,10 +193,14 @@ test.describe('AOI draw-session keys', () => {
             handlers[event] = handler
             return () => delete handlers[event]
         }
-        window.mmgisAPI.forPlugin = () => ({
+        // The controller injects the plugin-scoped handle before make() runs.
+        AOITool.api = {
+            on: () => () => { },
             emit: () => { },
             provide: () => () => { },
-        })
+            request: () => Promise.resolve(null),
+            release: () => { },
+        }
         appendTo(document.body, 'div', { id: 'toolPanel' })
         AOITool.make('toolPanel')
 
