@@ -43,9 +43,8 @@ const FetchStatsTool = {
     },
 
     make(targetId) {
-        // The modern layout calls initialize() then make(); the guard makes
-        // the second start a no-op. It discards targetId, which is safe only
-        // because this plugin renders nothing.
+        // The guard drops the targetId the second start passes, which is
+        // safe only because this plugin renders nothing.
         if (this.made) return
         this.made = true
         this.MMGISInterface = new interfaceWithMMGIS(this, targetId)

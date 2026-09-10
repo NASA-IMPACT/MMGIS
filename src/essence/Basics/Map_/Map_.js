@@ -492,7 +492,7 @@ let Map_ = {
             })
 
             if (Globe_.controls.link) {
-                this.engine.on('moveend', () => {
+                this.engine.on('move', () => {
                     const c = Map_.engine.getCenter()
                     Globe_.controls.link.linkMove(c.lng, c.lat)
                 })
