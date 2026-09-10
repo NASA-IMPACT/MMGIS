@@ -478,21 +478,21 @@
             {
               "field": "time.dataStartTime",
               "name": "Data Start Time",
-              "description": "The earliest time for which data is available in this layer. This is for display purposes only and does not constrain queries. Format: ISO 8601 datetime string (e.g., 2020-01-01T00:00:00Z).",
+              "description": "The earliest time this layer has data for. The layer is not requested while the timeline's window lies entirely before it. Leave empty to leave the start unconstrained. Format: ISO 8601 datetime string (e.g., 2020-01-01T00:00:00Z).",
               "type": "text",
               "width": 6
             },
             {
               "field": "time.dataEndTime",
               "name": "Data End Time",
-              "description": "The latest time for which data is available in this layer. This is for display purposes only and does not constrain queries. Format: ISO 8601 datetime string (e.g., 2025-12-31T23:59:59Z).",
+              "description": "The latest time this layer has data for. The layer is not requested while the timeline's window lies entirely after it. Leave empty to leave the end unconstrained; 'now' means the current moment. Format: ISO 8601 datetime string (e.g., 2025-12-31T23:59:59Z).",
               "type": "text",
               "width": 6
             },
             {
               "field": "time.dataDates",
               "name": "Data Dates",
-              "description": "Optional. For layers with data on only a scattered handful of days rather than continuously across the extent above. A comma-separated list of the days data is available on, in UTC. Format: YYYY-MM-DD (e.g., 2020-03-04, 2020-07-19). The timeline draws one box per listed day instead of a single bar spanning the extent. Leave empty for a layer with continuous coverage. Day granularity only; times of day are ignored.",
+              "description": "Optional. For layers with data on only a scattered handful of days rather than continuously across the extent above. A comma-separated list of the days data is available on, in UTC. Format: YYYY-MM-DD (e.g., 2020-03-04, 2020-07-19). When set, the layer is requested only while the timeline's window touches one of these days, and the timeline draws one box per listed day instead of a single bar spanning the extent. Leave empty for a layer with continuous coverage. Day granularity only; times of day are ignored.",
               "type": "textarray",
               "width": 12
             }
