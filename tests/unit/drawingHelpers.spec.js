@@ -1,7 +1,9 @@
-import { test, expect } from 'vitest'
+import { test, expect, vi } from 'vitest'
 import {
     committedVerticesFromChange,
     drawModeKeyEvents,
+    DrawEndClickGuard,
+    DrawPointerWatch,
     extractCommittedVertices,
     validateDrawnLineString,
 } from '../../src/essence/Basics/MapEngines/Adapters/DrawingHelpers.ts'
@@ -176,5 +178,172 @@ test.describe('drawModeKeyEvents', () => {
         for (const shape of ['point', 'linestring', 'polygon', 'rectangle', 'circle']) {
             expect(drawModeKeyEvents(shape).cancel).toBeNull()
         }
+    })
+})
+
+/** A DOM event stamped as the browser would stamp one made at `timeStamp`. */
+const stamped = (type, timeStamp) => {
+    const event = new Event(type)
+    Object.defineProperty(event, 'timeStamp', { value: timeStamp })
+    return event
+}
+
+/**
+ * An element standing in for the one the engine's pointer events reach. In the
+ * page, because an event only propagates through `window` from a node that is.
+ */
+const mapElement = () => {
+    const element = document.createElement('div')
+    document.body.appendChild(element)
+    return element
+}
+
+test.describe('DrawPointerWatch', () => {
+    // terra-draw commits from inside the pointer event, so the engine has yet
+    // to make a click of the gesture the session is ending on.
+    test('reports the pointer being dispatched as the click still to come', () => {
+        const element = mapElement()
+        const watch = new DrawPointerWatch()
+        watch.start(element)
+
+        for (const type of ['pointerdown', 'pointerup']) {
+            const event = stamped(type, 1000)
+            let pending = null
+            const read = () => { pending = watch.pendingClick }
+            element.addEventListener(type, read)
+            element.dispatchEvent(event)
+            element.removeEventListener(type, read)
+            expect(pending).toBe(event)
+        }
+    })
+
+    // deck holds every click a tap interval to see whether a double-click is
+    // coming, so a pointerup that recent still has one on the way.
+    test('keeps a pointerup that recent as the click still to come', () => {
+        const element = mapElement()
+        const watch = new DrawPointerWatch()
+        watch.start(element)
+
+        const up = stamped('pointerup', 1000)
+        element.dispatchEvent(up)
+
+        expect(watch.pendingClick).toBe(up)
+    })
+
+    // Any older and the click has been delivered on either engine. Covering
+    // one would only swallow the click the user makes next.
+    test('lets go of a pointerup older than the tap interval', () => {
+        vi.useFakeTimers()
+        try {
+            const element = mapElement()
+            const watch = new DrawPointerWatch()
+            watch.start(element)
+
+            element.dispatchEvent(stamped('pointerup', 1000))
+            vi.advanceTimersByTime(301)
+
+            expect(watch.pendingClick).toBeNull()
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    // A session ended from a plugin's own panel ends on a pointer the map
+    // never saw, and the engine owes no click for it.
+    test('ignores a pointer that was not on the map', () => {
+        const element = mapElement()
+        const elsewhere = mapElement()
+        const watch = new DrawPointerWatch()
+        watch.start(element)
+
+        elsewhere.dispatchEvent(stamped('pointerup', 1000))
+
+        expect(watch.pendingClick).toBeNull()
+    })
+})
+
+test.describe('DrawEndClickGuard', () => {
+    // A click is normally stamped with the pointerup it was made from, which
+    // puts it inside the horizon. A browser that stamps it at dispatch instead
+    // puts it outside — but the guard saw it go by the element, and identity
+    // answers on its own.
+    test('owns a click of its own gesture stamped past the horizon', () => {
+        const element = mapElement()
+        const guard = new DrawEndClickGuard()
+        guard.arm(stamped('pointerup', 1000), element)
+
+        const click = stamped('click', 9999)
+        element.dispatchEvent(click)
+
+        expect(guard.owns(click)).toBe(true)
+    })
+
+    // The second tap of a double-click finish can be pressed at the very edge
+    // of the interval that still makes it one, and released after it. The
+    // gesture stays the drawing's, and carries the horizon with it.
+    test('owns the click of a tap pressed at the edge of the interval', () => {
+        const element = mapElement()
+        const guard = new DrawEndClickGuard()
+        guard.arm(stamped('pointerup', 1000), element)
+
+        element.dispatchEvent(stamped('pointerdown', 1300))
+        element.dispatchEvent(stamped('pointerup', 1360))
+
+        expect(guard.owns(stamped('click', 1360))).toBe(true)
+    })
+
+    // What an engine hands over is not always the DOM event itself: deck's
+    // overlaid overlay forwards MapLibre's `MapMouseEvent`, which carries the
+    // native click as its own `originalEvent`.
+    test('owns a click handed over wrapped in a library event', () => {
+        const element = mapElement()
+        const guard = new DrawEndClickGuard()
+        guard.arm(stamped('pointerup', 1000), element)
+
+        expect(guard.owns({ originalEvent: stamped('click', 1100) })).toBe(true)
+    })
+
+    // An engine with no map element cannot be delivering clicks, so there is
+    // nothing to cover and nothing to listen on.
+    test('arming without an element covers nothing', () => {
+        const guard = new DrawEndClickGuard()
+
+        guard.arm(stamped('pointerup', 1000), null)
+
+        expect(guard.owns(stamped('click', 1100))).toBe(false)
+    })
+
+    // Double-click zoom is taken at the start of the session, because
+    // terra-draw disables it as the mode starts and leaves it that way.
+    test('gives double-click zoom back when the session leaves no click behind', () => {
+        let enabled = true
+        const handler = {
+            enabled: () => enabled,
+            enable: () => { enabled = true },
+            disable: () => { enabled = false },
+        }
+        const guard = new DrawEndClickGuard()
+
+        guard.holdDoubleClickZoom(handler)
+        expect(enabled).toBe(false)
+        guard.arm(null, mapElement())
+
+        expect(enabled).toBe(true)
+    })
+
+    // A map configured without double-click zoom must not be given it.
+    test('gives back the state the map had before the drawing', () => {
+        let enabled = false
+        const handler = {
+            enabled: () => enabled,
+            enable: () => { enabled = true },
+            disable: () => { enabled = false },
+        }
+        const guard = new DrawEndClickGuard()
+
+        guard.holdDoubleClickZoom(handler)
+        guard.arm(null, mapElement())
+
+        expect(enabled).toBe(false)
     })
 })

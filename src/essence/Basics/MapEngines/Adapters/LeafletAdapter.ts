@@ -49,7 +49,10 @@ import {
 import { TerraDrawLeafletAdapter } from 'terra-draw-leaflet-adapter'
 import {
     committedVerticesFromChange,
+    DoubleClickZoomHandler,
+    DrawEndClickGuard,
     drawModeKeyEvents,
+    DrawPointerWatch,
     drawStyles,
     validateDrawnLineString,
 } from './DrawingHelpers'
@@ -105,9 +108,26 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     private _overlays: Map<string, () => void> = new Map()
 
     /**
-     * Registry of event handlers for cleanup
+     * Registry of event handlers for cleanup, keyed by event name and the
+     * subscriber's source so {@link off} can find the wrapper it made. The
+     * event name is kept alongside the wrapper because the key is not one.
      */
-    private _eventHandlers: Map<string, Function> = new Map()
+    private _eventHandlers: Map<
+        string,
+        { eventName: string; wrapped: (e: any) => void }
+    > = new Map()
+
+    /**
+     * Click subscribers registered through {@link on}. They hang off the
+     * adapter's own map listener rather than off Leaflet directly, so that
+     * whether a drawing session owns a click is answered once, where clicks
+     * are reported, instead of at every subscription — the same shape
+     * DeckGLAdapter's pointer-click path has.
+     */
+    private _clickListeners: Set<(e: any) => void> = new Set()
+
+    /** Whether {@link _onMapClick} is currently on the map. */
+    private _mapClickAttached = false
 
     /**
      * Stored initialization options
@@ -118,10 +138,12 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     private _basemapAccessToken: string | undefined
 
     /**
-     * Wrapped map listeners installed by onFeatureClick / onFeatureHover.
-     * Stored so replacing the handler (or destroying the adapter) cleanly
-     * detaches the prior listener — without this Leaflet's `.on()` would
-     * accumulate one extra click listener per call.
+     * The listeners onFeatureClick / onFeatureHover installed. The click one
+     * is called by {@link _onMapClick}, the hover ones sit on the map. Stored
+     * so replacing the handler (or destroying the adapter) cleanly detaches
+     * the prior listener — without this, each call to onFeatureHover would
+     * leave Leaflet with one more `mousemove`/`mouseout` listener than the
+     * last.
      */
     private _featureClickListener: ((e: any) => void) | null = null
     private _featureHoverMoveListener: ((e: any) => void) | null = null
@@ -130,6 +152,8 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     private _terraDraw: TerraDraw | null = null
     private _drawingShape: DrawShape | null = null
     private _terraDrawListeners: Array<() => void> = []
+    private _drawEndClick = new DrawEndClickGuard()
+    private _drawPointers = new DrawPointerWatch()
 
     /**
      * Initialize the Leaflet map instance
@@ -310,8 +334,10 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
 
         this._removeBasemapLayer()
 
-        this._eventHandlers.forEach((handler, eventName) => {
-            this._map.off(eventName, handler)
+        this._eventHandlers.forEach(({ eventName, wrapped }) => {
+            // Click subscribers never went on the map — they hang off
+            // {@link _onMapClick}, which _detachMapClickListener takes off.
+            if (eventName !== 'click') this._map.off(eventName, wrapped)
         })
         this._eventHandlers.clear()
 
@@ -324,6 +350,9 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         })
         this._overlays.clear()
 
+        this._drawEndClick.dispose()
+        this._drawPointers.stop()
+
         if (this._terraDraw) {
             this._terraDrawListeners.forEach((off) => { try { off() } catch { /* ignore */ } })
             this._terraDrawListeners = []
@@ -331,7 +360,9 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             this._terraDraw = null
         }
 
-        this._detachFeatureClickListener()
+        this._clickListeners.clear()
+        this._detachMapClickListener()
+        this._featureClickListener = null
         this._detachFeatureHoverListeners()
 
         this._layers.clear()
@@ -886,25 +917,70 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             handler(normalizedEvent)
         }
 
-        this._map.on(eventName, wrappedHandler)
+        // Clicks reach their subscribers through the adapter's own map
+        // listener, the one place a drawing session is checked for all of them
+        // (see {@link _onMapClick}). Every other event goes straight to
+        // Leaflet.
+        if (eventName === 'click') {
+            this._clickListeners.add(wrappedHandler)
+            this._attachMapClickListener()
+        } else {
+            this._map.on(eventName, wrappedHandler)
+        }
 
         const key = `${eventName}_${handler.toString()}`
-        this._eventHandlers.set(key, wrappedHandler)
+        this._eventHandlers.set(key, { eventName, wrapped: wrappedHandler })
+    }
+
+    /**
+     * Report a click Leaflet delivered, unless the drawing session owns it:
+     * the ones terra-draw is taking as vertices, and the ones that arrive once
+     * the session has ended (see {@link DrawEndClickGuard}). Nothing in
+     * Leaflet holds a vertex click back on its own — terra-draw's adapter
+     * never stops click propagation — so the session is checked here, at the
+     * single point every click the adapter reports passes through, as
+     * DeckGLAdapter's own click path does.
+     */
+    private _onMapClick = (e: any): void => {
+        if (this._drawingShape || this._drawEndClick.owns(e?.originalEvent)) return
+        this._featureClickListener?.(e)
+        this._clickListeners.forEach((listener) => listener(e))
+    }
+
+    /** Put {@link _onMapClick} on the map, once, for its first subscriber. */
+    private _attachMapClickListener(): void {
+        if (this._mapClickAttached || !this._map) return
+        this._map.on('click', this._onMapClick)
+        this._mapClickAttached = true
+    }
+
+    private _detachMapClickListener(): void {
+        if (!this._mapClickAttached) return
+        this._map?.off('click', this._onMapClick)
+        this._mapClickAttached = false
     }
 
     off(eventName: string, handler?: MapEventHandler<any>): void {
         if (!handler) {
-            this._map.off(eventName)
-            this._eventHandlers.forEach((wrappedHandler, key) => {
+            if (eventName === 'click') {
+                this._clickListeners.clear()
+            } else {
+                this._map.off(eventName)
+            }
+            for (const key of this._eventHandlers.keys()) {
                 if (key.startsWith(eventName + '_')) {
                     this._eventHandlers.delete(key)
                 }
-            })
+            }
         } else {
             const key = `${eventName}_${handler.toString()}`
-            const wrappedHandler = this._eventHandlers.get(key)
-            if (wrappedHandler) {
-                this._map.off(eventName, wrappedHandler)
+            const entry = this._eventHandlers.get(key)
+            if (entry) {
+                if (eventName === 'click') {
+                    this._clickListeners.delete(entry.wrapped)
+                } else {
+                    this._map.off(eventName, entry.wrapped)
+                }
                 this._eventHandlers.delete(key)
             }
         }
@@ -952,13 +1028,12 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
 
     /**
      * Register a handler called when the user clicks a rendered feature.
-     * Attaches a map-level click listener; on each click iterates registered
-     * vector layers to find the topmost feature under the cursor. Returns an
-     * unsubscribe function. Replace semantics: calling again with a new
-     * handler detaches the prior listener first.
+     * Hangs off the adapter's map click listener; on each click iterates
+     * registered vector layers to find the topmost feature under the cursor.
+     * Returns an unsubscribe function. Replace semantics: calling again
+     * replaces the handler.
      */
     onFeatureClick(handler: FeatureInteractionHandler): () => void {
-        this._detachFeatureClickListener()
         const listener = (e: any) => {
             const result = this._pickFeatureAtLatLng(e.latlng)
             handler({
@@ -971,19 +1046,12 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             })
         }
         this._featureClickListener = listener
-        this._map.on('click', listener)
+        this._attachMapClickListener()
         return () => {
             if (this._featureClickListener === listener) {
-                this._detachFeatureClickListener()
+                this._featureClickListener = null
             }
         }
-    }
-
-    private _detachFeatureClickListener(): void {
-        if (this._featureClickListener && this._map) {
-            this._map.off('click', this._featureClickListener)
-        }
-        this._featureClickListener = null
     }
 
     /**
@@ -1097,16 +1165,39 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     }
 
     enableDrawing(shape: DrawShape): void {
+        // A live session ends here whoever asked for the new shape, and a
+        // drawing ended before it finished is a cancel.
         if (this._drawingShape) {
             this.disableDrawing()
         }
 
         const td = this._ensureTerraDraw()
-        if (!td.enabled) td.start()
-        td.clear()
-        td.setMode(shape)
+        // Handed over before the mode starts, while double-click zoom is still
+        // the map's own: terra-draw disables it from here to the end of the
+        // session, and the guard is what gives it back.
+        this._drawEndClick.holdDoubleClickZoom(this._doubleClickZoom())
+        try {
+            if (!td.enabled) td.start()
+            td.clear()
+            td.setMode(shape)
+        } catch (err) {
+            // terra-draw throws on a shape it has no mode for, from a start
+            // that has already put its listeners back on the map routed to
+            // whichever mode it was last in. Stopping unregisters them, and a
+            // session that never began has no end to give double-click zoom
+            // back at.
+            try { td.stop() } catch { /* map already gone */ }
+            this._drawEndClick.dispose()
+            throw err
+        }
         this._drawingShape = shape
+        this._drawPointers.start(this._drawEventElement())
         this.emit('drawstart', { shape })
+    }
+
+    private _doubleClickZoom(): DoubleClickZoomHandler | undefined {
+        return (this._map as { doubleClickZoom?: DoubleClickZoomHandler })
+            ?.doubleClickZoom
     }
 
     /** The element terra-draw's Leaflet adapter attaches its listeners to. */
@@ -1116,10 +1207,9 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
 
     /**
      * Tear down the terra-draw session and clear in-progress geometry
-     * without emitting any lifecycle event. Used by both the user-facing
-     * cancel path ({@link disableDrawing}) and the internal finish path
-     * ({@link enableDrawing}'s `onFinish`) so the latter can emit
-     * `drawcomplete` instead of `drawcancel`.
+     * without emitting any lifecycle event. The caller decides what the end
+     * means: {@link disableDrawing} adds the `drawcancel`, and the finish in
+     * {@link _ensureTerraDraw} emits `drawcomplete` instead.
      */
     private _stopDrawing(): DrawShape | null {
         if (!this._drawingShape) return null
@@ -1129,6 +1219,15 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             try { this._terraDraw.clear() } catch { /* terra-draw mid-vertex */ }
             try { this._terraDraw.stop() } catch { /* idempotent */ }
         }
+        // The drawing's clicks reach Leaflet after this, on the native clicks
+        // that follow its pointerups; the watch is what knows whether one is
+        // still owed. Arming is also what puts double-click zoom back on the
+        // clock, so it happens on every end of a session.
+        this._drawEndClick.arm(
+            this._drawPointers.pendingClick,
+            this._drawEventElement()
+        )
+        this._drawPointers.stop()
         return shape
     }
 
@@ -1158,6 +1257,10 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
 
     isDrawing(): boolean {
         return this._drawingShape !== null
+    }
+
+    ownsDrawEndClick(source: unknown): boolean {
+        return this._drawEndClick.owns(source)
     }
 
     /**
