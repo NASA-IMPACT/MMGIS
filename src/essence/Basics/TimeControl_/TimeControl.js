@@ -6,6 +6,7 @@ import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
 import Map_ from '../Map_/Map_'
 import { parseTimeWithOffset, parseTimeToSeconds } from './timeUtils'
+import { evaluateLayerDataCoverage } from './layerDataCoverage'
 import { formatLayerTime, buildTileUrlOptions } from '../Layers_/tileUrlUtils'
 import { resolveTileLayerSource } from '../Layers_/tileLayerSource'
 import { isRasterTileLayerType } from '../MapEngines/types/engine'
@@ -402,10 +403,35 @@ var TimeControl = {
         // be. Stamped unconditionally, a layer that is off — which the gates
         // below skip — would go on looking current however far the time bar
         // moved, and nothing could tell it had fallen behind.
-        const willRefresh =
-            (evenIfControlled === true || layer.controlled !== true) &&
-            (L_.layers.on[layer.name] || evenIfOff)
+        const mayTouch = evenIfControlled === true || layer.controlled !== true
+        const willRefresh = mayTouch && (L_.layers.on[layer.name] || evenIfOff)
         if (willRefresh) layer.time.current = TimeControl.currentTime
+
+        // Whether the layer holds data in the window it is about to request,
+        // decided before any URL work so an out-of-coverage layer makes no
+        // urlReplacement call and no tile request. A caller that may not
+        // touch the layer only records the verdict.
+        //
+        // Engine visibility is written only on a transition: on deck.gl every
+        // visibility write re-syncs every held layer, and this runs for every
+        // time-enabled layer on every time step.
+        let restoreAfterRefresh = false
+        if (mayTouch) {
+            const wasHidden = L_.layers.coverageHidden[layer.name] === true
+            if (!L_.assessLayerDataCoverage(layer, evenIfControlled)) {
+                if (!wasHidden && Map_.engine)
+                    Map_.engine.setLayerVisibility(layer.name, false)
+                return true
+            }
+            // Restored after the refresh below, never before: a layer added
+            // back holding the URL it was hidden with would fetch a round of
+            // stale tiles first.
+            restoreAfterRefresh = wasHidden && L_.layers.on[layer.name] === true
+        } else {
+            const record = evaluateLayerDataCoverage(layer)
+            L_.setLayerDataCoverage(layer.name, record)
+            if (record.outOfDataRange) return true
+        }
 
         // The config URL is the template — `{starttime}`, `{endtime}` and a
         // urlReplacement's `{key}` all live in it. The branches below
@@ -555,7 +581,7 @@ var TimeControl = {
                 if (evenIfControlled === true || layer.controlled !== true)
                     if (L_.layers.on[layer.name] || evenIfOff) {
                         try {
-                            return await Map_.refreshLayer(
+                            await Map_.refreshLayer(
                                 layer,
                                 () => {
                                     // if requery was force, remember to timeFilter after load
@@ -595,6 +621,14 @@ var TimeControl = {
         }
         // put the template back
         layer.url = originalUrl
+        // Time steps overlap when the timeline is scrubbed, and a later one
+        // may have hidden the layer again while this one was refreshing.
+        if (
+            restoreAfterRefresh &&
+            Map_.engine &&
+            L_.layers.coverageHidden[layer.name] !== true
+        )
+            Map_.engine.setLayerVisibility(layer.name, true)
         return true
     },
     performTimeUrlReplacements: async function (

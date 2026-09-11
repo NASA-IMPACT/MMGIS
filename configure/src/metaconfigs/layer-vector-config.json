@@ -508,14 +508,14 @@
             {
               "field": "time.dataStartTime",
               "name": "Data Start Time",
-              "description": "The earliest time for which data is available in this layer. This is for display purposes only and does not constrain queries. Use an ISO 8601 datetime (e.g., 2020-01-01T00:00:00Z), or now to follow the current date, optionally offset by an ISO 8601 duration (e.g., now - P1D). An unreadable value is ignored.",
+              "description": "The earliest time this layer has data for. The layer is not requested while the timeline's window lies entirely before it. Use an ISO 8601 datetime (e.g., 2020-01-01T00:00:00Z); a partial date starts at the beginning of what it names, so 2020-03 starts on 1 March. Or use now to follow the current date, optionally offset by an ISO 8601 duration (e.g., now - P1D). Leave empty to leave the start unconstrained. An unreadable value is ignored.",
               "type": "text",
               "width": 4
             },
             {
               "field": "time.dataEndTime",
               "name": "Data End Time",
-              "description": "The latest time for which data is available in this layer. This is for display purposes only and does not constrain queries. Use an ISO 8601 datetime (e.g., 2025-12-31T23:59:59Z), or now for a collection that is still growing, so the layer stays current without edits, optionally offset by an ISO 8601 duration (e.g., now + P5D). An unreadable value is ignored.",
+              "description": "The latest time this layer has data for. The layer is not requested while the timeline's window lies entirely after it. Use an ISO 8601 datetime (e.g., 2025-12-31T23:59:59Z); a partial date runs to the end of what it names, so 2020-03 runs to the end of March. Or use now for a collection that is still growing, so the layer stays current without edits, optionally offset by an ISO 8601 duration (e.g., now + P5D). Leave empty to leave the end unconstrained. An unreadable value is ignored.",
               "type": "text",
               "width": 4
             },
@@ -529,7 +529,7 @@
             {
               "field": "time.dataDates",
               "name": "Data Dates",
-              "description": "Optional. For layers with data on only a scattered handful of days rather than continuously across the extent above. A comma-separated list of the days data is available on, in UTC. Format: YYYY-MM-DD (e.g., 2020-03-04, 2020-07-19). The timeline draws one box per listed day instead of a single bar spanning the extent. Leave empty for a layer with continuous coverage. Day granularity only; times of day are ignored.",
+              "description": "Optional. For layers with data at only a scattered set of times rather than continuously across the extent above. A comma-separated list of when data is available, in UTC, each written only as precisely as the data is: a year (2020), a month (2020-03), a day (2020-03-04) or an hour (2020-03-04T14). Each entry covers the whole of what it names, and anything more precise than an hour, such as 2020-03-04T14:30, covers its hour. The layer is requested only while the timeline's window touches one of these entries. Format: ISO 8601. Leave empty for a layer with continuous coverage.",
               "type": "textarray",
               "width": 12
             }

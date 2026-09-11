@@ -29,13 +29,24 @@ vi.mock('../../src/essence/Basics/Layers_/Layers_', () => ({
         missionPath: '',
         configData: {},
         FUTURES: {},
-        layers: { data: {}, layer: {}, on: {}, opacity: {}, filters: {} },
+        layers: {
+            data: {},
+            layer: {},
+            on: {},
+            opacity: {},
+            filters: {},
+            dataCoverage: {},
+            coverageHidden: {},
+        },
         asLayerUUID: (name) => name,
         // Mirrors the real getUrl's COG: prefix stripping (the resolved
         // file URL a deckRaster layer reads directly).
         getUrl: (type, url) => (url.startsWith('COG:') ? url.slice(4) : url),
         transformStacUrl: (url) => url,
         timeFilterVectorLayer: vi.fn(),
+        setLayerDataCoverage: vi.fn(),
+        // Every layer here declares no coverage, so the gate lets it show.
+        assessLayerDataCoverage: () => true,
     },
 }))
 
