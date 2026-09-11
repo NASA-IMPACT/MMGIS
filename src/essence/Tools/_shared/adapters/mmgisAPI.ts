@@ -154,6 +154,8 @@ export const mmgisGetListedLayers = (): Promise<Record<
 export type CogCapabilities = {
     hasColormap: boolean
     canChangeColormap: boolean
+    /** Whether the client-side renderer paints the layer. */
+    deckRaster?: boolean
 }
 
 /**

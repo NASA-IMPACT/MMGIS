@@ -87,3 +87,47 @@ describe('useAvailableColormaps', () => {
         await unmount()
     })
 })
+
+/**
+ * A layer's ramps come from whatever paints it: a supplied table is the whole
+ * list, since a service's ramps are its own and may differ from these.
+ */
+describe('useAvailableColormaps with a local ramp table', () => {
+    const LOCAL = ['inferno', 'viridis']
+
+    test('offers exactly the local ramps, without asking a service', async () => {
+        global.fetch = vi.fn() as never
+        const { result, unmount } = await mountHook(() =>
+            useAvailableColormaps(BASE, LOCAL),
+        )
+
+        expect(global.fetch).not.toHaveBeenCalled()
+        expect(result.current.colormaps).toEqual(['inferno', 'viridis'])
+        expect(result.current.loading).toBe(false)
+        await unmount()
+    })
+
+    // No table means the service paints this layer, so its ramp definitions
+    // are the ones a swatch has to stand for.
+    test('lists only the service ramps when no local table is supplied', async () => {
+        global.fetch = vi.fn(async () => okResponse(NAMES)) as never
+        const { result, unmount } = await mountHook(() =>
+            useAvailableColormaps(BASE, null),
+        )
+
+        expect(global.fetch).toHaveBeenCalledWith(`${BASE}/colorMaps`)
+        expect(result.current.colormaps).toEqual(['accent', 'viridis', 'viridis_r'])
+        await unmount()
+    })
+
+    test('reports unavailable when a server-rendered layer has no service', async () => {
+        global.fetch = vi.fn() as never
+        const { result, unmount } = await mountHook(() =>
+            useAvailableColormaps(null, null),
+        )
+
+        expect(global.fetch).not.toHaveBeenCalled()
+        expect(result.current.colormaps).toBeNull()
+        await unmount()
+    })
+})
