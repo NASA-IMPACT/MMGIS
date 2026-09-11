@@ -335,7 +335,7 @@ describe('turning on a layer with no data in the window', () => {
 
     test('shows it once the window reaches its data', async () => {
         L_.layers.data[FLOOD_DAYS.name].time.start = '2020-03-04T14:00:00Z'
-        L_.layers.data[FLOOD_DAYS.name].time.end = '2020-03-04T15:00:00Z'
+        L_.layers.data[FLOOD_DAYS.name].time.end = '2020-03-04T14:30:00Z'
 
         await L_.toggleLayerHelper(L_.layers.data[FLOOD_DAYS.name], false)
 

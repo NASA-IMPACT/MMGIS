@@ -184,16 +184,20 @@ export function parseRequestedWindow(time) {
     return { start, end }
 }
 
-/** Whether any span touches the window. Inclusive at both edges. */
-function spansOverlapWindow(spans, window) {
-    return spans.some(
-        (span) => span.start <= window.end && span.end >= window.start
-    )
+/** Whether any span holds the instant. Inclusive at both edges. */
+function spansContain(spans, instant) {
+    return spans.some((span) => span.start <= instant && instant <= span.end)
 }
 
 /**
  * The full coverage record for a layer: what it declares, what it would
  * request, and the verdict.
+ *
+ * The verdict tests the current time — the requested window's end — and
+ * nothing else: a layer has data only where its listed times, or failing
+ * those its extent, cover that instant. However much coverage the rest of
+ * the window holds, a layer is out of range at an instant it has nothing
+ * for, so the gate agrees with where the timeline draws the layer's data.
  *
  * `outOfDataRange` is false whenever the question cannot be answered — no
  * coverage declared, no readable window, no `time` at all. The gate may
@@ -207,7 +211,7 @@ export function evaluateLayerDataCoverage(layer) {
     const outOfDataRange =
         coverage != null &&
         requestedWindow != null &&
-        !spansOverlapWindow(coverage.spans, requestedWindow)
+        !spansContain(coverage.spans, requestedWindow.end)
 
     return {
         outOfDataRange,
