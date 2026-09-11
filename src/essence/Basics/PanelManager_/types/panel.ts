@@ -9,15 +9,6 @@ import {
 } from './layout';
 
 /**
- * Panel size configuration.
- * Can be fixed pixels, full viewport, content-based, or constrained.
- */
-export type PanelSize =
-    | number                                    // Fixed pixels (e.g., 300)
-    | 'content'                                 // Size based on content (grows to fit)
-    | { min?: number; max?: number };           // Content-based with constraints
-
-/**
  * Panel layout priority for viewport space allocation.
  * Lower numbers = higher priority (claim space first).
  *
@@ -50,32 +41,30 @@ export interface PanelStateConstraints {
  */
 export interface PanelDimensions {
     /**
-     * Size of the icon bar when in iconified state (pixels).
-     * Always a fixed number.
-     * - For left/right panels: width of vertical icon bar
-     * - For top/bottom panels: height of horizontal icon bar
+     * Size of the icon bar in the iconified and focused states, padding included:
+     * width for a left/right panel, height for a top/bottom one. A number, or a
+     * numeric string, is pixels; a string with a unit is that CSS length. The icon
+     * buttons divide up this measure, so a smaller bar carries smaller icons.
+     * Omitted, the bar takes the size its stylesheet sets.
      */
-    iconifiedSize?: number;
+    iconifiedSize?: number | string;
 
     /**
-     * Size when a single tool is opened from iconified state (focused state).
+     * Expanded-state size: height for top/bottom panels, width for left/right.
+     * A number, or a numeric string, is pixels; a string with a unit is that CSS
+     * length (e.g. "320px", "40vh"). The panel is exactly this size and its content
+     * scrolls inside. Omitted or empty, the panel sizes to its content. A drag
+     * overrides it with a pixel currentSize.
      */
-    focusedHeight?: PanelSize;
-    focusedWidth?: PanelSize;
+    expandedSize?: number | string;
 
     /**
-     * Size when all tools are visible (expanded state).
-     * - For top/bottom: this is the height
-     * - For left/right: this is the width
-     */
-    expandedSize?: PanelSize;
-
-    /**
-     * CSS sizing for floating panels — applied directly as CSS properties on the panel element.
-     * Numbers are treated as px; strings are passed through as-is (e.g. "50%", "40vh", "300px").
+     * CSS sizing for floating panels, applied as properties on the panel element.
+     * A number, or a numeric string, is pixels; a string with a unit is that CSS
+     * length (e.g. "50%", "40vh").
      *
-     * Distinct from PanelCapabilities.minSize/maxSize, which constrain drag-resize handles
-     * (single-axis, pixels only). These apply to both axes and support all CSS units.
+     * These cover both axes and take any CSS unit, unlike
+     * PanelCapabilities.minSize/maxSize, which bound a drag on one axis in pixels.
      */
     defaultWidth?: number | string;
     defaultHeight?: number | string;
@@ -111,14 +100,15 @@ export interface PanelCapabilities {
     resizable?: boolean;
 
     /**
-     * Minimum size constraint for user resizing (pixels).
+     * Minimum size constraint for drag-resizing (pixels).
      * Only relevant if resizable = true.
      */
     minSize?: number;
 
     /**
-     * Maximum size constraint for user resizing (pixels).
-     * Only relevant if resizable = true.
+     * Maximum size constraint (pixels). Caps a drag, caps a content-sized panel
+     * so its overflow scrolls rather than growing the panel, and bounds an
+     * expandedSize larger than itself.
      */
     maxSize?: number;
 }
