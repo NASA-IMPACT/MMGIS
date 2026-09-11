@@ -382,8 +382,31 @@ describe('parseRequestedWindow', () => {
 
 const hasData = (layer) => !evaluateLayerDataCoverage(layer).outOfDataRange
 
+// The verdict tests the current time, which is the requested window's end.
+// Where the window starts plays no part.
 describe('evaluateLayerDataCoverage verdict', () => {
-    test('is false for a window lying between two listed hours', () => {
+    test('is false when the window overlaps a listed entry but ends past it', () => {
+        expect(
+            hasData(
+                sparseLayer('2020-01-01T00:00:00Z', '2020-05-01T00:00:00Z')
+            )
+        ).toBe(false)
+    })
+
+    test('is true when the window ends inside a listed entry, whatever its start', () => {
+        expect(
+            hasData(
+                sparseLayer('2012-01-19T00:00:00Z', '2020-03-04T14:20:00Z')
+            )
+        ).toBe(true)
+        expect(
+            hasData(
+                sparseLayer('2020-03-04T14:10:00Z', '2020-03-04T14:20:00Z')
+            )
+        ).toBe(true)
+    })
+
+    test('is false for a window ending between two listed entries', () => {
         expect(
             hasData(
                 sparseLayer('2020-04-01T00:00:00Z', '2020-05-01T00:00:00Z')
@@ -393,71 +416,124 @@ describe('evaluateLayerDataCoverage verdict', () => {
 
     // The whole hour counts, not only the listed minute: an hour is the
     // finest step the timeline takes.
-    test('is true for a window inside a listed hour but short of its time', () => {
-        expect(
-            hasData(
-                sparseLayer('2020-03-04T14:10:00Z', '2020-03-04T14:20:00Z')
-            )
-        ).toBe(true)
+    test('counts the whole of a listed hour, both edges included', () => {
+        const at = (end) => hasData(sparseLayer('2020-03-04T13:00:00Z', end))
+        expect(at('2020-03-04T14:00:00.000Z')).toBe(true)
+        expect(at('2020-03-04T14:59:59.999Z')).toBe(true)
+        expect(at('2020-03-04T15:00:00.000Z')).toBe(false)
     })
 
-    test('is false for a window starting just past a listed hour', () => {
-        expect(
-            hasData(
-                sparseLayer('2020-03-04T15:00:00Z', '2020-03-04T16:00:00Z')
-            )
-        ).toBe(false)
+    test('counts the whole of a listed day and nothing after it', () => {
+        const layer = (end) => ({
+            name: 'DIST-S1',
+            time: {
+                enabled: true,
+                dataDates: ['2025-01-09'],
+                start: '2025-01-09T00:00:00Z',
+                end,
+            },
+        })
+        expect(hasData(layer('2025-01-09T00:00:00Z'))).toBe(true)
+        expect(hasData(layer('2025-01-09T23:59:59Z'))).toBe(true)
+        expect(hasData(layer('2025-01-10T00:00:00Z'))).toBe(false)
     })
 
-    test('counts a window ending exactly on a span start as overlapping', () => {
-        expect(
-            hasData(
-                sparseLayer('2020-03-04T13:00:00Z', '2020-03-04T14:00:00.000Z')
-            )
-        ).toBe(true)
-    })
-
-    test('counts a window starting exactly on a span end as overlapping', () => {
-        expect(
-            hasData(
-                sparseLayer('2020-03-04T14:59:59.999Z', '2020-03-04T16:00:00Z')
-            )
-        ).toBe(true)
-    })
-
-    test('is false outside a continuous extent and true inside it', () => {
+    test('reads listed times over the extent', () => {
         const layer = {
+            name: 'Listed within an extent',
+            time: {
+                enabled: true,
+                dataStartTime: '2020-01-01T00:00:00Z',
+                dataEndTime: '2020-12-31T23:59:59Z',
+                dataDates: ['2020-03-04'],
+                start: '2020-01-01T00:00:00Z',
+                end: '2020-06-01T00:00:00Z',
+            },
+        }
+        expect(hasData(layer)).toBe(false)
+    })
+
+    test('is true inside a continuous extent and false either side of it', () => {
+        const layer = (start, end) => ({
             name: 'NO2',
             time: {
                 enabled: true,
                 dataStartTime: '2020-01-01T00:00:00Z',
                 dataEndTime: '2020-03-01T00:00:00Z',
-                start: '2020-05-01T00:00:00Z',
-                end: '2020-05-04T00:00:00Z',
+                start,
+                end,
             },
-        }
-        expect(hasData(layer)).toBe(false)
+        })
+        expect(
+            hasData(layer('2019-12-01T00:00:00Z', '2019-12-31T23:59:59Z'))
+        ).toBe(false)
+        expect(
+            hasData(layer('2020-02-01T00:00:00Z', '2020-02-04T00:00:00Z'))
+        ).toBe(true)
+        expect(
+            hasData(layer('2020-02-01T00:00:00Z', '2020-05-04T00:00:00Z'))
+        ).toBe(false)
+    })
 
-        layer.time.start = '2020-02-01T00:00:00Z'
-        layer.time.end = '2020-02-04T00:00:00Z'
-        expect(hasData(layer)).toBe(true)
+    // A startup window running from 2012 to 2026 overlaps almost any extent;
+    // what counts is that 2026-08-12 lies outside this one.
+    test('is false when a wide window spans the extent but ends past it', () => {
+        expect(
+            hasData({
+                name: 'Sentinel-1',
+                time: {
+                    enabled: true,
+                    dataStartTime: '2025-01-09T00:00:00Z',
+                    dataEndTime: '2025-01-21T23:59:59Z',
+                    start: '2012-01-19T00:00:00Z',
+                    end: '2026-08-12T00:00:00Z',
+                },
+            })
+        ).toBe(false)
     })
 
     test('is gated before a lone start bound and unconstrained after it', () => {
-        const layer = {
+        const layer = (end) => ({
             name: 'Ongoing',
             time: {
                 enabled: true,
                 dataStartTime: '2020-01-01T00:00:00Z',
-                start: '2019-05-01T00:00:00Z',
-                end: '2019-05-04T00:00:00Z',
+                start: '2010-01-01T00:00:00Z',
+                end,
             },
-        }
-        expect(hasData(layer)).toBe(false)
+        })
+        expect(hasData(layer('2019-05-04T00:00:00Z'))).toBe(false)
+        expect(hasData(layer('2030-05-04T00:00:00Z'))).toBe(true)
+    })
 
-        layer.time.start = '2030-05-01T00:00:00Z'
-        layer.time.end = '2030-05-04T00:00:00Z'
-        expect(hasData(layer)).toBe(true)
+    test('is unconstrained before a lone end bound and gated after it', () => {
+        const layer = (end) => ({
+            name: 'Retired',
+            time: {
+                enabled: true,
+                dataEndTime: '2020-01-01T00:00:00Z',
+                start: '2010-01-01T00:00:00Z',
+                end,
+            },
+        })
+        expect(hasData(layer('2015-05-04T00:00:00Z'))).toBe(true)
+        expect(hasData(layer('2020-05-04T00:00:00Z'))).toBe(false)
+    })
+
+    test('follows an end bound of now', () => {
+        const day = 24 * 60 * 60 * 1000
+        const layer = (end) => ({
+            name: 'Growing',
+            time: {
+                enabled: true,
+                dataStartTime: '2020-01-01T00:00:00Z',
+                dataEndTime: 'now',
+                start: '2010-01-01T00:00:00Z',
+                end: new Date(end).toISOString(),
+            },
+        })
+        expect(hasData(layer(Date.now() - day))).toBe(true)
+        expect(hasData(layer(Date.now() + day))).toBe(false)
     })
 
     // The gate may only suppress on positive evidence of absence.
@@ -478,6 +554,9 @@ describe('evaluateLayerDataCoverage verdict', () => {
         ).toBe(true)
         expect(
             hasData(sparseLayer('garbage', '2020-05-01T00:00:00Z'))
+        ).toBe(true)
+        expect(
+            hasData(sparseLayer('2020-01-01T00:00:00Z', 'garbage'))
         ).toBe(true)
     })
 })

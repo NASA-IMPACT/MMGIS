@@ -287,8 +287,8 @@ const L_ = {
         // engine's request hooks. Written only via L_.setLayerLoadStatus.
         loadStatus: {},
         // Name -> LayerDataCoverage: whether the layer's requests are being
-        // suppressed for lack of data in the window it would request, and
-        // the declared coverage that decided it. Written only via
+        // suppressed for lack of data at the current time, and the declared
+        // coverage that decided it. Written only via
         // L_.setLayerDataCoverage.
         dataCoverage: {},
         // Name -> true while the gate holds a layer off the map. Says what
@@ -577,8 +577,8 @@ const L_ = {
                         : L_.layers.loadStatus
                 ),
                 // Whether each layer's requests are being suppressed for
-                // lack of data in the window it would request, with the
-                // coverage that decided it. Called with a layer identifier
+                // lack of data at the current time, with the coverage that
+                // decided it. Called with a layer identifier
                 // it answers for that one layer, resolving a name the way
                 // every other layer-keyed provider does; called with none it
                 // returns the whole map, keyed by UUID. Live updates
@@ -2355,9 +2355,9 @@ const L_ = {
                 ...record,
             })
     },
-    // Evaluates a layer against the window it would request, records the
-    // result, and answers whether the layer may show. Asked only where the
-    // engine is then told the answer, so coverageHidden tracks the engine.
+    // Evaluates a layer at the current time, records the result, and answers
+    // whether the layer may show. Asked only where the engine is then told
+    // the answer, so coverageHidden tracks the engine.
     assessLayerDataCoverage: function (layer, evenIfControlled) {
         const record = evaluateLayerDataCoverage(layer)
         L_.setLayerDataCoverage(layer.name, record)
