@@ -178,4 +178,88 @@ router.get("/collections/:collection/export", async function (req, res, next) {
   }
 });
 
+// VEDA STAC source (#333): the layer editor's two-step flow against an
+// external VEDA/eoAPI catalog. /vedastac/inspect returns the facts a human
+// decides from (renders, temporal coverage, preselections); /vedastac/fill
+// maps their choices to TileLayer fields. Mapping and fetch logic live in
+// scripts/lib/vedaStacLayer.js + vedaStacFetch.js (pure + injectable,
+// unit-tested there). Server-side so Configure needs no CORS against the
+// catalog.
+const {
+  inspectCollection,
+  generateLayer,
+} = require("../../../../scripts/lib/vedaStacFetch");
+
+const vedaStacBadRequest = (res, message) =>
+  res.status(400).send({ status: "failure", message });
+
+router.post("/vedastac/inspect", async function (req, res) {
+  const { collectionId, stacUrl } = req.body || {};
+  if (
+    typeof collectionId !== "string" ||
+    collectionId === "" ||
+    typeof stacUrl !== "string" ||
+    !/^https?:\/\//.test(stacUrl)
+  ) {
+    vedaStacBadRequest(
+      res,
+      "collectionId and stacUrl (absolute http(s) URL) are required"
+    );
+    return;
+  }
+  try {
+    const facts = await inspectCollection(collectionId, {
+      stac: stacUrl,
+      fetchImpl: fetch,
+    });
+    res.send({ status: "success", facts });
+  } catch (error) {
+    logger("error", "VEDA STAC inspect failed", req.originalUrl, req, error);
+    res.status(500).send({
+      status: "failure",
+      message: error.message || "VEDA STAC inspect failed",
+    });
+  }
+});
+
+router.post("/vedastac/fill", async function (req, res) {
+  const { collectionId, stacUrl, rasterUrl, render, timeMode } =
+    req.body || {};
+  if (
+    typeof collectionId !== "string" ||
+    collectionId === "" ||
+    typeof stacUrl !== "string" ||
+    !/^https?:\/\//.test(stacUrl) ||
+    typeof rasterUrl !== "string" ||
+    !/^https?:\/\//.test(rasterUrl)
+  ) {
+    vedaStacBadRequest(
+      res,
+      "collectionId, stacUrl and rasterUrl (absolute http(s) URLs) are required"
+    );
+    return;
+  }
+  const warnings = [];
+  try {
+    const layer = await generateLayer(
+      collectionId,
+      {
+        stac: stacUrl,
+        raster: rasterUrl,
+        render: typeof render === "string" && render !== "" ? render : undefined,
+        timeMode: ["time", "static"].includes(timeMode) ? timeMode : "auto",
+        fetchImpl: fetch,
+      },
+      (msg) => warnings.push(msg)
+    );
+    res.send({ status: "success", layer, warnings });
+  } catch (error) {
+    logger("error", "VEDA STAC fill failed", req.originalUrl, req, error);
+    res.status(500).send({
+      status: "failure",
+      message: error.message || "VEDA STAC fill failed",
+    });
+  }
+});
+
 module.exports = router;
