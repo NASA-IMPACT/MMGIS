@@ -141,6 +141,18 @@ export const mmgisGetListedLayers = (): Promise<Record<
     return mmgisRequestIfProvided<Record<string, boolean>>('layers:getListed')
 }
 
+/** Draw order as layer UUIDs, top first; headers excluded. */
+export const mmgisGetLayerOrder = (): Promise<string[] | null> => {
+    return mmgisRequestIfProvided<string[]>('layers:getOrder')
+}
+
+/** Replaces the draw order. Must hold the same layers as
+ *  mmgisGetLayerOrder, in any order; core refuses anything else with false.
+ *  Core broadcasts 'layers:orderChanged' once applied. */
+export const mmgisSetLayerOrder = (order: string[]): Promise<boolean | null> => {
+    return mmgisRequestIfProvided<boolean>('layers:setOrder', { order })
+}
+
 /**
  * What a layer's COG colormap supports: `hasColormap` for whether there is a
  * ramp to draw a legend from, `canChangeColormap` for whether that ramp can be

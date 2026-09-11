@@ -2,10 +2,12 @@ import {
     mmgisRequest,
     mmgisGetCogCapabilities,
     mmgisGetListedLayers,
+    mmgisGetLayerOrder,
     mmgisGetTiTilerUrls,
     type CogCapabilities,
 } from '../../_shared/adapters/mmgisAPI'
 import { buildLayerLegendData } from './buildLayerLegendData'
+import { sortByOrder } from '../lib/utils/layerOrder'
 import type { Layer } from '../lib/types'
 
 export type FetchOptions = { showOnlyVisible?: boolean }
@@ -16,12 +18,13 @@ export const getVisibleLayersWithLegends = async ({
     const layerConfigs = await mmgisRequest<Record<string, Record<string, unknown>>>('layers:getAllConfigs')
     if (!layerConfigs) return []
 
-    const [visibleLayers, opacities, listed, cogCapabilities, titilerUrls] = await Promise.all([
+    const [visibleLayers, opacities, listed, cogCapabilities, titilerUrls, order] = await Promise.all([
         mmgisRequest<Record<string, boolean>>('layers:getVisible'),
         mmgisRequest<Record<string, number>>('layers:getAllOpacities'),
         mmgisGetListedLayers(),
         mmgisGetCogCapabilities(),
         mmgisGetTiTilerUrls(),
+        mmgisGetLayerOrder(),
     ])
 
     const result: Layer[] = []
@@ -43,5 +46,6 @@ export const getVisibleLayersWithLegends = async ({
             ),
         )
     }
-    return result
+    // Config order until core can say otherwise.
+    return sortByOrder(result, order)
 }

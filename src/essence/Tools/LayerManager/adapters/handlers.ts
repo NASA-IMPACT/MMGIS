@@ -5,11 +5,15 @@ import {
     mmgisGetLayerCogCapabilities,
     mmgisGetLayerBounds,
     mmgisFitBounds,
+    mmgisGetLayerOrder,
+    mmgisSetLayerOrder,
 } from '../../_shared/adapters/mmgisAPI'
 import {
     ZOOM_TO_LAYER_PADDING,
     ZOOM_TO_LAYER_POINT_MAX_ZOOM,
 } from '../lib/utils/constants'
+import { moveInOrder } from '../lib/utils/layerOrder'
+import type { LayerMoveAction } from '../lib/types'
 
 type Refresh = () => Promise<void> | void
 
@@ -64,6 +68,26 @@ export const zoomToLayer = async (layerId: string): Promise<void> => {
         padding: ZOOM_TO_LAYER_PADDING,
         ...(enclosesNoArea ? { maxZoom: ZOOM_TO_LAYER_POINT_MAX_ZOOM } : {}),
     })
+}
+
+/**
+ * Moves a layer in the draw order, one step past its neighbour in the list
+ * the user sees or all the way to an end. Core broadcasts the new order,
+ * which is what re-sorts the list; nothing to emit here.
+ */
+export const moveLayer = async (
+    layerId: string,
+    action: LayerMoveAction,
+    shownIds: string[],
+): Promise<void> => {
+    const order = await mmgisGetLayerOrder()
+    if (order === null) return
+    const next = moveInOrder(order, shownIds, layerId, action)
+    if (next === null) return
+    const accepted = await mmgisSetLayerOrder(next)
+    if (accepted === false) {
+        console.warn(`LayerManager: core refused the new order for '${layerId}'`)
+    }
 }
 
 /**

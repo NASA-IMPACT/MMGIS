@@ -11,7 +11,7 @@ export { ColorRampPicker, type ColorRampPickerProps } from './geo/ColorRampPicke
 export { PopoverMenu, type PopoverMenuProps, type PopoverMenuItem } from './geo/PopoverMenu'
 export { FloatingPopover, type FloatingPopoverProps } from './FloatingPopover'
 
-export type { Layer, LegendType, CategoricalStop, CogData } from './types'
+export type { Layer, LegendType, CategoricalStop, CogData, LayerMoveAction } from './types'
 
 // Side-effect import of the component stylesheet.
 import './styles/index.scss'

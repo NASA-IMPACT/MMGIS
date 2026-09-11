@@ -1,5 +1,8 @@
 export type LegendType = 'gradient' | 'categorical' | 'text' | 'none'
 
+/** A step in the list: one slot, or all the way. */
+export type LayerMoveAction = 'up' | 'down' | 'top' | 'bottom'
+
 export type CategoricalStop = { color: string; label: string }
 
 export type CogData = {
