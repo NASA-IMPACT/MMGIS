@@ -1,4 +1,5 @@
 import moment from 'moment'
+import { resolveTimePolicy } from './layerTimePolicy'
 
 /**
  * A layer's declared data coverage, read from its `time` config.
@@ -73,16 +74,27 @@ function resolveListedEntries(dataDates) {
     )
 }
 
+// A `now` bound, bare or offset by a duration (`now - P1D`), names a moving
+// instant rather than a fixed one.
+const isMovingBound = (raw) =>
+    typeof raw === 'string' && raw.trim().startsWith('now')
+
 /**
- * One bound of an extent. Absent or unreadable is open. An ISO 8601 bound
- * covers its whole unit, so a start opens at the beginning of what it names
- * and an end closes at the close of it: an end of 2020-03 runs to the last
- * instant of March. Anything else is read leniently as the exact instant it
- * names, because configs carry these bounds in looser formats too.
+ * One bound of an extent. Absent or unreadable is open. A `now` bound is
+ * resolved by the core's time-policy reader, so it accepts the same
+ * `now ± <ISO 8601 duration>` forms every other reader of these fields does.
+ * An ISO 8601 bound covers its whole unit, so a start opens at the beginning
+ * of what it names and an end closes at the close of it: an end of 2020-03
+ * runs to the last instant of March. Anything else is read leniently as the
+ * exact instant it names, because configs carry these bounds in looser
+ * formats too.
  */
 function resolveBound(raw, open, edge) {
     if (raw == null || raw === '') return open
-    if (raw === 'now') return Date.now()
+    if (isMovingBound(raw)) {
+        const iso = resolveTimePolicy(raw, { now: new Date(Date.now()) })
+        return iso == null ? open : new Date(iso).getTime()
+    }
     const entry = readEntry(raw)
     if (entry) return edge === 'start' ? entry.start : entry.end
     const parsed = new Date(raw).getTime()
@@ -119,7 +131,7 @@ export function resolveDataCoverage(time) {
     const coverage = readDataCoverage(time)
     const moving =
         coverage?.kind !== 'sparse' &&
-        (dataStartTime === 'now' || dataEndTime === 'now')
+        (isMovingBound(dataStartTime) || isMovingBound(dataEndTime))
     if (!moving)
         resolved.set(time, { dataDates, dataStartTime, dataEndTime, coverage })
     return coverage

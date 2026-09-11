@@ -223,6 +223,20 @@ describe('resolveDataCoverage over an extent', () => {
         )
     })
 
+    test("offsets a 'now' bound by an ISO 8601 duration", () => {
+        vi.spyOn(Date, 'now').mockReturnValue(ms('2026-06-01T12:00:00Z'))
+
+        expect(extent('now - P1D', 'now + P5D').spans).toEqual([
+            { start: ms('2026-05-31T12:00:00Z'), end: ms('2026-06-06T12:00:00Z') },
+        ])
+    })
+
+    test("leaves a 'now' bound with an unreadable offset open", () => {
+        vi.spyOn(Date, 'now').mockReturnValue(ms('2026-06-01T12:00:00Z'))
+
+        expect(extent('2020-01-01', 'now + 5 days').spans[0].end).toBe(Infinity)
+    })
+
     test('treats an inverted extent as no coverage and warns', () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
@@ -289,6 +303,18 @@ describe('resolveDataCoverage caching', () => {
 
         expect(resolveDataCoverage(time).spans[0].end).toBe(
             ms('2026-06-01T13:00:00Z')
+        )
+    })
+
+    test("resolves an offset 'now' bound afresh on every call", () => {
+        const now = vi.spyOn(Date, 'now').mockReturnValue(ms('2026-06-01T12:00:00Z'))
+        const time = { enabled: true, dataStartTime: 'now - P7D' }
+        resolveDataCoverage(time)
+
+        now.mockReturnValue(ms('2026-06-02T12:00:00Z'))
+
+        expect(resolveDataCoverage(time).spans[0].start).toBe(
+            ms('2026-05-26T12:00:00Z')
         )
     })
 })
