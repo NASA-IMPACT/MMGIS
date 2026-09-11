@@ -252,6 +252,31 @@ describe('the no-data warning on a layer row', () => {
         await unmount()
     })
 
+    // A layer that is switched off draws nothing whether or not it has data,
+    // so there is nothing to explain until it is on.
+    test('appears only while its layer is switched on', async () => {
+        const { container, unmount } = await mount(
+            <LayerManagerPanel
+                layers={[{ ...layer('Hidden', outOfRange()), visible: false }]}
+            />,
+        )
+        const checkbox = rowOf(container, 'Hidden').querySelector<HTMLInputElement>(
+            '.blocks-layer-legend__checkbox',
+        )!
+        expect(warningsIn(container)).toHaveLength(0)
+
+        await act(async () => {
+            checkbox.click()
+        })
+        expect(warningsIn(container)).toHaveLength(1)
+
+        await act(async () => {
+            checkbox.click()
+        })
+        expect(warningsIn(container)).toHaveLength(0)
+        await unmount()
+    })
+
     // Nothing about the row changes besides the icon: no dimming class, the
     // checkbox as it was, every control where it was.
     test('leaves the rest of the row as it is', async () => {
@@ -314,8 +339,8 @@ describe('the no-data warning on a layer row', () => {
             const description = document.getElementById(describedBy!)!
             expect(description).not.toBeNull()
             expect(popovers()).toHaveLength(0)
-            expect(description.textContent).toContain('Data available on 2020-03-04')
-            expect(description.textContent).toContain('Requested 2020-04-02')
+            expect(description.textContent).toContain('This layer is only available on Mar 4, 2020.')
+            expect(description.textContent).toContain('No data for Apr 2, 2020')
             // Hidden outright rather than visually, so browse mode doesn't
             // read the explanation a second time after the button.
             expect(description.hidden).toBe(true)
@@ -341,8 +366,8 @@ describe('the no-data warning on a layer row', () => {
             const description = document.getElementById(
                 warning.getAttribute('aria-describedby')!,
             )!
-            expect(description.textContent).toContain('Data available on 2020-03-04')
-            expect(description.textContent).not.toContain('Requested')
+            expect(description.textContent).toContain('This layer is only available on Mar 4, 2020.')
+            expect(description.textContent).not.toContain('No data for')
 
             await act(async () => {
                 warning.focus()
@@ -352,13 +377,13 @@ describe('the no-data warning on a layer row', () => {
                     outOfRange({ start: utc(2020, 6, 1), end: utc(2020, 6, 2) }),
                 )
             })
-            expect(description.textContent).toContain('Requested 2020-07-02')
+            expect(description.textContent).toContain('No data for Jul 2, 2020')
             await unmount()
         })
     })
 
     describe('opening and closing', () => {
-        test('opens on hover with the three lines', async () => {
+        test('opens on hover with its icon, title and coverage', async () => {
             const { container, unmount } = await mount(
                 <LayerManagerPanel layers={[layer('Suppressed', outOfRange())]} />,
             )
@@ -367,9 +392,17 @@ describe('the no-data warning on a layer row', () => {
             await hover(warningsIn(container)[0])
             const [popover] = popovers()
             expect(popover).toBeDefined()
-            expect(popover.textContent).toContain('No data at this time')
-            expect(popover.textContent).toContain('Requested 2020-04-02')
-            expect(popover.textContent).toContain('Data available on 2020-03-04')
+            expect(
+                popover.querySelector('.blocks-layer-legend__coverage-icon'),
+            ).not.toBeNull()
+            expect(
+                popover.querySelector('.blocks-layer-legend__coverage-title')!
+                    .textContent,
+            ).toBe('No data for Apr 2, 2020')
+            expect(
+                popover.querySelector('.blocks-layer-legend__coverage-text')!
+                    .textContent,
+            ).toBe('This layer is only available on Mar 4, 2020.')
             await unmount()
         })
 
@@ -740,8 +773,8 @@ describe('the no-data warning on a layer row', () => {
 
             expect(getDataCoverage).toHaveBeenCalledWith('Suppressed')
             const [popover] = popovers()
-            expect(popover.textContent).toContain('Requested 2020-06-10 14:00 UTC')
-            expect(popover.textContent).not.toContain('2020-04-02')
+            expect(popover.textContent).toContain('No data for Jun 10, 2020 14:00 UTC')
+            expect(popover.textContent).not.toContain('Apr 2, 2020')
             await unmount()
         })
 
@@ -757,15 +790,15 @@ describe('the no-data warning on a layer row', () => {
             await hover(warningsIn(container)[0])
             const [popover] = popovers()
             expect(popover.textContent).toContain('No data at this time')
-            expect(popover.textContent).toContain('Data available on 2020-03-04')
-            expect(popover.textContent).not.toContain('Requested')
+            expect(popover.textContent).toContain('This layer is only available on Mar 4, 2020.')
+            expect(popover.textContent).not.toContain('No data for')
 
             await act(async () => {
                 answer.resolve(
                     outOfRange({ start: utc(2020, 6, 1), end: utc(2020, 6, 2) }),
                 )
             })
-            expect(popovers()[0].textContent).toContain('Requested 2020-07-02')
+            expect(popovers()[0].textContent).toContain('No data for Jul 2, 2020')
             await unmount()
         })
 
@@ -783,12 +816,12 @@ describe('the no-data warning on a layer row', () => {
             const [warning] = warningsIn(container)
 
             await hover(warning)
-            expect(popovers()[0].textContent).toContain('Requested 2020-06-10')
+            expect(popovers()[0].textContent).toContain('No data for Jun 10, 2020')
             await leave(warning)
 
             end = utc(2020, 5, 11)
             await hover(warning)
-            expect(popovers()[0].textContent).toContain('Requested 2020-06-11')
+            expect(popovers()[0].textContent).toContain('No data for Jun 11, 2020')
             expect(getDataCoverage).toHaveBeenCalledTimes(2)
             await unmount()
         })
@@ -823,7 +856,7 @@ describe('the no-data warning on a layer row', () => {
             // Second opening, closed with its answer still outstanding, then
             // a third.
             await hover(warning)
-            expect(popovers()[0].textContent).not.toContain('Requested')
+            expect(popovers()[0].textContent).not.toContain('No data for')
             await leave(warning)
             await hover(warning)
             expect(asked).toBe(3)
@@ -832,13 +865,13 @@ describe('the no-data warning on a layer row', () => {
             await act(async () => {
                 answers[2].resolve(answerFor(3))
             })
-            expect(popovers()[0].textContent).toContain('Requested 2020-07-03')
+            expect(popovers()[0].textContent).toContain('No data for Jul 3, 2020')
             await act(async () => {
                 answers[1].resolve(answerFor(2))
             })
-            expect(popovers()[0].textContent).toContain('Requested 2020-07-03')
-            expect(popovers()[0].textContent).not.toContain('2020-07-02')
-            expect(popovers()[0].textContent).not.toContain('2020-07-01')
+            expect(popovers()[0].textContent).toContain('No data for Jul 3, 2020')
+            expect(popovers()[0].textContent).not.toContain('Jul 2, 2020')
+            expect(popovers()[0].textContent).not.toContain('Jul 1, 2020')
             await unmount()
         })
 
@@ -854,8 +887,8 @@ describe('the no-data warning on a layer row', () => {
 
             await hover(warningsIn(container)[0])
             const [popover] = popovers()
-            expect(popover.textContent).toContain('Data available on 2020-03-04')
-            expect(popover.textContent).not.toContain('Requested')
+            expect(popover.textContent).toContain('This layer is only available on Mar 4, 2020.')
+            expect(popover.textContent).not.toContain('No data for')
             await unmount()
         })
 
@@ -878,9 +911,9 @@ describe('the no-data warning on a layer row', () => {
             await hover(warningsIn(container)[0])
             const [popover] = popovers()
             expect(popover.textContent).toContain('No data at this time')
-            expect(popover.textContent).toContain('Data available on 2020-03-04')
+            expect(popover.textContent).toContain('This layer is only available on Mar 4, 2020.')
             // The row's instant is stale, so it is not the one shown.
-            expect(popover.textContent).not.toContain('2020-04-02')
+            expect(popover.textContent).not.toContain('Apr 2, 2020')
             await unmount()
         })
     })
@@ -962,6 +995,27 @@ describe('the no-data warning on a layer row', () => {
                     layers={[layer('A', inRange()), layer('B', outOfRange())]}
                 />,
             )
+            expect(document.activeElement).toBe(
+                rowOf(container, 'A').querySelector('.blocks-layer-legend__checkbox'),
+            )
+            expect(popovers()).toHaveLength(0)
+            await unmount()
+        })
+
+        test("a layer switched off from elsewhere hands the icon's focus to its checkbox", async () => {
+            const { container, rerender, unmount } = await mount(
+                <LayerManagerPanel layers={[layer('A', outOfRange())]} />,
+            )
+            await act(async () => {
+                warningsIn(container)[0].focus()
+            })
+
+            await rerender(
+                <LayerManagerPanel
+                    layers={[{ ...layer('A', outOfRange()), visible: false }]}
+                />,
+            )
+            expect(warningsIn(container)).toHaveLength(0)
             expect(document.activeElement).toBe(
                 rowOf(container, 'A').querySelector('.blocks-layer-legend__checkbox'),
             )

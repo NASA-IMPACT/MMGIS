@@ -113,16 +113,19 @@ export function LayerLegend({
 
     const hasDescription = hasText(description)
 
-    const isOutOfDataRange = dataCoverage?.outOfDataRange === true
+    // A layer that is switched off draws nothing either way, so missing data
+    // is only flagged while the layer is on.
+    const showsCoverageWarning =
+        isVisible && dataCoverage?.outOfDataRange === true
 
-    // The warning goes when the layer comes back into range, and focus on it
-    // would fall to the page. It moves to the row's checkbox instead, keeping
-    // a keyboard user's place in the list.
+    // The warning goes when the layer comes back into range or is switched
+    // off, and focus on it would fall to the page. It moves to the row's
+    // checkbox instead, keeping a keyboard user's place in the list.
     useLayoutEffect(() => {
-        if (isOutOfDataRange || !warningFocusedRef.current) return
+        if (showsCoverageWarning || !warningFocusedRef.current) return
         warningFocusedRef.current = false
         checkboxRef.current?.focus()
-    }, [isOutOfDataRange])
+    }, [showsCoverageWarning])
 
     useEffect(() => {
         setIsVisible(visible)
@@ -297,7 +300,7 @@ export function LayerLegend({
                         its checkbox and controls as they are, since nothing is
                         wrong with the layer and it shows again once the time
                         moves back into its data. */}
-                    {isOutOfDataRange && dataCoverage && (
+                    {showsCoverageWarning && dataCoverage && (
                         <DataCoverageWarning
                             layerId={id}
                             layerTitle={title}

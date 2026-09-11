@@ -52,14 +52,28 @@ const hourEntry = (y, m, d, h, min = 0) => ({
 })
 
 describe('describeDataCoverage', () => {
-    test('titles every constrained record the same way', () => {
-        expect(
-            describeDataCoverage(continuous(utc(2020, 0, 1), endOfDay(2020, 2, 1)))
-                .title,
-        ).toBe('No data at this time')
-        expect(describeDataCoverage(sparse([yearEntry(2020)])).title).toBe(
-            'No data at this time',
-        )
+    describe('the title', () => {
+        test('names the requested instant', () => {
+            const window = { start: utc(2024, 9, 30), end: utc(2024, 9, 31) }
+            expect(
+                describeDataCoverage(
+                    continuous(utc(2024, 11, 31), endOfDay(2025, 2, 30), window),
+                ).title,
+            ).toBe('No data for Oct 31, 2024')
+            expect(
+                describeDataCoverage(sparse([yearEntry(2020)], window)).title,
+            ).toBe('No data for Oct 31, 2024')
+        })
+
+        test('says "at this time" when the record has no window', () => {
+            expect(
+                describeDataCoverage(continuous(utc(2020, 0, 1), endOfDay(2020, 2, 1)))
+                    .title,
+            ).toBe('No data at this time')
+            expect(describeDataCoverage(sparse([yearEntry(2020)])).title).toBe(
+                'No data at this time',
+            )
+        })
     })
 
     describe('continuous coverage', () => {
@@ -68,21 +82,21 @@ describe('describeDataCoverage', () => {
                 describeDataCoverage(
                     continuous(utc(2020, 0, 1), endOfDay(2020, 2, 1)),
                 ).coverage,
-            ).toBe('Data available 2020-01-01 to 2020-03-01')
+            ).toBe('This layer is only available between Jan 1, 2020 and Mar 1, 2020.')
         })
 
         test('names an open start as "until"', () => {
             expect(
                 describeDataCoverage(continuous(-Infinity, endOfDay(2020, 2, 1)))
                     .coverage,
-            ).toBe('Data available until 2020-03-01')
+            ).toBe('This layer is only available until Mar 1, 2020.')
         })
 
         test('names an open end as "from"', () => {
             expect(
                 describeDataCoverage(continuous(utc(2020, 0, 1), Infinity))
                     .coverage,
-            ).toBe('Data available from 2020-01-01')
+            ).toBe('This layer is only available from Jan 1, 2020.')
         })
 
         test('adds the time of day only to a bound off a day boundary', () => {
@@ -90,12 +104,12 @@ describe('describeDataCoverage', () => {
                 describeDataCoverage(
                     continuous(utc(2020, 0, 1, 6), utc(2020, 2, 1, 13) - 1),
                 ).coverage,
-            ).toBe('Data available 2020-01-01 06:00 UTC to 2020-03-01 12:59 UTC')
+            ).toBe('This layer is only available between Jan 1, 2020 06:00 UTC and Mar 1, 2020 12:59 UTC.')
             expect(
                 describeDataCoverage(
                     continuous(utc(2020, 0, 1, 6), endOfDay(2020, 2, 1)),
                 ).coverage,
-            ).toBe('Data available 2020-01-01 06:00 UTC to 2020-03-01')
+            ).toBe('This layer is only available between Jan 1, 2020 06:00 UTC and Mar 1, 2020.')
         })
 
         test('has no coverage to name when both bounds are open', () => {
@@ -108,26 +122,26 @@ describe('describeDataCoverage', () => {
     describe('a single listed entry, named at its own unit', () => {
         test('year', () => {
             expect(describeDataCoverage(sparse([yearEntry(2020)])).coverage).toBe(
-                'Data available in 2020',
+                'This layer is only available in 2020.',
             )
         })
 
         test('month', () => {
             expect(
                 describeDataCoverage(sparse([monthEntry(2020, 2)])).coverage,
-            ).toBe('Data available in March 2020')
+            ).toBe('This layer is only available in March 2020.')
         })
 
         test('day', () => {
             expect(
                 describeDataCoverage(sparse([dayEntry(2020, 2, 4)])).coverage,
-            ).toBe('Data available on 2020-03-04')
+            ).toBe('This layer is only available on Mar 4, 2020.')
         })
 
         test('hour', () => {
             expect(
                 describeDataCoverage(sparse([hourEntry(2020, 2, 4, 14)])).coverage,
-            ).toBe('Data available on 2020-03-04 at 14:00 UTC')
+            ).toBe('This layer is only available on Mar 4, 2020 at 14:00 UTC.')
         })
 
         // Listed as 14:30, the entry covers 14:00–14:59. It is named by the
@@ -136,7 +150,7 @@ describe('describeDataCoverage', () => {
             expect(
                 describeDataCoverage(sparse([hourEntry(2020, 2, 4, 14, 30)]))
                     .coverage,
-            ).toBe('Data available on 2020-03-04 at 14:30 UTC')
+            ).toBe('This layer is only available on Mar 4, 2020 at 14:30 UTC.')
         })
 
         // The same span called a month and called a day: only the unit
@@ -144,14 +158,14 @@ describe('describeDataCoverage', () => {
         test('reads the unit, never the length of the span', () => {
             const span = monthEntry(2020, 1)
             expect(describeDataCoverage(sparse([span])).coverage).toBe(
-                'Data available in February 2020',
+                'This layer is only available in February 2020.',
             )
             expect(
                 describeDataCoverage(sparse([{ ...span, unit: 'day' }])).coverage,
-            ).toBe('Data available on 2020-02-01')
+            ).toBe('This layer is only available on Feb 1, 2020.')
             expect(
                 describeDataCoverage(sparse([{ ...span, unit: 'year' }])).coverage,
-            ).toBe('Data available in 2020')
+            ).toBe('This layer is only available in 2020.')
         })
 
         test('names every month in English', () => {
@@ -159,18 +173,18 @@ describe('describeDataCoverage', () => {
                 describeDataCoverage(sparse([monthEntry(2021, m)])).coverage,
             )
             expect(names).toEqual([
-                'Data available in January 2021',
-                'Data available in February 2021',
-                'Data available in March 2021',
-                'Data available in April 2021',
-                'Data available in May 2021',
-                'Data available in June 2021',
-                'Data available in July 2021',
-                'Data available in August 2021',
-                'Data available in September 2021',
-                'Data available in October 2021',
-                'Data available in November 2021',
-                'Data available in December 2021',
+                'This layer is only available in January 2021.',
+                'This layer is only available in February 2021.',
+                'This layer is only available in March 2021.',
+                'This layer is only available in April 2021.',
+                'This layer is only available in May 2021.',
+                'This layer is only available in June 2021.',
+                'This layer is only available in July 2021.',
+                'This layer is only available in August 2021.',
+                'This layer is only available in September 2021.',
+                'This layer is only available in October 2021.',
+                'This layer is only available in November 2021.',
+                'This layer is only available in December 2021.',
             ])
         })
     })
@@ -184,7 +198,7 @@ describe('describeDataCoverage', () => {
             ]
             expect(spans).toHaveLength(12)
             expect(describeDataCoverage(sparse(spans)).coverage).toBe(
-                'Data available for 12 listed periods, March 2020 to 2020-11-30',
+                'This layer is only available for 12 listed periods between March 2020 and Nov 30, 2020.',
             )
         })
 
@@ -195,14 +209,14 @@ describe('describeDataCoverage', () => {
                 describeDataCoverage(
                     sparse([yearEntry(2019), yearEntry(2020), dayEntry(2020, 2, 4)]),
                 ).coverage,
-            ).toBe('Data available for 3 listed periods, 2019 to 2020')
+            ).toBe('This layer is only available for 3 listed periods between 2019 and 2020.')
         })
 
         test('names one entry holding all the others alone', () => {
             expect(
                 describeDataCoverage(sparse([yearEntry(2020), dayEntry(2020, 2, 4)]))
                     .coverage,
-            ).toBe('Data available for 2 listed periods in 2020')
+            ).toBe('This layer is only available for 2 listed periods in 2020.')
             expect(
                 describeDataCoverage(
                     sparse([
@@ -211,7 +225,7 @@ describe('describeDataCoverage', () => {
                         hourEntry(2020, 2, 4, 14, 30),
                     ]),
                 ).coverage,
-            ).toBe('Data available for 3 listed periods on 2020-03-04')
+            ).toBe('This layer is only available for 3 listed periods on Mar 4, 2020.')
         })
 
         // Several entries can share the earliest start or the latest end; the
@@ -228,7 +242,7 @@ describe('describeDataCoverage', () => {
                         dayEntry(2020, 11, 31),
                     ]),
                 ).coverage,
-            ).toBe('Data available for 6 listed periods, 2019-01-01 to 2020-12-31')
+            ).toBe('This layer is only available for 6 listed periods between Jan 1, 2019 and Dec 31, 2020.')
         })
 
         test('reads the entries in any order', () => {
@@ -236,7 +250,7 @@ describe('describeDataCoverage', () => {
                 describeDataCoverage(
                     sparse([dayEntry(2020, 10, 30), monthEntry(2020, 2)]),
                 ).coverage,
-            ).toBe('Data available for 2 listed periods, March 2020 to 2020-11-30')
+            ).toBe('This layer is only available for 2 listed periods between March 2020 and Nov 30, 2020.')
         })
 
         test('names a year first and an hour last', () => {
@@ -245,7 +259,7 @@ describe('describeDataCoverage', () => {
                     sparse([yearEntry(2019), hourEntry(2020, 10, 30, 14, 30)]),
                 ).coverage,
             ).toBe(
-                'Data available for 2 listed periods, 2019 to 2020-11-30 14:30 UTC',
+                'This layer is only available for 2 listed periods between 2019 and Nov 30, 2020 14:30 UTC.',
             )
         })
     })
@@ -255,14 +269,14 @@ describe('describeDataCoverage', () => {
             const window = { start: utc(2020, 3, 14), end: utc(2020, 3, 15, 14) }
             expect(
                 describeDataCoverage(sparse([dayEntry(2020, 2, 4)], window)).instant,
-            ).toBe('Requested 2020-04-15 14:00 UTC')
+            ).toBe('Apr 15, 2020 14:00 UTC')
         })
 
         test('is named by day alone at midnight', () => {
             const window = { start: utc(2020, 3, 14), end: utc(2020, 3, 15) }
             expect(
                 describeDataCoverage(sparse([dayEntry(2020, 2, 4)], window)).instant,
-            ).toBe('Requested 2020-04-15')
+            ).toBe('Apr 15, 2020')
         })
 
         test('keeps seconds that are there', () => {
@@ -272,13 +286,13 @@ describe('describeDataCoverage', () => {
             }
             expect(
                 describeDataCoverage(sparse([dayEntry(2020, 2, 4)], window)).instant,
-            ).toBe('Requested 2020-04-15 14:23:07 UTC')
+            ).toBe('Apr 15, 2020 14:23:07 UTC')
         })
 
         test('is absent when the record has no window', () => {
             const wording = describeDataCoverage(sparse([dayEntry(2020, 2, 4)]))
             expect(wording.instant).toBeNull()
-            expect(wording.coverage).toBe('Data available on 2020-03-04')
+            expect(wording.coverage).toBe('This layer is only available on Mar 4, 2020.')
         })
     })
 
@@ -300,7 +314,7 @@ describe('describeDataCoverage', () => {
                         dayEntry(2020, 2, 6),
                     ]),
                 ).coverage,
-            ).toBe('Data available on 2020-03-06')
+            ).toBe('This layer is only available on Mar 6, 2020.')
         })
 
         test('has nothing to word when no listed entry can be named', () => {
@@ -340,7 +354,7 @@ describe('describeDataCoverage', () => {
             ]) {
                 const wording = describeDataCoverage(sparse([day], requestedWindow))
                 expect(wording.instant).toBeNull()
-                expect(wording.coverage).toBe('Data available on 2020-03-04')
+                expect(wording.coverage).toBe('This layer is only available on Mar 4, 2020.')
             }
         })
 

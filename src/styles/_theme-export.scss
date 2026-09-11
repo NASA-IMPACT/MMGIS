@@ -68,6 +68,10 @@
     --theme-color-accent-cool-dark: #{color("accent-cool-dark")};
     --theme-color-accent-cool-darker: #{color("accent-cool-darker")};
 
+    /* State colors */
+    --theme-color-warning: #{color("warning")};
+    --theme-color-warning-dark: #{color("warning-dark")};
+
     /* Base (gray) colors - guaranteed in USWDS */
     --theme-color-base-darkest: #{color("base-darkest")};
     --theme-color-base-darker: #{color("base-darker")};

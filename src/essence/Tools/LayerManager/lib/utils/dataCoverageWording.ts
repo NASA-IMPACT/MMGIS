@@ -2,21 +2,25 @@ import type { CoverageSpan, CoverageUnit, DataCoverage } from '../types'
 
 /**
  * A layer's coverage record in words, for the popover on a row whose layer
- * has no data at the time being asked for. Pure: record in, three lines out.
+ * has no data at the time being asked for. Pure: record in, a title naming
+ * the instant and a sentence naming the coverage out.
  *
  * Everything is UTC and in English whatever the browser's locale, so the
  * words match the timeline and the layer config they were read from.
  */
 
 export type DataCoverageWording = {
+    /** "No data for" the instant, or "No data at this time" without one. */
     title: string
     /** The instant being asked for; null when the record carries no window. */
     instant: string | null
-    /** What the layer holds; null when it names no bound to describe. */
+    /** What the layer holds, as a sentence; null when it names no bound. */
     coverage: string | null
 }
 
 const TITLE = 'No data at this time'
+
+const AVAILABLE = 'This layer is only available'
 
 const MONTHS = [
     'January',
@@ -45,9 +49,11 @@ const monthOf = (ms: number): string => {
     return `${MONTHS[date.getUTCMonth()]} ${yearOf(ms)}`
 }
 
+/** A day as "Mar 4, 2020". */
 const dayOf = (ms: number): string => {
     const date = new Date(ms)
-    return `${yearOf(ms)}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`
+    const month = MONTHS[date.getUTCMonth()].slice(0, 3)
+    return `${month} ${date.getUTCDate()}, ${yearOf(ms)}`
 }
 
 /** HH:mm, with seconds only when there are some to show. */
@@ -94,7 +100,7 @@ const entryName = (at: number, unit: CoverageUnit | undefined): string => {
     }
 }
 
-/** A lone listed entry as a phrase: "in 2020", "on 2020-03-04 at 14:30 UTC". */
+/** A lone listed entry as a phrase: "in 2020", "on Mar 4, 2020 at 14:30 UTC". */
 const entryPhrase = (at: number, unit: CoverageUnit | undefined): string => {
     switch (unit) {
         case 'year':
@@ -166,10 +172,10 @@ const describeContinuous = (start: number, end: number): string | null => {
     const hasStart = Number.isFinite(start)
     const hasEnd = Number.isFinite(end)
     if (hasStart && hasEnd) {
-        return `Data available ${boundOf(start, 'start')} to ${boundOf(end, 'end')}`
+        return `${AVAILABLE} between ${boundOf(start, 'start')} and ${boundOf(end, 'end')}.`
     }
-    if (hasEnd) return `Data available until ${boundOf(end, 'end')}`
-    if (hasStart) return `Data available from ${boundOf(start, 'start')}`
+    if (hasEnd) return `${AVAILABLE} until ${boundOf(end, 'end')}.`
+    if (hasStart) return `${AVAILABLE} from ${boundOf(start, 'start')}.`
     return null
 }
 
@@ -177,21 +183,21 @@ const describeSparse = (entries: NamedEntry[]): string => {
     const first = firstBy(entries, byOpening)
     const last = firstBy(entries, byClosing)
     if (entries.length === 1) {
-        return `Data available ${entryPhrase(first.at, first.unit)}`
+        return `${AVAILABLE} ${entryPhrase(first.at, first.unit)}.`
     }
     // One entry holds all the others, so it is the whole range.
     if (first === last) {
-        return `Data available for ${entries.length} listed periods ${entryPhrase(first.at, first.unit)}`
+        return `${AVAILABLE} for ${entries.length} listed periods ${entryPhrase(first.at, first.unit)}.`
     }
     return (
-        `Data available for ${entries.length} listed periods, ` +
-        `${entryName(first.at, first.unit)} to ${entryName(last.at, last.unit)}`
+        `${AVAILABLE} for ${entries.length} listed periods between ` +
+        `${entryName(first.at, first.unit)} and ${entryName(last.at, last.unit)}.`
     )
 }
 
 const describeInstant = (requestedWindow: unknown): string | null => {
     const end = isObject(requestedWindow) ? requestedWindow.end : undefined
-    return isMoment(end) ? `Requested ${instantOf(end)}` : null
+    return isMoment(end) ? instantOf(end) : null
 }
 
 /**
@@ -222,9 +228,10 @@ export const describeDataCoverage = (
         return null
     }
 
+    const instant = describeInstant(record.requestedWindow)
     return {
-        title: TITLE,
-        instant: describeInstant(record.requestedWindow),
+        title: instant ? `No data for ${instant}` : TITLE,
+        instant,
         coverage,
     }
 }

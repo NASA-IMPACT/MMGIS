@@ -42,8 +42,8 @@ type Holds = {
 const RELEASED: Holds = { pointer: false, focus: false, click: false }
 
 /**
- * A calendar warning beside a layer's name, explaining why the layer is absent
- * from the map rather than broken. Hovering, focus, or a click, tap, Enter or
+ * A warning beside a layer's name, explaining why the layer is absent from
+ * the map rather than broken. Hovering, focus, or a click, tap, Enter or
  * Space shows what time is being asked for and when the layer does have
  * data. Focus stays on the icon: the popover is informational, with nothing
  * inside to operate.
@@ -170,7 +170,11 @@ export function DataCoverageWarning({
     const freshWording = describeDataCoverage(fresh)
     const wording = freshWording ?? describeDataCoverage(coverage)
     const instant = freshWording?.instant ?? null
-    const explanation = [instant, wording?.coverage].filter(Boolean).join('. ')
+    const title = freshWording?.title ?? 'No data at this time'
+    // The title adds to the button's name only once it names the instant.
+    const explanation = [instant ? `${title}.` : null, wording?.coverage]
+        .filter(Boolean)
+        .join(' ')
 
     return (
         <>
@@ -213,11 +217,22 @@ export function DataCoverageWarning({
                 onPointerLeave={handlePointerLeave}
                 onMouseDown={keepFocusOnIcon}
             >
-                <div className="blocks-layer-legend__coverage-title">
-                    {wording?.title ?? 'No data at this time'}
+                <div className="blocks-layer-legend__coverage-body">
+                    <span
+                        className="blocks-layer-legend__icon blocks-layer-legend__icon--no-data blocks-layer-legend__coverage-icon"
+                        aria-hidden="true"
+                    />
+                    <div>
+                        <div className="blocks-layer-legend__coverage-title">
+                            {title}
+                        </div>
+                        {wording?.coverage && (
+                            <div className="blocks-layer-legend__coverage-text">
+                                {wording.coverage}
+                            </div>
+                        )}
+                    </div>
                 </div>
-                {instant && <div>{instant}</div>}
-                {wording?.coverage && <div>{wording.coverage}</div>}
             </FloatingPopover>
         </>
     )

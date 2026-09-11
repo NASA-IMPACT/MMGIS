@@ -339,8 +339,8 @@ describe('MMGISLayerManagerAdapter data coverage', () => {
             params: SPARSE,
         })
         const [popover] = popovers()
-        expect(popover.textContent).toContain('Requested 2020-05-09 14:00 UTC')
-        expect(popover.textContent).toContain('Data available on 2020-03-04')
+        expect(popover.textContent).toContain('No data for May 9, 2020 14:00 UTC')
+        expect(popover.textContent).toContain('This layer is only available on Mar 4, 2020.')
         await unmount()
     })
 

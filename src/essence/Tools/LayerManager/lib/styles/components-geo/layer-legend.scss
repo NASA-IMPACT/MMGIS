@@ -167,7 +167,7 @@ $legend-content-indent: 28px;
         background: transparent;
         border: none;
         border-radius: var(--theme-radius-0, 0);
-        color: var(--theme-color-secondary-dark, #971453);
+        color: var(--theme-color-warning-dark, #e5a000);
         cursor: pointer;
 
         &:focus-visible {
@@ -212,8 +212,8 @@ $legend-content-indent: 28px;
         }
 
         &--no-data {
-            -webkit-mask-image: url('../../geo/icons/no-data.svg');
-            mask-image: url('../../geo/icons/no-data.svg');
+            -webkit-mask-image: url('../../geo/icons/warning.svg');
+            mask-image: url('../../geo/icons/warning.svg');
         }
     }
 
@@ -364,24 +364,42 @@ $legend-content-indent: 28px;
 }
 
 /* No Data Popover
-   Same portaled surface as the info popover, for three short lines: what is
-   wrong, the time being asked for, and when the layer does have data. */
+   Same portaled surface as the info popover: the warning icon beside a title
+   naming the time being asked for, over a sentence saying when the layer
+   does have data. */
 .blocks-layer-legend__coverage-popover {
     width: max-content;
     max-width: 280px;
-    padding: var(--theme-spacing-1, 0.5rem) var(--theme-spacing-105, 0.75rem);
+    padding: var(--theme-spacing-105, 0.75rem);
     background: var(--theme-color-white, #ffffff);
     border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
     box-shadow: 0 4px 12px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
     font-family: var(--theme-font-body, 'Public Sans Web', sans-serif);
-    font-size: var(--theme-font-size-3xs, 0.75rem);
-    line-height: 1.6;
-    color: var(--theme-color-base-dark, #565c65);
+    line-height: 1.4;
+}
+
+.blocks-layer-legend__coverage-body {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--theme-spacing-1, 0.5rem);
+}
+
+/* Nudged down to sit centered on the title's first line. */
+.blocks-layer-legend__coverage-icon {
+    margin-top: 2px;
+    color: var(--theme-color-warning-dark, #e5a000);
 }
 
 .blocks-layer-legend__coverage-title {
+    font-size: var(--theme-font-size-2xs, 0.88rem);
     font-weight: var(--theme-font-weight-semibold, 600);
     color: var(--theme-color-ink, #1c1d1f);
+}
+
+.blocks-layer-legend__coverage-text {
+    margin-top: 2px;
+    font-size: var(--theme-font-size-3xs, 0.75rem);
+    color: var(--theme-color-base, #71767a);
 }
 
 /* Names the layer the description belongs to. The popover is portaled away
