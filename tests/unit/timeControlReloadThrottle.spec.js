@@ -180,6 +180,36 @@ describe('time-driven layer reloads', () => {
         ])
     })
 
+    // A Leaflet tile layer compiles each tile's URL from its own options when
+    // the tile is requested. Written at commit time, a tile a pan exposes
+    // inside the window would carry the new time beside on-screen tiles
+    // carrying the old one, so a commit leaves the options to the reload -
+    // reloadLayer writes them. (`TimeControl.updateLayersTime`, which is
+    // public API, writes them itself; commits do not go through it.)
+    test('leaves a commit\'s tile options to the reload it books', async () => {
+        const leafletLayer = { options: {} }
+        L_.layers.layer['NO2 Monthly'] = leafletLayer
+
+        await commit('06')
+        expect(leafletLayer.options.time).toBeUndefined()
+
+        await vi.advanceTimersByTimeAsync(WINDOW_MS)
+        expect(leafletLayer.options.time).toBe('202206')
+    })
+
+    // The other caller of the same times: `updateLayersTime` is public API
+    // that promises a layer synchronized with the global times, and a Leaflet
+    // raster tile layer is not synchronized until its options carry them.
+    test('synchronizes the tile options on updateLayersTime', async () => {
+        const leafletLayer = { options: {} }
+        L_.layers.layer['NO2 Monthly'] = leafletLayer
+
+        await commit('06')
+        expect(TimeControl.updateLayersTime()).toEqual(['NO2 Monthly'])
+
+        expect(leafletLayer.options.time).toBe('202206')
+    })
+
     // A mission swap re-inits TimeControl. A reload the old mission's last
     // commit left booked would otherwise land on the new mission's layers.
     test('drops a booked reload on re-init', async () => {

@@ -624,7 +624,7 @@ window.mmgisAPI.setLayerTimeStatus("Earthquakes", "green");
 
 ### updateLayersTime()
 
-This function will synchronize every global time enabled layer with the current global times. Similar to `setTime` but used internally to update values when users change values on the Time UI. Unlikely to be needed elsewhere except for potential edge cases where re-synchronization may be necessary.
+This function will synchronize every global time enabled layer with the current global times: the layer's own times, the labels that read them, and - for a Leaflet raster tile layer - the options its per-tile urls are compiled from. Probably should be a private function, but it can be useful for edge cases where re-synchronization may be necessary.
 
 The following is an example of how to call the `updateLayersTime` function:
 

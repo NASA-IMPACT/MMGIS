@@ -92,21 +92,41 @@ function titilerUrlFor(layerConfig) {
 
 /**
  * Mission configuration's `boundingBox` as a `[west, south, east, north]`
- * tuple of numbers, or null when the layer declares no usable footprint.
+ * tuple of degrees, or null when the layer declares no usable footprint.
  *
- * Configuration writes the four values as strings as readily as numbers, and a
- * half-filled box is a real thing to find in a config. Callers hand the result
- * to map engines, where a NaN in the tuple is worse than no footprint at all -
- * deck.gl clamps its viewport against the extent and would draw nothing - so a
- * box that does not parse whole is refused whole.
+ * Configuration writes the box as four numbers, four strings, or one
+ * comma-separated string, and a half-filled box is a real thing to find in a
+ * config. Callers hand the result to map engines, where a NaN in the tuple is
+ * worse than no footprint at all - deck.gl clamps its viewport against the
+ * extent and would draw nothing - so a box that does not parse whole is
+ * refused whole, as is one outside +-180 / +-90: the engine's projection
+ * throws on a latitude past the poles, which a box in projected units always
+ * is.
+ *
+ * Corners are ordered per axis, so a box whose corners are transposed - east
+ * written where west belongs - reads as the box it describes, the same box
+ * Leaflet's latLngBounds makes of it. A footprint that crosses the
+ * antimeridian, west 170 and east -170, is a different thing and is not
+ * representable: ordering reads it as the complementary box across the other
+ * 340 degrees, which is also what Leaflet reads it as.
  *
  * @param {unknown} boundingBox - A layer config's `boundingBox`.
  * @returns {[number, number, number, number] | null}
  */
 export function parseBoundingBox(boundingBox) {
-    if (!Array.isArray(boundingBox) || boundingBox.length !== 4) return null
-    const parsed = boundingBox.map((n) => parseFloat(n))
-    return parsed.every(Number.isFinite) ? parsed : null
+    const parts =
+        typeof boundingBox === 'string' ? boundingBox.split(',') : boundingBox
+    if (!Array.isArray(parts) || parts.length !== 4) return null
+    const [x1, y1, x2, y2] = parts.map((n) => parseFloat(n))
+    if (![x1, y1, x2, y2].every(Number.isFinite)) return null
+    if (Math.max(Math.abs(x1), Math.abs(x2)) > 180) return null
+    if (Math.max(Math.abs(y1), Math.abs(y2)) > 90) return null
+    return [
+        Math.min(x1, x2),
+        Math.min(y1, y2),
+        Math.max(x1, x2),
+        Math.max(y1, y2),
+    ]
 }
 
 /**
@@ -228,7 +248,6 @@ async function refreshTileLayer(uuid, updateOptions) {
         return L_.Map_.engine.refreshLayer(uuid, {
             url: sourceUrl,
             tileOptions,
-            force: false,
         })
     } catch (err) {
         console.error(`layers:refresh failed for "${uuid}"`, err)

@@ -35,12 +35,12 @@ describe('LeafletAdapter.refreshLayer', () => {
             adapter.refreshLayer('l1', {
                 url: 'https://x/{z}/{x}/{y}.png',
                 tileOptions: { colormap: 'viridis' },
-                force: true,
             })
         ).toBe(true)
+        // force stays off: a tile whose URL did not change is left alone.
         expect(layer.refreshed).toEqual({
             url: 'https://x/{z}/{x}/{y}.png',
-            force: true,
+            force: false,
             tileOptions: { colormap: 'viridis' },
         })
     })
@@ -56,7 +56,6 @@ describe('LeafletAdapter.refreshLayer', () => {
         expect(refresh).toHaveBeenCalledWith(layer, {
             url: 'u',
             tileOptions: undefined,
-            force: undefined,
         })
         expect(layer.refreshed).toBe(null)
     })

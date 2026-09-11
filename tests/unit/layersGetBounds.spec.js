@@ -267,7 +267,7 @@ describe('layers:getBounds provider', () => {
  * the engine cannot survive the second.
  */
 describe('parseBoundingBox', () => {
-    test('keeps configuration order, west-south-east-north', () => {
+    test('returns a well-formed box as written', () => {
         expect(parseBoundingBox([-120, 30, -100, 45])).toEqual([-120, 30, -100, 45])
     })
 
@@ -275,6 +275,33 @@ describe('parseBoundingBox', () => {
         expect(parseBoundingBox(['-120', '30', '-100', '45'])).toEqual([
             -120, 30, -100, 45,
         ])
+    })
+
+    // Configure never writes one - its Bounding Box field is a `textarray`,
+    // which splits what is typed on the commas - so a string reaches a config
+    // by a hand edit or through the API.
+    test('reads a footprint written as one comma-separated string', () => {
+        expect(parseBoundingBox('-120,30,-100,45')).toEqual([-120, 30, -100, 45])
+    })
+
+    // Transposed corners, not a footprint that crosses the antimeridian -
+    // west 170, east -170 - which neither engine can represent: ordering
+    // reads that one as the complementary box, and so does Leaflet. Ordered,
+    // these corners describe the box Leaflet's latLngBounds makes of them,
+    // and deck.gl requests no tile at all for the inverted form.
+    test('orders a box whose corners are transposed, as Leaflet does', () => {
+        expect(parseBoundingBox([-100, 45, -120, 30])).toEqual([-120, 30, -100, 45])
+    })
+
+    // A box in projected metres - what TiTiler's cog/info reports for a
+    // non-4326 dataset - or one past the poles reaches deck.gl's projection,
+    // which throws on a latitude outside +-90 on every viewport update.
+    test.each([
+        ['in projected units', [-13358338, 3503549, -11131949, 5621521]],
+        ['past the poles', [-120, 30, -100, 95]],
+        ['outside +-180', [-120, 30, 190, 45]],
+    ])('refuses a footprint %s', (_label, boundingBox) => {
+        expect(parseBoundingBox(boundingBox)).toBeNull()
     })
 
     // Not [-120, 30, NaN, 45]: deck.gl intersects the viewport with the
@@ -287,6 +314,7 @@ describe('parseBoundingBox', () => {
     test.each([
         ['absent', undefined],
         ['too short', [-120, 30, -100]],
+        ['a string of the wrong length', '-120,30,-100'],
         ['not an array', { west: -120 }],
     ])('answers null for a %s footprint', (_label, boundingBox) => {
         expect(parseBoundingBox(boundingBox)).toBeNull()

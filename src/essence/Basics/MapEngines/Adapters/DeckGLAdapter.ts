@@ -1141,7 +1141,6 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const next = refresh(existing, {
             url: ctx.url,
             tileOptions: ctx.tileOptions,
-            force: ctx.force,
         })
 
         // A refresher with nothing to apply returns nothing; keep what we hold.

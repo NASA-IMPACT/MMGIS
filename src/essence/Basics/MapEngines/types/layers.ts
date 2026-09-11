@@ -58,13 +58,16 @@ export interface TileLayerOptions extends LayerOptions {
     /** 'wms' => deck.gl WMSLayer; else a {z}/{x}/{y} url template. */
     tileformat?: string
     /**
-     * The layer's footprint as `[west, south, east, north]` in lng/lat -
-     * mission configuration's `boundingBox`, unchanged.
+     * The layer's footprint as `[west, south, east, north]` in degrees, each
+     * corner in range and west <= east, south <= north - what
+     * `parseBoundingBox` returns for mission configuration's `boundingBox`.
      *
-     * deck.gl requests no tile outside it, so a single-item layer stops
-     * asking the tile service for the rest of the world. Leave it undefined
-     * when the footprint is unknown: a partially-NaN extent clamps every
-     * viewport to NaN and the layer draws nothing.
+     * deck.gl requests no tile outside it. Leave it undefined when the
+     * footprint is unknown: deck.gl never normalises an extent, so a NaN or
+     * inverted box clamps every viewport to nothing.
+     *
+     * A 'wms' tileformat ignores it: deck.gl's WMSLayer requests one image
+     * per viewport and has no extent prop.
      */
     extent?: [number, number, number, number]
     nativeOptions?: Record<string, unknown>
@@ -123,6 +126,14 @@ export interface VectorTileLayerOptions extends LayerOptions {
     vectorTileLayerStyles?: Record<string, unknown>
     maxNativeZoom?: number
     attribution?: string
+    /**
+     * The tile size the layer is built with, in pixels, which sets the zoom
+     * level deck.gl requests for a given view zoom. Vector tiles are cut at
+     * 512 unless the source says otherwise.
+     */
+    tileSize?: number
+    /** As {@link TileLayerOptions.extent}. */
+    extent?: [number, number, number, number]
     nativeOptions?: Record<string, unknown>
 }
 
@@ -200,10 +211,16 @@ export interface OverlayOptions {
  * `url` is nullable, not merely optional: a source that resolves to nothing —
  * a `COG:` layer with no TiTiler service behind it — yields null, and callers
  * pass it through so the refresher, not the call site, decides what to do
- * with it. The domain-side refresher registered in `Map_.makeTileLayer` tests `ctx.url == null`.
+ * with it. The domain-side refreshers in `deckTileRefresher` compile their
+ * URL through one `compileSource`, and that is where `ctx.url == null` is
+ * tested.
+ *
+ * A requery that must refetch unchanged tiles arrives as a changed `url`:
+ * `TimeControl.performTimeUrlReplacements` appends a `nocache` param for one,
+ * and both engines reload on a URL they have not seen while keeping their
+ * tiles on one they have.
  */
 export type RefreshContext = {
     url?: string | null
     tileOptions?: Record<string, unknown>
-    force?: boolean
 }
