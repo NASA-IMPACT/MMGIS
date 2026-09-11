@@ -197,3 +197,16 @@ export type RefreshContext = {
     tileOptions?: Record<string, unknown>
     force?: boolean
 }
+
+/**
+ * What the core hands the engine with a new draw order. Keyed by layer id:
+ * the mission layer type, and the sublayer attachments that ride with it,
+ * each one flagged on or off. Leaflet re-adds vectors with their attachments;
+ * deck.gl needs none of it.
+ */
+export type LayerOrderContext = {
+    layers?: Record<
+        string,
+        { type?: string; attachments?: Array<{ layer: unknown; on: boolean }> }
+    >
+}

@@ -6,7 +6,7 @@ import {
     FitBoundsOptions,
     MapInitOptions,
 } from './types/view'
-import { LayerOptions, OverlayOptions, RefreshContext } from './types/layers'
+import { LayerOptions, LayerOrderContext, OverlayOptions, RefreshContext } from './types/layers'
 import {
     MapEventHandler,
     MapEventOptions,
@@ -253,6 +253,12 @@ export interface IMapEngine<
      * Set the z index of a layer to control draw order.
      */
     setLayerZIndex(layer: TLayer | string, zIndex: number): void
+
+    /**
+     * Rank the whole stack at once. `order` lists layer ids top first; ids
+     * the engine does not hold or draw are skipped.
+     */
+    setLayerOrder(order: string[], ctx?: LayerOrderContext): void
 
     /**
      * Move a layer to the top of the stack.

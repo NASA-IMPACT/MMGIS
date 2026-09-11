@@ -925,3 +925,117 @@ test.describe('LeafletAdapter - queryRenderedFeatures', () => {
         expect(results).toEqual([])
     })
 })
+
+// ─── Layer Order ──────────────────────────────────────────────────────────────
+
+// The Leaflet stack: rasters take a z-index; vectors and images share one
+// pane, so each one drawn is removed and re-added bottom first with its
+// on-attachments just before it. `order` is top first.
+test.describe('LeafletAdapter - setLayerOrder', () => {
+    const makeLayer = (extra = {}) => ({ addTo() {}, on() {}, ...extra })
+
+    function setupOrder() {
+        const { mockMap } = setup()
+        const onMap = new Set()
+        mockMap.hasLayer = (l) => onMap.has(l)
+        const calls = []
+        mockMap.addLayer = vi.fn((l) => { onMap.add(l); calls.push(['add', l]) })
+        mockMap.removeLayer = vi.fn((l) => { onMap.delete(l); calls.push(['remove', l]) })
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+        return { adapter, onMap, calls }
+    }
+
+    test('re-adds drawn vectors bottom first and ranks rasters by position', () => {
+        const { adapter, onMap, calls } = setupOrder()
+        const top = makeLayer({ name: 'top' })
+        const bottom = makeLayer({ name: 'bottom' })
+        const tile = makeLayer({ setZIndex: vi.fn() })
+        adapter.registerLayer('top', top)
+        adapter.registerLayer('tile', tile)
+        adapter.registerLayer('bottom', bottom)
+        onMap.add(top).add(tile).add(bottom)
+
+        adapter.setLayerOrder(['top', 'tile', 'bottom'], {
+            layers: {
+                top: { type: 'vector' },
+                tile: { type: 'tile' },
+                bottom: { type: 'vector' },
+            },
+        })
+
+        expect(calls).toEqual([
+            ['remove', bottom],
+            ['remove', top],
+            ['add', bottom],
+            ['add', top],
+        ])
+        expect(tile.setZIndex).toHaveBeenCalledWith(3 + 1 - 1)
+    })
+
+    test('re-adds a vector\'s on-attachments just before it and drops the off ones', () => {
+        const { adapter, onMap, calls } = setupOrder()
+        const vector = makeLayer()
+        const labels = makeLayer()
+        const model = makeLayer()
+        adapter.registerLayer('v', vector)
+        onMap.add(vector).add(labels).add(model)
+
+        adapter.setLayerOrder(['v'], {
+            layers: {
+                v: {
+                    type: 'vector',
+                    attachments: [
+                        { layer: labels, on: true },
+                        { layer: model, on: false },
+                        { layer: null, on: true },
+                    ],
+                },
+            },
+        })
+
+        expect(calls).toEqual([
+            ['remove', labels],
+            ['remove', model],
+            ['remove', vector],
+            ['add', labels],
+            ['add', vector],
+        ])
+    })
+
+    test('an image is re-added, ranked, and redrawn', () => {
+        const { adapter, onMap, calls } = setupOrder()
+        const image = makeLayer({ setZIndex: vi.fn(), clearCache: vi.fn(), redraw: vi.fn() })
+        adapter.registerLayer('img', image)
+        onMap.add(image)
+
+        adapter.setLayerOrder(['other', 'img'], { layers: { img: { type: 'image' } } })
+
+        expect(calls).toEqual([['remove', image], ['add', image]])
+        expect(image.setZIndex).toHaveBeenCalledWith(2 + 1 - 1)
+        expect(image.clearCache).toHaveBeenCalledTimes(1)
+        expect(image.redraw).toHaveBeenCalledTimes(1)
+    })
+
+    test('leaves layers that are off, unheld, or of another type alone', () => {
+        const { adapter, onMap, calls } = setupOrder()
+        const off = makeLayer({ setZIndex: vi.fn() })
+        const grid = makeLayer({ setZIndex: vi.fn() })
+        adapter.registerLayer('off', off)
+        adapter.registerLayer('grid', grid)
+        onMap.add(grid)
+
+        adapter.setLayerOrder(['off', 'unheld', 'grid'], {
+            layers: { off: { type: 'tile' }, grid: { type: 'vectortile' } },
+        })
+
+        expect(calls).toEqual([])
+        expect(off.setZIndex).not.toHaveBeenCalled()
+        expect(grid.setZIndex).not.toHaveBeenCalled()
+    })
+
+    test('does nothing before init', () => {
+        const adapter = new LeafletAdapter()
+        expect(() => adapter.setLayerOrder(['a'])).not.toThrow()
+    })
+})

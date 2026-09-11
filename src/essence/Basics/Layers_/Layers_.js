@@ -542,6 +542,17 @@ const L_ = {
                     })
                     return true
                 }),
+                // Draw order, top first, headers excluded. setOrder takes the
+                // whole list back and broadcasts 'layers:orderChanged'.
+                window.mmgisAPI.provide('layers:getOrder', () => [
+                    ...L_._layersOrdered,
+                ]),
+                window.mmgisAPI.provide('layers:setOrder', ({ order } = {}) => {
+                    if (!Array.isArray(order)) return false
+                    return L_.reorderLayers(
+                        order.map((name) => L_.asLayerUUID(name))
+                    )
+                }),
                 // In-memory layer add/remove (not persisted; lost on reload).
                 // layerObj requires { name, type, ... }. See mmgisAPI.addLayer.
                 window.mmgisAPI.provide('layers:addLayer', (layerObj) =>
@@ -1251,7 +1262,7 @@ const L_ = {
                 s.type === 'vector' &&
                 skipOrderedBringToFront !== true
             ) {
-                L_.Map_.orderedBringToFront()
+                L_.syncLayerOrder()
             }
             L_._refreshAnnotationEvents()
 
@@ -1866,7 +1877,7 @@ const L_ = {
             for (let i = L_.toggledOffFeatures.length - 1; i >= 0; i--)
                 L_.toggleFeature(L_.toggledOffFeatures[i], true)
         }
-        L_.Map_.orderedBringToFront()
+        L_.syncLayerOrder()
         L_.setActiveFeature(L_.activeFeature?.layer)
         L_._refreshAnnotationEvents()
     },
@@ -2994,14 +3005,65 @@ const L_ = {
             console.warn(
                 "reorderLayers: newLayersOrdered is not consistent, won't run."
             )
-            return
+            return false
         }
 
-        L_._layersOrdered = newLayersOrdered
+        L_.applyLayerOrder(newLayersOrdered)
+        return true
+    },
+    // Trusts `order` to be a permutation of `_layersOrdered`.
+    applyLayerOrder: function (order) {
+        // `_layersLoaded` is indexed like `_layersOrdered`, so it moves too.
+        const loaded = {}
+        L_._layersOrdered.forEach((name, i) => {
+            loaded[name] = L_._layersLoaded[i]
+        })
+        L_._layersOrdered = [...order]
+        L_._layersLoaded = L_._layersOrdered.map((name) => loaded[name])
 
-        if (L_.Map_) L_.Map_.orderedBringToFront(true)
+        L_.syncLayerOrder()
 
         if (L_.Globe_) L_.Globe_.litho.orderLayers(L_._layersOrdered)
+
+        if (window.mmgisAPI)
+            window.mmgisAPI.emit('layers:orderChanged', {
+                order: [...L_._layersOrdered],
+            })
+    },
+    // Push `_layersOrdered` to the engine, then re-apply the two rules that
+    // sit above any engine's stack: zoom cutoffs, and drawings on top.
+    syncLayerOrder: function () {
+        const engine = L_.Map_?.engine
+        if (!engine) return
+
+        const layers = {}
+        L_._layersOrdered.forEach((name) => {
+            const attachments = Object.values(
+                L_.layers.attachments[name] || {}
+            ).map((a) => ({
+                layer: L_.Map_.nativeLayer(a.layer),
+                on: a.on === true && a.type !== 'model',
+            }))
+            layers[name] = { type: L_.layers.data[name]?.type, attachments }
+        })
+
+        CursorInfo.hide(true)
+        engine.setLayerOrder([...L_._layersOrdered], { layers })
+
+        L_.enforceVisibilityCutoffs()
+
+        Object.keys(L_.layers.layer).forEach((key) => {
+            if (
+                key.startsWith('DrawTool_') &&
+                Array.isArray(L_.layers.layer[key])
+            ) {
+                L_.layers.layer[key].forEach((l) => {
+                    try {
+                        engine.bringToFront(L_.Map_.nativeLayer(l))
+                    } catch (err) {}
+                })
+            }
+        })
     },
     clearVectorLayer: function (layerName) {
         layerName = L_.asLayerUUID(layerName)
@@ -3736,6 +3798,7 @@ const L_ = {
     resetConfig: async function (data) {
         // Save so we can make sure we reproduce the same layer settings after parsing the config
         const toggledArray = { ...L_.layers.on }
+        const previousOrder = L_._layersOrdered
 
         // Reset for now
         L_.layers.on = {}
@@ -3750,6 +3813,18 @@ const L_ = {
 
         // Set back
         L_.layers.on = { ...L_.layers.on, ...toggledArray }
+
+        // parseConfig rebuilt the order from the config. Layers that survived
+        // keep their relative order from before; new ones take their config slot.
+        const kept = previousOrder.filter((name) =>
+            L_._layersOrdered.includes(name)
+        )
+        let k = 0
+        const merged = L_._layersOrdered.map((name) =>
+            previousOrder.includes(name) ? kept[k++] : name
+        )
+        if (merged.some((name, i) => name !== L_._layersOrdered[i]))
+            L_.applyLayerOrder(merged)
     },
     // Dynamically add a new layer or update a layer (used by WebSocket)
     modifyLayer: async function (data, layerName, type) {
@@ -3904,7 +3979,7 @@ const L_ = {
                 await L_.modifyLayer(data, newLayerName, type)
             }
 
-            if (L_.Map_) L_.Map_.orderedBringToFront(true)
+            L_.syncLayerOrder()
 
             // If the user rearranged the layers with the LayersTool, reset the ordering history
             if (
