@@ -369,14 +369,14 @@
             {
               "field": "time.dataStartTime",
               "name": "Data Start Time",
-              "description": "The earliest time this layer has data for. The layer is not requested while the timeline's window lies entirely before it. A partial date starts at the beginning of what it names, so 2020-03 starts on 1 March. Leave empty to leave the start unconstrained. Format: ISO 8601 (e.g., 2020-01-01T00:00:00Z or 2020-01).",
+              "description": "The earliest time this layer has data for. The layer is not requested while the timeline's window lies entirely before it. Use an ISO 8601 datetime (e.g., 2020-01-01T00:00:00Z); a partial date starts at the beginning of what it names, so 2020-03 starts on 1 March. Or use now to follow the current date, optionally offset by an ISO 8601 duration (e.g., now - P1D). Leave empty to leave the start unconstrained. An unreadable value is ignored.",
               "type": "text",
               "width": 6
             },
             {
               "field": "time.dataEndTime",
               "name": "Data End Time",
-              "description": "The latest time this layer has data for. The layer is not requested while the timeline's window lies entirely after it. A partial date runs to the end of what it names, so 2020-03 runs to the end of March. Leave empty to leave the end unconstrained; 'now' means the current moment. Format: ISO 8601 (e.g., 2025-12-31T23:59:59Z or 2025-12).",
+              "description": "The latest time this layer has data for. The layer is not requested while the timeline's window lies entirely after it. Use an ISO 8601 datetime (e.g., 2025-12-31T23:59:59Z); a partial date runs to the end of what it names, so 2020-03 runs to the end of March. Or use now for a collection that is still growing, so the layer stays current without edits, optionally offset by an ISO 8601 duration (e.g., now + P5D). Leave empty to leave the end unconstrained. An unreadable value is ignored.",
               "type": "text",
               "width": 6
             },
