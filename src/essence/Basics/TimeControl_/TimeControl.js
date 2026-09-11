@@ -67,29 +67,46 @@ async function fetchUrlReplacement(r, layer, layerTimeFormat) {
 // commit would otherwise refetch every time-enabled layer's whole tileset.
 const TIME_LAYER_RELOAD_WINDOW_MS = 200
 
-let _timeLayerReloadTimeout = null
+let _timeLayerReloadWindow = null
+let _timeLayerReloadBooked = false
 
 /**
- * Reloads the time-enabled layers once per window, on the times the layers
- * carry when it runs.
- *
- * Trailing edge, one booking at a time: the first commit opens the window and
- * the ones after it fall in, so a burst reloads once and continuous playback
- * reloads every window rather than never. Only this path waits:
- * `TimeControl.reloadTimeLayers` stays immediate for the tools that call it
- * directly, and cancels the booking it would otherwise duplicate.
+ * Opens a window running from now, in which any commit books the single
+ * reload that closes it. Every reload of the time-enabled layers opens one,
+ * so a window always runs from the last reload rather than from the last
+ * commit.
  */
-function scheduleTimeLayerReload() {
-    if (_timeLayerReloadTimeout != null) return
-    _timeLayerReloadTimeout = setTimeout(() => {
-        _timeLayerReloadTimeout = null
-        TimeControl.reloadTimeLayers()
+function openTimeLayerReloadWindow() {
+    clearTimeout(_timeLayerReloadWindow)
+    _timeLayerReloadBooked = false
+    _timeLayerReloadWindow = setTimeout(() => {
+        _timeLayerReloadWindow = null
+        if (_timeLayerReloadBooked) TimeControl.reloadTimeLayers()
     }, TIME_LAYER_RELOAD_WINDOW_MS)
 }
 
+/**
+ * Reloads the time-enabled layers for a committed time change, at most once
+ * per window and always on the times the layers carry when the reload runs.
+ *
+ * Leading and trailing: a commit arriving with no window open reloads straight
+ * away, so an isolated change — `mmgisAPI.setTime`, the first commit after
+ * `Map_.init` — costs no latency, and the commits that follow it inside the
+ * window collapse into the one reload that closes the window. Continuous
+ * playback therefore reloads every window rather than never.
+ */
+function scheduleTimeLayerReload() {
+    if (_timeLayerReloadWindow != null) {
+        _timeLayerReloadBooked = true
+        return
+    }
+    TimeControl.reloadTimeLayers()
+}
+
 function cancelTimeLayerReload() {
-    clearTimeout(_timeLayerReloadTimeout)
-    _timeLayerReloadTimeout = null
+    clearTimeout(_timeLayerReloadWindow)
+    _timeLayerReloadWindow = null
+    _timeLayerReloadBooked = false
 }
 
 // Can be either hh:mm:ss or just seconds
@@ -117,7 +134,8 @@ var TimeControl = {
         _providerCleanups.forEach((cleanup) => cleanup())
         _providerCleanups = []
         // Same for a reload the previous mission's last time change left
-        // booked, which would land on the new mission's layers.
+        // booked, which would land on the new mission's layers, and for the
+        // window it was booked in.
         cancelTimeLayerReload()
 
         // Register bus handlers before any UI or plugin can emit, so a
@@ -678,9 +696,10 @@ var TimeControl = {
         return nextUrl
     },
     reloadTimeLayers: function () {
-        // This is the reload a booked one would have performed, so the booking
-        // has nothing left to do.
-        cancelTimeLayerReload()
+        // This is the window's reload, whoever asked for it: it drops a
+        // booking that would now refetch the same tilesets a second time, and
+        // starts the next window here so the commits right behind it coalesce.
+        openTimeLayerReloadWindow()
 
         // refresh time enabled layers
         let reloadedLayers = []
@@ -904,7 +923,7 @@ function initLayerTimes() {
  * them - onto the global times, and names the layers moved.
  *
  * The layers' Leaflet tile options are left where they are, for the callers
- * whose reload follows a window later: `reloadLayer` writes the options as it
+ * whose reload may be a window off: `reloadLayer` writes the options as it
  * reloads, so a tile a pan exposes in between is compiled from the same time
  * as the tiles around it. `TimeControl.updateLayersTime` writes both.
  *
@@ -960,10 +979,11 @@ function timeInputChange(startTime, endTime, currentTime, skipUpdate) {
     })
 
     if (skipUpdate !== true) {
-        // The times and their labels move now; the reload waits for its
-        // window. A Leaflet layer's own tile options move with the reload -
-        // reloadLayer writes them - so a tile a pan exposes meanwhile is
-        // compiled with the time still on screen.
+        // The times and their labels move now; the reload is this window's,
+        // which is either now or when the window closes. A Leaflet layer's own
+        // tile options move with the reload — reloadLayer writes them — so a
+        // tile a pan exposes while one is pending is compiled with the time
+        // still on screen.
         applyGlobalTimesToLayers()
         scheduleTimeLayerReload()
     }

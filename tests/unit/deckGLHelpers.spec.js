@@ -1,5 +1,6 @@
 import { test, expect } from 'vitest'
-import { TileLayer } from '@deck.gl/geo-layers'
+import { WebMercatorViewport } from '@deck.gl/core'
+import { TileLayer, _Tileset2D as Tileset2D } from '@deck.gl/geo-layers'
 import {
     resolveLatLng,
     resolveBounds,
@@ -306,6 +307,51 @@ test.describe('DeckGLHelpers', () => {
                 expect(layer.props.visibleMinZoom).toBe(4.5)
                 expect(layer.props.maxZoom).toBe(14)
             })
+
+            // The floor above is arithmetic over deck.gl's tile-level
+            // rounding and its 512px TILE_SIZE, so those numbers stay correct
+            // only for as long as deck.gl keeps both. This hands the layer's
+            // own props to the tileset deck.gl asks for tiles through and
+            // asserts on the tiles that come back, so a deck.gl upgrade that
+            // moved either fails here rather than shifting every tile layer's
+            // visibility a level and a half.
+            const tilesDeckAsksFor = (layer, zoom) =>
+                new Tileset2D(layer.props).getTileIndices({
+                    viewport: new WebMercatorViewport({
+                        width: 800,
+                        height: 600,
+                        longitude: -110,
+                        latitude: 37,
+                        zoom,
+                    }),
+                    minZoom: layer.props.minZoom,
+                    maxZoom: layer.props.maxZoom,
+                })
+
+            test.each([
+                ['a 256px raster tile layer', 'tile', 3.5],
+                ['a 512px vector tile layer', 'vectortile', 4.5],
+            ])(
+                'puts %s on the view zoom deck.gl first asks for its minZoom at',
+                (_label, type, expectedFloor) => {
+                    const layer = buildDeckLayer('deck-floor', {
+                        type,
+                        url: 'https://example.com/tiles/{z}/{x}/{y}',
+                        extent: [-120, 30, -100, 45],
+                        minZoom: 5,
+                    })
+                    expect(layer.props.visibleMinZoom).toBe(expectedFloor)
+
+                    const floor = layer.props.visibleMinZoom
+                    expect(tilesDeckAsksFor(layer, floor - 0.01)).toEqual([])
+
+                    const tiles = tilesDeckAsksFor(layer, floor)
+                    expect(tiles.length).toBeGreaterThan(0)
+                    expect(tiles.map((tile) => tile.z)).toEqual(
+                        tiles.map(() => 5)
+                    )
+                }
+            )
         })
 
         test('creates a GeoJsonLayer for vector type', () => {

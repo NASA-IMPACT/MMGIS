@@ -8,10 +8,12 @@ import { MAP_ENGINE } from '../../src/essence/Basics/MapEngines/types/engine.ts'
  * faster than the tiles they ask for can come back — the browser abandons the
  * in-flight requests, but the tile service has already begun answering them.
  *
- * So the reload waits: one per window, carrying the time the last commit in
- * the window set. What is asserted here is the engine-side effect — how many
- * times the layer is actually refreshed, and with which time — not that a
- * scheduler was called.
+ * So a commit reloads at most once per window: the one that opens the window
+ * reloads straight away, and the ones that arrive while it is open collapse
+ * into a single reload when it closes, carrying the time the last of them set.
+ * What is asserted here is the engine-side effect — how many times the layer
+ * is actually refreshed, and with which time — not that a scheduler was
+ * called.
  *
  * Commits arrive on `time:changeRequested`, the bus event the timeline, the
  * datepicker and the play loop all raise.
@@ -127,28 +129,31 @@ describe('time-driven layer reloads', () => {
         await vi.advanceTimersByTimeAsync(0)
     }
 
-    test('reloads once, when the window closes, on an isolated change', async () => {
+    // The `mmgisAPI.setTime()` case: nothing else is coming, so there is
+    // nothing to wait for and nothing to collapse into a second reload.
+    test('reloads an isolated change immediately and not again', async () => {
         await commit('06')
+        expect(refreshedTimes()).toEqual(['202206'])
 
-        await vi.advanceTimersByTimeAsync(WINDOW_MS - 1)
-        expect(refreshedTimes()).toEqual([])
-
-        await vi.advanceTimersByTimeAsync(1)
+        await vi.advanceTimersByTimeAsync(WINDOW_MS * 2)
         expect(refreshedTimes()).toEqual(['202206'])
     })
 
     // The held-down arrow key / typed date case: the months passed through
-    // are never on screen long enough to be worth a tileset, and the month
-    // that matters is the one the user stopped on.
-    test('collapses a burst into one reload, carrying the last time', async () => {
+    // are never on screen long enough to be worth a tileset, so the burst
+    // costs the tile service the month it started on and the month the user
+    // stopped on, not one tileset per keystroke.
+    test('collapses a burst into the first time and the last', async () => {
         await commit('06')
         await commit('07')
         await commit('08')
         await commit('09')
 
+        expect(refreshedTimes()).toEqual(['202206'])
+
         await vi.advanceTimersByTimeAsync(WINDOW_MS)
 
-        expect(refreshedTimes()).toEqual(['202209'])
+        expect(refreshedTimes()).toEqual(['202206', '202209'])
     })
 
     // Every commit still moves the clock immediately, whatever the reload is
@@ -163,7 +168,7 @@ describe('time-driven layer reloads', () => {
     // Playback at its fastest commits every 100ms and never goes quiet. A
     // commit must not push the booked reload back, or the map would freeze
     // until the user pressed stop: every window still ends in a reload, on
-    // the newest tick.
+    // the newest tick, so playback runs at one tileset per window.
     test('keeps reloading every window through continuous playback', async () => {
         const ticks = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10']
         for (const month of ticks) {
@@ -172,6 +177,7 @@ describe('time-driven layer reloads', () => {
         }
 
         expect(refreshedTimes()).toEqual([
+            '202201',
             '202202',
             '202204',
             '202206',
@@ -191,10 +197,11 @@ describe('time-driven layer reloads', () => {
         L_.layers.layer['NO2 Monthly'] = leafletLayer
 
         await commit('06')
-        expect(leafletLayer.options.time).toBeUndefined()
+        await commit('07')
+        expect(leafletLayer.options.time).toBe('202206')
 
         await vi.advanceTimersByTimeAsync(WINDOW_MS)
-        expect(leafletLayer.options.time).toBe('202206')
+        expect(leafletLayer.options.time).toBe('202207')
     })
 
     // The other caller of the same times: `updateLayersTime` is public API
@@ -205,44 +212,53 @@ describe('time-driven layer reloads', () => {
         L_.layers.layer['NO2 Monthly'] = leafletLayer
 
         await commit('06')
+        await commit('07')
         expect(TimeControl.updateLayersTime()).toEqual(['NO2 Monthly'])
 
-        expect(leafletLayer.options.time).toBe('202206')
+        expect(leafletLayer.options.time).toBe('202207')
     })
 
     // A mission swap re-inits TimeControl. A reload the old mission's last
     // commit left booked would otherwise land on the new mission's layers.
     test('drops a booked reload on re-init', async () => {
         await commit('06')
+        await commit('07')
 
         TimeControl.init()
         await vi.advanceTimersByTimeAsync(WINDOW_MS * 5)
 
-        expect(refreshedTimes()).toEqual([])
+        expect(refreshedTimes()).toEqual(['202206'])
     })
 
-    // The wait belongs to the commit path alone. A tool or plugin that calls
-    // reloadTimeLayers has asked for a reload now — typically because
-    // something other than the time changed — and gets one.
-    test('leaves a direct reloadTimeLayers call unthrottled', async () => {
+    // A tool or plugin that calls reloadTimeLayers has asked for a reload now
+    // — typically because something other than the time changed — and gets
+    // one, window or no window. It is also the reload the booking was waiting
+    // to perform, on the same times, so letting the window close afterwards
+    // would refetch every tileset a second time for nothing.
+    test('reloads on a direct call and drops the booking it satisfies', async () => {
         await commit('06')
+        await commit('07')
 
         TimeControl.reloadTimeLayers()
         await vi.advanceTimersByTimeAsync(0)
+        expect(refreshedTimes()).toEqual(['202206', '202207'])
 
-        expect(refreshedTimes()).toEqual(['202206'])
+        await vi.advanceTimersByTimeAsync(WINDOW_MS * 2)
+        expect(refreshedTimes()).toEqual(['202206', '202207'])
     })
 
-    // That direct call is the flush, not a reload alongside the booked one:
-    // it reloads the layers on the times the commit left them, which is
-    // exactly what the booking was waiting to do, so letting the window close
-    // afterwards would refetch every tileset a second time for nothing.
-    test('cancels the booked reload when one is asked for directly', async () => {
-        await commit('06')
-
+    // And it counts as the window's reload, so the commits behind it are
+    // throttled against it rather than reloading the tilesets it has just
+    // fetched.
+    test('opens a window of its own on a direct call', async () => {
         TimeControl.reloadTimeLayers()
-        await vi.advanceTimersByTimeAsync(WINDOW_MS * 2)
+        await vi.advanceTimersByTimeAsync(0)
+        expect(refreshedTimes()).toEqual(['202201'])
 
-        expect(refreshedTimes()).toEqual(['202206'])
+        await commit('06')
+        expect(refreshedTimes()).toEqual(['202201'])
+
+        await vi.advanceTimersByTimeAsync(WINDOW_MS)
+        expect(refreshedTimes()).toEqual(['202201', '202206'])
     })
 })

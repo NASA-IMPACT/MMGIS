@@ -574,9 +574,9 @@ const getComponent = (
                 layer.demtileurl,
                 `Missions/${configuration.msv.mission}/`,
                 layer.throughTileServer === true,
+                layer.tileMatrixSet,
                 (minZoom, maxNativeZoom, boundingBox) => {
-                  // A tile source reports what it has: cog/info carries no
-                  // zoom levels at all on current TiTiler, and a bounding box
+                  // A tile source reports what it has, and a bounding box
                   // only counts when it came back in lng/lat degrees. Write
                   // the fields that arrived and name the ones that did not.
                   const populated = [];
@@ -635,7 +635,7 @@ const getComponent = (
                   const reason = err?.message ? `: ${err.message}` : ".";
                   dispatch(
                     setSnackBarText({
-                      text: `Could not read an XML or cog/info.geojson alongside that URL${reason}`,
+                      text: `Could not read a tilemapresource.xml or a TiTiler tilejson for that URL${reason}`,
                       severity: "error",
                     })
                   );
@@ -1897,6 +1897,7 @@ function tilePopulateFromX(
   demTileUrl,
   missionPath,
   throughTileServer,
+  tileMatrixSet,
   cb,
   errorCallback
 ) {
@@ -1916,27 +1917,34 @@ function tilePopulateFromX(
         }
       }
 
-      fullUrl = `${getApiBase()}titiler/cog/info.geojson?url=${fullUrl}`;
+      // The tilejson of the pyramid MMGIS asks this layer's tiles from -
+      // ServiceUrls' buildTiTilerCogTilesUrl requests
+      // cog/tiles/{tileMatrixSet} and defaults the same way - so the zoom
+      // levels it reports are the ones the layer's requests are numbered in.
+      const tms = tileMatrixSet || "WebMercatorQuad";
+      fullUrl = `${getApiBase()}titiler/cog/${tms}/tilejson.json?url=${fullUrl}`;
 
       fetch(fullUrl)
         .then((response) => {
           // TiTiler answers a bad url with a 4xx and a `{detail: ...}` body,
-          // which parses as cleanly as an info document. Refuse it here so
-          // errorCallback runs instead of a feature with nothing in it.
+          // which parses as cleanly as a tilejson. Refuse it here so
+          // errorCallback runs instead of a document with nothing in it.
           if (!response.ok)
             throw new Error(
-              `cog/info.geojson responded ${response.status} ${response.statusText}`
+              `cog/${tms}/tilejson.json responded ${response.status} ${response.statusText}`
             );
           return response.json();
         })
-        .then((feature) => {
+        .then((tilejson) => {
           try {
-            // info.geojson is cog/info wrapped in a GeoJSON feature: the same
-            // fields under `properties`, and a `bbox` TiTiler has reprojected
-            // to lng/lat degrees. `properties.bounds` is in the image's own
-            // CRS, so the feature's box is the one to read.
-            const info = feature.properties || {};
-            cb(info.minzoom, info.maxzoom, lngLatBoundingBox(feature.bbox));
+            // A tilejson states `minzoom`, `maxzoom` and - per the TileJSON
+            // spec, whatever the tile matrix set's own CRS - `bounds` in
+            // lng/lat degrees.
+            cb(
+              tilejson.minzoom,
+              tilejson.maxzoom,
+              lngLatBoundingBox(tilejson.bounds)
+            );
           } catch (err) {
             errorCallback(err);
           }
@@ -1983,7 +1991,7 @@ function tilePopulateFromX(
           // tilemapresource.xml states its BoundingBox in the tiles' own
           // projection - gdal2tiles4extent writes a projected extent under
           // the `raster` profile - so it gets the same degree filter the
-          // cog/info.geojson box does.
+          // tilejson box does.
           cb(
             parseInt(minZoom),
             parseInt(maxNativeZoom),
