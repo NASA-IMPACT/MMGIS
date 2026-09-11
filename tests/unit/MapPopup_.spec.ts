@@ -520,10 +520,13 @@ describe('MapPopup_', () => {
         expect(outcome).toEqual(['closed'])
     })
 
-    it('rejects and leaves nothing mounted when wiring the popup fails', async () => {
+    // Failing on the last subscription the wiring makes leaves the unwind with
+    // every one of them to drop, the window's `resize` among them.
+    it('rejects and unwinds every subscription when wiring the popup fails', async () => {
+        const removeListener = vi.spyOn(window, 'removeEventListener')
         const subscribe = engine.engine.on
         engine.engine.on = (event: string, handler: () => void) => {
-            if (event === 'zoomend') throw new Error('engine destroyed')
+            if (event === 'click') throw new Error('engine destroyed')
             subscribe(event, handler)
         }
 
@@ -536,24 +539,6 @@ describe('MapPopup_', () => {
         expect(outcome).toHaveLength(1)
         expect(outcome[0]).toBe(WIRING_FAILED)
         expect(popups()).toHaveLength(0)
-        expect(engine.listenerCount('move')).toBe(0)
-        expect(engine.listenerCount('zoomstart')).toBe(0)
-    })
-
-    // Failing on the last subscription the wiring makes leaves the unwind with
-    // every one of them to drop, the window's `resize` among them.
-    it('unwinds every subscription made before the wiring failed', async () => {
-        const removeListener = vi.spyOn(window, 'removeEventListener')
-        const subscribe = engine.engine.on
-        engine.engine.on = (event: string, handler: () => void) => {
-            if (event === 'click') throw new Error('engine destroyed')
-            subscribe(event, handler)
-        }
-
-        const outcome = track(MapPopup_.show(request(), engine.engine as never))
-        await nextTick()
-
-        expect(outcome).toEqual([WIRING_FAILED])
         for (const event of ['move', 'moveend', 'zoomstart', 'zoomend'])
             expect(engine.listenerCount(event)).toBe(0)
         expect(
