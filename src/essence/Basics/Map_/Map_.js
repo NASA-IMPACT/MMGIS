@@ -1,7 +1,7 @@
 import $ from 'jquery'
 import { isStaticBuild } from '../../../pre/capabilities'
 import F_ from '../Formulae_/Formulae_'
-import L_ from '../Layers_/Layers_'
+import L_, { parseBoundingBox } from '../Layers_/Layers_'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
 import { captureVector } from '../Layers_/LayerCapturer'
 import {
@@ -27,6 +27,10 @@ import {
     syncTileFormatToConfig,
 } from '../Layers_/tileLayerSource'
 import { makeDeckCOGRefresher } from '../Layers_/deckCOGRefresher'
+import {
+    refreshDeckTileLayer,
+    refreshDeckWmsLayer,
+} from '../Layers_/deckTileRefresher'
 import { handOffLayerToEngine } from '../Layers_/engineLayerHandoff'
 import { Kinds } from '../../../pre/tools'
 import DataShaders from '../../Ancillary/DataShaders'
@@ -1692,6 +1696,44 @@ async function makeVelocityLayer(
 }
 
 /**
+ * A layer's configured footprint as `[west, south, east, north]`, or null when
+ * it declares none usable: deck.gl takes it as `extent`, Leaflet as `bounds`.
+ *
+ * A box that does not parse leaves the layer loading unbounded, so say so
+ * rather than let it pass as a configuration that worked.
+ *
+ * @param {object} layerObj - Layer config from the mission JSON.
+ * @returns {[number, number, number, number] | null}
+ */
+function layerBoundingBox(layerObj) {
+    const boundingBox = parseBoundingBox(layerObj.boundingBox)
+    if (layerObj.boundingBox != null && boundingBox == null) {
+        console.warn(
+            `Layer '${layerObj.name}' declares a boundingBox that is not four lng/lat degrees, so it loads without a footprint:`,
+            layerObj.boundingBox
+        )
+    }
+    return boundingBox
+}
+
+/**
+ * A footprint as the `L.LatLngBounds` Leaflet layers take, or null when there
+ * is none.
+ *
+ * @param {[number, number, number, number] | null} boundingBox - As
+ * {@link layerBoundingBox} returns it: `[west, south, east, north]` in degrees.
+ * @returns {object | null}
+ */
+function leafletBounds(boundingBox) {
+    return boundingBox
+        ? L.latLngBounds(
+              L.latLng(boundingBox[1], boundingBox[0]),
+              L.latLng(boundingBox[3], boundingBox[2])
+          )
+        : null
+}
+
+/**
  * Builds a raster tile layer (TMS, WMTS, COG via TiTiler, STAC) and registers it with the active map engine.
  * @param {object} layerObj - Layer config from the mission JSON.
  * @param {object|null} mapContext - Override map/registry context; defaults to main map.
@@ -1712,13 +1754,8 @@ async function makeTileLayer(layerObj, mapContext = null) {
 
     syncTileFormatToConfig(layerObj, tileSource)
 
-    let bb = null
-    if (layerObj.hasOwnProperty('boundingBox')) {
-        bb = L.latLngBounds(
-            L.latLng(layerObj.boundingBox[3], layerObj.boundingBox[2]),
-            L.latLng(layerObj.boundingBox[1], layerObj.boundingBox[0])
-        )
-    }
+    const boundingBox = layerBoundingBox(layerObj)
+
     layerUrl = await TimeControl.performTimeUrlReplacements(
         layerUrl,
         layerObj,
@@ -1769,6 +1806,7 @@ async function makeTileLayer(layerObj, mapContext = null) {
             type: layerObj.type || 'tile',
             url: layerUrl,
             tileformat: tileFormat,
+            extent: boundingBox ?? undefined,
             opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
             minZoom: parseInt(layerObj.minZoom),
             maxNativeZoom: parseInt(layerObj.maxNativeZoom),
@@ -1802,30 +1840,15 @@ async function makeTileLayer(layerObj, mapContext = null) {
                       },
         })
 
-        // A plain deck tile layer takes one static URL, so the per-tile params
-        // Leaflet adds in getTileUrl have to be baked in on every refresh too.
-        // Registered here, on the domain side, because compileTileUrl is not
-        // generic — it branches on MMGIS service prefixes (stac-collection,
-        // COG, titiler-url) and injects COG fields. An adapter must not know
-        // any of that; it only knows it has a function to call.
         // Guarded to the main map for the same reason registerLayer below is:
         // Map_.engine is always the MAIN map's engine, so a non-default ctx
         // would collide with the main map's entry under the same uuid.
         if (ctx.default === true) {
             Map_.engine.setLayerRefresher(
                 layerObj.name,
-                (layer, refreshCtx) => {
-                    // No source URL, or one that compiles to nothing: return
-                    // nothing so the engine keeps the instance it holds.
-                    // Handing deck an empty url would blank the layer.
-                    if (refreshCtx.url == null) return
-                    const compiled = compileTileUrl(
-                        refreshCtx.url,
-                        refreshCtx.tileOptions ?? {}
-                    )
-                    if (!compiled) return
-                    return layer.clone({ data: compiled })
-                }
+                tileFormat === 'wms'
+                    ? refreshDeckWmsLayer
+                    : refreshDeckTileLayer
             )
         }
 
@@ -1850,7 +1873,7 @@ async function makeTileLayer(layerObj, mapContext = null) {
         //noWrap: true,
         continuousWorld: true,
         reuseTiles: true,
-        bounds: bb,
+        bounds: leafletBounds(boundingBox),
         variables: layerObj.variables || {},
     })
 
@@ -1943,10 +1966,13 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
             }` + '&type=mvt&x={x}&y={y}&z={z}'
     }
 
+    const boundingBox = layerBoundingBox(layerObj)
+
     if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
         ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
             type: layerObj.type || 'vectortile',
             url: layerUrl,
+            extent: boundingBox ?? undefined,
             opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
             minZoom: parseInt(layerObj.minZoom),
             maxNativeZoom: parseInt(layerObj.maxNativeZoom),
@@ -1987,13 +2013,7 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
         return
     }
 
-    var bb = null
-    if (layerObj.hasOwnProperty('boundingBox')) {
-        bb = L.latLngBounds(
-            L.latLng(layerObj.boundingBox[3], layerObj.boundingBox[2]),
-            L.latLng(layerObj.boundingBox[1], layerObj.boundingBox[0])
-        )
-    }
+    const bb = leafletBounds(boundingBox)
 
     var clearHighlight = function () {
         for (let l of Object.keys(L_.layers.data)) {
@@ -2045,6 +2065,7 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
 
     var vectorTileOptions = {
         layerName: layerObj.name,
+        bounds: bb,
         rendererFactory: L.svg.tile,
         vectorTileLayerStyles: layerObj.style.vtLayer || {},
         interactive: true,
@@ -2171,13 +2192,8 @@ function makeDataLayer(layerObj, mapContext = null) {
     }
     let layerUrl = L_.getUrl(layerObj.type, layerObj.demtileurl, layerObj)
 
-    let bb = null
-    if (layerObj.hasOwnProperty('boundingBox')) {
-        bb = L.latLngBounds(
-            L.latLng(layerObj.boundingBox[3], layerObj.boundingBox[2]),
-            L.latLng(layerObj.boundingBox[1], layerObj.boundingBox[0])
-        )
-    }
+    const boundingBox = layerBoundingBox(layerObj)
+    const bb = leafletBounds(boundingBox)
 
     const shader = F_.getIn(layerObj, 'variables.shader') || {}
     const shaderType = shader.type || 'image'
@@ -2218,14 +2234,6 @@ function makeImageLayer(layerObj, mapContext = null) {
     let layerUrl = L_.getUrl(layerObj.type, layerObj.url, layerObj)
     if (!F_.isUrlAbsolute(layerUrl)) {
         layerUrl = `${ServiceUrls.getLocalBaseUrl()}/${layerUrl}`
-    }
-
-    let bb = null
-    if (layerObj.hasOwnProperty('boundingBox')) {
-        bb = L.latLngBounds(
-            L.latLng(layerObj.boundingBox[3], layerObj.boundingBox[2]),
-            L.latLng(layerObj.boundingBox[1], layerObj.boundingBox[0])
-        )
     }
 
     const cogColormap = F_.getIn(L_.layers.data[layerObj.name], 'cogColormap')
@@ -2465,9 +2473,13 @@ function makeVideoLayer(layerObj, mapContext = null) {
         layerUrl = `${ServiceUrls.getLocalBaseUrl()}/${layerUrl}`
     }
 
-    if (!layerObj.boundingBox || layerObj.boundingBox.length !== 4) {
+    // The corners the video is stretched between, so a layer without a usable
+    // footprint has nowhere to put it.
+    const boundingBox = parseBoundingBox(layerObj.boundingBox)
+    if (boundingBox == null) {
         console.warn(
-            `Video layer '${layerObj.name}' missing required bounding box`
+            `Video layer '${layerObj.name}' needs a boundingBox of four lng/lat degrees to place its video, and declares:`,
+            layerObj.boundingBox
         )
         L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
         L_.layers.layer[layerObj.name] = null
@@ -2475,16 +2487,7 @@ function makeVideoLayer(layerObj, mapContext = null) {
         return
     }
 
-    const bounds = [
-        [
-            parseFloat(layerObj.boundingBox[1]),
-            parseFloat(layerObj.boundingBox[0]),
-        ],
-        [
-            parseFloat(layerObj.boundingBox[3]),
-            parseFloat(layerObj.boundingBox[2]),
-        ],
-    ]
+    const bounds = leafletBounds(boundingBox)
 
     const videoOptions = {
         opacity: layerObj.initialOpacity != null ? layerObj.initialOpacity : 1,

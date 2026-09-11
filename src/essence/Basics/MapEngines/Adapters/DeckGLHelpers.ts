@@ -294,6 +294,88 @@ function parseWmsUrl(url: string): {
 }
 
 /**
+ * A deck.gl WMSLayer's `data` and `layers` props for a full WMS URL - the
+ * service address plus the GetMap and vendor params the mission pasted - and
+ * `wmsSourceUrl`, the URL they were built from.
+ *
+ * A pre-built source is the only channel WMSLayer offers for forwarding those
+ * params on every request: given the URL as a string it would build a source
+ * from the whole of it and append a second query. The cost is that deck.gl
+ * has no way to tell two sources built from the same URL apart - it compares
+ * `data` objects by identity - and a layer handed a new source refetches its
+ * capabilities and its image. So the URL rides along in the layer's props,
+ * where a refresh can read what the source it holds was built from.
+ */
+export function wmsLayerSource(url: string): {
+    data: WMSImageSource
+    layers: string[]
+    wmsSourceUrl: string
+} {
+    const { base, layers, wmsParameters, vendorParameters } = parseWmsUrl(url)
+    return {
+        data: new WMSImageSource(base, {
+            wms: { wmsParameters, vendorParameters },
+        } as ConstructorParameters<typeof WMSImageSource>[1]),
+        layers,
+        wmsSourceUrl: url,
+    }
+}
+
+/**
+ * deck.gl's zoom props for a tile layer whose floor and ceiling come from
+ * mission configuration, where they are Leaflet tile levels: `minZoom` is the
+ * first level the layer shows at, `maxNativeZoom` the last level the service
+ * has (deeper views scale its tiles), and either may be absent - Map_ hands
+ * over parseInt of an absent field, NaN.
+ *
+ * The floor is stated as `visibleMinZoom`, which deck.gl compares against its
+ * view zoom and honours with and without an extent: it stops the tile
+ * requests and hides the layer. deck.gl's own `minZoom` is left at its
+ * default because it does neither uniformly - with an extent it clamps the
+ * requests to level minZoom instead of stopping them, and without one it hides
+ * on the view-zoom scale, a level and a half above the same floor.
+ *
+ * Converting the level to a view zoom: deck.gl fetches level
+ * round(zoom + log2(512 / tileSize)), so level minZoom first appears at
+ * zoom = minZoom - log2(512 / tileSize) - 0.5, Math.round taking .5 upwards.
+ * deck.gl's view zoom runs one below Leaflet's for the same scale, so minZoom
+ * 5 at 256px tiles becomes 3.5 here and the layer appears where Leaflet's
+ * minZoom 5 shows it.
+ *
+ * @param tileSize - The tile size the layer is built with, in pixels.
+ */
+function tileZoomProps(
+    o: { minZoom?: number; maxZoom?: number; maxNativeZoom?: number },
+    tileSize: number
+): { visibleMinZoom: number | undefined; maxZoom: number | undefined } {
+    const finite = (n: unknown): number | undefined =>
+        typeof n === 'number' && Number.isFinite(n) ? n : undefined
+    const minZoom = finite(o.minZoom)
+    return {
+        visibleMinZoom:
+            minZoom === undefined
+                ? undefined
+                : minZoom - Math.log2(512 / tileSize) - 0.5,
+        maxZoom: finite(o.maxNativeZoom) ?? finite(o.maxZoom),
+    }
+}
+
+/**
+ * The tile size a deck.gl tile layer is effectively built with, in pixels. A
+ * `nativeOptions.tileSize` outranks the layer's own field because
+ * `nativeOptions` is spread over the layer's props last, so the zoom floor
+ * {@link tileZoomProps} computes has to be derived from the same number.
+ *
+ * @param fallback - The layer class's own tile size, used when neither is set.
+ */
+function effectiveTileSize(
+    o: { tileSize?: number; nativeOptions?: Record<string, unknown> },
+    fallback: number
+): number {
+    return Number(o.nativeOptions?.tileSize) || Number(o.tileSize) || fallback
+}
+
+/**
  * Resolve the per-feature style accessors shared by the `vector` and
  * `vectortile` layers.
  *
@@ -460,30 +542,26 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
             // per view. Route to deck.gl's WMSLayer, parsing the service URL and
             // LAYERS out of the full WMS url (same params Leaflet reads).
             if (o.tileformat === 'wms') {
-                const { base, layers, wmsParameters, vendorParameters } =
-                    parseWmsUrl(o.url)
                 return new WMSLayer({
                     id,
-                    // A pre-built source (instead of the base-URL string) is the
-                    // only channel WMSLayer offers for forwarding the pasted
-                    // URL's GetMap/vendor params on every request.
-                    data: new WMSImageSource(base, {
-                        wms: { wmsParameters, vendorParameters },
-                    } as ConstructorParameters<typeof WMSImageSource>[1]),
+                    ...wmsLayerSource(o.url),
                     serviceType: 'wms',
-                    layers,
                     srs: 'EPSG:3857',
                     opacity: o.opacity ?? 1,
                     ...(o.nativeOptions ?? {}),
                 }) as unknown as Layer
             }
 
+            // The 256px tiles MMGIS's raster layers are cut at, unless a
+            // layer or native option replaces it.
+            const tileSize = effectiveTileSize(o, 256)
+
             return new TileLayer({
                 id,
                 data: o.url,
-                tileSize: o.tileSize ?? 256,
-                minZoom: o.minZoom,
-                maxZoom: o.maxNativeZoom ?? o.maxZoom,
+                tileSize,
+                ...tileZoomProps(o, tileSize),
+                extent: o.extent,
                 opacity: o.opacity ?? 1,
                 getTileData: (tile: { url?: string | null; signal?: AbortSignal }) =>
                     fetchImageTile(tile.url, tile.signal),
@@ -584,11 +662,18 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 legendFingerprint,
             } = resolveStyleAccessors(style, o.legend, o.legendConfigured)
 
+            const tileSize = effectiveTileSize(o, 512)
+
             return new MVTLayer({
                 id,
                 data: o.url,
-                minZoom: o.minZoom,
-                maxZoom: o.maxNativeZoom ?? o.maxZoom,
+                // The 512px tiles vector tiles are cut at, unless a layer or
+                // native option replaces it. Handed to the layer as well as to
+                // the zoom floor, so the floor is always computed from the size
+                // the layer is built with.
+                tileSize,
+                ...tileZoomProps(o, tileSize),
+                extent: o.extent,
                 opacity: o.opacity ?? 1,
                 pickable: o.interactive ?? true,
                 // deck.gl decodes vector tiles into a binary form by default,

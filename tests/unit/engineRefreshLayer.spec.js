@@ -1,7 +1,6 @@
 import { describe, test, expect, vi } from 'vitest'
 import LeafletAdapter from '../../src/essence/Basics/MapEngines/Adapters/LeafletAdapter.ts'
 import DeckGLAdapter from '../../src/essence/Basics/MapEngines/Adapters/DeckGLAdapter.ts'
-import { compileTileUrl } from '../../src/essence/Basics/Layers_/tileUrlUtils.ts'
 
 /**
  * refreshLayer is the single update entry point both engines expose (#274).
@@ -36,12 +35,12 @@ describe('LeafletAdapter.refreshLayer', () => {
             adapter.refreshLayer('l1', {
                 url: 'https://x/{z}/{x}/{y}.png',
                 tileOptions: { colormap: 'viridis' },
-                force: true,
             })
         ).toBe(true)
+        // force stays off: a tile whose URL did not change is left alone.
         expect(layer.refreshed).toEqual({
             url: 'https://x/{z}/{x}/{y}.png',
-            force: true,
+            force: false,
             tileOptions: { colormap: 'viridis' },
         })
     })
@@ -57,7 +56,6 @@ describe('LeafletAdapter.refreshLayer', () => {
         expect(refresh).toHaveBeenCalledWith(layer, {
             url: 'u',
             tileOptions: undefined,
-            force: undefined,
         })
         expect(layer.refreshed).toBe(null)
     })
@@ -126,57 +124,6 @@ describe('DeckGLAdapter.refreshLayer', () => {
         expect(
             adapter.refreshLayer('l1', { url: 'https://x/{z}/{x}/{y}.png' })
         ).toBe(false)
-        expect(adapter.getLayers().find((l) => l.id === 'l1')).toBe(original)
-    })
-})
-
-/**
- * The refresher Map_.makeTileLayer registers for a plain deck tile layer.
- * Reproduced here because Map_ cannot be imported under vitest (it pulls in
- * JSX viewers Vite will not parse from a .js file); what this pins is the
- * compile-and-clone contract the adapter drives, not the registration itself.
- */
-const makeTileRefresher = () => (layer, ctx) => {
-    if (ctx.url == null) return
-    const compiled = compileTileUrl(ctx.url, ctx.tileOptions ?? {})
-    if (!compiled) return
-    return layer.clone({ data: compiled })
-}
-
-describe('the plain deck tile refresher', () => {
-    test('clones with a compiled tile URL', () => {
-        const adapter = new DeckGLAdapter()
-        adapter.addLayer(makeDeckLayer('l1', { data: 'old' }))
-        adapter.setLayerRefresher('l1', makeTileRefresher())
-
-        // The url carries a {time} placeholder and tileOptions substitutes it,
-        // so this is only observable if the refresher actually calls
-        // compileTileUrl — a byte-identical url (no placeholder) would pass
-        // even if compileTileUrl were never invoked.
-        expect(
-            adapter.refreshLayer('l1', {
-                url: 'https://x/{z}/{x}/{y}.png?time={time}',
-                tileOptions: { time: '2024-01-01T00:00:00Z' },
-            })
-        ).toBe(true)
-        const data = adapter.getLayers().find((l) => l.id === 'l1').props.data
-        expect(data).not.toContain('{time}')
-        expect(data).toContain('2024-01-01T00:00:00Z')
-    })
-
-    // A `COG:` layer with no TiTiler service behind it resolves to no url.
-    // Handing that to deck would blank the layer, so the refresher declines
-    // and the engine keeps the instance it holds.
-    test('leaves the held layer alone when there is no url to compile', () => {
-        const adapter = new DeckGLAdapter()
-        const original = makeDeckLayer('l1', { data: 'old' })
-        adapter.addLayer(original)
-        adapter.setLayerRefresher('l1', makeTileRefresher())
-
-        adapter.refreshLayer('l1', { url: null })
-        expect(adapter.getLayers().find((l) => l.id === 'l1')).toBe(original)
-
-        adapter.refreshLayer('l1', { url: '' })
         expect(adapter.getLayers().find((l) => l.id === 'l1')).toBe(original)
     })
 })
