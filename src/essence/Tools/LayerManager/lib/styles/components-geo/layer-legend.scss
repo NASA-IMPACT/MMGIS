@@ -149,6 +149,18 @@ $legend-content-indent: 28px;
         }
     }
 
+    /* Always shown, unlike the hover-only actions: it is how a row is picked
+       up, and a handle that appears on hover cannot be found. */
+    &__drag-handle {
+        color: var(--theme-color-base-light, #a9aeb1);
+        cursor: grab;
+        touch-action: none;
+
+        &:active {
+            cursor: grabbing;
+        }
+    }
+
     /* Icons are the exported SVGs used as masks, tinted by the button's color.
        Masking (rather than <img>) is what lets them follow hover/active state. */
     &__icon {
@@ -182,6 +194,11 @@ $legend-content-indent: 28px;
         &--more-options {
             -webkit-mask-image: url('../../geo/icons/more-options.svg');
             mask-image: url('../../geo/icons/more-options.svg');
+        }
+
+        &--drag-handle {
+            -webkit-mask-image: url('../../geo/icons/drag-handle.svg');
+            mask-image: url('../../geo/icons/drag-handle.svg');
         }
     }
 

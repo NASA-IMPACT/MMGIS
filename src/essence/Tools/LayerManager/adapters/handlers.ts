@@ -12,7 +12,7 @@ import {
     ZOOM_TO_LAYER_PADDING,
     ZOOM_TO_LAYER_POINT_MAX_ZOOM,
 } from '../lib/utils/constants'
-import { moveInOrder } from '../lib/utils/layerOrder'
+import { moveInOrder, placeInOrder } from '../lib/utils/layerOrder'
 import type { LayerMoveAction } from '../lib/types'
 
 type Refresh = () => Promise<void> | void
@@ -70,10 +70,19 @@ export const zoomToLayer = async (layerId: string): Promise<void> => {
     })
 }
 
+// Core broadcasts the new order, which is what re-sorts the list; nothing
+// to emit here. Null means there was nowhere to go.
+const writeOrder = async (layerId: string, next: string[] | null): Promise<void> => {
+    if (next === null) return
+    const accepted = await mmgisSetLayerOrder(next)
+    if (accepted === false) {
+        console.warn(`LayerManager: core refused the new order for '${layerId}'`)
+    }
+}
+
 /**
  * Moves a layer in the draw order, one step past its neighbour in the list
- * the user sees or all the way to an end. Core broadcasts the new order,
- * which is what re-sorts the list; nothing to emit here.
+ * the user sees or all the way to an end.
  */
 export const moveLayer = async (
     layerId: string,
@@ -82,12 +91,18 @@ export const moveLayer = async (
 ): Promise<void> => {
     const order = await mmgisGetLayerOrder()
     if (order === null) return
-    const next = moveInOrder(order, shownIds, layerId, action)
-    if (next === null) return
-    const accepted = await mmgisSetLayerOrder(next)
-    if (accepted === false) {
-        console.warn(`LayerManager: core refused the new order for '${layerId}'`)
-    }
+    await writeOrder(layerId, moveInOrder(order, shownIds, layerId, action))
+}
+
+/** Drops a dragged layer at `toIndex` of the list the user dragged it through. */
+export const dropLayer = async (
+    layerId: string,
+    toIndex: number,
+    shownIds: string[],
+): Promise<void> => {
+    const order = await mmgisGetLayerOrder()
+    if (order === null) return
+    await writeOrder(layerId, placeInOrder(order, shownIds, layerId, toIndex))
 }
 
 /**

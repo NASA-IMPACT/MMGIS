@@ -48,3 +48,39 @@ export const moveInOrder = (
     const insertAt = action === 'up' ? slot : slot + 1
     return [...rest.slice(0, insertAt), id, ...rest.slice(insertAt)]
 }
+
+/**
+ * The full draw order after dropping one layer at `toIndex` of `shown`, the
+ * list the user dragged it through. It lands next to the last shown layer it
+ * passed — just above the one now below it when dragged up, just below the
+ * one now above it when dragged down — so it never ends up under a hidden
+ * layer that sits between two shown ones. Null when nothing moves.
+ */
+export const placeInOrder = (
+    order: string[],
+    shown: string[],
+    id: string,
+    toIndex: number,
+): string[] | null => {
+    const from = shown.indexOf(id)
+    if (from === -1 || !order.includes(id)) return null
+
+    const moved = shown.filter((other) => other !== id)
+    const at = Math.max(0, Math.min(toIndex, moved.length))
+    if (at === from) return null
+    moved.splice(at, 0, id)
+    const above = moved[at - 1]
+    const below = moved[at + 1]
+
+    const rest = order.filter((other) => other !== id)
+    const passedUp = toIndex < from
+    let insertAt = -1
+    if (passedUp && below != null) insertAt = rest.indexOf(below)
+    else if (!passedUp && above != null) insertAt = rest.indexOf(above) + 1
+    else if (below != null) insertAt = rest.indexOf(below)
+    else if (above != null) insertAt = rest.indexOf(above) + 1
+    if (insertAt < 0) return null
+
+    const next = [...rest.slice(0, insertAt), id, ...rest.slice(insertAt)]
+    return next.every((other, i) => other === order[i]) ? null : next
+}

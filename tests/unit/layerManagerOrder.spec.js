@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest'
-import { sortByOrder, moveInOrder } from '../../src/essence/Tools/LayerManager/lib/utils/layerOrder.ts'
+import { sortByOrder, moveInOrder, placeInOrder } from '../../src/essence/Tools/LayerManager/lib/utils/layerOrder.ts'
 
 /**
  * The LayerManager reads the draw order over the bus, shows its list top
@@ -68,10 +68,48 @@ describe('moveInOrder', () => {
     })
 })
 
-describe('moveLayer handler', () => {
+describe('placeInOrder', () => {
+    // Full order a..e; the user sees only a, c, e (b and d are filtered out).
+    const order = ['a', 'b', 'c', 'd', 'e']
+    const shown = ['a', 'c', 'e']
+
+    test('dragged up, it lands just above the shown layer now below it', () => {
+        expect(placeInOrder(order, shown, 'e', 1)).toEqual(['a', 'b', 'e', 'c', 'd'])
+        expect(placeInOrder(order, shown, 'e', 0)).toEqual(['e', 'a', 'b', 'c', 'd'])
+    })
+
+    test('dragged down, it lands just below the shown layer now above it', () => {
+        expect(placeInOrder(order, shown, 'a', 1)).toEqual(['b', 'c', 'a', 'd', 'e'])
+        expect(placeInOrder(order, shown, 'a', 2)).toEqual(['b', 'c', 'd', 'e', 'a'])
+    })
+
+    test('an index past the end drops it last', () => {
+        expect(placeInOrder(order, shown, 'a', 99)).toEqual(['b', 'c', 'd', 'e', 'a'])
+    })
+
+    test.each([
+        ['dropped where it already is', 'c', 1],
+        ['a layer the list does not show', 'b', 0],
+        ['a layer the order does not hold', 'zz', 0],
+        ['the only shown layer', 'a', 0, ['a']],
+    ])('returns null for %s', (_label, id, toIndex, shownOverride) => {
+        expect(placeInOrder(order, shownOverride ?? shown, id, toIndex)).toBeNull()
+    })
+
+    test('does not mutate the input', () => {
+        const before = [...order]
+        const shownBefore = [...shown]
+        placeInOrder(order, shown, 'e', 0)
+        expect(order).toEqual(before)
+        expect(shown).toEqual(shownBefore)
+    })
+})
+
+describe('moveLayer and dropLayer handlers', () => {
     let getOrder
     let setOrder
     let moveLayer
+    let dropLayer
 
     beforeEach(async () => {
         vi.resetModules()
@@ -87,7 +125,23 @@ describe('moveLayer handler', () => {
             mmgisGetLayerOrder: getOrder,
             mmgisSetLayerOrder: setOrder,
         }))
-        ;({ moveLayer } = await import('../../src/essence/Tools/LayerManager/adapters/handlers.ts'))
+        ;({ moveLayer, dropLayer } = await import('../../src/essence/Tools/LayerManager/adapters/handlers.ts'))
+    })
+
+    test('a drop reads the order from core and writes the placed one back', async () => {
+        getOrder.mockResolvedValue(['a', 'b', 'c'])
+
+        await dropLayer('c', 0, ['a', 'b', 'c'])
+
+        expect(setOrder).toHaveBeenCalledWith(['c', 'a', 'b'])
+    })
+
+    test('a drop onto its own slot writes nothing', async () => {
+        getOrder.mockResolvedValue(['a', 'b', 'c'])
+
+        await dropLayer('b', 1, ['a', 'b', 'c'])
+
+        expect(setOrder).not.toHaveBeenCalled()
     })
 
     test('reads the order from core and writes the moved one back', async () => {
