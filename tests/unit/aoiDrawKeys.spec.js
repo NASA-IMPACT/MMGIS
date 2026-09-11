@@ -57,6 +57,7 @@ beforeEach(() => {
     // hand the tool the handle the controller would have injected — every
     // request it makes goes through that.
     AOITool.api = {
+        // As `mintHandle` does: subscribing hands back the disposer for it.
         on: () => () => { },
         emit: () => { },
         provide: () => () => { },
@@ -213,11 +214,11 @@ test.describe('AOI draw-session keys', () => {
     })
 
     // The keys are only ever armed by the engine's drawstart reaching the
-    // plugin, so drive the session the way the bus does: through the tool the
-    // panel actually makes.
+    // plugin, so drive the session the way the bus does: through the handle
+    // the tool the panel actually makes subscribes on.
     test('a drawstart delivered over the bus arms the keys', () => {
         const handlers = {}
-        window.mmgisAPI.on = (event, handler) => {
+        AOITool.api.on = (event, handler) => {
             handlers[event] = handler
             return () => delete handlers[event]
         }

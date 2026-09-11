@@ -179,37 +179,35 @@ const AOITool = {
                 this._setState({ searchLoading: false, searchDisabled: true })
             })
 
-        // Subscriptions are on the global bus; only requests need the handle.
-        const bus = window.mmgisAPI
-        if (bus?.on) {
-            const subscribe = (event, handler) => {
-                const off = bus.on(event, handler)
-                this._cleanups.push(typeof off === 'function' ? off : () => { })
-            }
-            subscribe('map:drawstart',     (e) => this._onDrawStart(e))
-            subscribe('map:drawvertex',    (e) => this._onDrawVertex(e))
-            subscribe('map:drawcomplete',  (e) => this._onDrawComplete(e))
-            subscribe('map:drawcancel',    () => this._onDrawCancelEvent())
-            subscribe('map:featureClick',  (info) => this._onMapFeatureClick(info))
-            subscribe('plugin:fetchstats:analysisProgress', ({ done, total }) => {
-                if (done === 0) {
-                    this._setState({
-                        analysisStatus: 'running',
-                        analysisLabel: this._state.currentAOI?.label || 'Area of interest',
-                        analysisDone: 0,
-                        analysisTotal: total,
-                    })
-                } else {
-                    this._setState({ analysisDone: done })
-                }
-            })
-            subscribe('plugin:fetchstats:analysisReady', () => {
-                this._setState({ analysisStatus: 'idle' })
-            })
-            subscribe('plugin:fetchstats:analysisSkipped', ({ reason } = {}) => {
-                this._showAnalysisError(this._messageForSkipReason(reason))
-            })
+        // Subscriptions go through the handle as well: it hands back a
+        // disposer for each one, and destroy() drains them from `_cleanups`.
+        const subscribe = (event, handler) => {
+            const off = this.api?.on(event, handler)
+            this._cleanups.push(typeof off === 'function' ? off : () => { })
         }
+        subscribe('map:drawstart',     (e) => this._onDrawStart(e))
+        subscribe('map:drawvertex',    (e) => this._onDrawVertex(e))
+        subscribe('map:drawcomplete',  (e) => this._onDrawComplete(e))
+        subscribe('map:drawcancel',    () => this._onDrawCancelEvent())
+        subscribe('map:featureClick',  (info) => this._onMapFeatureClick(info))
+        subscribe('plugin:fetchstats:analysisProgress', ({ done, total }) => {
+            if (done === 0) {
+                this._setState({
+                    analysisStatus: 'running',
+                    analysisLabel: this._state.currentAOI?.label || 'Area of interest',
+                    analysisDone: 0,
+                    analysisTotal: total,
+                })
+            } else {
+                this._setState({ analysisDone: done })
+            }
+        })
+        subscribe('plugin:fetchstats:analysisReady', () => {
+            this._setState({ analysisStatus: 'idle' })
+        })
+        subscribe('plugin:fetchstats:analysisSkipped', ({ reason } = {}) => {
+            this._showAnalysisError(this._messageForSkipReason(reason))
+        })
 
         this._render()
         this.made = true
@@ -633,12 +631,13 @@ const AOITool = {
     _applySelection(feature, source, label) {
         this._cancelPendingPopup()
         this._removeSelectionLayer()
+        // This feature is the current selection from here on, so a session has
+        // no suspended selection left for its next vertex to drop.
+        this._suspendedAOI = null
 
-        // Requests go through AOI's handle, which stamps them with AOI's
-        // address; the bus events are subscribed on the global, which is where
-        // `on`/`off` live.
+        // Everything goes through AOI's handle: it stamps each request with
+        // AOI's address and hands back a disposer for each subscription.
         const api = this.api
-        const bus = window.mmgisAPI
         api?.request('map:createLayer', {
             id: SELECTION_LAYER_ID,
             type: 'vector',
@@ -653,7 +652,7 @@ const AOITool = {
         const showPopup = (view) => this._showSelectionPopup(feature, label, view)
 
         const bbox = featureBounds(feature)
-        if (bbox && api?.request && bus?.on && bus?.off) {
+        if (bbox && api?.request && api?.on) {
             // Pending from here on, before the camera is even read: a teardown
             // or a superseding selection during that async hop must drop this
             // popup. `disarm` is filled in only if the show waits on the camera.
@@ -690,10 +689,10 @@ const AOITool = {
                     // inside the call.
                     const oneShot = () => settled()
                     const timer = setTimeout(oneShot, 1500)
-                    bus.on('map:moveend', oneShot)
+                    const offMoveend = api.on('map:moveend', oneShot)
                     disarm = () => {
                         clearTimeout(timer)
-                        bus.off('map:moveend', oneShot)
+                        offMoveend?.()
                     }
 
                     api.request('map:fitBounds', fit).catch((err) => {

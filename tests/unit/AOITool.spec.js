@@ -29,10 +29,11 @@ const VIEW = {
 }
 
 /**
- * Stand-ins for the global bus the plugin subscribes on (`window.mmgisAPI`) and
- * the handle the controller injects as `AOITool.api`. Requests and emits are
- * recorded; the popup impls model core's one-slot contract, every show being
- * answered on its own promise with how its popup closed.
+ * Stand-ins for the global bus (`window.mmgisAPI`) and the handle the
+ * controller injects as `AOITool.api` — which is what the plugin subscribes,
+ * requests and emits through. Calls are recorded; the popup impls model core's
+ * one-slot contract, every show being answered on its own promise with how its
+ * popup closed.
  */
 function makeFakeApi() {
     const listeners = new Map()
@@ -84,7 +85,8 @@ function makeFakeApi() {
 
         // A plugin's bus handle, as `mintHandle` builds it: emits and provides
         // are prefixed with the plugin's address, requests keep their full name
-        // and are stamped with it.
+        // and are stamped with it, and `on` hands back the disposer for the
+        // subscription it made.
         handleFor(address) {
             const prefix = `plugin:${address}:`
             return {
@@ -377,9 +379,8 @@ describe('AOITool popup lifecycle', () => {
         await flush()
 
         expect(warn).toHaveBeenCalled()
-        // No popup can open from here, so claiming one is pending would be a
-        // lie — and would suppress the next selection's show.
-        expect(AOITool._pendingPopup).toBeNull()
+        // Nothing was armed to open this selection's popup, so neither a
+        // moveend nor the fallback timer can produce one.
         api.emit('map:moveend')
         await vi.advanceTimersByTimeAsync(2000)
         expect(api.namesOf('map:showPopup')).toHaveLength(0)

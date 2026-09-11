@@ -219,8 +219,13 @@ test.describe('selectionPopupAnchor', () => {
 })
 
 test.describe('AOITool._applySelection camera behavior', () => {
+    // Every subscription the tool made through its handle, in order, each with
+    // the disposer the handle handed back — unhooking is calling that disposer,
+    // so that is what these specs watch.
+    let subs = []
     const mockApi = (currentView) => {
         const calls = []
+        subs = []
         window.mmgisAPI = {
             // The handle below adds a third argument naming who asked, the
             // way the real one stamps a request with its plugin's address.
@@ -232,15 +237,18 @@ test.describe('AOITool._applySelection camera behavior', () => {
                     name === 'map:getBounds' ? currentView : undefined
                 )
             }),
-            on: vi.fn(),
-            off: vi.fn(),
         }
         // These specs drive `_applySelection` on its own rather than through
         // `make()`, so hand the tool the handle the controller would have
-        // injected. Every request goes through it, which is what stamps the
-        // request with the plugin's address.
+        // injected. Every request and subscription goes through it: that is
+        // what stamps a request with the plugin's address, and what makes a
+        // subscription hand back its own disposer.
         AOITool.api = {
-            on: (event, handler) => window.mmgisAPI.on(event, handler),
+            on: (event, handler) => {
+                const off = vi.fn()
+                subs.push({ event, handler, off })
+                return off
+            },
             emit: () => { },
             provide: () => () => { },
             request: (name, data) =>
@@ -275,10 +283,7 @@ test.describe('AOITool._applySelection camera behavior', () => {
         // Anchored at the selection's own centroid — the view never moved, but
         // the centroid was already on-screen.
         expect(popup?.payload.latlng).toEqual({ lat: 35, lng: -95 })
-        expect(window.mmgisAPI.on).not.toHaveBeenCalledWith(
-            'map:moveend',
-            expect.anything()
-        )
+        expect(subs).toHaveLength(0)
     })
 
     test('forwards the selection extent to map:fitBounds when it overflows the view', async () => {
@@ -316,7 +321,7 @@ test.describe('AOITool._applySelection camera behavior', () => {
             'Beyond view'
         )
         await flush()
-        const [event, onMoveend] = window.mmgisAPI.on.mock.calls[0]
+        const { event, handler: onMoveend, off: offMoveend } = subs[0]
         expect(event).toBe('map:moveend')
         expect(names(calls)).not.toContain('map:showPopup')
 
@@ -330,10 +335,7 @@ test.describe('AOITool._applySelection camera behavior', () => {
         expect(
             calls.find((c) => c.name === 'map:showPopup')?.payload.latlng
         ).toEqual({ lat: 35, lng: -89 })
-        expect(window.mmgisAPI.off).toHaveBeenCalledWith(
-            'map:moveend',
-            onMoveend
-        )
+        expect(offMoveend).toHaveBeenCalled()
         // The fallback timer is disarmed, so it cannot open a second popup.
         vi.advanceTimersByTime(1600)
         await flush()
@@ -377,7 +379,7 @@ test.describe('AOITool._applySelection camera behavior', () => {
         AOITool._applySelection(squareFeature(-98, 20, -80, 45), 'search', 'Second')
         await flush()
 
-        const [, secondMoveend] = window.mmgisAPI.on.mock.calls[1]
+        const { handler: secondMoveend, off: secondOff } = subs[1]
 
         rejectFit[0](new Error('nope'))
         await flush()
@@ -389,10 +391,7 @@ test.describe('AOITool._applySelection camera behavior', () => {
         // And it leaves the current selection's show armed. Disarming that one
         // is the worse half of the failure: the popup the user is waiting for
         // never opens at all.
-        expect(window.mmgisAPI.off).not.toHaveBeenCalledWith(
-            'map:moveend',
-            secondMoveend
-        )
+        expect(secondOff).not.toHaveBeenCalled()
 
         // A view state nowhere near the selection's centroid, so a handler
         // that forwarded it as the anchor is caught here.
