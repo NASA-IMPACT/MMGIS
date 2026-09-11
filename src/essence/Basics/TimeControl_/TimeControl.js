@@ -407,10 +407,11 @@ var TimeControl = {
         const willRefresh = mayTouch && (L_.layers.on[layer.name] || evenIfOff)
         if (willRefresh) layer.time.current = TimeControl.currentTime
 
-        // Whether the layer holds data in the window it is about to request,
-        // decided before any URL work so an out-of-coverage layer makes no
-        // urlReplacement call and no tile request. A caller that may not
-        // touch the layer only records the verdict.
+        // Whether the layer holds data at the current time, the end of the
+        // window it is about to request, decided before any URL work so an
+        // out-of-coverage layer makes no urlReplacement call and no tile
+        // request. A caller that may not touch the layer only records the
+        // verdict.
         //
         // Engine visibility is written only on a transition: on deck.gl every
         // visibility write re-syncs every held layer, and this runs for every

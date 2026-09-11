@@ -171,6 +171,10 @@ range the request would ask the server for.
 Overlap is inclusive at both edges: a window ending precisely at a coverage
 span's start still overlaps it.
 
+> **Amended 2026-09-11:** the verdict tests the window's end — the current
+> time — rather than overlap with the whole window. See
+> [2026-09-11-layer-data-coverage-at-current-time-design.md](2026-09-11-layer-data-coverage-at-current-time-design.md).
+
 **Returns `true` whenever it cannot tell.** No coverage configured, a window
 that will not parse, a missing `layer.time` — all resolve to "has data". The
 gate may only ever suppress on positive evidence of absence; a bug in this
@@ -507,6 +511,11 @@ twelve days, so no requests are suppressed. This is correct — the request
 genuinely asks for a range that contains data — but means the saving is
 realized when stepping through narrow windows, which is the scrubbing case that
 motivates it.
+
+> **Superseded 2026-09-11:** most layers request only the current instant, so
+> a wide window left them requested, and unflagged, at instants they have no
+> data for. The verdict now tests the current time; see
+> [2026-09-11-layer-data-coverage-at-current-time-design.md](2026-09-11-layer-data-coverage-at-current-time-design.md).
 
 **Globe divergence.** Until the globe is gated, a mission using both views
 suppresses requests on the map and not on the globe. Consistent behavior, not
