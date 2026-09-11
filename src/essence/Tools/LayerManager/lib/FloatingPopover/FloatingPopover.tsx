@@ -17,6 +17,14 @@ export interface FloatingPopoverProps {
      * content, where taking focus off the trigger is disruptive.
      */
     autoFocus?: boolean
+    /**
+     * Pointer entering and leaving the popover itself, for a popover opened
+     * on hover that has to stay open while the pointer rests on it.
+     */
+    onPointerEnter?: React.PointerEventHandler<HTMLDivElement>
+    onPointerLeave?: React.PointerEventHandler<HTMLDivElement>
+    /** A press anywhere on the popover, including its padding and border. */
+    onMouseDown?: React.MouseEventHandler<HTMLDivElement>
     children: React.ReactNode
 }
 
@@ -30,6 +38,9 @@ export const FloatingPopover: React.FC<FloatingPopoverProps> = ({
     id,
     label,
     autoFocus = false,
+    onPointerEnter,
+    onPointerLeave,
+    onMouseDown,
     children
 }) => {
     const popupRef = useRef<HTMLDivElement>(null)
@@ -212,6 +223,9 @@ export const FloatingPopover: React.FC<FloatingPopoverProps> = ({
             aria-label={label}
             tabIndex={-1}
             className={`floating-popover-portal ${className}`}
+            onPointerEnter={onPointerEnter}
+            onPointerLeave={onPointerLeave}
+            onMouseDown={onMouseDown}
             style={{
                 position: 'fixed',
                 zIndex: 999999,

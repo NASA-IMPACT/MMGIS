@@ -20,6 +20,38 @@ export type CogData = {
   titilerUrl: string | null
 }
 
+/** The unit a listed entry names; nothing finer than the hour. */
+export type CoverageUnit = 'year' | 'month' | 'day' | 'hour'
+
+/**
+ * A span of time in epoch milliseconds, UTC. An open bound is -Infinity or
+ * Infinity. A span from a listed entry also carries the `unit` that entry
+ * names and its `at` timestamp — the entry as written, any part left out
+ * filled with its start — so 14:30 stays 14:30 though the span is the hour.
+ */
+export type CoverageSpan = {
+  start: number
+  end: number
+  at?: number
+  unit?: CoverageUnit
+}
+
+/**
+ * Whether the host is holding a layer back for lack of data in the window it
+ * would request, and the declared coverage that decided it. `outOfDataRange`
+ * is only ever true for a time-enabled layer that declares coverage; `kind`
+ * is null for any other.
+ */
+export type DataCoverage = {
+  outOfDataRange: boolean
+  /** 'sparse' from listed entries, 'continuous' from an extent. */
+  kind: 'continuous' | 'sparse' | null
+  /** Sparse: one span per listed entry, ordered by start. Continuous: one. */
+  spans: CoverageSpan[] | null
+  /** The window the layer would request; the instant asked for is its end. */
+  requestedWindow: CoverageSpan | null
+}
+
 export type Layer = {
   id: string
   title: string
@@ -36,4 +68,6 @@ export type Layer = {
   categoricalStops?: CategoricalStop[]
   // optional COG controls
   cog: CogData | null
+  // flags the row while the host has no data for the layer at this time
+  dataCoverage?: DataCoverage | null
 }

@@ -1,6 +1,7 @@
 import {
     mmgisRequest,
     mmgisGetCogCapabilities,
+    mmgisGetDataCoverage,
     mmgisGetListedLayers,
     mmgisGetTiTilerUrls,
     type CogCapabilities,
@@ -16,13 +17,18 @@ export const getVisibleLayersWithLegends = async ({
     const layerConfigs = await mmgisRequest<Record<string, Record<string, unknown>>>('layers:getAllConfigs')
     if (!layerConfigs) return []
 
-    const [visibleLayers, opacities, listed, cogCapabilities, titilerUrls] = await Promise.all([
-        mmgisRequest<Record<string, boolean>>('layers:getVisible'),
-        mmgisRequest<Record<string, number>>('layers:getAllOpacities'),
-        mmgisGetListedLayers(),
-        mmgisGetCogCapabilities(),
-        mmgisGetTiTilerUrls(),
-    ])
+    // Coverage is read with the rest, so a layer core is already holding back
+    // for lack of data is flagged on the first render rather than at the next
+    // change core announces.
+    const [visibleLayers, opacities, listed, cogCapabilities, titilerUrls, coverage] =
+        await Promise.all([
+            mmgisRequest<Record<string, boolean>>('layers:getVisible'),
+            mmgisRequest<Record<string, number>>('layers:getAllOpacities'),
+            mmgisGetListedLayers(),
+            mmgisGetCogCapabilities(),
+            mmgisGetTiTilerUrls(),
+            mmgisGetDataCoverage(),
+        ])
 
     const result: Layer[] = []
     for (const layerName of Object.keys(layerConfigs)) {
@@ -32,8 +38,8 @@ export const getVisibleLayersWithLegends = async ({
         if (listed?.[layerName] === false) continue
         const isVisible = visibleLayers?.[layerName] === true
         if (showOnlyVisible && !isVisible) continue
-        result.push(
-            buildLayerLegendData(
+        result.push({
+            ...buildLayerLegendData(
                 layerName,
                 cfg as Parameters<typeof buildLayerLegendData>[1],
                 opacities ?? null,
@@ -41,7 +47,8 @@ export const getVisibleLayersWithLegends = async ({
                 cogCapabilities?.[layerName] as CogCapabilities | undefined,
                 titilerUrls?.[layerName] ?? null,
             ),
-        )
+            dataCoverage: coverage?.[layerName] ?? null,
+        })
     }
     return result
 }
