@@ -13,6 +13,7 @@ export type LayerLegendListProps = {
     onZoomToLayer?: LayerLegendProps['onZoomToLayer']
     canZoomToLayer?: LayerLegendProps['canZoomToLayer']
     onCompareLayer?: LayerLegendProps['onCompareLayer']
+    getDataCoverage?: LayerLegendProps['getDataCoverage']
 }
 
 export function LayerLegendList({
@@ -26,6 +27,7 @@ export function LayerLegendList({
     onZoomToLayer,
     canZoomToLayer,
     onCompareLayer,
+    getDataCoverage,
 }: LayerLegendListProps) {
     if (!layers || layers.length === 0) {
         return (
@@ -48,6 +50,7 @@ export function LayerLegendList({
                     onZoomToLayer={onZoomToLayer}
                     canZoomToLayer={canZoomToLayer}
                     onCompareLayer={onCompareLayer}
+                    getDataCoverage={getDataCoverage}
                 />
             ))}
         </div>

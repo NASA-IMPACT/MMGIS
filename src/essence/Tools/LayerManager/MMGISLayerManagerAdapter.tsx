@@ -1,5 +1,5 @@
 import React from 'react'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { LayerManagerPanel } from './lib'
 import type { Layer } from './lib/types'
 import { useMMGISEvent } from '../_shared/adapters/useMMGISEvent'
@@ -16,7 +16,13 @@ import {
     compareLayer,
     showAddLayer,
 } from './adapters/handlers'
-import { mmgisGetLayerBounds } from '../_shared/adapters/mmgisAPI'
+import {
+    mmgisGetLayerBounds,
+    mmgisGetLayerDataCoverage,
+    mmgisOnDataCoverageChanged,
+    type LayerDataCoverage,
+    type LayerDataCoverageChange,
+} from '../_shared/adapters/mmgisAPI'
 
 type ToolVars = { showOnlyVisible?: boolean; width?: number }
 
@@ -27,6 +33,24 @@ const report = (action: string, result: Promise<void>): void => {
     result.catch((err) => {
         console.error(`LayerManager: ${action} failed`, err)
     })
+}
+
+/**
+ * The rows with the given layers' coverage records swapped in, keyed by layer
+ * UUID — which is what both row ids and core's announcements use. The same
+ * array when no row is named, so an announcement for a layer the list does
+ * not hold re-renders nothing.
+ */
+const withCoverage = (
+    rows: Layer[],
+    records: Map<string, LayerDataCoverage>,
+): Layer[] => {
+    if (!rows.some((row) => records.has(row.id))) return rows
+    return rows.map((row) =>
+        records.has(row.id)
+            ? { ...row, dataCoverage: records.get(row.id) }
+            : row,
+    )
 }
 
 // Module scope keeps the handler stable, so the subscription is made once.
@@ -40,19 +64,43 @@ export function MMGISLayerManagerAdapter() {
     const [loading, setLoading] = useState(true)
     const toolVars = useMMGISToolVars<ToolVars>('layermanager')
 
+    // Coverage changes announced while a refresh is reading, one collection
+    // per refresh in flight. A refresh reads every layer's coverage before its
+    // rows land, and a change announced in between would otherwise be
+    // overwritten by that older read until the layer next changes.
+    const inFlight = useRef(new Set<Map<string, LayerDataCoverage>>())
+
     const refresh = useCallback(async () => {
+        const announced = new Map<string, LayerDataCoverage>()
+        inFlight.current.add(announced)
         try {
             const data = await getVisibleLayersWithLegends({
                 showOnlyVisible: toolVars.showOnlyVisible === true,
             })
-            setLayers(data)
+            setLayers(withCoverage(data, announced))
         } catch (err) {
             console.error('LayerManager: refresh failed', err)
             setLayers([])
         } finally {
+            inFlight.current.delete(announced)
             setLoading(false)
         }
     }, [toolVars.showOnlyVisible])
+
+    // Core announces a layer's record whenever its verdict or coverage
+    // changes, so this keeps each row's warning current between refreshes.
+    const applyCoverageChange = useCallback(
+        ({ layerName, ...record }: LayerDataCoverageChange) => {
+            if (!layerName) return
+            for (const announced of inFlight.current) announced.set(layerName, record)
+            setLayers((rows) => withCoverage(rows, new Map([[layerName, record]])))
+        },
+        [],
+    )
+    useEffect(
+        () => mmgisOnDataCoverageChanged(applyCoverageChange),
+        [applyCoverageChange],
+    )
 
     // Whether the layer has somewhere to zoom to. Core answers null both for a
     // layer with no extent and for a core too old to know the question, and
@@ -85,6 +133,7 @@ export function MMGISLayerManagerAdapter() {
             onRescaleChange={(id, mn, mx) => { report('setRescale', setRescale(id, mn, mx, refresh)) }}
             onZoomToLayer={(id) => { report('zoomToLayer', zoomToLayer(id)) }}
             canZoomToLayer={canZoomToLayer}
+            getDataCoverage={mmgisGetLayerDataCoverage}
             onCompareLayer={compareLayer}
             onAddLayer={showAddLayer}
         />

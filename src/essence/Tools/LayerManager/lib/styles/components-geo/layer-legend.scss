@@ -70,14 +70,18 @@ $legend-content-indent: 28px;
         }
     }
 
+    /* The title and, while the layer has no data at this time, the warning
+       after it. The title gives way first, so the warning is never cut off. */
     &__title-group {
         display: flex;
-        flex-direction: column;
+        align-items: center;
+        gap: var(--theme-spacing-05, 0.25rem);
         flex: 1;
         min-width: 0;
     }
 
     &__title {
+        min-width: 0;
         font-size: var(--theme-font-size-2xs, 0.88rem);
         font-weight: var(--theme-font-weight-semibold, 600);
         color: var(--theme-color-ink, #1c1d1f);
@@ -149,6 +153,29 @@ $legend-content-indent: 28px;
         }
     }
 
+    /* Always shown, unlike the actions: it explains why the layer is absent
+       from the map. A button so keyboard focus, a click or a tap can open its
+       popover. */
+    &__coverage-warning {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        width: 20px;
+        height: 20px;
+        padding: 2px;
+        background: transparent;
+        border: none;
+        border-radius: var(--theme-radius-0, 0);
+        color: var(--theme-color-secondary-dark, #971453);
+        cursor: pointer;
+
+        &:focus-visible {
+            outline: 2px solid var(--theme-color-primary, #1c67e3);
+            outline-offset: 1px;
+        }
+    }
+
     /* Icons are the exported SVGs used as masks, tinted by the button's color.
        Masking (rather than <img>) is what lets them follow hover/active state. */
     &__icon {
@@ -182,6 +209,11 @@ $legend-content-indent: 28px;
         &--more-options {
             -webkit-mask-image: url('../../geo/icons/more-options.svg');
             mask-image: url('../../geo/icons/more-options.svg');
+        }
+
+        &--no-data {
+            -webkit-mask-image: url('../../geo/icons/no-data.svg');
+            mask-image: url('../../geo/icons/no-data.svg');
         }
     }
 
@@ -329,6 +361,27 @@ $legend-content-indent: 28px;
     &::-webkit-scrollbar-thumb:hover {
         background: var(--theme-color-base-dark, #565c65);
     }
+}
+
+/* No Data Popover
+   Same portaled surface as the info popover, for three short lines: what is
+   wrong, the time being asked for, and when the layer does have data. */
+.blocks-layer-legend__coverage-popover {
+    width: max-content;
+    max-width: 280px;
+    padding: var(--theme-spacing-1, 0.5rem) var(--theme-spacing-105, 0.75rem);
+    background: var(--theme-color-white, #ffffff);
+    border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    box-shadow: 0 4px 12px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
+    font-family: var(--theme-font-body, 'Public Sans Web', sans-serif);
+    font-size: var(--theme-font-size-3xs, 0.75rem);
+    line-height: 1.6;
+    color: var(--theme-color-base-dark, #565c65);
+}
+
+.blocks-layer-legend__coverage-title {
+    font-weight: var(--theme-font-weight-semibold, 600);
+    color: var(--theme-color-ink, #1c1d1f);
 }
 
 /* Names the layer the description belongs to. The popover is portaled away

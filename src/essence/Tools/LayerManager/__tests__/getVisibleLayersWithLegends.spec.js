@@ -25,7 +25,12 @@ const CONFIGS = {
     [BASEMAP]: { display_name: 'Basemap', cogColormap: 'viridis' },
 }
 
-const setupMock = ({ capabilities, provideCapability = true, titilerUrls }) => {
+const setupMock = ({
+    capabilities,
+    provideCapability = true,
+    titilerUrls,
+    coverage,
+}) => {
     const responses = {
         'layers:getAllConfigs': CONFIGS,
         'layers:getVisible': { [DISPLACEMENT]: true, [BASEMAP]: true },
@@ -33,6 +38,7 @@ const setupMock = ({ capabilities, provideCapability = true, titilerUrls }) => {
     }
     if (provideCapability) responses['layers:getCogCapabilities'] = capabilities
     if (titilerUrls) responses['layers:getTiTilerUrl'] = titilerUrls
+    if (coverage) responses['layers:getDataCoverage'] = coverage
 
     global.window = global.window || {}
     global.window.mmgisAPI = {
@@ -148,5 +154,46 @@ describe('getVisibleLayersWithLegends', () => {
         const layers = await getVisibleLayersWithLegends()
 
         expect(byId(layers, DISPLACEMENT).cog?.titilerUrl).toBeNull()
+    })
+
+    // Read with the rest of the row data, so a layer core was already
+    // suppressing is flagged on the panel's first render.
+    test("carries each layer's coverage record, keyed by UUID", async () => {
+        const suppressed = {
+            outOfDataRange: true,
+            kind: 'sparse',
+            spans: [{ start: 0, end: 1, at: 0, unit: 'day' }],
+            requestedWindow: { start: 2, end: 3 },
+        }
+        const unconstrained = {
+            outOfDataRange: false,
+            kind: null,
+            spans: null,
+            requestedWindow: { start: 2, end: 3 },
+        }
+        setupMock({
+            capabilities: {},
+            coverage: {
+                [DISPLACEMENT]: suppressed,
+                // What a display-name-keyed lookup would find instead.
+                Basemap: suppressed,
+                [BASEMAP]: unconstrained,
+            },
+        })
+        const layers = await getVisibleLayersWithLegends()
+
+        expect(byId(layers, DISPLACEMENT).dataCoverage).toEqual(suppressed)
+        expect(byId(layers, BASEMAP).dataCoverage).toEqual(unconstrained)
+    })
+
+    test('leaves coverage null where core reports none', async () => {
+        setupMock({ capabilities: {}, coverage: {} })
+        const layers = await getVisibleLayersWithLegends()
+        expect(layers.every((l) => l.dataCoverage === null)).toBe(true)
+
+        setupMock({ capabilities: {} })
+        const withoutHandler = await getVisibleLayersWithLegends()
+        expect(withoutHandler).toHaveLength(2)
+        expect(withoutHandler.every((l) => l.dataCoverage === null)).toBe(true)
     })
 })

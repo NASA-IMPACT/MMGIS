@@ -29,3 +29,10 @@ export const ZOOM_TO_LAYER_PADDING = 40
  * still zooms to the detail it actually carries.
  */
 export const ZOOM_TO_LAYER_POINT_MAX_ZOOM = 16
+
+/**
+ * How long the no-data popover waits after the pointer leaves its icon or
+ * itself before closing: long enough to cross the gap between the two, short
+ * enough that it doesn't linger once the pointer has moved on.
+ */
+export const COVERAGE_POPOVER_CLOSE_DELAY_MS = 120
