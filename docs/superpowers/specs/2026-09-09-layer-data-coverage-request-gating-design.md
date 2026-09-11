@@ -19,9 +19,9 @@ and does not constrain queries", and the timeline is their only consumer.
 ## Goal
 
 A time-enabled layer that declares data coverage issues **no requests** while
-the time window sits outside that coverage, on either map engine, whether it
-was switched on before, during, or after the window moved out. When the window
-moves back into coverage the layer returns, current.
+the timeline's current time sits outside that coverage, on either map engine,
+whether it was switched on before, during, or after the time moved out. When
+the time moves back into coverage the layer returns, current.
 
 A layer that declares no coverage keeps today's behavior exactly.
 
@@ -162,18 +162,20 @@ on which days exist.
 layerHasDataInWindow(layer) -> boolean
 ```
 
-Resolves the layer's coverage and overlaps it against the window the layer
-would request: `[layer.time.start, layer.time.end]`. Per `updateLayersTime`
-that window is `[TimeControl.startTime, TimeControl.currentTime]` — the
-current instant is the window's *end*, not its middle — so this is exactly the
-range the request would ask the server for.
+Resolves the layer's coverage and tests it at the current time: the end of the
+window the layer would request, `[layer.time.start, layer.time.end]`. Per
+`updateLayersTime` that window is `[TimeControl.startTime,
+TimeControl.currentTime]` — the current instant is the window's *end*, not its
+middle. Readable `dataDates` decide; failing those, the extent does.
 
-Overlap is inclusive at both edges: a window ending precisely at a coverage
-span's start still overlaps it.
+The window's start plays no part. A wide window overlaps nearly any coverage —
+a mission opening on 2012-01-19 → 2026-08-12 overlaps almost every layer's —
+while most layers request only the current instant (`{time}`), so testing
+overlap would leave them requested at instants they have no data for. The rule
+applies to every time-enabled layer whatever its URL requests.
 
-> **Amended 2026-09-11:** the verdict tests the window's end — the current
-> time — rather than overlap with the whole window. See
-> [2026-09-11-layer-data-coverage-at-current-time-design.md](2026-09-11-layer-data-coverage-at-current-time-design.md).
+Containment is inclusive at both edges: a listed entry covers the whole year,
+month, day or hour it names, from its first millisecond to its last.
 
 **Returns `true` whenever it cannot tell.** No coverage configured, a window
 that will not parse, a missing `layer.time` — all resolve to "has data". The
@@ -281,9 +283,9 @@ L_.Map_.engine.setLayerVisibility(s.name, true)
 ```
 
 The literal `true` becomes `layerHasDataInWindow(s)`, so switching a layer on
-while the window sits outside its coverage adds nothing to the map and
+while the current time sits outside its coverage adds nothing to the map and
 requests nothing. `L_.layers.on[s.name]` still records it as on, and it appears
-the moment the window moves into coverage.
+the moment the time moves into coverage.
 
 `setLayerDataCoverage` is called here too, so a consumer learns of the state on
 the toggle rather than waiting for the next time change.
@@ -438,9 +440,10 @@ same icon and the popovers multiply.
 **Rewrite the field descriptions** for `time.dataStartTime`,
 `time.dataEndTime` and `time.dataDates`. Each currently ends "This is for
 display purposes only and does not constrain queries", which this change makes
-false. Replace with wording that states the layer will not be requested outside
-the declared coverage, and that leaving a field empty leaves that direction
-unconstrained.
+false. Replace with wording that states the layer will not be requested while
+the timeline's current time is outside the declared coverage, that readable
+`dataDates` decide in place of the extent, and that leaving a field empty
+leaves that direction unconstrained.
 
 **Add the Data Time Extent subsection** to `layer-vectortile-config.json`,
 `layer-query-config.json` and `layer-velocity-config.json`. Only
@@ -462,8 +465,9 @@ mirroring the structure of the Timeline plugin's `layerTimeRanges.spec.ts`:
 - `dataEndTime: 'now'`
 - `time.enabled !== true` → `null`
 - inverted extent → `null` and warns
-- overlap is inclusive at both edges; a window entirely between two sparse days
-  does not overlap
+- an entry holds the current time inclusively at both edges; a time between
+  two sparse entries, or just past one, has no data
+- a wide window that overlaps coverage but ends outside it has no data
 - `layerHasDataInWindow` returns `true` for an unparseable window, a missing
   `layer.time`, and no configured coverage
 
@@ -505,17 +509,10 @@ where it previously drew. This is the intended contract change and the reason
 for the popover: the layer explains itself rather than silently vanishing. It
 is called out in the field descriptions and belongs in the release notes.
 
-**Wide windows blunt the optimization.** The gate tests window overlap, not the
-current instant. A timeline window spanning a year overlaps a sparse layer's
-twelve days, so no requests are suppressed. This is correct — the request
-genuinely asks for a range that contains data — but means the saving is
-realized when stepping through narrow windows, which is the scrubbing case that
-motivates it.
-
-> **Superseded 2026-09-11:** most layers request only the current instant, so
-> a wide window left them requested, and unflagged, at instants they have no
-> data for. The verdict now tests the current time; see
-> [2026-09-11-layer-data-coverage-at-current-time-design.md](2026-09-11-layer-data-coverage-at-current-time-design.md).
+**Range-requesting layers.** A layer whose URL asks for a
+`{starttime}`–`{endtime}` range is suppressed whenever the current time is not
+covered, even though the range request might have returned a mosaic of the
+window. The declared coverage is the source of truth.
 
 **Globe divergence.** Until the globe is gated, a mission using both views
 suppresses requests on the map and not on the globe. Consistent behavior, not
@@ -527,8 +524,8 @@ correctness: the globe simply keeps today's behavior.
 
 | File | Change |
 | --- | --- |
-| `src/essence/Basics/TimeControl_/layerDataCoverage.js` | new — the pure coverage module: spans, kind, window overlap. No prose. |
-| `src/essence/Basics/TimeControl_/__tests__/layerDataCoverage.spec.js` | new — resolver and overlap unit tests |
+| `src/essence/Basics/TimeControl_/layerDataCoverage.js` | new — the pure coverage module: spans, kind, current-time verdict. No prose. |
+| `src/essence/Basics/TimeControl_/__tests__/layerDataCoverage.spec.js` | new — resolver and verdict unit tests |
 | `src/essence/Basics/TimeControl_/TimeControl.js` | gate in `reloadLayer` |
 | `src/essence/Basics/Layers_/Layers_.js` | `dataCoverage` registry, `setLayerDataCoverage`, `layers:dataCoverageChanged` event, `layers:getDataCoverage` handler, mission-change cleanup, `toggleLayerHelper` gate |
 | `src/essence/Basics/Map_/Map_.js` | `handOffToEngine` visibility gate |
