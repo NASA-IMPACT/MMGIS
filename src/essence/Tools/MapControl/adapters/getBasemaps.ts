@@ -1,4 +1,4 @@
-import { mmgisRequest } from './mmgisAPI'
+import { mmgisRequest } from '../../_shared/adapters/mmgisAPI'
 import type { BasemapStyle } from '../lib'
 
 /** Pull the basemap style list + active style from the map engine via the bus. */
