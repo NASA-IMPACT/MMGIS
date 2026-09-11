@@ -291,10 +291,11 @@ const L_ = {
         // the declared coverage that decided it. Written only via
         // L_.setLayerDataCoverage.
         dataCoverage: {},
-        // Name -> true while the gate holds an on layer off the map. Says
-        // what the engine was told, which the record above does not: a
+        // Name -> true while the gate holds a layer off the map. Says what
+        // the engine was told, which the record above does not: a
         // controlled layer is reported out of range without being moved.
-        // Written only via L_.assessLayerDataCoverage.
+        // A time step marks a layer that is off as well, so readers pair
+        // this with `on`. Written only via L_.assessLayerDataCoverage.
         coverageHidden: {},
     },
     // ===== Private ======
@@ -1524,13 +1525,11 @@ const L_ = {
                         }
                         // By uuid, so the engine acts on the instance it
                         // holds rather than the object built at creation,
-                        // which may since have been refreshed. Gated again
-                        // because this also runs after a re-order.
+                        // which may since have been refreshed.
                         engine.setLayerVisibility(
                             L_.layers.dataFlat[i].name,
                             L_.assessLayerDataCoverage(L_.layers.dataFlat[i])
                         )
-                        // Re-ranked because this also runs after a re-order.
                         engine.setLayerZIndex(
                             L_.layers.dataFlat[i].name,
                             L_.layerZIndex(L_.layers.dataFlat[i].name)
@@ -3817,6 +3816,9 @@ const L_ = {
         L_.layers.dataFlat = []
         L_._layersLoaded = []
         L_.layers.loadStatus = {}
+        // The verdicts are re-derived on the next assessment. coverageHidden
+        // is kept: it records what the engine was told, and the layers the
+        // engine holds survive a reset untouched.
         L_.layers.dataCoverage = {}
 
         await L_.parseConfig(data)
