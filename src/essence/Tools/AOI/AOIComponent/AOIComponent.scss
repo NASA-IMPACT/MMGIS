@@ -1,4 +1,4 @@
-// AOI plugin — scoped under the .aoi-tool / .aoi-tooltip roots only.
+// AOI plugin — scoped under the .aoi-tool root only.
 //
 // Every value resolves against the global design tokens exported by
 // src/styles/_theme-export.scss as :root --theme-* custom properties; the
@@ -16,8 +16,7 @@
 // picture — hover, focus, disabled — use the accent tint the rest of the map
 // controls use.
 
-.aoi-tool,
-.aoi-tooltip {
+.aoi-tool {
     box-sizing: border-box;
     color: var(--theme-color-ink, #17171b);
     font-family: var(--theme-font-body, 'Public Sans', system-ui, sans-serif);
@@ -25,8 +24,7 @@
     background: var(--theme-color-white, #ffffff);
 }
 
-.aoi-tool *,
-.aoi-tooltip * {
+.aoi-tool * {
     box-sizing: border-box;
 }
 
@@ -35,8 +33,7 @@
 // matched declaration beats one inherited from the list — however specific the
 // list's own selector is — so every list in the tool would render in that pale
 // gray. Restoring `inherit` hands the cascade back to the list.
-.aoi-tool li,
-.aoi-tooltip li {
+.aoi-tool li {
     color: var(--theme-color-base-dark, #58585b);
 }
 
@@ -44,8 +41,7 @@
 // focusable control in the plugin restores one here.
 .aoi-tool button:focus-visible,
 .aoi-tool input:focus-visible,
-.aoi-tool [tabindex]:focus-visible,
-.aoi-tooltip button:focus-visible {
+.aoi-tool [tabindex]:focus-visible {
     outline: var(--theme-border-width-md, 2px) solid var(--theme-color-primary, #1c67e3);
     outline-offset: -2px;
 }
@@ -619,61 +615,3 @@
     line-height: 1.6;
 }
 
-.aoi-tooltip {
-    position: absolute;
-    transform: translate(-50%, calc(-100% - var(--theme-spacing-105, 12px)));
-    min-width: 220px;
-    padding: var(--theme-spacing-105, 12px);
-    border-radius: var(--theme-radius-sm, 2px);
-    box-shadow: 0 4px 8px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
-    pointer-events: auto;
-    z-index: 1000;
-}
-
-.aoi-tooltip__label {
-    margin: 0 0 var(--theme-spacing-1, 8px);
-    font-size: var(--theme-font-size-2xs, 14px);
-    font-weight: var(--theme-font-weight-semibold, 600);
-}
-
-.aoi-tooltip__actions {
-    display: flex;
-    gap: var(--theme-spacing-1, 8px);
-}
-
-.aoi-tooltip__primary,
-.aoi-tooltip__secondary {
-    flex: 1 1 auto;
-    height: 32px;
-    border: 0;
-    border-radius: var(--theme-radius-sm, 2px);
-    cursor: pointer;
-    font-family: inherit;
-    font-size: var(--theme-font-size-2xs, 14px);
-    font-weight: var(--theme-font-weight-semibold, 600);
-    transition: background-color 0.12s ease, color 0.12s ease;
-}
-
-.aoi-tooltip__primary {
-    background: var(--theme-color-primary, #1c67e3);
-    color: var(--theme-color-white, #ffffff);
-}
-
-.aoi-tooltip__primary:hover:not(:disabled) {
-    background: var(--theme-color-primary-dark, #0b3d91);
-}
-
-.aoi-tooltip__primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.aoi-tooltip__secondary {
-    background: var(--theme-color-base-lightest, #f6f6f6);
-    color: var(--theme-color-ink, #17171b);
-}
-
-.aoi-tooltip__secondary:hover {
-    background: var(--theme-color-primary-lightest, #eaf0fd);
-    color: var(--theme-color-primary, #1c67e3);
-}
