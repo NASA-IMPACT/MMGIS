@@ -87,3 +87,131 @@ export function readPath(json: unknown, path: string): unknown {
     }
     return current
 }
+
+export interface ExtentSource {
+    url?: string | null
+    startPath?: string | null
+    endPath?: string | null
+    intervalPath?: string | null
+    datesPath?: string | null
+}
+
+export interface LayerTime {
+    enabled?: boolean
+    dataStartTime?: string | null
+    dataEndTime?: string | null
+    interval?: string | null
+    dataDates?: string[] | string | null
+    extentSource?: ExtentSource | null
+    [key: string]: unknown
+}
+
+export interface ApplyReport {
+    /** Fields overwritten from the source. */
+    applied: string[]
+    /** One reason per configured field left at its static value. */
+    skipped: string[]
+}
+
+type Field = 'dataStartTime' | 'dataEndTime' | 'interval' | 'dataDates'
+
+const PATH_FOR: Record<Field, keyof ExtentSource> = {
+    dataStartTime: 'startPath',
+    dataEndTime: 'endPath',
+    interval: 'intervalPath',
+    dataDates: 'datesPath',
+}
+
+const isNonEmptyString = (v: unknown): v is string =>
+    typeof v === 'string' && v !== ''
+
+// Seconds are the finest the static fields carry, so the fraction is dropped.
+function epochToIso(ms: number): string | null {
+    const date = new Date(ms)
+    if (isNaN(date.getTime())) return null
+    return date.toISOString().split('.')[0] + 'Z'
+}
+
+/**
+ * A single time value in the form the static start/end fields hold: a
+ * string exactly as written — the existing readers already accept ISO
+ * datetimes, partial dates and `now` policies — or a finite number read as
+ * epoch milliseconds. Anything else is null.
+ */
+function normalizeTimeValue(v: unknown): string | null {
+    if (isNonEmptyString(v)) return v
+    if (typeof v === 'number' && Number.isFinite(v)) return epochToIso(v)
+    return null
+}
+
+function normalizeInterval(v: unknown): string | null {
+    return isNonEmptyString(v) ? v : null
+}
+
+/**
+ * The dates list: an array keeps its string and finite-number entries and
+ * drops the rest; a lone scalar is a one-entry list. Null when nothing
+ * usable remains.
+ */
+function normalizeDates(v: unknown): string[] | null {
+    const raw = Array.isArray(v) ? v : [v]
+    const dates = raw
+        .map((entry) => normalizeTimeValue(entry))
+        .filter((d): d is string => d != null)
+    return dates.length > 0 ? dates : null
+}
+
+const NORMALIZE: Record<Field, (v: unknown) => string | string[] | null> = {
+    dataStartTime: normalizeTimeValue,
+    dataEndTime: normalizeTimeValue,
+    interval: normalizeInterval,
+    dataDates: normalizeDates,
+}
+
+/**
+ * Overwrites each of the four static data-time fields on `time` whose
+ * configured path yields an accepted value in `json`. A blank path is not
+ * configured and is silently left alone. A configured path that is invalid,
+ * matches nothing or yields an unaccepted value leaves its field at the
+ * static value and is reported in `skipped` so the caller can warn once.
+ */
+export function applyExtentSource(time: LayerTime, json: unknown): ApplyReport {
+    const report: ApplyReport = { applied: [], skipped: [] }
+    const source = time?.extentSource
+    if (source == null) return report
+
+    const configured = (Object.keys(PATH_FOR) as Field[]).filter((field) =>
+        isNonEmptyString(String(source[PATH_FOR[field]] ?? '').trim())
+    )
+    if (configured.length === 0) return report
+
+    if (json == null || typeof json !== 'object') {
+        report.skipped.push(
+            `response is not a JSON object or array, so no field was applied`
+        )
+        return report
+    }
+
+    configured.forEach((field) => {
+        const path = String(source[PATH_FOR[field]]).trim()
+        const found = readPath(json, path)
+        if (found === undefined) {
+            report.skipped.push(
+                `${field}: path "${path}" is invalid or matched nothing`
+            )
+            return
+        }
+        const value = NORMALIZE[field](found)
+        if (value == null) {
+            report.skipped.push(
+                `${field}: path "${path}" yielded a value that is not usable as a ${field}`
+            )
+            return
+        }
+        // The four fields have different declared types, so a write through
+        // the union key goes via the index signature.
+        ;(time as Record<string, unknown>)[field] = value
+        report.applied.push(field)
+    })
+    return report
+}
