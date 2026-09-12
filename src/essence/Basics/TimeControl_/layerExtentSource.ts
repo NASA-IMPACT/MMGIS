@@ -215,3 +215,76 @@ export function applyExtentSource(time: LayerTime, json: unknown): ApplyReport {
     })
     return report
 }
+
+export interface ExtentSourceLayer {
+    name?: string
+    display_name?: string
+    time?: LayerTime | null
+}
+
+const DEFAULT_TIMEOUT_MS = 10000
+
+function labelOf(layer: ExtentSourceLayer): string {
+    return layer.display_name || layer.name || '(unnamed layer)'
+}
+
+/**
+ * Fetches a layer's configured extent source and merges the result onto its
+ * `time` block. Resolves to the merge report, or null when the layer has no
+ * enabled time block, no source URL, or the fetch failed — a network error,
+ * a non-2xx status, a non-JSON body or the timeout elapsing. Every failure,
+ * and every configured field the response could not supply, is reported in
+ * one console warning naming the layer. Never rejects: a broken source may
+ * cost the layer its fetched extent, never its place on the map.
+ *
+ * `fetchImpl` and `timeoutMs` are injectable for tests.
+ */
+export async function fetchLayerExtentSource(
+    layer: ExtentSourceLayer,
+    options: { timeoutMs?: number; fetchImpl?: typeof fetch } = {}
+): Promise<ApplyReport | null> {
+    const time = layer?.time
+    if (time == null || time.enabled !== true) return null
+    const url = String(time.extentSource?.url ?? '').trim()
+    if (url === '') return null
+
+    const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+    const fetchImpl = options.fetchImpl ?? fetch
+    const label = labelOf(layer)
+
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    let json: unknown
+    try {
+        const response = await fetchImpl(url, { signal: controller.signal })
+        if (!response.ok) {
+            console.warn(
+                `[Layers] ${label}: time extent source ${url} responded ${response.status}; using the configured data times.`
+            )
+            return null
+        }
+        json = await response.json()
+    } catch (err) {
+        const reason =
+            controller.signal.aborted
+                ? `timed out after ${timeoutMs} ms`
+                : `could not be fetched or parsed as JSON (${
+                      (err as Error)?.message ?? err
+                  })`
+        console.warn(
+            `[Layers] ${label}: time extent source ${url} ${reason}; using the configured data times.`
+        )
+        return null
+    } finally {
+        clearTimeout(timer)
+    }
+
+    const report = applyExtentSource(time, json)
+    if (report.skipped.length > 0) {
+        console.warn(
+            `[Layers] ${label}: time extent source ${url} left these at their configured values:\n  ` +
+                report.skipped.join('\n  ')
+        )
+    }
+    return report
+}
