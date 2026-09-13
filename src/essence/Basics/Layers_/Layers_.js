@@ -4518,11 +4518,13 @@ async function parseConfig(configData, urlOnLayers) {
     // so awaiting here is what lets them read the fetched values with no
     // knowledge of the source. Started here rather than awaited per layer so
     // a mission with many sources waits for the slowest, not their sum.
+    // fetchLayerExtentSource never rejects; allSettled is the backstop that
+    // keeps a slip there from failing the mission load.
     const extentSourceFetches = []
 
     //Begin recursively going through those layers
     await expandLayers(layers, 0, null)
-    await Promise.all(extentSourceFetches)
+    await Promise.allSettled(extentSourceFetches)
 
     async function expandLayers(d, level, prevName) {
         const stacRegex = /^stac(-((item)|(catalog)|(collection)))?:/i

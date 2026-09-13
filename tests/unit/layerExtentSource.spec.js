@@ -29,8 +29,30 @@ describe('layer extent source', () => {
                 ['2021-01-01T00:00:00Z', '2021-02-01T00:00:00Z'],
             ],
             ['extent.temporal.interval[*]', [['2020-01-01T00:00:00Z', null]]],
+            ['summaries. cadence', 'P1M'],
         ])('reads %s', (path, expected) => {
             expect(readPath(STAC, path)).toEqual(expected)
+        })
+
+        test('[*] reads every element of an array root', () => {
+            expect(readPath(['2020-01', '2020-02'], '[*]')).toEqual([
+                '2020-01',
+                '2020-02',
+            ])
+        })
+
+        test('$[0].d addresses an array root by index', () => {
+            expect(readPath([{ d: 'x' }], '$[0].d')).toBe('x')
+        })
+
+        test('a repeated [*] flattens one more level', () => {
+            expect(
+                readPath({ a: [[1, 2], [3]] }, 'a[*][*]')
+            ).toEqual([1, 2, 3])
+        })
+
+        test('a repeated [*] over non-array elements matches nothing', () => {
+            expect(readPath({ a: [1, 2] }, 'a[*][*]')).toBeUndefined()
         })
 
         test.each([
@@ -181,6 +203,54 @@ describe('layer extent source', () => {
             expect(report.skipped[0]).toContain(path)
         })
 
+        test('a string containing markup characters is not accepted as a start value', () => {
+            const time = {
+                ...staticTime(),
+                extentSource: { url: 'x', startPath: 'start' },
+            }
+            const report = applyExtentSource(time, {
+                start: '<img src=x onerror=alert(1)>',
+            })
+            expect(time.dataStartTime).toBe('2000-01-01T00:00:00Z')
+            expect(report.applied).toEqual([])
+            expect(report.skipped).toHaveLength(1)
+        })
+
+        test.each([
+            ['now - P1D'],
+            ['now + P5D'],
+            ['2020-03'],
+            ['2020-03-04T14:30:00+02:00'],
+        ])('%s is still accepted as a start value', (value) => {
+            const time = {
+                ...staticTime(),
+                extentSource: { url: 'x', startPath: 'start' },
+            }
+            applyExtentSource(time, { start: value })
+            expect(time.dataStartTime).toBe(value)
+        })
+
+        test('P1M is still accepted as an interval value', () => {
+            const time = {
+                ...staticTime(),
+                extentSource: { url: 'x', intervalPath: 'i' },
+            }
+            applyExtentSource(time, { i: 'P1M' })
+            expect(time.interval).toBe('P1M')
+        })
+
+        test('a dates entry containing markup characters is dropped', () => {
+            const time = {
+                ...staticTime(),
+                extentSource: { url: 'x', datesPath: 'd' },
+            }
+            const report = applyExtentSource(time, {
+                d: ['2020-01', '<script>1</script>'],
+            })
+            expect(time.dataDates).toEqual(['2020-01'])
+            expect(report.applied).toEqual(['dataDates'])
+        })
+
         test('an interval must be a string', () => {
             const time = {
                 ...staticTime(),
@@ -217,19 +287,24 @@ describe('layer extent source', () => {
             }
         )
 
-        test('an array root cannot be addressed: the grammar needs a key first', () => {
+        test('an array root is addressed with a leading index or wildcard', () => {
             const time = {
                 ...staticTime(),
                 extentSource: { url: 'x', datesPath: '[*].d' },
             }
-            const report = applyExtentSource(time, [{ d: '2020-01' }])
-            expect(report.applied).toEqual([])
+            const report = applyExtentSource(time, [
+                { d: '2020-01' },
+                { d: '2020-02' },
+            ])
+            expect(time.dataDates).toEqual(['2020-01', '2020-02'])
+            expect(report.applied).toEqual(['dataDates'])
+
             const time2 = {
                 ...staticTime(),
                 extentSource: { url: 'x', startPath: '$[0].d' },
             }
             applyExtentSource(time2, [{ d: '2020-01' }])
-            expect(time2.dataStartTime).toBe('2000-01-01T00:00:00Z')
+            expect(time2.dataStartTime).toBe('2020-01')
         })
 
         test('no extentSource applies nothing and reports nothing', () => {
@@ -324,6 +399,18 @@ describe('layer extent source', () => {
             expect(layer.time.dataStartTime).toBe('2000-01-01T00:00:00Z')
             expect(warn).toHaveBeenCalledTimes(1)
             expect(warn.mock.calls[0][0]).toContain('CO2 Monthly')
+        })
+
+        test('a fetchImpl that throws synchronously resolves null and warns once', async () => {
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+            const fetchImpl = vi.fn(() => {
+                throw new Error('boom')
+            })
+            const layer = layerWith({ url: 'u', startPath: 'start' })
+            const report = await fetchLayerExtentSource(layer, { fetchImpl })
+            expect(report).toBeNull()
+            expect(layer.time.dataStartTime).toBe('2000-01-01T00:00:00Z')
+            expect(warn).toHaveBeenCalledTimes(1)
         })
 
         test('a timeout aborts the request, applies nothing and resolves null', async () => {

@@ -123,11 +123,16 @@ datesPath:    summaries.datetime[*]
 - dot-separated object keys: `extent.temporal`;
 - `[n]` for an array index, zero-based: `interval[0][1]`;
 - `[*]` for every element of an array, flattened one level into the result:
-  `features[*].properties.datetime` yields one value per feature.
+  `features[*].properties.datetime` yields one value per feature; a `[*]`
+  reached while already flattened flattens one further level again.
+- a path may begin with an index or a wildcard when the root itself is an
+  array: `[*]` on `["2020-01", "2020-02"]` yields the list, `$[0].d` on
+  `[{ d: 'x' }]` yields `'x'`.
 
-Anything outside this grammar — filters, recursive descent, quoted keys —
-makes the path invalid. An invalid path is reported once with the layer name
-and path and treated as matching nothing.
+Anything outside this grammar — a bare `.` or `..` at the start, filters,
+recursive descent past the root, quoted keys — makes the path invalid. An
+invalid path is reported once with the layer name and path and treated as
+matching nothing.
 
 ## 3. Normalization
 

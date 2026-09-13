@@ -14,10 +14,13 @@
 /**
  * Path grammar, deliberately small: an optional leading `$` or `$.`,
  * dot-separated object keys, `[n]` array indexes and `[*]` for every element
- * of an array, flattened one level. Filters, recursive descent and quoted
- * keys are invalid and match nothing.
+ * of an array, flattened one level (a repeated `[*]` flattens one further
+ * level again). A path may begin with an index or a wildcard when the root
+ * itself is an array. Filters, recursive descent and quoted keys are invalid
+ * and match nothing.
  */
 const SEGMENT_RE = /^([^.[\]]+)|^\[(\d+|\*)\]/
+const LEADING_INDEX_RE = /^\[(\d+|\*)\]/
 
 type Segment = { key: string } | { index: number } | { all: true }
 
@@ -25,9 +28,11 @@ function parsePath(path: string): Segment[] | null {
     let rest = path.trim()
     if (rest.startsWith('$.')) rest = rest.slice(2)
     else if (rest.startsWith('$')) rest = rest.slice(1)
-    // A path begins with a key: a bare index or a leading dot has no object
-    // to apply to, so `$..a`, `$[0]` and `[0]` are all invalid.
-    if (rest === '' || rest.startsWith('[') || rest.startsWith('.')) return null
+    // A path begins with a key, or with an index/wildcard addressing an
+    // array root; a leading dot or recursive descent has no object to apply
+    // to, so `$..a` and a bare `.` are invalid, but `[0]` and `$[0]` are not.
+    if (rest === '' || rest.startsWith('.')) return null
+    if (rest.startsWith('[') && !LEADING_INDEX_RE.test(rest)) return null
 
     const segments: Segment[] = []
     while (rest.length > 0) {
@@ -40,7 +45,7 @@ function parsePath(path: string): Segment[] | null {
         }
         const m = SEGMENT_RE.exec(rest)
         if (!m) return null
-        if (m[1] != null) segments.push({ key: m[1] })
+        if (m[1] != null) segments.push({ key: m[1].trim() })
         else if (m[2] === '*') segments.push({ all: true })
         else segments.push({ index: Number(m[2]) })
         rest = rest.slice(m[0].length)
@@ -64,7 +69,10 @@ function step(value: unknown, segment: Segment): unknown {
  * The value a path names inside `json`, or undefined when the path is
  * invalid or matches nothing. A `[*]` fans out: every later segment is
  * applied to each element, and elements that match nothing are dropped.
- * A fan-out that leaves no elements matches nothing.
+ * A `[*]` reached while already fanned out flattens one further level
+ * instead — the elements of each element are concatenated, and elements
+ * that are not themselves arrays are dropped. A fan-out that leaves no
+ * elements matches nothing.
  */
 export function readPath(json: unknown, path: string): unknown {
     const segments = parsePath(path)
@@ -74,9 +82,14 @@ export function readPath(json: unknown, path: string): unknown {
     let current: unknown = json
     for (const segment of segments) {
         if (fannedOut) {
-            const next = (current as unknown[])
-                .map((el) => step(el, segment))
-                .filter((v) => v !== undefined)
+            const next =
+                'all' in segment
+                    ? (current as unknown[]).flatMap((el) =>
+                          Array.isArray(el) ? el : []
+                      )
+                    : (current as unknown[])
+                          .map((el) => step(el, segment))
+                          .filter((v) => v !== undefined)
             if (next.length === 0) return undefined
             current = next
         } else {
@@ -125,6 +138,16 @@ const PATH_FOR: Record<Field, keyof ExtentSource> = {
 const isNonEmptyString = (v: unknown): v is string =>
     typeof v === 'string' && v !== ''
 
+// The charset every string this module writes into a layer's time fields is
+// restricted to: digits, letters, `:`, `+`, `-`, `.` and whitespace. That
+// covers every form the existing readers parse — ISO datetimes and partial
+// dates, `now` policies and ISO durations — with no room for markup, since
+// these strings are later concatenated into HTML by the Layers tool.
+const SAFE_TIME_STRING_RE = /^[0-9A-Za-z:+\-.\s]+$/
+
+const isSafeTimeString = (v: unknown): v is string =>
+    isNonEmptyString(v) && SAFE_TIME_STRING_RE.test(v)
+
 // Seconds are the finest the static fields carry, so the fraction is dropped.
 function epochToIso(ms: number): string | null {
     const date = new Date(ms)
@@ -135,17 +158,18 @@ function epochToIso(ms: number): string | null {
 /**
  * A single time value in the form the static start/end fields hold: a
  * string exactly as written — the existing readers already accept ISO
- * datetimes, partial dates and `now` policies — or a finite number read as
- * epoch milliseconds. Anything else is null.
+ * datetimes, partial dates and `now` policies, and the safe charset covers
+ * all of them — or a finite number read as epoch milliseconds. Anything
+ * else, including a string outside that charset, is null.
  */
 function normalizeTimeValue(v: unknown): string | null {
-    if (isNonEmptyString(v)) return v
+    if (isSafeTimeString(v)) return v
     if (typeof v === 'number' && Number.isFinite(v)) return epochToIso(v)
     return null
 }
 
 function normalizeInterval(v: unknown): string | null {
-    return isNonEmptyString(v) ? v : null
+    return isSafeTimeString(v) ? v : null
 }
 
 /**
@@ -249,13 +273,15 @@ export async function fetchLayerExtentSource(
     if (url === '') return null
 
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
-    const fetchImpl = options.fetchImpl ?? fetch
     const label = labelOf(layer)
 
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    let controller: AbortController | undefined
+    let timer: ReturnType<typeof setTimeout> | undefined
     let json: unknown
     try {
+        const fetchImpl = options.fetchImpl ?? fetch
+        controller = new AbortController()
+        timer = setTimeout(() => controller!.abort(), timeoutMs)
         const response = await fetchImpl(url, { signal: controller.signal })
         if (!response.ok) {
             console.warn(
@@ -265,18 +291,17 @@ export async function fetchLayerExtentSource(
         }
         json = await response.json()
     } catch (err) {
-        const reason =
-            controller.signal.aborted
-                ? `timed out after ${timeoutMs} ms`
-                : `could not be fetched or parsed as JSON (${
-                      (err as Error)?.message ?? err
-                  })`
+        const reason = controller?.signal.aborted
+            ? `timed out after ${timeoutMs} ms`
+            : `could not be fetched or parsed as JSON (${
+                  (err as Error)?.message ?? err
+              })`
         console.warn(
             `[Layers] ${label}: time extent source ${url} ${reason}; using the configured data times.`
         )
         return null
     } finally {
-        clearTimeout(timer)
+        if (timer !== undefined) clearTimeout(timer)
     }
 
     const report = applyExtentSource(time, json)
