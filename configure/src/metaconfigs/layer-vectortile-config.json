@@ -482,7 +482,7 @@
             {
               "field": "time.extentSource.url",
               "name": "Time Extent URL",
-              "description": "Optional. A URL returning JSON that describes when this layer has data, such as a STAC collection. Fetched once when the mission loads, with a 10 second timeout. Each path below that finds a value replaces the matching field above; anything the response cannot supply keeps the value typed above. If the request fails the layer uses the values above and logs a warning. Leave empty to use only the values above.",
+              "description": "Optional. A URL returning JSON that describes when this layer has data, such as a STAC collection. Fetched once when the mission loads, with a 10 second timeout. Each path below that finds a value replaces the matching field above; anything the response cannot supply keeps the value typed above. If the request fails the layer uses the values above and logs a warning. Leave empty to use only the values above. A relative URL is resolved against the page, not the mission folder.",
               "type": "text",
               "width": 12
             },
@@ -503,7 +503,7 @@
             {
               "field": "time.extentSource.intervalPath",
               "name": "Interval Path",
-              "description": "Where in the response the data cadence is, as an ISO 8601 duration such as P1D or P1M, e.g. summaries.cadence. Leave empty to keep Data Time Interval.",
+              "description": "Where in the response the data cadence is, as an ISO 8601 duration such as P1D or P1M, e.g. summaries.cadence. Leave empty for no cadence.",
               "type": "text",
               "width": 3
             },
