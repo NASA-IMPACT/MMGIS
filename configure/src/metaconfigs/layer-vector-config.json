@@ -508,30 +508,65 @@
             {
               "field": "time.dataStartTime",
               "name": "Data Start Time",
-              "description": "The earliest time this layer has data for. The layer is not requested while the timeline's window lies entirely before it. Use an ISO 8601 datetime (e.g., 2020-01-01T00:00:00Z); a partial date starts at the beginning of what it names, so 2020-03 starts on 1 March. Or use now to follow the current date, optionally offset by an ISO 8601 duration (e.g., now - P1D). Leave empty to leave the start unconstrained. An unreadable value is ignored.",
+              "description": "The earliest time this layer has data for. The layer is not requested while the timeline's window lies entirely before it. Use an ISO 8601 datetime (e.g., 2020-01-01T00:00:00Z); a partial date starts at the beginning of what it names, so 2020-03 starts on 1 March. Or use now to follow the current date, optionally offset by an ISO 8601 duration (e.g., now - P1D). Leave empty to leave the start unconstrained. An unreadable value is ignored. When a Time Extent URL is set below and its path finds a value, that value is used instead and this one is the fallback.",
               "type": "text",
               "width": 4
             },
             {
               "field": "time.dataEndTime",
               "name": "Data End Time",
-              "description": "The latest time this layer has data for. The layer is not requested while the timeline's window lies entirely after it. Use an ISO 8601 datetime (e.g., 2025-12-31T23:59:59Z); a partial date runs to the end of what it names, so 2020-03 runs to the end of March. Or use now for a collection that is still growing, so the layer stays current without edits, optionally offset by an ISO 8601 duration (e.g., now + P5D). Leave empty to leave the end unconstrained. An unreadable value is ignored.",
+              "description": "The latest time this layer has data for. The layer is not requested while the timeline's window lies entirely after it. Use an ISO 8601 datetime (e.g., 2025-12-31T23:59:59Z); a partial date runs to the end of what it names, so 2020-03 runs to the end of March. Or use now for a collection that is still growing, so the layer stays current without edits, optionally offset by an ISO 8601 duration (e.g., now + P5D). Leave empty to leave the end unconstrained. An unreadable value is ignored. When a Time Extent URL is set below and its path finds a value, that value is used instead and this one is the fallback.",
               "type": "text",
               "width": 4
             },
             {
               "field": "time.interval",
               "name": "Data Time Interval",
-              "description": "How often new data is added, as an ISO 8601 duration (e.g., P1D for daily, P7D for weekly, P1M for monthly). When set, the data end time snaps back to the most recent date that actually has data. Leave empty for continuous or irregular data. An unreadable value is ignored.",
+              "description": "How often new data is added, as an ISO 8601 duration (e.g., P1D for daily, P7D for weekly, P1M for monthly). When set, the data end time snaps back to the most recent date that actually has data. Leave empty for continuous or irregular data. An unreadable value is ignored. When a Time Extent URL is set below and its path finds a value, that value is used instead and this one is the fallback.",
               "type": "text",
               "width": 4
             },
             {
               "field": "time.dataDates",
               "name": "Data Dates",
-              "description": "Optional. For layers with data at only a scattered set of times rather than continuously across the extent above. A comma-separated list of when data is available, in UTC, each written only as precisely as the data is: a year (2020), a month (2020-03), a day (2020-03-04) or an hour (2020-03-04T14). Each entry covers the whole of what it names, and anything more precise than an hour, such as 2020-03-04T14:30, covers its hour. The layer is requested only while the timeline's window touches one of these entries. Format: ISO 8601. Leave empty for a layer with continuous coverage.",
+              "description": "Optional. For layers with data at only a scattered set of times rather than continuously across the extent above. A comma-separated list of when data is available, in UTC, each written only as precisely as the data is: a year (2020), a month (2020-03), a day (2020-03-04) or an hour (2020-03-04T14). Each entry covers the whole of what it names, and anything more precise than an hour, such as 2020-03-04T14:30, covers its hour. The layer is requested only while the timeline's window touches one of these entries. Format: ISO 8601. Leave empty for a layer with continuous coverage. When a Time Extent URL is set below and its path finds a value, that value is used instead and this one is the fallback.",
               "type": "textarray",
               "width": 12
+            },
+            {
+              "field": "time.extentSource.url",
+              "name": "Time Extent URL",
+              "description": "Optional. A URL returning JSON that describes when this layer has data, such as a STAC collection. Fetched once when the mission loads, with a 10 second timeout. Each path below that finds a value replaces the matching field above; anything the response cannot supply keeps the value typed above. If the request fails the layer uses the values above and logs a warning. Leave empty to use only the values above.",
+              "type": "text",
+              "width": 12
+            },
+            {
+              "field": "time.extentSource.startPath",
+              "name": "Start Path",
+              "description": "Where in the response the earliest data time is, as a dotted path with [n] for an array position and [*] for every element, e.g. extent.temporal.interval[0][0]. Accepts an ISO 8601 datetime or a number of milliseconds since 1970. Leave empty to keep Data Start Time.",
+              "type": "text",
+              "width": 3
+            },
+            {
+              "field": "time.extentSource.endPath",
+              "name": "End Path",
+              "description": "Where in the response the latest data time is, e.g. extent.temporal.interval[0][1]. Accepts an ISO 8601 datetime or a number of milliseconds since 1970. Leave empty to keep Data End Time.",
+              "type": "text",
+              "width": 3
+            },
+            {
+              "field": "time.extentSource.intervalPath",
+              "name": "Interval Path",
+              "description": "Where in the response the data cadence is, as an ISO 8601 duration such as P1D or P1M, e.g. summaries.cadence. Leave empty to keep Data Time Interval.",
+              "type": "text",
+              "width": 3
+            },
+            {
+              "field": "time.extentSource.datesPath",
+              "name": "Data Dates Path",
+              "description": "Where in the response the list of times with data is, e.g. summaries.datetime[*] or features[*].properties.datetime. Each entry is an ISO 8601 date or datetime, or milliseconds since 1970. Leave empty to keep Data Dates.",
+              "type": "text",
+              "width": 3
             }
           ]
         }
