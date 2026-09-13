@@ -17,71 +17,30 @@ const STAC = {
 describe('layer extent source', () => {
     describe('readPath', () => {
         test.each([
-            ['extent.temporal.interval[0][0]', '2020-01-01T00:00:00Z'],
-            ['extent.temporal.interval[0][1]', null],
+            ['extent.temporal.interval.0.0', '2020-01-01T00:00:00Z'],
             ['summaries.cadence', 'P1M'],
             ['summaries.datetime', ['2020-01', '2020-02']],
-            ['summaries.datetime[*]', ['2020-01', '2020-02']],
-            ['$.summaries.cadence', 'P1M'],
-            ['$summaries.cadence', 'P1M'],
-            [
-                'features[*].properties.datetime',
-                ['2021-01-01T00:00:00Z', '2021-02-01T00:00:00Z'],
-            ],
-            ['extent.temporal.interval[*]', [['2020-01-01T00:00:00Z', null]]],
+            ['features.1.properties.datetime', '2021-02-01T00:00:00Z'],
             ['summaries. cadence', 'P1M'],
+            [' summaries.cadence ', 'P1M'],
         ])('reads %s', (path, expected) => {
             expect(readPath(STAC, path)).toEqual(expected)
         })
 
-        test('[*] reads every element of an array root', () => {
-            expect(readPath(['2020-01', '2020-02'], '[*]')).toEqual([
-                '2020-01',
-                '2020-02',
-            ])
-        })
-
-        test('$[0].d addresses an array root by index', () => {
-            expect(readPath([{ d: 'x' }], '$[0].d')).toBe('x')
-        })
-
-        test('a repeated [*] flattens one more level', () => {
-            expect(
-                readPath({ a: [[1, 2], [3]] }, 'a[*][*]')
-            ).toEqual([1, 2, 3])
-        })
-
-        test('a repeated [*] over non-array elements matches nothing', () => {
-            expect(readPath({ a: [1, 2] }, 'a[*][*]')).toBeUndefined()
+        test('an array root is addressed by index', () => {
+            expect(readPath([{ d: 'x' }], '0.d')).toBe('x')
         })
 
         test.each([
             ['missing.key'],
-            ['summaries.datetime[5]'],
+            ['summaries.datetime.5'],
             ['summaries.cadence.deeper'],
-            ['features[*].nothing'],
-        ])('%s matches nothing', (path) => {
-            expect(readPath(STAC, path)).toBeUndefined()
-        })
-
-        test('[*] on a non-array matches nothing', () => {
-            expect(readPath(STAC, 'summaries[*]')).toBeUndefined()
-        })
-
-        test('[*] yielding no elements matches nothing', () => {
-            expect(readPath({ items: [] }, 'items[*].id')).toBeUndefined()
-        })
-
-        test.each([
-            ['$..datetime'],
-            ["features[?(@.id=='a')]"],
-            ["['summaries']"],
+            ['extent.temporal.interval.0.1'],
             ['summaries..cadence'],
             ['summaries.'],
-            ['[0]'],
             [''],
-            ['summaries[a]'],
-        ])('rejects %s as invalid', (path) => {
+            ['   '],
+        ])('%s matches nothing', (path) => {
             expect(readPath(STAC, path)).toBeUndefined()
         })
 
@@ -105,10 +64,10 @@ describe('layer extent source', () => {
                 ...staticTime(),
                 extentSource: {
                     url: 'x',
-                    startPath: 'extent.temporal.interval[0][0]',
+                    startPath: 'extent.temporal.interval.0.0',
                     endPath: 'end',
                     intervalPath: 'summaries.cadence',
-                    datesPath: 'summaries.datetime[*]',
+                    datesPath: 'summaries.datetime',
                 },
             }
             const report = applyExtentSource(time, {
@@ -184,7 +143,7 @@ describe('layer extent source', () => {
 
         test.each([
             ['matches nothing', { nope: 1 }, 'start'],
-            ['is invalid', { start: '2020' }, '$..start'],
+            ['names keys that do not exist', { start: '2020' }, 'nope.start'],
             ['yields null', { start: null }, 'start'],
             ['yields an object', { start: {} }, 'start'],
             ['yields a boolean', { start: true }, 'start'],
@@ -261,12 +220,12 @@ describe('layer extent source', () => {
             expect(report.skipped).toHaveLength(1)
         })
 
-        test('a [*] over nested arrays is not accepted for start', () => {
+        test('a path that yields an array is not accepted for start', () => {
             const time = {
                 ...staticTime(),
                 extentSource: {
                     url: 'x',
-                    startPath: 'extent.temporal.interval[*]',
+                    startPath: 'extent.temporal.interval',
                 },
             }
             applyExtentSource(time, STAC)
@@ -287,24 +246,14 @@ describe('layer extent source', () => {
             }
         )
 
-        test('an array root is addressed with a leading index or wildcard', () => {
+        test('an array root is addressed by index', () => {
             const time = {
                 ...staticTime(),
-                extentSource: { url: 'x', datesPath: '[*].d' },
+                extentSource: { url: 'x', startPath: '0.d' },
             }
-            const report = applyExtentSource(time, [
-                { d: '2020-01' },
-                { d: '2020-02' },
-            ])
-            expect(time.dataDates).toEqual(['2020-01', '2020-02'])
-            expect(report.applied).toEqual(['dataDates'])
-
-            const time2 = {
-                ...staticTime(),
-                extentSource: { url: 'x', startPath: '$[0].d' },
-            }
-            applyExtentSource(time2, [{ d: '2020-01' }])
-            expect(time2.dataStartTime).toBe('2020-01')
+            const report = applyExtentSource(time, [{ d: '2020-01' }])
+            expect(time.dataStartTime).toBe('2020-01')
+            expect(report.applied).toEqual(['dataStartTime'])
         })
 
         test('no extentSource applies nothing and reports nothing', () => {
@@ -432,6 +381,28 @@ describe('layer extent source', () => {
             expect(layer.time.dataStartTime).toBe('2000-01-01T00:00:00Z')
             expect(warn).toHaveBeenCalledTimes(1)
             expect(warn.mock.calls[0][0]).toMatch(/timed out/)
+        })
+
+        test.each([
+            ['a relative URL', 'extent.json', 'Missions/Demo/extent.json'],
+            ['a root-relative URL', '/public/extent.json', '/public/extent.json'],
+            ['an absolute URL', 'https://api.example/extent', 'https://api.example/extent'],
+            ['a scheme-relative URL', '//api.example/extent', '//api.example/extent'],
+        ])('%s is prefixed with the mission path only when relative', async (_, url, expected) => {
+            const fetchImpl = vi.fn(async () => jsonResponse({ start: '2020' }))
+            await fetchLayerExtentSource(layerWith({ url, startPath: 'start' }), {
+                fetchImpl,
+                missionPath: 'Missions/Demo/',
+            })
+            expect(fetchImpl.mock.calls[0][0]).toBe(expected)
+        })
+
+        test('a relative URL is fetched as written without a mission path', async () => {
+            const fetchImpl = vi.fn(async () => jsonResponse({ start: '2020' }))
+            await fetchLayerExtentSource(layerWith({ url: 'extent.json', startPath: 'start' }), {
+                fetchImpl,
+            })
+            expect(fetchImpl.mock.calls[0][0]).toBe('extent.json')
         })
 
         test.each([

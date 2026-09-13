@@ -63,10 +63,13 @@ price.
 experience but two code paths to test. Rejected as premature; the broadcast
 path is the upgrade if startup latency turns out to matter.
 
-**Full JSONPath via a library.** Filters and recursive descent are more than
-the endpoints this is for need, and a dependency is more than a path reader
-of a few dozen lines. Rejected; the reader can grow if a real endpoint needs
-it.
+**A path grammar of our own, or a JSONPath library.** Both were tried in
+review and dropped. The core already reads every dotted config path with
+`F_.getIn`, and a second reader for the same job is the kind of duplication
+the plugin boundary is meant to prevent. Wildcards (`features[*].datetime`)
+were the one capability getIn lacks; they were removed rather than kept as
+the reason for a parallel reader, at the cost of not addressing endpoints that
+nest each date in a record.
 
 ## Architecture
 
@@ -108,31 +111,34 @@ Example, a STAC collection:
 
 ```
 url:          https://stac.example/collections/co2-monthly
-startPath:    extent.temporal.interval[0][0]
-endPath:      extent.temporal.interval[0][1]
+startPath:    extent.temporal.interval.0.0
+endPath:      extent.temporal.interval.0.1
 intervalPath: summaries.cadence
-datesPath:    summaries.datetime[*]
+datesPath:    summaries.datetime
 ```
 
 ## 2. Path reader
 
-`readPath(json, path)` in the new module returns the value a path names, or
-`undefined` when nothing is there. Grammar:
+`readPath(json, path)` returns the value a path names, or `undefined` when
+nothing is there. It is the core's existing dotted-path reader, `F_.getIn`,
+which every other dotted path in a layer config already goes through:
 
-- an optional leading `$` or `$.`, ignored;
 - dot-separated object keys: `extent.temporal`;
-- `[n]` for an array index, zero-based: `interval[0][1]`;
-- `[*]` for every element of an array, flattened one level into the result:
-  `features[*].properties.datetime` yields one value per feature; a `[*]`
-  reached while already flattened flattens one further level again.
-- a path may begin with an index or a wildcard when the root itself is an
-  array: `[*]` on `["2020-01", "2020-02"]` yields the list, `$[0].d` on
-  `[{ d: 'x' }]` yields `'x'`.
+- a numeric key addresses an array position, zero-based:
+  `extent.temporal.interval.0.1`; an array root is addressed the same way,
+  `0.d` on `[{ d: 'x' }]` yields `'x'`;
+- whitespace around a key is ignored.
 
-Anything outside this grammar — a bare `.` or `..` at the start, filters,
-recursive descent past the root, quoted keys — makes the path invalid. An
-invalid path is reported once with the layer name and path and treated as
-matching nothing.
+There is no wildcard: a path names one value, and a list is supplied by
+naming the list (`summaries.datetime`). An endpoint that nests each date in a
+record, such as a STAC item search, is not addressable; a source that wants to
+feed the dates list returns it flat. A path that names nothing, or names a
+null, is reported once with the layer name and path and leaves its field at
+the static value.
+
+The URL is resolved the way a legend path is: a relative URL is prefixed with
+the mission folder, and a URL with a scheme, a `//` host or a leading `/` is
+fetched as written.
 
 ## 3. Normalization
 
@@ -147,9 +153,9 @@ existing readers see nothing new.
 | dates | an array of strings and finite numbers | the list, each entry normalized as a start/end value; other entries dropped |
 | dates | a lone string or finite number | a one-entry list |
 
-`[*]` on a nested array (`interval[*]` on `[["2020-01-01", null]]`) yields
-arrays, which are not accepted for start or end and are dropped for dates.
-Null, objects and booleans are never applied. An empty string is a value
+A path that yields an array (`extent.temporal.interval`) is not accepted for
+start, end or interval; for dates, entries that are themselves arrays are
+dropped. Null, objects and booleans are never applied. An empty string is a value
 that names nothing, so it is not applied either; the static field stays.
 
 ## 4. Merge
@@ -157,7 +163,7 @@ that names nothing, so it is not applied either; the static field stays.
 `applyExtentSource(time, json)` writes onto the layer's `time` object:
 
 - a path that yields an accepted value overwrites its static field;
-- a path that is blank, invalid, matches nothing or yields an unaccepted
+- a path that is blank, names nothing or yields an unaccepted
   value leaves its static field untouched and is reported;
 - a response that is not a JSON object or array applies nothing.
 
@@ -200,10 +206,10 @@ extent and one warning in the console.
 Unit tests in `tests/unit/layerExtentSource.spec.js` (vitest, matching the
 neighbouring time-module specs):
 
-- path reader: each grammar form, `$` prefix, `[*]` flattening, an index out
-  of range, a missing key, and every rejected form;
-- normalization: each accepted and rejected shape per field, including a
-  nested array under `[*]` and an empty string;
+- path reader: dotted keys, numeric array positions, an array root, key
+  trimming, an index out of range, a missing key, a null, a blank path;
+- normalization: each accepted and rejected shape per field, including an
+  array value and an empty string;
 - merge: override versus fallback per field, a blank path, an invalid path,
   a non-object response;
 - fetch: a successful fetch applies values; a timeout, a non-2xx status, a

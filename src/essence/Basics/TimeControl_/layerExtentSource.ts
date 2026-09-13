@@ -8,97 +8,27 @@
  * anything the source cannot supply.
  *
  * Pure except for the injected `fetch`; nothing here touches the DOM, an
- * engine or the layer registry.
+ * engine or the layer registry. Paths are read with the same `F_.getIn`
+ * every other dotted config path goes through.
  */
 
-/**
- * Path grammar, deliberately small: an optional leading `$` or `$.`,
- * dot-separated object keys, `[n]` array indexes and `[*]` for every element
- * of an array, flattened one level (a repeated `[*]` flattens one further
- * level again). A path may begin with an index or a wildcard when the root
- * itself is an array. Filters, recursive descent and quoted keys are invalid
- * and match nothing.
- */
-const SEGMENT_RE = /^([^.[\]]+)|^\[(\d+|\*)\]/
-const LEADING_INDEX_RE = /^\[(\d+|\*)\]/
-
-type Segment = { key: string } | { index: number } | { all: true }
-
-function parsePath(path: string): Segment[] | null {
-    let rest = path.trim()
-    if (rest.startsWith('$.')) rest = rest.slice(2)
-    else if (rest.startsWith('$')) rest = rest.slice(1)
-    // A path begins with a key, or with an index/wildcard addressing an
-    // array root; a leading dot or recursive descent has no object to apply
-    // to, so `$..a` and a bare `.` are invalid, but `[0]` and `$[0]` are not.
-    if (rest === '' || rest.startsWith('.')) return null
-    if (rest.startsWith('[') && !LEADING_INDEX_RE.test(rest)) return null
-
-    const segments: Segment[] = []
-    while (rest.length > 0) {
-        // A dot separates a key from what precedes it; a dot followed by
-        // nothing, another dot or an index is malformed.
-        if (rest.startsWith('.')) {
-            rest = rest.slice(1)
-            if (rest === '' || rest.startsWith('.') || rest.startsWith('['))
-                return null
-        }
-        const m = SEGMENT_RE.exec(rest)
-        if (!m) return null
-        if (m[1] != null) segments.push({ key: m[1].trim() })
-        else if (m[2] === '*') segments.push({ all: true })
-        else segments.push({ index: Number(m[2]) })
-        rest = rest.slice(m[0].length)
-    }
-    return segments
-}
-
-function step(value: unknown, segment: Segment): unknown {
-    if (value == null) return undefined
-    if ('all' in segment) {
-        return Array.isArray(value) && value.length > 0 ? value : undefined
-    }
-    if ('index' in segment) {
-        return Array.isArray(value) ? value[segment.index] : undefined
-    }
-    if (typeof value !== 'object' || Array.isArray(value)) return undefined
-    return (value as Record<string, unknown>)[segment.key]
-}
+import F_ from '../Formulae_/Formulae_'
 
 /**
- * The value a path names inside `json`, or undefined when the path is
- * invalid or matches nothing. A `[*]` fans out: every later segment is
- * applied to each element, and elements that match nothing are dropped.
- * A `[*]` reached while already fanned out flattens one further level
- * instead — the elements of each element are concatenated, and elements
- * that are not themselves arrays are dropped. A fan-out that leaves no
- * elements matches nothing.
+ * The value a dotted path names inside `json`, read the way every other
+ * dotted path in a layer config is read (`F_.getIn`): keys separated by
+ * dots, a numeric key addressing an array position (`interval.0.1`), and
+ * whitespace around each key ignored. Undefined when the path is blank or
+ * names nothing. A value that is null reads as nothing too: the reader
+ * cannot tell the two apart, and neither is usable.
  */
 export function readPath(json: unknown, path: string): unknown {
-    const segments = parsePath(path)
-    if (segments == null) return undefined
-
-    let fannedOut = false
-    let current: unknown = json
-    for (const segment of segments) {
-        if (fannedOut) {
-            const next =
-                'all' in segment
-                    ? (current as unknown[]).flatMap((el) =>
-                          Array.isArray(el) ? el : []
-                      )
-                    : (current as unknown[])
-                          .map((el) => step(el, segment))
-                          .filter((v) => v !== undefined)
-            if (next.length === 0) return undefined
-            current = next
-        } else {
-            current = step(current, segment)
-            if (current === undefined) return undefined
-            if ('all' in segment) fannedOut = true
-        }
-    }
-    return current
+    const keys = String(path ?? '')
+        .split('.')
+        .map((key) => key.trim())
+    if (keys.length === 1 && keys[0] === '') return undefined
+    const found = F_.getIn(json, keys)
+    return found == null ? undefined : found
 }
 
 export interface ExtentSource {
@@ -195,9 +125,9 @@ const NORMALIZE: Record<Field, (v: unknown) => string | string[] | null> = {
 /**
  * Overwrites each of the four static data-time fields on `time` whose
  * configured path yields an accepted value in `json`. A blank path is not
- * configured and is silently left alone. A configured path that is invalid,
- * matches nothing or yields an unaccepted value leaves its field at the
- * static value and is reported in `skipped` so the caller can warn once.
+ * configured and is silently left alone. A configured path that names
+ * nothing or yields an unaccepted value leaves its field at the static value
+ * and is reported in `skipped` so the caller can warn once.
  */
 export function applyExtentSource(time: LayerTime, json: unknown): ApplyReport {
     const report: ApplyReport = { applied: [], skipped: [] }
@@ -219,16 +149,10 @@ export function applyExtentSource(time: LayerTime, json: unknown): ApplyReport {
     configured.forEach((field) => {
         const path = String(source[PATH_FOR[field]]).trim()
         const found = readPath(json, path)
-        if (found === undefined) {
-            report.skipped.push(
-                `${field}: path "${path}" is invalid or matched nothing`
-            )
-            return
-        }
-        const value = NORMALIZE[field](found)
+        const value = found === undefined ? null : NORMALIZE[field](found)
         if (value == null) {
             report.skipped.push(
-                `${field}: path "${path}" yielded a value that is not usable as a ${field}`
+                `${field}: path "${path}" matched nothing usable as a ${field}`
             )
             return
         }
@@ -248,6 +172,16 @@ export interface ExtentSourceLayer {
 
 const DEFAULT_TIMEOUT_MS = 10000
 
+/**
+ * A relative URL names a file shipped with the mission and is resolved
+ * against the mission folder, the way a legend path is. A URL with a
+ * scheme, a `//` host or a leading `/` is fetched as written.
+ */
+function resolveSourceUrl(url: string, missionPath?: string | null): string {
+    if (!missionPath || url.startsWith('/') || F_.isUrlAbsolute(url)) return url
+    return missionPath + url
+}
+
 function labelOf(layer: ExtentSourceLayer): string {
     return layer.display_name || layer.name || '(unnamed layer)'
 }
@@ -261,16 +195,22 @@ function labelOf(layer: ExtentSourceLayer): string {
  * one console warning naming the layer. Never rejects: a broken source may
  * cost the layer its fetched extent, never its place on the map.
  *
- * `fetchImpl` and `timeoutMs` are injectable for tests.
+ * `missionPath` is the folder relative URLs resolve against; `fetchImpl`
+ * and `timeoutMs` are injectable for tests.
  */
 export async function fetchLayerExtentSource(
     layer: ExtentSourceLayer,
-    options: { timeoutMs?: number; fetchImpl?: typeof fetch } = {}
+    options: {
+        timeoutMs?: number
+        fetchImpl?: typeof fetch
+        missionPath?: string | null
+    } = {}
 ): Promise<ApplyReport | null> {
     const time = layer?.time
     if (time == null || time.enabled !== true) return null
-    const url = String(time.extentSource?.url ?? '').trim()
-    if (url === '') return null
+    const configuredUrl = String(time.extentSource?.url ?? '').trim()
+    if (configuredUrl === '') return null
+    const url = resolveSourceUrl(configuredUrl, options.missionPath)
 
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
     const label = labelOf(layer)

@@ -482,21 +482,21 @@
             {
               "field": "time.extentSource.url",
               "name": "Time Extent URL",
-              "description": "Optional. A URL returning JSON that describes when this layer has data, such as a STAC collection. Fetched once when the mission loads, with a 10 second timeout. Each path below that finds a value replaces the matching field above; anything the response cannot supply keeps the value typed above. If the request fails the layer uses the values above and logs a warning. Leave empty to use only the values above. A relative URL is resolved against the page, not the mission folder.",
+              "description": "Optional. A URL returning JSON that describes when this layer has data, such as a STAC collection. Fetched once when the mission loads, with a 10 second timeout. Each path below that finds a value replaces the matching field above; anything the response cannot supply keeps the value typed above. If the request fails the layer uses the values above and logs a warning. Leave empty to use only the values above. A relative URL names a file in the mission folder, like a legend path; a URL starting with / or with a scheme is fetched as written.",
               "type": "text",
               "width": 12
             },
             {
               "field": "time.extentSource.startPath",
               "name": "Start Path",
-              "description": "Where in the response the earliest data time is, as a dotted path with [n] for an array position and [*] for every element, e.g. extent.temporal.interval[0][0]. Accepts an ISO 8601 datetime or a number of milliseconds since 1970. Leave empty to keep Data Start Time.",
+              "description": "Where in the response the earliest data time is, as a dotted path in which a number selects an array position, e.g. extent.temporal.interval.0.0. Accepts an ISO 8601 datetime or a number of milliseconds since 1970. Leave empty to keep Data Start Time.",
               "type": "text",
               "width": 3
             },
             {
               "field": "time.extentSource.endPath",
               "name": "End Path",
-              "description": "Where in the response the latest data time is, e.g. extent.temporal.interval[0][1]. Accepts an ISO 8601 datetime or a number of milliseconds since 1970. Leave empty to keep Data End Time.",
+              "description": "Where in the response the latest data time is, e.g. extent.temporal.interval.0.1. Accepts an ISO 8601 datetime or a number of milliseconds since 1970. Leave empty to keep Data End Time.",
               "type": "text",
               "width": 3
             },
@@ -510,7 +510,7 @@
             {
               "field": "time.extentSource.datesPath",
               "name": "Data Dates Path",
-              "description": "Where in the response the list of times with data is, e.g. summaries.datetime[*] or features[*].properties.datetime. Each entry is an ISO 8601 date or datetime, or milliseconds since 1970. Leave empty to keep Data Dates.",
+              "description": "Where in the response the list of times with data is, as a dotted path naming a list, e.g. summaries.datetime. Each entry is an ISO 8601 date or datetime, or milliseconds since 1970. Leave empty to keep Data Dates.",
               "type": "text",
               "width": 3
             }

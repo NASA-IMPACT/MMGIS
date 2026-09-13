@@ -4564,7 +4564,9 @@ async function parseConfig(configData, urlOnLayers) {
             // layer carries the fetched data times once it resolves.
             // fetchLayerExtentSource resolves null, never rejects, for a
             // layer with no source or a failed fetch.
-            extentSourceFetches.push(fetchLayerExtentSource(d[i]))
+            extentSourceFetches.push(
+                fetchLayerExtentSource(d[i], { missionPath: L_.missionPath })
+            )
 
             if (d[i].display_name === 'TimeCogs') {
                 d[i].time.current = '2025-02-12T01:20:55Z'
