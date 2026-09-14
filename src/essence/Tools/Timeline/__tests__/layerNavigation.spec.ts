@@ -89,7 +89,7 @@ describe('resolveLayerNavigation', () => {
         expect(nav?.kind).toBe('sparse')
     })
 
-    test('stops on the last UTC instant of each listed day', () => {
+    test('stops on the last UTC instant of a bare listed day', () => {
         // The current time is the trailing edge of a layer's query window; a
         // stop at midnight would exclude that day's data.
         const nav = resolve({
@@ -101,6 +101,44 @@ describe('resolveLayerNavigation', () => {
             '2020-03-04T23:59:59.999Z',
             '2020-07-19T23:59:59.999Z',
         ])
+    })
+
+    test('stops on the instant itself when an entry carries a time', () => {
+        const nav = resolve({
+            enabled: true,
+            dataDates: [
+                '2026-09-09T13:35:56Z',
+                '2026-09-09T12:55:48.035905536Z',
+                '2020-03-04T14',
+            ],
+        })
+
+        expect(iso(nav?.stops)).toEqual([
+            '2020-03-04T14:00:00.000Z',
+            '2026-09-09T12:55:48.035Z',
+            '2026-09-09T13:35:56.000Z',
+        ])
+    })
+
+    test('stops on the last instant of a bare month or year', () => {
+        const nav = resolve({
+            enabled: true,
+            dataDates: ['2020-03', '2021'],
+        })
+
+        expect(iso(nav?.stops)).toEqual([
+            '2020-03-31T23:59:59.999Z',
+            '2021-12-31T23:59:59.999Z',
+        ])
+    })
+
+    test('reads a timed entry in UTC whatever the process timezone', () => {
+        const nav = resolve({
+            enabled: true,
+            dataDates: ['2020-03-04T02:00:00+02:00'],
+        })
+
+        expect(iso(nav?.stops)).toEqual(['2020-03-04T00:00:00.000Z'])
     })
 
     test('bounds a sparse layer by its first and last stop', () => {
@@ -128,18 +166,22 @@ describe('resolveLayerNavigation', () => {
         ])
     })
 
-    test('gives a day listed more than once a single stop', () => {
+    test('gives each distinct listed instant its own stop, and a repeat one', () => {
         const nav = resolve({
             enabled: true,
             dataDates: [
                 '2020-03-04',
                 '2020-03-04T06:00:00Z',
                 '2020-03-04T18:30:00Z',
+                '2020-03-04T06:00:00Z',
+                '2020-07-19',
                 '2020-07-19',
             ],
         })
 
         expect(iso(nav?.stops)).toEqual([
+            '2020-03-04T06:00:00.000Z',
+            '2020-03-04T18:30:00.000Z',
             '2020-03-04T23:59:59.999Z',
             '2020-07-19T23:59:59.999Z',
         ])
