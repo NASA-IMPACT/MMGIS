@@ -47,7 +47,12 @@ import type {
     MapInitOptions,
     BasemapOptions,
 } from '../types/view'
-import type { LayerOptions, OverlayOptions, RefreshContext } from '../types/layers'
+import type {
+    LayerOptions,
+    OverlayOptions,
+    RefreshContext,
+    TileLayerOptions,
+} from '../types/layers'
 import type {
     MapEventHandler,
     MapEventOptions,
@@ -1050,6 +1055,11 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         return (existing.props as { visible?: boolean })?.visible !== false
     }
 
+    /** See {@link IMapEngine.holdsLayer}. */
+    holdsLayer(id: string): boolean {
+        return this._layers.has(id)
+    }
+
     /**
      * Add a pre-built deck.gl layer to the map. The layer's `id` property is
      * used as the registry key. Anything this engine cannot hold is declined —
@@ -1092,8 +1102,16 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * built, but layer types it has no builder for fall through to being
      * built with Leaflet instead. The warning exists so that mis-construction
      * surfaces, rather than presenting as an update that quietly did nothing.
+     *
+     * A `tileFootprint` carries deck.gl tile props under their deck.gl names,
+     * so it is spread on whole. What put the numbers there — a service's
+     * tilejson, a config field, a measurement — is the caller's business: this
+     * adapter is handed an area and a ceiling and hands them to deck.gl.
      */
-    updateLayer(layer: Layer | string, options: Partial<LayerOptions>): Layer {
+    updateLayer(
+        layer: Layer | string,
+        options: Partial<TileLayerOptions>
+    ): Layer {
         const id = resolveLayerId(layer)
         const existing = this._layers.get(id)
         if (!existing) return existing as unknown as Layer
@@ -1102,6 +1120,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             ...(options.opacity !== undefined ? { opacity: options.opacity } : {}),
             ...(options.visible !== undefined ? { visible: options.visible } : {}),
             ...(options.url !== undefined ? { data: options.url } : {}),
+            ...(options.tileFootprint ?? {}),
         }) as Layer
         this._layers.set(id, updated)
         this._syncLayers()

@@ -25,13 +25,20 @@ import {
     cogSourceType,
     hasCogColormap,
     shouldUseDeckRaster,
+    stacCollectionNameFrom,
     supportsCogTransform,
 } from './tileUrlUtils'
+import { orderedDegreeBox } from './boundingBox'
 import {
     evaluateLayerDataCoverage,
     isCoverageGated,
     isSameCoverage,
 } from '../TimeControl_/layerDataCoverage'
+import {
+    forgetAllServiceTileFootprints,
+    forgetServiceTileFootprint,
+    serviceTileFootprintFor,
+} from './serviceTileFootprint'
 import { bbox } from '@turf/turf'
 import $ from 'jquery'
 
@@ -112,12 +119,8 @@ function titilerUrlFor(layerConfig) {
  * whole, as is one outside +-180 / +-90: a latitude past the poles places a
  * layer somewhere it cannot be, which a box in projected units always does.
  *
- * Corners are ordered per axis, so a box whose corners are transposed - east
- * written where west belongs - reads as the box it describes, the same box
- * Leaflet's latLngBounds makes of it. A footprint that crosses the
- * antimeridian, west 170 and east -170, is a different thing and is not
- * representable: ordering reads it as the complementary box across the other
- * 340 degrees, which is also what Leaflet reads it as.
+ * Corners are put the right way round per axis by `orderedDegreeBox`, which
+ * also refuses anything that is not four finite numbers.
  *
  * @param {unknown} boundingBox - A layer config's `boundingBox`.
  * @returns {[number, number, number, number] | null}
@@ -125,17 +128,12 @@ function titilerUrlFor(layerConfig) {
 export function parseBoundingBox(boundingBox) {
     const parts =
         typeof boundingBox === 'string' ? boundingBox.split(',') : boundingBox
-    if (!Array.isArray(parts) || parts.length !== 4) return null
-    const [x1, y1, x2, y2] = parts.map((n) => parseFloat(n))
-    if (![x1, y1, x2, y2].every(Number.isFinite)) return null
-    if (Math.max(Math.abs(x1), Math.abs(x2)) > 180) return null
-    if (Math.max(Math.abs(y1), Math.abs(y2)) > 90) return null
-    return [
-        Math.min(x1, x2),
-        Math.min(y1, y2),
-        Math.max(x1, x2),
-        Math.max(y1, y2),
-    ]
+    const box = orderedDegreeBox(parts)
+    if (box == null) return null
+    const [west, south, east, north] = box
+    if (Math.abs(west) > 180 || Math.abs(east) > 180) return null
+    if (Math.abs(south) > 90 || Math.abs(north) > 90) return null
+    return box
 }
 
 /**
@@ -146,8 +144,9 @@ export function parseBoundingBox(boundingBox) {
  * Where an extent comes from depends on how the layer is drawn, so the sources
  * are tried in order of fidelity: a Leaflet layer measures the geometry it has
  * actually rendered, a deck.gl layer has to be measured from the GeoJSON it was
- * handed, and a raster layer has no geometry at all — only the footprint
- * declared in mission configuration.
+ * handed, and a raster layer has no geometry at all — it is declared for, by
+ * its tile service where one answered for it and by mission configuration's
+ * `boundingBox` otherwise.
  *
  * @param {string} uuid - A key of `L_.layers.data`.
  * @returns {[[number, number], [number, number]] | null}
@@ -200,8 +199,20 @@ function layerBoundsFor(uuid) {
         }
     }
 
-    // Raster layers carry no geometry of their own. Mission configuration
-    // declares their footprint as [west, south, east, north].
+    // Raster layers carry no geometry of their own, so their footprint is
+    // declared for them, as [west, south, east, north]. The tile service's own
+    // answer outranks mission configuration's box: it is measured from the
+    // data rather than typed in, and a COG or STAC layer routinely has no box
+    // configured at all.
+    const serviceExtent = serviceTileFootprintFor(uuid)?.extent
+    if (serviceExtent) {
+        const [west, south, east, north] = serviceExtent
+        return [
+            [south, west],
+            [north, east],
+        ]
+    }
+
     const boundingBox = parseBoundingBox(L_.layers.data[uuid]?.boundingBox)
     if (boundingBox) {
         const [west, south, east, north] = boundingBox
@@ -403,6 +414,10 @@ const L_ = {
         L_.UserInterface_ = null
         L_.tools = null
         L_.configData = null
+        // The layer set is replaced wholesale below rather than removed layer
+        // by layer, so the tile footprints keyed by those layers' names are
+        // dropped here or not at all.
+        forgetAllServiceTileFootprints()
         L_.layers = {
             data: {},
             dataFlat: [],
@@ -745,11 +760,8 @@ const L_ = {
         if (!lowerUrl.startsWith('stac-collection:')) return url
 
         // Parse the STAC URL: stac-collection:collection_name?params
-        const splitColonUrl = url.split(':')
-        if (splitColonUrl.length < 2) return url
-
-        const splitParams = splitColonUrl[1].split('?')
-        const collectionName = splitParams[0]
+        const collectionName = stacCollectionNameFrom(url)
+        if (collectionName == null) return url
 
         // Build bands parameter (only if no expression exists)
         let bandsParam = ''
@@ -3955,6 +3967,12 @@ const L_ = {
                         delete L_.layers.nameToUUID[display_name]
                     }
                 }
+
+                // The tile service's answer for this layer goes with it:
+                // it is remembered outside L_.layers, keyed by the same name,
+                // and a name that comes back on another layer would otherwise
+                // inherit it.
+                forgetServiceTileFootprint(layerUUID)
 
                 delete L_.layers.layer[layerUUID]
                 delete L_.layers.data[layerUUID]

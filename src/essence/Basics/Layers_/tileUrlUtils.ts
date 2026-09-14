@@ -37,6 +37,23 @@ export function cogSourceType(
 }
 
 /**
+ * The collection a `stac-collection:<name>?<params>` source names, or
+ * undefined when the URL carries nothing after the prefix.
+ *
+ * The one reading of the name, shared by everything that addresses
+ * titiler-pgstac for a layer — its tile URLs and its tilejson — so the two
+ * cannot come to describe different collections. The name is the first colon
+ * segment: a further colon starts something that is not the name.
+ */
+export function stacCollectionNameFrom(
+    sourceUrl: string | null | undefined
+): string | undefined {
+    const segments = (sourceUrl || '').split(':')
+    if (segments[1] == null) return undefined
+    return segments[1].split('?')[0]
+}
+
+/**
  * True when a layer paints its pixels through a COG colormap, so a legend can
  * draw the ramp and its bounds. Covers `image` layers, which colour pixels
  * client-side from the same `cog*` config fields as a tile layer.

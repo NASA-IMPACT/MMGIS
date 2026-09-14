@@ -65,13 +65,16 @@ A value from 0 to 1 of the layer's initial opacity. 1 is fully opaque.
 
 _type:_ integer  
 The lowest (smallest number) zoom level of the tile set.  
-_Note: This field can be automatically populate with "Populate from XML". "Populate from XML" uses looks for a `tilemapresource.xml` in the tileset directory specified by the URL field._
+_Note: This field can be automatically populated with "Populate Fields From tilemapresource.xml or TiTiler tilejson", which looks for a `tilemapresource.xml` in the tileset directory specified by the URL field, or reads TiTiler's tilejson for a `COG:` source._
 
 #### Maximum Native Zoom
 
 _type:_ integer  
-The highest (largest number) zoom level of the tile set.  
-_Note: This field can be automatically populate with "Populate from XML". "Populate from XML" uses looks for a `tilemapresource.xml` in the tileset directory specified by the URL field._
+The highest (largest number) zoom level of the tile set — the deepest level tiles are requested at, above which they are scaled in instead.
+
+On deck.gl this applies only until the layer's tile service answers for itself: a `COG:` or `stac-collection:` layer whose tilejson reports a `maxzoom` requests to that level instead of this one, since the service knows how deep its own pyramid goes. Every other layer, and every layer on Leaflet, uses this field.
+
+_Note: This field can be automatically populated with "Populate Fields From tilemapresource.xml or TiTiler tilejson", which looks for a `tilemapresource.xml` in the tileset directory specified by the URL field, or reads TiTiler's tilejson for a `COG:` source._
 
 #### Maximum Zoom
 
@@ -81,8 +84,18 @@ The highest (largest number) zoom level to see in MMGIS. This value is at least 
 #### Bounding Box
 
 _type:_ string _optional_  
-A comma separated string defining the tileset's `minimumLonDeg,minimumLatDeg,maximumLonDeg,maximumLatDeg`. Setting a bounding box improves performance by limiting requests for tiles to only those that fit the bounds.  
-_Note: This field can be automatically populate with "Populate from XML". "Populate from XML" uses looks for a `tilemapresource.xml` in the tileset directory specified by the URL field._
+A comma separated string defining the tileset's `minimumLonDeg,minimumLatDeg,maximumLonDeg,maximumLatDeg`.
+
+What it does depends on the rendering engine:
+
+- **Leaflet** limits tile requests to the tiles that fit the box, so setting one improves performance.
+- **deck.gl** does not read the box for tile requests. A `COG:` or `stac-collection:` layer instead asks its tile service where the data is — TiTiler's `/cog/WebMercatorQuad/tilejson.json` or titiler-pgstac's `/collections/{id}/WebMercatorQuad/tilejson.json`, `WebMercatorQuad` being the only tile matrix set deck.gl indexes — and limits requests to the `bounds` the service reports. That is measured from the data, so it needs no configuration; a service that reports a world-wide footprint leaves the layer making requests everywhere.
+
+On both engines the box is what "zoom to layer" moves to, for a layer with no geometry of its own. A layer whose service reported a footprint uses that instead.
+
+The box is read as degrees. One with a corner outside ±180 / ±90, such as an extent in metres, is refused whole and the layer loads without a footprint.
+
+_Note: This field can be automatically populated with "Populate Fields From tilemapresource.xml or TiTiler tilejson", which looks for a `tilemapresource.xml` in the tileset directory specified by the URL field, or reads TiTiler's tilejson for a `COG:` source._
 
 #### Time Enabled
 

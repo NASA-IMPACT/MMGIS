@@ -6,7 +6,12 @@ import {
     FitBoundsOptions,
     MapInitOptions,
 } from './types/view'
-import { LayerOptions, OverlayOptions, RefreshContext } from './types/layers'
+import {
+    LayerOptions,
+    OverlayOptions,
+    RefreshContext,
+    TileLayerOptions,
+} from './types/layers'
 import {
     MapEventHandler,
     MapEventOptions,
@@ -176,8 +181,21 @@ export interface IMapEngine<
 
     /**
      * Check if a layer is on the map by layer object or string id.
+     *
+     * Drawn, not held: for whether the engine has a layer under an id at all,
+     * including one held hidden, ask {@link holdsLayer}.
      */
     hasLayer(layer: TLayer | string): boolean
+
+    /**
+     * Whether the engine holds a layer under this id — drawn or hidden.
+     *
+     * The question {@link hasLayer} does not answer: a layer the mission
+     * starts switched off is held from creation and shown later, and a caller
+     * addressing it by id — to update it, to read it — needs to know it is
+     * there, not whether it is currently painted.
+     */
+    holdsLayer(id: string): boolean
 
     /**
      * Add an already created native layer to the map.
@@ -197,8 +215,15 @@ export interface IMapEngine<
 
     /**
      * Update properties on an existing layer (opacity, style, etc).
+     *
+     * Typed on the tile options rather than the base ones so that a tile
+     * layer's own fields — `tileFootprint` among them — can be passed without
+     * a cast. An adapter applies the ones its layer kinds understand.
      */
-    updateLayer(layer: TLayer | string, options: Partial<LayerOptions>): TLayer
+    updateLayer(
+        layer: TLayer | string,
+        options: Partial<TileLayerOptions>
+    ): TLayer
 
     /**
      * Take ownership of an externally-built native layer under `id`, so

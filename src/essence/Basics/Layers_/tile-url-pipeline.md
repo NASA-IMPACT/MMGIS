@@ -23,6 +23,10 @@ changing time formatting, STAC/COG param injection, or anything that touches
   and freezes the result. Same code, different cadence — not a bypass.
 - **WMS** is the one genuine bypass of `compileTileUrl` (it substitutes in its
   own `getTileUrl`), but it still shares the formatted time values.
+- **`startServiceTileFootprint`** is a step alongside the pipeline, not in it:
+  for a DeckGL `COG:` / `stac-collection:` layer it reads the service's
+  tilejson and narrows **where and at what levels** tiles are asked for. It
+  never touches the tile URL.
 - The **3D globe** has a **third, separate formatter** that diverges slightly.
 
 ## The pipeline in stages
@@ -148,6 +152,89 @@ configured, or times not yet resolved): `https://t/{time}.png` becomes
 `https://t/.png`, not a literal `{time}` the tile server would reject. The
 substitution reads the layer's URL template each time, so an emptied URL is
 never sticky — the next compile with real times fills them in.
+
+## Stage 4 (DeckGL only) — the service's footprint (`startServiceTileFootprint`)
+
+[`serviceTileFootprint.js`](./serviceTileFootprint.js). Stages 1–3 settle **what
+URL** a tile is fetched from. This settles **which tiles are fetched at all**,
+and only on DeckGL: a Leaflet layer takes its `bounds` from the config
+`boundingBox` at construction, but the DeckGL build carries no footprint, so the
+layer asks for tiles across the whole viewport at every zoom.
+
+`Map_.makeTileLayer` does not start it. It hands back what its layer's service
+can be asked, and `makeLayer` calls `startServiceTileFootprint` after
+`handOffToEngine` — the footprint is applied to the layer *the engine holds*,
+and the engine does not hold it before the hand-off. That call is made for every
+build, with a footprint source or without: a rebuild that leaves the layer with
+no service to ask still has to drop what the last build learned. It is made for
+the **main map only** — `Map_.engine` is always the main map's, so the Animation
+tool's offscreen rebuild of the same layer name describes a layer it is not
+holding. The layer is built and counted as loaded by then, and the call is
+**not** awaited: a slow tile service must not hold up `allLayersLoaded`. It
+derives a tilejson URL from the same resolved source Stage 1 produced, through
+the same `ServiceUrls` getter the tile URLs resolve through:
+
+| Source            | Tilejson read                                                           |
+| ----------------- | ----------------------------------------------------------------------- |
+| `COG`             | `{titiler}/cog/WebMercatorQuad/tilejson.json?url=<encoded .tif url>`     |
+| `stac-collection` | `{titilerpgstac}/collections/<id>/WebMercatorQuad/tilejson.json?assets=asset` |
+| `titiler-url`     | none — an opaque endpoint with no derivable tilejson path               |
+| plain template    | none — not a TiTiler, WMS included                                      |
+| deck raster `COG` | none — the layer reads the `.tif` itself and requests no tiles          |
+
+Only `WebMercatorQuad` is asked, the same `tileMatrixSet || 'WebMercatorQuad'`
+rule the tile URLs use: DeckGL indexes WebMercator tiles only. A null getter —
+a static build with no service configured — makes no request either. Neither
+does a URL whose time placeholders have not resolved: a `{time}` that compiled
+to nothing, or a `{customtime.N}` still sitting in the URL, names a file no
+service can answer for, and the answer would be remembered under that URL for
+the life of the page.
+
+What comes back becomes two deck.gl tile props, applied to the layer the
+engine already holds via `updateLayer`'s `tileFootprint`:
+
+- **`extent`** from `bounds`, clamped to ±180 / ±90 rather than refused, since
+  TiTiler routinely reports `-180.0000001` and ±85.0511. Bounds still spanning
+  the globe after clamping are treated as none reported — titiler-pgstac reports
+  the world box for any collection whose `extent.spatial.bbox` is the world.
+- **`maxZoom`** from `maxzoom`, replacing the ceiling the config
+  `maxNativeZoom` / `maxZoom` set at build. `minzoom: 0` with `maxzoom: 24`
+  counts as no zooms reported — that is the matrix set's own range, which
+  titiler-pgstac returns for every collection.
+
+**The service's `minzoom` is deliberately not passed on.** Alongside an
+`extent`, DeckGL reads `minZoom` as "raise every request to this level" across
+the whole of that extent ∩ viewport: a continental COG reporting a floor of 8
+would ask for hundreds of level-8 tiles at world zoom where the unbounded layer
+asked for a handful. TiTiler serves the levels below a COG's own floor from its
+overviews, and titiler-pgstac never reports a real one. The config `minZoom`
+keeps its own meaning untouched — the zoom the layer appears at, reaching DeckGL
+as `visibleMinZoom` (see `tileZoomProps`).
+
+One request per tilejson URL per page, successes and failures alike, so layers
+sharing a COG and the rebuilds a tile-level switch triggers reuse it. A failure
+— network error, the 10 s timeout, a non-2xx, an unusable body — leaves the
+layer exactly as built and warns once per layer, each in its own name, since
+the layers reusing a remembered failure would otherwise fail silently. Every
+apply first drops whatever footprint the layer had, so a rebuild onto a source
+with no tilejson does not leave zoom-to-layer answering with the old one, and
+takes a token that a read settling out of order is checked against, so a slow
+first build cannot land its answer on a second build's layer. A footprint is
+remembered only once the engine is known to hold the layer. A time change
+reaches the layer as `layer.clone({ data })` (`deckTileRefresher.js`), which
+carries these props forward, so a time-templated `COG:` series keeps its
+build-time footprint.
+
+`layerBoundsFor` prefers a fetched footprint over the config `boundingBox`, so
+zoom-to-layer works for a COG or STAC layer with no box configured. What is
+remembered lives outside `L_.layers` and is keyed by layer name, so every way a
+layer can leave the map has to say so, or the next layer to take that name
+inherits its footprint: `L_.removeLayerFromLayersData` calls
+`forgetServiceTileFootprint` for the one layer, `L_.clear` calls
+`forgetAllServiceTileFootprints` for the whole set a mission swap replaces, and
+`makeLayer`'s `catch` forgets a layer whose rebuild threw before the apply.
+Each drops the build token alongside the footprint, so a read still in flight
+is discarded with it.
 
 ## The three call sites
 

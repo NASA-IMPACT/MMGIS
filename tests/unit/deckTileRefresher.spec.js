@@ -44,6 +44,33 @@ describe('refreshDeckTileLayer', () => {
     ])('keeps the layer given %s', (_label, ctx) => {
         expect(refreshDeckTileLayer(makeDeckLayer({ data: 'a' }), ctx)).toBeUndefined()
     })
+
+    // A time-templated COG is one file series over one footprint, fetched once
+    // at the build. Every time step after that arrives here as a new URL, and
+    // the footprint has to survive the swap or the layer goes back to asking
+    // for tiles across the whole viewport at the first time change. Run on a
+    // real layer and a real clone, because what carries the props forward is
+    // deck.gl's doing, not ours.
+    test('carries a service footprint across a time change', () => {
+        const built = buildDeckLayer('cog-layer', {
+            type: 'tile',
+            url: TILE_URL,
+            minZoom: 5,
+        }).clone({ extent: [-8.05, 18.89, -6.99, 19.89], maxZoom: 14 })
+
+        const next = refreshDeckTileLayer(built, {
+            url: TILE_URL,
+            tileOptions: { time: '202207' },
+        })
+
+        expect(next.props.data).toBe(
+            'https://example.com/{z}/{x}/{y}.png?time=202207'
+        )
+        expect(next.props.extent).toEqual([-8.05, 18.89, -6.99, 19.89])
+        expect(next.props.maxZoom).toBe(14)
+        // And the configured hide threshold along with them.
+        expect(next.props.visibleMinZoom).toBe(3.5)
+    })
 })
 
 describe('refreshDeckWmsLayer', () => {

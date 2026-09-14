@@ -284,13 +284,13 @@ test.describe('DeckGLHelpers', () => {
             // asserts on the tiles that come back, so a deck.gl upgrade that
             // moved either fails here rather than shifting every tile layer's
             // visibility a level and a half.
-            const tilesDeckAsksFor = (layer, zoom) =>
+            const tilesDeckAsksFor = (layer, zoom, center = {}) =>
                 new Tileset2D(layer.props).getTileIndices({
                     viewport: new WebMercatorViewport({
                         width: 800,
                         height: 600,
-                        longitude: -110,
-                        latitude: 37,
+                        longitude: center.longitude ?? -110,
+                        latitude: center.latitude ?? 37,
                         zoom,
                     }),
                     minZoom: layer.props.minZoom,
@@ -320,6 +320,101 @@ test.describe('DeckGLHelpers', () => {
                     )
                 }
             )
+
+            // What a tile service reports about its own data lands on deck.gl's
+            // `extent` and `maxZoom`, applied to the layer the engine already
+            // holds. The service's own floor is deliberately not among them,
+            // and these run deck.gl's real tileset to show why.
+            test.describe('a service footprint applied after the build', () => {
+                // A 1° box off the West African coast, as TiTiler reports the
+                // bounds of a COG covering it.
+                const EXTENT = [-8.05, 18.89, -6.99, 19.89]
+                const OVER_THE_DATA = { longitude: -7.5, latitude: 19.4 }
+
+                // Low enough that the whole world is in view.
+                const WORLD_ZOOM = 1
+
+                const built = (options) =>
+                    buildDeckLayer('deck-footprint', {
+                        type: 'tile',
+                        url: 'https://example.com/tiles/{z}/{x}/{y}',
+                        ...options,
+                    })
+
+                const narrowed = () =>
+                    built().clone({ extent: EXTENT, maxZoom: 14 })
+
+                test('asks only for the low-level tiles its extent overlaps', () => {
+                    const tiles = tilesDeckAsksFor(
+                        narrowed(),
+                        WORLD_ZOOM,
+                        OVER_THE_DATA
+                    )
+
+                    expect(tiles.length).toBeGreaterThan(0)
+                    expect(tiles.length).toBeLessThan(
+                        tilesDeckAsksFor(built(), WORLD_ZOOM, OVER_THE_DATA)
+                            .length
+                    )
+
+                    // At the level the view itself calls for, not the service's
+                    // deepest, and each tile overlapping the extent.
+                    const lngAt = (x, z) => (x / 2 ** z) * 360 - 180
+                    tiles.forEach((tile) => {
+                        expect(tile.z).toBe(2)
+                        expect(lngAt(tile.x, tile.z)).toBeLessThan(EXTENT[2])
+                        expect(lngAt(tile.x + 1, tile.z)).toBeGreaterThan(
+                            EXTENT[0]
+                        )
+                    })
+                })
+
+                // Why the service's minzoom is never passed on. With an extent,
+                // deck.gl raises every request to that level across the whole
+                // of it, so a continental COG with a deep floor asks for
+                // hundreds of tiles where the same view unclamped asks for a
+                // handful - the opposite of the point of the footprint.
+                test('would multiply the requests if given the service’s floor', () => {
+                    const CONTINENT = [-125, 24, -66, 50]
+                    const OVER_THE_CONTINENT = {
+                        longitude: -95,
+                        latitude: 37,
+                    }
+                    const asksFor = (layer) =>
+                        tilesDeckAsksFor(layer, WORLD_ZOOM, OVER_THE_CONTINENT)
+                            .length
+
+                    const extentOnly = built().clone({
+                        extent: CONTINENT,
+                        maxZoom: 14,
+                    })
+                    const withServiceFloor = built().clone({
+                        extent: CONTINENT,
+                        minZoom: 8,
+                        maxZoom: 14,
+                    })
+
+                    expect(asksFor(extentOnly)).toBeLessThan(20)
+                    expect(asksFor(withServiceFloor)).toBeGreaterThan(500)
+                })
+
+                // The zoom the layer appears at stays mission configuration's
+                // to set, and a footprint arriving afterwards leaves it alone.
+                test('leaves the configured hide threshold in charge below it', () => {
+                    const layer = built({ minZoom: 5 }).clone({
+                        extent: EXTENT,
+                        maxZoom: 14,
+                    })
+                    expect(layer.props.visibleMinZoom).toBe(3.5)
+
+                    expect(
+                        tilesDeckAsksFor(layer, 3.49, OVER_THE_DATA)
+                    ).toEqual([])
+                    expect(
+                        tilesDeckAsksFor(layer, 3.5, OVER_THE_DATA).length
+                    ).toBeGreaterThan(0)
+                })
+            })
         })
 
         test('creates a GeoJsonLayer for vector type', () => {
