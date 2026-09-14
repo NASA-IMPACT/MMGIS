@@ -89,7 +89,7 @@
         ],
         "id": "left-tools-panel",
         "dimensions": {
-          "iconifiedSize": 40,
+          "iconifiedSize": "3.5rem",
           "expandedSize": 368
         },
         "pinnedTools": [

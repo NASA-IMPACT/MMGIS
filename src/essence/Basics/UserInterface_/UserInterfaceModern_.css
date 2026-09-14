@@ -332,9 +332,10 @@
 .ui-region-bottom .ui-panel-body {
     flex-direction: row;
     flex-wrap: nowrap;
-    align-items: center;
+    align-items: stretch; /* fill panel height so a tall tool can scroll internally */
     overflow-x: auto;
-    overflow-y: hidden;
+    overflow-y: auto; /* scroll when a tool exceeds the panel's capped (maxSize) height */
+    min-height: 0; /* allow the flex child to shrink below content so it scrolls, not overflows */
 }
 
 .ui-region-top .ui-tool-card-stacked,
@@ -366,11 +367,21 @@
 
 /* Sidebar Icons */
 .ui-panel-icons {
+    /* The bar's outer size along its own axis: width for a left/right panel,
+       height for a top/bottom one. syncDOMState applies it to that axis, and
+       overrides it with the panel's iconifiedSize when one is set. */
+    --ui-icon-bar-size: 3.5rem;
+    --ui-icon-bar-padding: var(--theme-spacing-05, 0.25rem);
+    /* What the buttons have to divide up once the bar's own padding is taken. */
+    --ui-icon-bar-inner: calc(var(--ui-icon-bar-size) - var(--ui-icon-bar-padding) * 2);
+
     display: none;
+    box-sizing: border-box; /* the bar's size covers its padding */
     background: transparent;
     color: var(--theme-color-white, #ffffff);
-    padding: var(--theme-spacing-05, 0.25rem);
+    padding: var(--ui-icon-bar-padding);
     gap: var(--theme-spacing-05, 0.25rem);
+    align-items: center;
     z-index: 2;
     overflow-y: auto;
     overflow-x: hidden;
@@ -382,8 +393,11 @@
     color: var(--theme-color-primary, #005ea2);
     opacity: 1;
     cursor: pointer;
-    font-size: var(--theme-font-size-xl, 2rem);
-    padding: var(--theme-spacing-1, 0.5rem);
+    /* The button divides up the bar's inner space: two thirds to the glyph, the
+       remaining third split between its sides. The shares total one, so the button
+       fills the bar at any size. A 3.5rem bar gives a 2rem glyph. */
+    font-size: calc(var(--ui-icon-bar-inner, 3rem) * 2 / 3);
+    padding: calc(var(--ui-icon-bar-inner, 3rem) / 6);
     border-radius: var(--theme-radius-sm, 4px);
     display: flex;
     align-items: center;
