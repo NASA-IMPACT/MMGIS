@@ -1688,7 +1688,7 @@ async function makeVelocityLayer(
 
 /**
  * A layer's configured footprint as `[west, south, east, north]`, or null when
- * it declares none usable: deck.gl takes it as `extent`, Leaflet as `bounds`.
+ * it declares none usable: Leaflet takes it as a layer's `bounds`.
  *
  * A box that does not parse leaves the layer loading unbounded, so say so
  * rather than let it pass as a configuration that worked.
@@ -1797,7 +1797,6 @@ async function makeTileLayer(layerObj, mapContext = null) {
             type: layerObj.type || 'tile',
             url: layerUrl,
             tileformat: tileFormat,
-            extent: boundingBox ?? undefined,
             opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
             minZoom: parseInt(layerObj.minZoom),
             maxNativeZoom: parseInt(layerObj.maxNativeZoom),
@@ -1957,13 +1956,10 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
             }` + '&type=mvt&x={x}&y={y}&z={z}'
     }
 
-    const boundingBox = layerBoundingBox(layerObj)
-
     if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
         ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
             type: layerObj.type || 'vectortile',
             url: layerUrl,
-            extent: boundingBox ?? undefined,
             opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
             minZoom: parseInt(layerObj.minZoom),
             maxNativeZoom: parseInt(layerObj.maxNativeZoom),
@@ -2003,8 +1999,6 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
         allLayersLoaded()
         return
     }
-
-    const bb = leafletBounds(boundingBox)
 
     var clearHighlight = function () {
         for (let l of Object.keys(L_.layers.data)) {
@@ -2056,7 +2050,6 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
 
     var vectorTileOptions = {
         layerName: layerObj.name,
-        bounds: bb,
         rendererFactory: L.svg.tile,
         vectorTileLayerStyles: layerObj.style.vtLayer || {},
         interactive: true,

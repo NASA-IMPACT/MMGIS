@@ -217,14 +217,11 @@ test.describe('DeckGLHelpers', () => {
             })
         })
 
-        // The footprint mission configuration declares for the layer, which
-        // deck.gl clamps its tile requests to - without it a single-scene
-        // layer asks the tile service for the whole world and is answered
-        // '404 outside bounds' for nearly all of it - and the zoom levels
-        // declared alongside it: below the floor the layer is hidden and asks
-        // for nothing, and above the ceiling deck.gl scales the service's
-        // last level rather than request levels the service does not have.
-        test.describe('footprint, zoom floor and ceiling', () => {
+        // The zoom levels mission configuration declares for the layer: below
+        // the floor the layer is hidden and asks for nothing, and above the
+        // ceiling deck.gl scales the service's last level rather than request
+        // levels the service does not have.
+        test.describe('zoom floor and ceiling', () => {
             const tileLayer = (options) =>
                 buildDeckLayer('tile-zoom', {
                     type: 'tile',
@@ -232,43 +229,18 @@ test.describe('DeckGLHelpers', () => {
                     ...options,
                 })
 
-            test('clamps tile requests to the footprint given', () => {
-                const layer = tileLayer({ extent: [-120, 30, -100, 45] })
-                expect(layer.props.extent).toEqual([-120, 30, -100, 45])
-            })
-
-            // Unset means unclamped in deck.gl, which is what a layer with no
-            // declared footprint needs: it keeps requesting whatever the
-            // viewport covers. A malformed `boundingBox` arrives here as
-            // undefined for the same reason - never as a half-NaN box, which
-            // would clamp every viewport to nothing.
-            test('leaves the footprint unset when the layer declares none', () => {
-                expect(tileLayer({}).props.extent).toBeUndefined()
-            })
-
             // The floor is visibleMinZoom, which deck.gl reads on the view's
             // own zoom scale rather than the tile level: minZoom 5 at the
             // default 256px tiles is tile level round(zoom + 1), so level 5
-            // first appears at zoom 3.5.
+            // first appears at zoom 3.5. deck.gl's own minZoom applies two
+            // different rules depending on whether the layer has an extent -
+            // hide on the view-zoom scale without one, clamp-and-fetch with
+            // one - so it stays at its default and the floor is
+            // visibleMinZoom for every tile layer.
             test('hides the layer below the view zoom its first tile level needs', () => {
-                expect(tileLayer({ minZoom: 5 }).props.visibleMinZoom).toBe(3.5)
-            })
-
-            // deck.gl's own minZoom applies two different rules depending on
-            // whether the layer has an extent - hide on the view-zoom scale
-            // without one, clamp-and-fetch with one - so it stays at its
-            // default and the floor is visibleMinZoom for every tile layer.
-            test('leaves deck.gl\'s minZoom alone whether or not there is an extent', () => {
-                const withExtent = tileLayer({
-                    minZoom: 5,
-                    extent: [-120, 30, -100, 45],
-                })
-                expect(withExtent.props.minZoom).toBe(TileLayer.defaultProps.minZoom)
-                expect(tileLayer({ minZoom: 5 }).props.minZoom).toBe(
-                    TileLayer.defaultProps.minZoom
-                )
-                // The same floor the extent-less layer above is given.
-                expect(withExtent.props.visibleMinZoom).toBe(3.5)
+                const layer = tileLayer({ minZoom: 5 })
+                expect(layer.props.visibleMinZoom).toBe(3.5)
+                expect(layer.props.minZoom).toBe(TileLayer.defaultProps.minZoom)
             })
 
             // Nothing to convert, and a floor of NaN - which parseInt of an
@@ -291,19 +263,16 @@ test.describe('DeckGLHelpers', () => {
                 expect(tileLayer(options).props.maxZoom).toBe(expected)
             })
 
-            // MVTLayer is a TileLayer: the same footprint stops the requests
-            // outside it, and the same floor applies, at deck.gl's 512px
-            // tile size.
-            test('gives a vector tile layer the same footprint, floor and ceiling', () => {
+            // MVTLayer is a TileLayer: the same floor and ceiling apply, at
+            // deck.gl's 512px tile size.
+            test('gives a vector tile layer the same floor and ceiling', () => {
                 const layer = buildDeckLayer('mvt-zoom', {
                     type: 'vectortile',
                     url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
-                    extent: [-120, 30, -100, 45],
                     minZoom: 5,
                     maxNativeZoom: NaN,
                     maxZoom: 14,
                 })
-                expect(layer.props.extent).toEqual([-120, 30, -100, 45])
                 expect(layer.props.visibleMinZoom).toBe(4.5)
                 expect(layer.props.maxZoom).toBe(14)
             })
@@ -337,7 +306,6 @@ test.describe('DeckGLHelpers', () => {
                     const layer = buildDeckLayer('deck-floor', {
                         type,
                         url: 'https://example.com/tiles/{z}/{x}/{y}',
-                        extent: [-120, 30, -100, 45],
                         minZoom: 5,
                     })
                     expect(layer.props.visibleMinZoom).toBe(expectedFloor)

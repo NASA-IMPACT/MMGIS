@@ -96,12 +96,11 @@ function titilerUrlFor(layerConfig) {
  *
  * Configuration writes the box as four numbers, four strings, or one
  * comma-separated string, and a half-filled box is a real thing to find in a
- * config. Callers hand the result to map engines, where a NaN in the tuple is
- * worse than no footprint at all - deck.gl clamps its viewport against the
- * extent and would draw nothing - so a box that does not parse whole is
- * refused whole, as is one outside +-180 / +-90: the engine's projection
- * throws on a latitude past the poles, which a box in projected units always
- * is.
+ * config. Callers hand the result to Leaflet, where a NaN in the tuple is
+ * worse than no footprint at all - `L.latLng` throws on one and takes the
+ * layer's load down with it - so a box that does not parse whole is refused
+ * whole, as is one outside +-180 / +-90: a latitude past the poles places a
+ * layer somewhere it cannot be, which a box in projected units always does.
  *
  * Corners are ordered per axis, so a box whose corners are transposed - east
  * written where west belongs - reads as the box it describes, the same box

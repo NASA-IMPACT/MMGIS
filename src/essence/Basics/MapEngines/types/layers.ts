@@ -57,19 +57,6 @@ export interface TileLayerOptions extends LayerOptions {
     tileElevation?: number
     /** 'wms' => deck.gl WMSLayer; else a {z}/{x}/{y} url template. */
     tileformat?: string
-    /**
-     * The layer's footprint as `[west, south, east, north]` in degrees, each
-     * corner in range and west <= east, south <= north - what
-     * `parseBoundingBox` returns for mission configuration's `boundingBox`.
-     *
-     * deck.gl requests no tile outside it. Leave it undefined when the
-     * footprint is unknown: deck.gl never normalises an extent, so a NaN or
-     * inverted box clamps every viewport to nothing.
-     *
-     * A 'wms' tileformat ignores it: deck.gl's WMSLayer requests one image
-     * per viewport and has no extent prop.
-     */
-    extent?: [number, number, number, number]
     nativeOptions?: Record<string, unknown>
 }
 
@@ -132,8 +119,6 @@ export interface VectorTileLayerOptions extends LayerOptions {
      * 512 unless the source says otherwise.
      */
     tileSize?: number
-    /** As {@link TileLayerOptions.extent}. */
-    extent?: [number, number, number, number]
     nativeOptions?: Record<string, unknown>
 }
 

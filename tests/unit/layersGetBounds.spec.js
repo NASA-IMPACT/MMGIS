@@ -260,11 +260,11 @@ describe('layers:getBounds provider', () => {
 })
 
 /**
- * The same footprint the provider above falls back to, read raw. deck.gl gets
- * this tuple as a tile layer's `extent` and clamps its tile requests to it, so
- * both the order and the refusal to return a half-parsed box matter on their
- * own - the provider's [[south, west], [north, east]] view hides the first and
- * the engine cannot survive the second.
+ * The same footprint the provider above falls back to, read raw. Leaflet gets
+ * this tuple as a raster tile, data or video layer's `bounds`, so both the
+ * order and the refusal to return a half-parsed box matter on their own - the
+ * provider's [[south, west], [north, east]] view hides the first and
+ * `L.latLng` throws on the second.
  */
 describe('parseBoundingBox', () => {
     test('returns a well-formed box as written', () => {
@@ -285,17 +285,16 @@ describe('parseBoundingBox', () => {
     })
 
     // Transposed corners, not a footprint that crosses the antimeridian -
-    // west 170, east -170 - which neither engine can represent: ordering
-    // reads that one as the complementary box, and so does Leaflet. Ordered,
-    // these corners describe the box Leaflet's latLngBounds makes of them,
-    // and deck.gl requests no tile at all for the inverted form.
+    // west 170, east -170 - which is not representable: ordering reads that
+    // one as the complementary box, and so does Leaflet. Ordered, these
+    // corners describe the box Leaflet's latLngBounds makes of them.
     test('orders a box whose corners are transposed, as Leaflet does', () => {
         expect(parseBoundingBox([-100, 45, -120, 30])).toEqual([-120, 30, -100, 45])
     })
 
     // A box in projected metres - what TiTiler's cog/info reports for a
-    // non-4326 dataset - or one past the poles reaches deck.gl's projection,
-    // which throws on a latitude outside +-90 on every viewport update.
+    // non-4326 dataset - or one past the poles places a layer at a latitude
+    // outside +-90, where nothing on the map can be.
     test.each([
         ['in projected units', [-13358338, 3503549, -11131949, 5621521]],
         ['past the poles', [-120, 30, -100, 95]],
@@ -304,9 +303,9 @@ describe('parseBoundingBox', () => {
         expect(parseBoundingBox(boundingBox)).toBeNull()
     })
 
-    // Not [-120, 30, NaN, 45]: deck.gl intersects the viewport with the
-    // extent, so one NaN corner collapses the whole box and the layer draws
-    // nothing anywhere.
+    // Not [-120, 30, NaN, 45]: one NaN corner reaches `L.latLng`, which
+    // throws on it, so the box is refused whole and the layer loads
+    // unbounded instead.
     test('refuses a box one corner of which does not parse', () => {
         expect(parseBoundingBox([-120, 30, 'east', 45])).toBeNull()
     })

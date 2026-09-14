@@ -329,11 +329,11 @@ export function wmsLayerSource(url: string): {
  * over parseInt of an absent field, NaN.
  *
  * The floor is stated as `visibleMinZoom`, which deck.gl compares against its
- * view zoom and honours with and without an extent: it stops the tile
- * requests and hides the layer. deck.gl's own `minZoom` is left at its
- * default because it does neither uniformly - with an extent it clamps the
- * requests to level minZoom instead of stopping them, and without one it hides
- * on the view-zoom scale, a level and a half above the same floor.
+ * view zoom: it stops the tile requests and hides the layer. deck.gl's own
+ * `minZoom` is left at its default because what it does there depends on
+ * whether the layer has an extent - with one it clamps the requests to level
+ * minZoom instead of stopping them, and without one it hides on the view-zoom
+ * scale, a level and a half above the same floor.
  *
  * Converting the level to a view zoom: deck.gl fetches level
  * round(zoom + log2(512 / tileSize)), so level minZoom first appears at
@@ -561,7 +561,6 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 data: o.url,
                 tileSize,
                 ...tileZoomProps(o, tileSize),
-                extent: o.extent,
                 opacity: o.opacity ?? 1,
                 getTileData: (tile: { url?: string | null; signal?: AbortSignal }) =>
                     fetchImageTile(tile.url, tile.signal),
@@ -673,7 +672,6 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 // the layer is built with.
                 tileSize,
                 ...tileZoomProps(o, tileSize),
-                extent: o.extent,
                 opacity: o.opacity ?? 1,
                 pickable: o.interactive ?? true,
                 // deck.gl decodes vector tiles into a binary form by default,
