@@ -649,6 +649,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         return this._map?.hasLayer(leafletLayer) === true
     }
 
+    /** See {@link IMapEngine.holdsLayer}. */
+    holdsLayer(id: string): boolean {
+        return this._layers.has(id)
+    }
+
     /**
      * Backward-compatible addLayer.
      *
@@ -738,8 +743,13 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      *   zIndex   → setZIndex()             (tile layers)
      *   style    → setStyle()              (GeoJSON layers)
      *   url      → setUrl()               (tile layers)
+     *
+     * `tileFootprint` is not among them: a Leaflet tile layer takes its
+     * `bounds` and zoom range at construction, from mission configuration, and
+     * it is passed over here rather than rewritten under a layer already
+     * drawing tiles.
      */
-    updateLayer(layer: any | string, updates: Partial<LayerOptions>): any {
+    updateLayer(layer: any | string, updates: Partial<TileLayerOptions>): any {
         const id = resolveLeafletLayerId(layer)
         const leafletLayer = this._layers.get(id)
         if (!leafletLayer) {
@@ -770,8 +780,8 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             leafletLayer.setStyle(updates.style)
         }
 
-        if ((updates as TileLayerOptions).url !== undefined && typeof leafletLayer.setUrl === 'function') {
-            leafletLayer.setUrl((updates as TileLayerOptions).url!)
+        if (updates.url !== undefined && typeof leafletLayer.setUrl === 'function') {
+            leafletLayer.setUrl(updates.url)
         }
 
         return leafletLayer

@@ -1,4 +1,12 @@
-import { describe, test, expect, beforeEach, afterAll, vi } from 'vitest'
+import {
+    describe,
+    test,
+    expect,
+    beforeEach,
+    afterEach,
+    afterAll,
+    vi,
+} from 'vitest'
 
 // Layers_ reaches Map_ transitively (Description -> TimeControl -> Map_), and
 // Map_ pulls in the JSX viewers that Vite will not parse from a .js file. The
@@ -8,6 +16,9 @@ vi.mock('../../src/essence/Basics/Map_/Map_', () => ({ default: {} }))
 
 const { default: L_, parseBoundingBox } = await import(
     '../../src/essence/Basics/Layers_/Layers_.js'
+)
+const { startServiceTileFootprint, serviceTileFootprintFor } = await import(
+    '../../src/essence/Basics/Layers_/serviceTileFootprint.js'
 )
 
 /**
@@ -50,6 +61,10 @@ describe('layers:getBounds provider', () => {
     // UUID. Named distinctly so a lookup by the wrong key finds nothing.
     const OUTLINE = 'Outline_0123456789abcdef'
     const IMAGERY = 'Imagery_fedcba9876543210'
+    // A layer whose footprint comes from its tile service. Kept apart from the
+    // two above because that footprint is remembered for the page, and the
+    // specs below expect their layers to have none.
+    const MOSAIC = 'Mosaic_0f1e2d3c4b5a6978'
 
     afterAll(() => {
         delete window.mmgisAPI
@@ -71,6 +86,11 @@ describe('layers:getBounds provider', () => {
             },
         }
         L_.fina(null, null, null, null, null, null)
+    })
+
+    afterEach(() => {
+        vi.unstubAllGlobals()
+        delete window.mmgisglobal
     })
 
     const getBounds = (...args) => providers['layers:getBounds'](...args)
@@ -191,6 +211,60 @@ describe('layers:getBounds provider', () => {
             [30, -120],
             [45, -100],
         ])
+    })
+
+    /**
+     * Put MOSAIC on the map as a STAC layer whose service answers for it, next
+     * to a configured box that disagrees.
+     */
+    const narrowMosaicToItsService = async () => {
+        const stac = { minzoom: 0, maxzoom: 24, bounds: [-110.6, 34.7, -66.7, 49.6] }
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => ({ ok: true, status: 200, json: async () => stac }))
+        )
+        window.mmgisglobal = {
+            SERVER: 'node',
+            options: { services: { titilerPgStacUrl: 'https://pgstac.example.org' } },
+        }
+        L_.layers.data = {
+            [MOSAIC]: { name: MOSAIC, boundingBox: [-120, 30, -100, 45] },
+        }
+
+        await startServiceTileFootprint(
+            { holdsLayer: () => true, updateLayer: () => {} },
+            MOSAIC,
+            {
+                splitColonType: 'stac-collection',
+                sourceUrl: 'stac-collection:blizzard-count',
+                layerConfig: {},
+            },
+            true
+        )
+    }
+
+    // A COG or STAC layer's tile service reports where its data actually is,
+    // measured from the data rather than typed into a config field. That is the
+    // better answer to zoom to, and routinely the only one: such a layer often
+    // carries no configured box at all.
+    test('prefers a footprint the tile service reported', async () => {
+        await narrowMosaicToItsService()
+
+        expect(getBounds(MOSAIC)).toEqual([
+            [34.7, -110.6],
+            [49.6, -66.7],
+        ])
+    })
+
+    // What the service reported is remembered outside L_.layers and pruned by
+    // nothing else, so taking the layer off the map is where it has to go: the
+    // name could come back on a layer somewhere else entirely.
+    test('forgets that footprint when the layer is removed', async () => {
+        await narrowMosaicToItsService()
+
+        await L_.removeLayerFromLayersData(MOSAIC)
+
+        expect(serviceTileFootprintFor(MOSAIC)).toBeUndefined()
     })
 
     test('accepts a footprint written as strings', () => {

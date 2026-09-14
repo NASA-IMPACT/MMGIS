@@ -137,6 +137,22 @@ test.describe('DeckGLAdapter', () => {
             expect(adapter.hasLayer(layer)).toBe(true)
         })
 
+        // A layer the mission starts switched off is held from creation and
+        // drawn on the first toggle. Callers that address it by id - to update
+        // it before it is ever shown - need the registry's answer, which is the
+        // one hasLayer does not give.
+        test('holdsLayer answers for a layer hasLayer says is not drawn', () => {
+            const adapter = makeAdapter()
+            const offLayer = makeLayer('off-layer')
+            // hasLayer reads the deck.gl prop, which this stub carries flat.
+            offLayer.props = { visible: false }
+            adapter.addLayer(offLayer)
+
+            expect(adapter.hasLayer('off-layer')).toBe(false)
+            expect(adapter.holdsLayer('off-layer')).toBe(true)
+            expect(adapter.holdsLayer('never-added')).toBe(false)
+        })
+
         test('getLayers returns all added layers', () => {
             const adapter = makeAdapter()
             adapter.addLayer(makeLayer('x'))
@@ -210,6 +226,50 @@ test.describe('DeckGLAdapter', () => {
         test('updateLayer on unknown id returns undefined without throwing', () => {
             const adapter = makeAdapter()
             expect(adapter.updateLayer('nonexistent', { visible: false })).toBeUndefined()
+        })
+
+        // Where a layer's tiles exist can be learned after the layer is built -
+        // by asking the tile service, say - and reaches the held layer as
+        // deck.gl's own extent and tile ceiling. The zoom the layer becomes
+        // visible at is a separate prop and is not part of the update, and
+        // nothing here sets a request floor.
+        test('updateLayer applies a tileFootprint to the stored layer', () => {
+            const adapter = makeAdapter()
+            adapter.addLayer(
+                makeLayer('cog-layer', { visibleMinZoom: 3.5, maxZoom: 18 })
+            )
+
+            adapter.updateLayer('cog-layer', {
+                tileFootprint: {
+                    extent: [-8.05, 18.89, -6.99, 19.89],
+                    maxZoom: 14,
+                },
+            })
+
+            const stored = adapter.getLayers().find((l) => l.id === 'cog-layer')
+            expect(stored.extent).toEqual([-8.05, 18.89, -6.99, 19.89])
+            expect(stored.maxZoom).toBe(14)
+            expect(stored.minZoom).toBeUndefined()
+            expect(stored.visibleMinZoom).toBe(3.5)
+        })
+
+        // A service reports where its data is without always reporting how
+        // deep it goes, so a footprint arrives carrying only one of the two.
+        // The one it does not carry is the one the layer was built with, and
+        // must not be blanked on the way through.
+        test('updateLayer applies a partial tileFootprint without blanking the rest', () => {
+            const adapter = makeAdapter()
+            adapter.addLayer(makeLayer('cog-layer', { maxZoom: 18 }))
+
+            adapter.updateLayer('cog-layer', {
+                opacity: 0.5,
+                tileFootprint: { extent: [-8.05, 18.89, -6.99, 19.89] },
+            })
+
+            const stored = adapter.getLayers().find((l) => l.id === 'cog-layer')
+            expect(stored.extent).toEqual([-8.05, 18.89, -6.99, 19.89])
+            expect(stored.maxZoom).toBe(18)
+            expect(stored.opacity).toBe(0.5)
         })
 
         test('setLayerOpacity sets opacity on the stored layer', () => {

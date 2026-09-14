@@ -57,6 +57,23 @@ export interface TileLayerOptions extends LayerOptions {
     tileElevation?: number
     /** 'wms' => deck.gl WMSLayer; else a {z}/{x}/{y} url template. */
     tileformat?: string
+    /**
+     * Where the layer's tiles exist, for `updateLayer` to narrow what an
+     * already-built layer asks for: `extent` is `[west, south, east, north]`
+     * in degrees and `maxZoom` the deepest level tiles are requested at.
+     *
+     * There is no floor here on purpose. deck.gl reads a `minZoom` alongside
+     * an `extent` as "raise every request to this level" across the whole
+     * extent, which costs far more requests at low zoom than it saves.
+     *
+     * A source that only discovers this after the layer is on the map — a tile
+     * service asked for its tilejson, say — applies it through here. deck.gl
+     * takes both as tile-layer props; Leaflet ignores them.
+     */
+    tileFootprint?: {
+        extent?: number[]
+        maxZoom?: number
+    }
     nativeOptions?: Record<string, unknown>
 }
 

@@ -31,6 +31,10 @@ import {
     refreshDeckTileLayer,
     refreshDeckWmsLayer,
 } from '../Layers_/deckTileRefresher'
+import {
+    forgetServiceTileFootprint,
+    startServiceTileFootprint,
+} from '../Layers_/serviceTileFootprint'
 import { handOffLayerToEngine } from '../Layers_/engineLayerHandoff'
 import { Kinds } from '../../../pre/tools'
 import DataShaders from '../../Ancillary/DataShaders'
@@ -1001,6 +1005,10 @@ async function makeLayer(
     } else {
         L_._layersBeingMade[layerName] = true
     }
+    // What a tile layer's own service can be asked about its footprint, set by
+    // makeTileLayer. Left undefined by every other kind of layer, and by a
+    // rebuild that leaves this one with no service to ask.
+    let footprintSource
     try {
         //Decide what kind of layer it is
         //Headers do not need to be made
@@ -1027,7 +1035,7 @@ async function makeLayer(
                     )
                     break
                 case 'tile':
-                    await makeTileLayer(layerObj, mapContext)
+                    footprintSource = await makeTileLayer(layerObj, mapContext)
                     break
                 case 'vectortile':
                     makeVectorTileLayer(layerObj, mapContext)
@@ -1068,14 +1076,14 @@ async function makeLayer(
                     break
                 case 'TileLayer':
                 case 'BitmapLayer':
-                    await makeTileLayer(layerObj, mapContext)
+                    footprintSource = await makeTileLayer(layerObj, mapContext)
                     break
                 case 'MVTLayer':
                     makeVectorTileLayer(layerObj, mapContext)
                     break
                 case 'PointCloudLayer':
                 case 'Tile3DLayer':
-                    await makeTileLayer(layerObj, mapContext)
+                    footprintSource = await makeTileLayer(layerObj, mapContext)
                     break
                 default:
                     console.warn('Unknown layer type: ' + layerObj.type)
@@ -1085,6 +1093,17 @@ async function makeLayer(
         // Every builder above is awaited, so the layer exists by now. Image
         // and video finish on their own schedule and hand off themselves.
         handOffToEngine(layerObj, mapContext)
+
+        // Must follow the hand-off: the footprint is applied to the layer the
+        // engine holds, and the engine is not holding it before then. Called
+        // for every build, footprint source or none - a rebuild that has no
+        // service to ask still has to drop what the last one learned.
+        startServiceTileFootprint(
+            Map_.engine,
+            layerObj.name,
+            footprintSource,
+            mapContext.default === true
+        )
 
         // release hold on layer
         L_._layersBeingMade[layerName] = false
@@ -1101,6 +1120,12 @@ async function makeLayer(
         )
         // release hold on layer so it can be remade
         L_._layersBeingMade[layerName] = false
+        // A build that threw never reached the apply above, so the previous
+        // build's footprint would stay on a layer this one has replaced or
+        // failed to make at all. Only the main map's build says anything:
+        // another context's describes a layer Map_.engine is not holding.
+        if (mapContext.default === true)
+            forgetServiceTileFootprint(layerObj.name)
         // count this layer as done (unsuccessfully) so a failed layer
         // doesn't stall allLayersLoaded()/essenceFina() for the mission
         L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
@@ -1737,6 +1762,9 @@ function leafletBounds(boundingBox) {
  * Builds a raster tile layer (TMS, WMTS, COG via TiTiler, STAC) and registers it with the active map engine.
  * @param {object} layerObj - Layer config from the mission JSON.
  * @param {object|null} mapContext - Override map/registry context; defaults to main map.
+ * @returns {Promise<object|undefined>} What this layer's tile service can be
+ *   asked about its footprint, for makeLayer to act on once the engine holds
+ *   the layer, or undefined for a layer with no service to ask.
  */
 async function makeTileLayer(layerObj, mapContext = null) {
     // Default to main map context for backward compatibility
@@ -1792,7 +1820,29 @@ async function makeTileLayer(layerObj, mapContext = null) {
             }
             L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
             allLayersLoaded()
+            // Nothing to hand back: this layer reads the .tif itself and asks
+            // for no tiles, so there is no footprint to narrow.
             return
+        }
+
+        // What the layer's tilejson is derived from, handed back to makeLayer
+        // rather than acted on here: the footprint is applied to the layer the
+        // engine holds, and the engine is not holding it until makeLayer hands
+        // it over.
+        const footprintSource = {
+            splitColonType,
+            sourceUrl: tileSource.sourceUrl,
+            // The bare, time-substituted .tif URL TiTiler renders from, which
+            // is what its tilejson describes, alongside the template it came
+            // from: the two together are what tell a time series whose times
+            // have not resolved from one whose have.
+            cogUrl:
+                splitColonType === 'COG'
+                    ? resolveDeckCOGFileUrl(layerObj, tileSource)
+                    : undefined,
+            cogUrlTemplate:
+                splitColonType === 'COG' ? tileSource.fileUrl : undefined,
+            layerConfig: layerObj,
         }
 
         // DeckGL needs a static URL upfront, so we bake in whatever params Leaflet
@@ -1853,7 +1903,9 @@ async function makeTileLayer(layerObj, mapContext = null) {
 
         L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
         allLayersLoaded()
-        return
+
+        // Read by makeLayer, once the layer has been handed to the engine.
+        return footprintSource
     }
 
     // Same builder the DeckGL path uses, so both engines see identical,
@@ -1946,6 +1998,9 @@ async function makeTileLayer(layerObj, mapContext = null) {
         L_.setGlobalLoaded(layerObj.name)
     })
     allLayersLoaded()
+
+    // A Leaflet build hands back no footprint source.
+    return undefined
 }
 
 function makeVectorTileLayer(layerObj, mapContext = null) {
