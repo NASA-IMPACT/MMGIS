@@ -259,3 +259,96 @@ describe('TimelineAdapter layer navigation', () => {
         ).toMatch(/layer/i)
     })
 })
+
+/**
+ * A layer's authored data times can be open-ended ("now", a duration offset,
+ * a cadence to floor to). Core resolves those; the timeline draws and
+ * navigates the resolved dates rather than re-reading the config itself.
+ */
+
+// Where core says a daily layer authored as ending "now" actually ends: its
+// last complete day, well inside the window and nowhere near the clock.
+const FLOORED_END = '2024-09-30T00:00:00.000Z'
+const AUTHORED_START = '2024-03-01T00:00:00.000Z'
+
+const OPEN_ENDED_CONFIGS = {
+    daily: {
+        name: 'daily',
+        display_name: 'Daily Product',
+        time: {
+            enabled: true,
+            dataStartTime: AUTHORED_START,
+            dataEndTime: 'now',
+            interval: 'P1D',
+        },
+    },
+}
+
+describe('TimelineAdapter open-ended layer time', () => {
+    let container: HTMLElement
+    let root: Root
+    let emits: Emit[]
+    let originalResizeObserver: unknown
+
+    beforeEach(async () => {
+        emits = []
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+        ;(window as unknown as { mmgisAPI: unknown }).mmgisAPI = {
+            request: async (name: string) => {
+                if (name === 'time:isEnabled') return true
+                if (name === 'time:getStart') return START
+                if (name === 'time:getEnd') return END
+                if (name === 'time:getCurrent') return CURRENT
+                if (name === 'tool:getVars') return {}
+                if (name === 'layers:getAllConfigs') return OPEN_ENDED_CONFIGS
+                if (name === 'layers:getVisible') return { daily: true }
+                if (name === 'layers:getTemporalExtent')
+                    return { daily: { start: AUTHORED_START, end: FLOORED_END } }
+                return null
+            },
+            hasHandler: () => true,
+            on: () => () => {},
+            emit: (event: string, payload?: unknown) => {
+                emits.push({ event, payload })
+            },
+        }
+
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+        await act(async () => {
+            root.render(<TimelineAdapter />)
+        })
+        await act(async () => {})
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        delete (window as { mmgisAPI?: unknown }).mmgisAPI
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver
+    })
+
+    const requests = () => emits.filter((e) => e.event === 'time:changeRequested')
+
+    test('the last date of a layer ending "now" is where core floored it, not the clock', () => {
+        act(() => {
+            container
+                .querySelector<HTMLButtonElement>(
+                    '[aria-label="Daily Product: last date"]'
+                )!
+                .click()
+        })
+
+        expect(requests()).toHaveLength(1)
+        expect(requests()[0].payload).toEqual({
+            startTime: new Date(START).toISOString(),
+            endTime: new Date(END).toISOString(),
+            currentTime: FLOORED_END,
+        })
+    })
+})

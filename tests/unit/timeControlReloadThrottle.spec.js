@@ -38,7 +38,19 @@ vi.mock('../../src/essence/Basics/Layers_/Layers_', () => ({
         missionPath: '',
         configData: {},
         FUTURES: {},
-        layers: { data: {}, layer: {}, on: {}, opacity: {}, filters: {} },
+        // coverageHidden/assess/setLayerDataCoverage back reloadLayer's
+        // data-coverage gate; the layer here declares no coverage, so it
+        // always has data and is never hidden.
+        layers: {
+            data: {},
+            layer: {},
+            on: {},
+            opacity: {},
+            filters: {},
+            coverageHidden: {},
+        },
+        assessLayerDataCoverage: () => true,
+        setLayerDataCoverage: () => {},
         asLayerUUID: (name) => name,
         getUrl: (type, url) => url,
         transformStacUrl: (url) => url,

@@ -236,6 +236,11 @@ class ModernInterface {
         // Initialize the User Interface with the sorted panels from PanelManager
         UserInterfaceModern_.init(activePanels, layoutStyle, theme)
 
+        // TimeControl must initialize ahead of Map_ because it seeds each
+        // time-enabled layer's time window, which Map_.init reads when it
+        // builds the layers.
+        TimeControl.init()
+
         // Initialize Map with proper error handling
         Map_.init(() => {
             try {
@@ -247,9 +252,6 @@ class ModernInterface {
 
         // Coordinates.init()
         ContextMenu.init()
-
-        // Make the time control
-        TimeControl.init()
     }
 
     /**
