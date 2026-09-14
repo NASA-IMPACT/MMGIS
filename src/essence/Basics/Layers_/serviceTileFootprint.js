@@ -17,9 +17,11 @@
  * unbounded layer asked for a handful. TiTiler serves the levels below a COG's
  * floor from its overviews anyway, and titiler-pgstac never reports a real one.
  *
- * Everything here resolves through `ServiceUrls`, so a deployment pointing a
- * layer at an external TiTiler is read at that TiTiler and a static build with
- * nothing configured makes no request at all.
+ * A layer that names its service by prefix resolves through `ServiceUrls`, so
+ * a deployment pointing a layer at an external TiTiler is read at that TiTiler
+ * and a static build with nothing configured makes no request at all. A layer
+ * configured with a collection mosaic's full tile address is read at the
+ * service that address names, since that is the one serving its tiles.
  */
 
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
@@ -72,15 +74,17 @@ const buildsByLayer = new Map()
 const requestsByTilejsonUrl = new Map()
 
 /**
- * Whether a compiled URL names nothing a service can answer for: a placeholder
- * is still in it, or every time placeholder its template carried compiled to
- * nothing, leaving the template with the tokens simply deleted.
+ * Whether a compiled URL - or a piece of one, a service base or a collection
+ * name - names nothing a service can answer for: a placeholder is still in it,
+ * or every time placeholder its template carried compiled to nothing, leaving
+ * the template with the tokens simply deleted.
  *
  * Either is a layer whose times have not resolved yet. Asking about it would
  * spend a request on a file that does not exist and, worse, remember the
  * answer under that URL for the life of the page.
  *
- * @param {string} compiledUrl - The URL as `compileTileUrl` left it.
+ * @param {string} compiledUrl - The URL, or the piece of one, as
+ *   `compileTileUrl` left it.
  * @param {string} [templateUrl] - The template it was compiled from.
  * @returns {boolean}
  */
@@ -92,19 +96,117 @@ function isUnresolvedUrl(compiledUrl, templateUrl) {
 }
 
 /**
+ * The tilejson URL titiler-pgstac describes a collection's mosaic by.
+ *
+ * The path carries no `/tiles/` segment where the tile path does: the service
+ * answers a tilejson path that has one with the STAC Browser page rather than
+ * a 404, a failure visible only as a JSON parse error. titiler-pgstac refuses
+ * the request outright without an `assets`, and answers the same bounds and
+ * zooms whichever asset is named.
+ *
+ * One trailing slash comes off the base. A service resolved through
+ * `ServiceUrls` arrives without one - it strips a configured URL's as it reads
+ * it - so what is normalised here is the address form: a tile address written
+ * `https://host/api//collections/...` names the base `https://host/api/`, and
+ * comes out as the URL its clean spelling does, sharing the single request
+ * remembered under it.
+ *
+ * @param {string} baseUrl - The service's base URL.
+ * @param {string} collectionName - The collection's id.
+ * @returns {string}
+ */
+function collectionTilejsonUrl(baseUrl, collectionName) {
+    const base = baseUrl.replace(/\/$/, '')
+    return `${base}/collections/${collectionName}/WebMercatorQuad/tilejson.json?assets=asset`
+}
+
+/**
+ * A collection mosaic's tile path, as a layer configured with the service's
+ * full address spells it out:
+ * `<base>/collections/<name>/tiles/<tms>/{z}/{x}/{y}`, with an optional `@Nx`
+ * scale suffix and format extension.
+ *
+ * Only an absolute `http(s)` address matches. `L_.getUrl` prefixes a relative
+ * one with `L_.missionPath`, so a mission-relative address of this shape names
+ * a path in the mission's own file tree, and asking it for a tilejson would
+ * spend a same-origin request on something that is not a tile service at all.
+ * The scheme is matched narrowly, and narrower than `F_.isUrlAbsolute` reads
+ * one: an uppercase `HTTPS://` and a protocol-relative `//host/...` are
+ * absolute to it and refused here, so a layer written either way draws exactly
+ * as it always has and simply goes without a footprint.
+ *
+ * The shape is the OGC API Tiles convention rather than a titiler-pgstac
+ * signature, so a service answering this path with a tilejson is assumed, not
+ * proven: another service laid out the same way costs one failed request and
+ * one warning.
+ *
+ * The collection name is one path segment with `/tiles/` immediately after it,
+ * so an item-pinned address - which carries `/items/<id>` in between - cannot
+ * match. The placeholders are matched in the only order the service serves,
+ * so a `{z}/{y}/{x}` template belongs to something else and is refused.
+ */
+const COLLECTION_TILE_PATH =
+    /^(https?:\/\/.*)\/collections\/([^/]+)\/tiles\/([^/]+)\/\{z\}\/\{x\}\/\{y\}(?:@\d+x)?(?:\.[a-zA-Z0-9]+)?$/
+
+/**
+ * The tilejson URL for a layer whose configured address is a collection
+ * mosaic's own tile URL, or null when the address is not one.
+ *
+ * The service and the collection are both read out of that address.
+ * `ServiceUrls` is deliberately not consulted: the author typed an absolute
+ * address, and the service serving the layer's tiles is the one that can say
+ * what they cover.
+ *
+ * The address's query string is dropped rather than carried. It holds the
+ * colormap, asset, rescale and nodata the tiles are drawn with, none of which
+ * change the bounds reported, and the address is read before its placeholders
+ * are substituted, so a time-enabled layer's still holds a literal
+ * `datetime={starttime}/{endtime}` - which the tilejson endpoint answers 500
+ * for, an answer then remembered under that URL for the life of the page.
+ * The URL itself is built by `collectionTilejsonUrl`, the one the
+ * `stac-collection` branch builds its own with, which keeps the two branches
+ * to a single request per collection between them.
+ *
+ * @param {string} [tileUrl] - The layer's resolved tile URL template.
+ * @returns {string|null}
+ */
+function collectionTilejsonUrlFrom(tileUrl) {
+    const [path] = (tileUrl || '').split(/[?#]/)
+    const match = COLLECTION_TILE_PATH.exec(path)
+    if (match == null) return null
+    const [, baseUrl, collectionName, tileMatrixSet] = match
+
+    // A raw address declares its tile matrix set in the path, where
+    // `tilejsonUrlFor`'s `layerConfig.tileMatrixSet` rule - a field these
+    // layers do not set - cannot see it.
+    if (tileMatrixSet !== 'WebMercatorQuad') return null
+
+    // The whole address up to the placeholders has to be literal: a service or
+    // a collection still spelled as a placeholder names nothing to ask about.
+    if (isUnresolvedUrl(baseUrl) || isUnresolvedUrl(collectionName)) return null
+
+    return collectionTilejsonUrl(baseUrl, collectionName)
+}
+
+/**
  * The tilejson URL a layer's tiles are described by, or null when there is
  * none to ask.
  *
- * Only `COG:` and `stac-collection:` sources have a derivable tilejson path. A
- * `titiler-url:` source is an opaque endpoint, a plain `{z}/{x}/{y}` template
- * and a WMS layer are not TiTilers at all, a `COG:` layer in deck raster mode
- * requests no tiles to narrow, and deck.gl indexes WebMercator tiles only, so
- * another tile matrix set has no footprint this can act on.
+ * `COG:` and `stac-collection:` sources have a derivable tilejson path, and so
+ * does a plain template that spells out a collection mosaic's full tile
+ * address. A `titiler-url:` source is an opaque endpoint, every other plain
+ * template - a basemap, a WMS layer - is not a TiTiler at all, a `COG:` layer
+ * in deck raster mode requests no tiles to narrow, and deck.gl indexes
+ * WebMercator tiles only, so another tile matrix set has no footprint this can
+ * act on.
  *
  * @param {object} source - The resolved tile source.
  * @param {string|undefined} source.splitColonType - `resolveTileLayerSource`'s
  *   service prefix.
  * @param {string} source.sourceUrl - The layer's raw config URL, prefix intact.
+ * @param {string} [source.tileUrl] - The layer's tile URL as the source
+ *   resolver left it, placeholders intact, read for the collection and service
+ *   a prefix-less address names.
  * @param {string} [source.cogUrl] - For a `COG:` source, the bare file URL its
  *   tiles are rendered from, time placeholders already substituted.
  * @param {string} [source.cogUrlTemplate] - For a `COG:` source, the template
@@ -117,6 +219,7 @@ function isUnresolvedUrl(compiledUrl, templateUrl) {
 export function tilejsonUrlFor({
     splitColonType,
     sourceUrl,
+    tileUrl,
     cogUrl,
     cogUrlTemplate,
     layerConfig,
@@ -149,10 +252,14 @@ export function tilejsonUrlFor({
         // The same reading of the name the layer's tile URLs are built from.
         const collectionName = stacCollectionNameFrom(sourceUrl)
         if (!collectionName || isUnresolvedUrl(collectionName)) return null
-        // titiler-pgstac refuses the request outright without an `assets`, and
-        // answers the same bounds and zooms whichever asset is named.
-        return `${baseUrl}/collections/${collectionName}/WebMercatorQuad/tilejson.json?assets=asset`
+        return collectionTilejsonUrl(baseUrl, collectionName)
     }
+
+    // No prefix: an address typed out in full, so that the tiles carry exactly
+    // the parameters the author chose. Only the collection and the service are
+    // taken from it - the tile URLs it produces are untouched. A `titiler-url:`
+    // source is left out even where its address takes the same shape.
+    if (splitColonType === undefined) return collectionTilejsonUrlFrom(tileUrl)
 
     return null
 }

@@ -1832,6 +1832,10 @@ async function makeTileLayer(layerObj, mapContext = null) {
         const footprintSource = {
             splitColonType,
             sourceUrl: tileSource.sourceUrl,
+            // The resolved tile URL with its placeholders intact: a layer
+            // configured with a collection mosaic's full address names its
+            // service and its collection in here and nowhere else.
+            tileUrl: tileSource.url,
             // The bare, time-substituted .tif URL TiTiler renders from, which
             // is what its tilejson describes, alongside the template it came
             // from: the two together are what tell a time series whose times

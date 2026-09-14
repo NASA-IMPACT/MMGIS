@@ -172,6 +172,7 @@ describe('tilejsonUrlFor', () => {
             {
                 splitColonType: undefined,
                 sourceUrl: 'https://tiles.example.org/{z}/{x}/{y}.png',
+                tileUrl: 'https://tiles.example.org/{z}/{x}/{y}.png',
                 layerConfig: {},
             },
         ],
@@ -180,6 +181,7 @@ describe('tilejsonUrlFor', () => {
             {
                 splitColonType: undefined,
                 sourceUrl: 'https://wms.example.org/geoserver/wms',
+                tileUrl: 'https://wms.example.org/geoserver/wms',
                 layerConfig: { tileformat: 'wms' },
             },
         ],
@@ -321,6 +323,181 @@ describe('tilejsonUrlFor', () => {
         ).toBe(
             'https://other.example.org/raster/collections/caldor-fire-burn-severity/WebMercatorQuad/tilejson.json?assets=asset'
         )
+    })
+
+    // A Disasters raster layer as it is configured: the collection mosaic's
+    // full tile address typed out, with the asset name, colormap and nodata
+    // the author chose. `tileUrl` is that address as the source resolver left
+    // it, before its placeholders are substituted.
+    const COLLECTION_TILE_URL =
+        'https://disasters.example.org/api/raster/collections/gaia-total-composite/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=total&bidx=1&colormap=%7B%221%22%3A%22%23ff0000%22%7D&resampling=nearest&nodata=0'
+    const COLLECTION_TILEJSON_URL =
+        'https://disasters.example.org/api/raster/collections/gaia-total-composite/WebMercatorQuad/tilejson.json?assets=asset'
+
+    const rawTemplate = (tileUrl, layerConfig = {}) => ({
+        splitColonType: undefined,
+        sourceUrl: tileUrl,
+        tileUrl,
+        layerConfig,
+    })
+
+    // The service and the collection are both read out of the address the
+    // author typed, and nothing else of it is carried: the query string holds
+    // the colormap and the asset the tiles are drawn with, neither of which
+    // changes where the data is. The `/tiles/` segment goes with it - the
+    // tilejson path carries none, and the service answers one that does 200
+    // text/html with the STAC Browser page rather than 404.
+    test('asks the service a full collection address names about that collection', async () => {
+        const { tilejsonUrlFor } = await loadModule()
+
+        expect(tilejsonUrlFor(rawTemplate(COLLECTION_TILE_URL))).toBe(
+            COLLECTION_TILEJSON_URL
+        )
+    })
+
+    // `ServiceUrls` is deliberately not consulted: the author typed an
+    // absolute address and that is the service that must be asked. A static
+    // build with nothing configured gets a footprint for the same reason.
+    test('asks the service a full collection address names with none configured', async () => {
+        window.mmgisglobal = { SERVER: 'static' }
+        const { tilejsonUrlFor } = await loadModule()
+
+        expect(tilejsonUrlFor(rawTemplate(COLLECTION_TILE_URL))).toBe(
+            COLLECTION_TILEJSON_URL
+        )
+    })
+
+    // The scale suffix and the format extension are the shapes the live
+    // layers are written in; the address with neither is the plainest form.
+    test.each([
+        ['a scale suffix', '/{z}/{x}/{y}@2x'],
+        ['a format extension', '/{z}/{x}/{y}.png'],
+        ['both', '/{z}/{x}/{y}@1x.webp'],
+        ['neither', '/{z}/{x}/{y}'],
+    ])('reads a full collection address ending in %s', async (_label, tail) => {
+        const { tilejsonUrlFor } = await loadModule()
+
+        expect(
+            tilejsonUrlFor(
+                rawTemplate(
+                    `https://disasters.example.org/api/raster/collections/gaia-total-composite/tiles/WebMercatorQuad${tail}`
+                )
+            )
+        ).toBe(COLLECTION_TILEJSON_URL)
+    })
+
+    // A time-enabled layer's address is read before its placeholders are
+    // substituted, so its query string still holds literal {starttime} and
+    // {endtime}. Live, a datetime like that makes the tilejson endpoint answer
+    // 500 - which is why the query string is dropped rather than carried.
+    test('reads a full collection address whose times have not resolved', async () => {
+        const { tilejsonUrlFor } = await loadModule()
+
+        expect(
+            tilejsonUrlFor(
+                rawTemplate(
+                    `${COLLECTION_TILE_URL}&datetime={starttime}/{endtime}`
+                )
+            )
+        ).toBe(COLLECTION_TILEJSON_URL)
+    })
+
+    // An item-pinned address is a whole collection's neighbour, not a whole
+    // collection; a placeholder left in the path names no collection any
+    // service can answer for; a tile matrix set other than WebMercatorQuad is
+    // one deck.gl cannot index, and a raw template declares it in the path
+    // where the layer config's own tileMatrixSet check cannot see it; and
+    // {z}/{y}/{x} is some other service's template, the mission's GIBS Black
+    // Marble layer among them.
+    test.each([
+        [
+            'an item inside a collection',
+            'https://disasters.example.org/api/raster/collections/gaia-total-composite/items/OPERA_L3_2024/tiles/WebMercatorQuad/{z}/{x}/{y}@1x',
+        ],
+        [
+            'another tile matrix set',
+            'https://disasters.example.org/api/raster/collections/gaia-total-composite/tiles/WorldCRS84Quad/{z}/{x}/{y}@1x',
+        ],
+        [
+            'placeholders in the other order',
+            'https://gibs.example.org/collections/BlackMarble/tiles/WebMercatorQuad/{z}/{y}/{x}.jpg',
+        ],
+        [
+            'a placeholder in the collection name',
+            'https://disasters.example.org/api/raster/collections/{collection}/tiles/WebMercatorQuad/{z}/{x}/{y}',
+        ],
+        [
+            'a placeholder before the collection',
+            'https://disasters.example.org/{env}/raster/collections/gaia-total-composite/tiles/WebMercatorQuad/{z}/{x}/{y}',
+        ],
+        [
+            'no collection at all',
+            'https://basemaps.example.org/tiles/WebMercatorQuad/{z}/{x}/{y}.png',
+        ],
+        [
+            'a collection but no tiles',
+            'https://disasters.example.org/api/raster/collections/gaia-total-composite/{z}/{x}/{y}',
+        ],
+        // `L_.getUrl` prefixes a relative URL with the mission path, so this
+        // shape under a mission is a file tree, not a tile service, and
+        // asking it for a tilejson would spend a same-origin request.
+        [
+            'a path under the mission rather than a service',
+            'Missions/Disasters/Layers/collections/gaia-total-composite/tiles/WebMercatorQuad/{z}/{x}/{y}',
+        ],
+    ])('asks nothing about an address naming %s', async (_label, tileUrl) => {
+        const { tilejsonUrlFor } = await loadModule()
+
+        expect(tilejsonUrlFor(rawTemplate(tileUrl))).toBe(null)
+    })
+
+    // `L_.getUrl` matches `stac-collection:` case-insensitively where
+    // `cogSourceType` does not, so a source written in capitals is resolved
+    // into a full collection address and still handed over as prefix-less.
+    // `tileUrl` is the only field holding that address - `sourceUrl` is the
+    // prefixed form the source resolver did not recognise.
+    test('reads the address out of the resolved tile URL, not the source', async () => {
+        const { tilejsonUrlFor } = await loadModule()
+
+        expect(
+            tilejsonUrlFor({
+                splitColonType: undefined,
+                sourceUrl: 'STAC-COLLECTION:gaia-total-composite',
+                tileUrl: COLLECTION_TILE_URL,
+                layerConfig: {},
+            })
+        ).toBe(COLLECTION_TILEJSON_URL)
+    })
+
+    // A full collection address on a layer the config declares to be on
+    // another matrix set is refused by the config-level rule before the
+    // address is read at all.
+    test('asks nothing about a full collection address on a layer configured for another matrix set', async () => {
+        const { tilejsonUrlFor } = await loadModule()
+
+        expect(
+            tilejsonUrlFor(
+                rawTemplate(COLLECTION_TILE_URL, {
+                    tileMatrixSet: 'WorldCRS84Quad',
+                })
+            )
+        ).toBe(null)
+    })
+
+    // shouldUseDeckRaster runs first: a layer with cogTransform set and the
+    // client-side renderer picked reads its .tif itself and asks for no tiles,
+    // whatever its address looks like.
+    test('asks nothing about a full collection address in deck raster mode', async () => {
+        const { tilejsonUrlFor } = await loadModule()
+
+        expect(
+            tilejsonUrlFor(
+                rawTemplate(COLLECTION_TILE_URL, {
+                    cogTransform: true,
+                    cogRendererMode: 'deckRaster',
+                })
+            )
+        ).toBe(null)
     })
 })
 
@@ -573,6 +750,94 @@ describe('startServiceTileFootprint', () => {
 
         expect(fetchMock).toHaveBeenCalledTimes(1)
         expect(engine.updateLayer).toHaveBeenCalledTimes(3)
+    })
+
+    // The collection the Disasters layers are configured against, written
+    // both ways: the mosaic's full tile address on one layer and the
+    // `stac-collection:` short form on another.
+    const RAW_COLLECTION_SOURCE = {
+        splitColonType: undefined,
+        sourceUrl: `${PGSTAC}/collections/caldor-fire-burn-severity/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=data&colormap_name=viridis`,
+        tileUrl: `${PGSTAC}/collections/caldor-fire-burn-severity/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=data&colormap_name=viridis`,
+        layerConfig: {},
+    }
+
+    test('narrows a layer configured with a full collection address', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(STAC_TILEJSON)))
+        const { startServiceTileFootprint } = await loadModule()
+        const engine = engineSpy()
+
+        await startServiceTileFootprint(
+            engine,
+            'Gaia total',
+            RAW_COLLECTION_SOURCE,
+            true
+        )
+
+        expect(engine.updateLayer).toHaveBeenCalledWith('Gaia total', {
+            tileFootprint: { extent: STAC_TILEJSON.bounds },
+        })
+    })
+
+    // Both forms address the same collection on the same service, and the
+    // request is remembered by tilejson URL, so the two of them ask once
+    // between them however they are configured.
+    test('reads one tilejson for both ways a collection is configured', async () => {
+        const fetchMock = vi.fn(async () => jsonResponse(STAC_TILEJSON))
+        vi.stubGlobal('fetch', fetchMock)
+        const { startServiceTileFootprint } = await loadModule()
+        const engine = engineSpy()
+
+        await Promise.all([
+            startServiceTileFootprint(
+                engine,
+                'Gaia total',
+                RAW_COLLECTION_SOURCE,
+                true
+            ),
+            startServiceTileFootprint(
+                engine,
+                'Burn severity',
+                STAC_SOURCE,
+                true
+            ),
+        ])
+
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expect(engine.updateLayer).toHaveBeenCalledTimes(2)
+    })
+
+    // An address typed out with a stray slash before `/collections/` names the
+    // service with a trailing one, which comes off where the address is read.
+    // It names the tilejson URL the clean spelling does, so the two layers
+    // share the one request remembered under it.
+    test('reads one tilejson for a full address carrying a stray slash', async () => {
+        const slashed = RAW_COLLECTION_SOURCE.tileUrl.replace(
+            '/collections/',
+            '//collections/'
+        )
+        const fetchMock = vi.fn(async () => jsonResponse(STAC_TILEJSON))
+        vi.stubGlobal('fetch', fetchMock)
+        const { startServiceTileFootprint } = await loadModule()
+        const engine = engineSpy()
+
+        await Promise.all([
+            startServiceTileFootprint(
+                engine,
+                'Gaia total',
+                RAW_COLLECTION_SOURCE,
+                true
+            ),
+            startServiceTileFootprint(
+                engine,
+                'Gaia total, other layer',
+                { ...RAW_COLLECTION_SOURCE, sourceUrl: slashed, tileUrl: slashed },
+                true
+            ),
+        ])
+
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expect(engine.updateLayer).toHaveBeenCalledTimes(2)
     })
 
     // A mission with a layer on an unreachable service must not sit on an open
@@ -1098,5 +1363,38 @@ describe('startServiceTileFootprint', () => {
             expect(engine.updateLayer).not.toHaveBeenCalled()
             expect(serviceTileFootprintFor('Elevation')).toBeUndefined()
         })
+    })
+})
+
+/**
+ * The point of reading the footprint out of a layer's own address is that the
+ * address itself does not move: the layer keeps requesting the tile URLs it
+ * requests today, parameter for parameter, so every edge-cache key survives.
+ */
+describe('the tile URL a full collection address compiles to', () => {
+    test('compiles to exactly what the author typed', async () => {
+        const { compileTileUrl, buildTileUrlOptions, resolveTileFormat } =
+            await import('../../src/essence/Basics/Layers_/tileUrlUtils')
+
+        const url =
+            'https://disasters.example.org/api/raster/collections/gaia-total-composite/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=total&bidx=1&resampling=nearest&nodata=0'
+        // The COG fields are set, and stay out of the URL: with no service
+        // prefix the compile never reaches the branch that injects them.
+        const layerObj = {
+            url,
+            tileformat: 'wmts',
+            cogTransform: true,
+            cogColormap: 'viridis',
+            cogMin: 0,
+            cogMax: 100,
+            cogResampling: 'bilinear',
+        }
+
+        expect(
+            compileTileUrl(
+                url,
+                buildTileUrlOptions(layerObj, undefined, resolveTileFormat(layerObj))
+            )
+        ).toBe(url)
     })
 })
