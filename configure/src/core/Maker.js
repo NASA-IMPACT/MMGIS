@@ -574,47 +574,68 @@ const getComponent = (
                 layer.demtileurl,
                 `Missions/${configuration.msv.mission}/`,
                 layer.throughTileServer === true,
+                layer.tileMatrixSet,
                 (minZoom, maxNativeZoom, boundingBox) => {
-                  let conf = updateConfiguration(
-                    "minZoom",
-                    minZoom,
-                    layer,
-                    true
-                  );
-                  conf = updateConfiguration(
-                    "maxNativeZoom",
-                    maxNativeZoom,
-                    layer,
-                    true,
-                    conf
-                  );
+                  // A tile source reports what it has, and a bounding box
+                  // only counts when it came back in lng/lat degrees. Write
+                  // the fields that arrived and name the ones that did not.
+                  const populated = [];
+                  const missing = [];
+                  const writes = [];
 
-                  conf = updateConfiguration(
-                    "maxZoom",
-                    maxNativeZoom,
-                    layer,
-                    true,
-                    conf
-                  );
-                  updateConfiguration(
-                    "boundingBox",
-                    boundingBox,
-                    layer,
-                    false,
-                    conf
-                  );
+                  if (Number.isFinite(minZoom)) {
+                    writes.push(["minZoom", minZoom]);
+                    populated.push("minZoom");
+                  } else missing.push("minZoom");
+
+                  if (Number.isFinite(maxNativeZoom)) {
+                    writes.push(["maxNativeZoom", maxNativeZoom]);
+                    writes.push(["maxZoom", maxNativeZoom]);
+                    populated.push("maxNativeZoom (and maxZoom)");
+                  } else missing.push("maxNativeZoom");
+
+                  if (boundingBox != null) {
+                    writes.push(["boundingBox", boundingBox]);
+                    populated.push("boundingBox");
+                  } else missing.push("boundingBox in lng/lat degrees");
+
+                  // Every write but the last is held back and threaded into
+                  // the next, so the configuration is dispatched once.
+                  let conf = null;
+                  writes.forEach(([field, value], i) => {
+                    conf = updateConfiguration(
+                      field,
+                      value,
+                      layer,
+                      i < writes.length - 1,
+                      conf
+                    );
+                  });
+
+                  const text = [
+                    populated.length > 0
+                      ? `Populated ${populated.join(", ")}.`
+                      : null,
+                    missing.length > 0
+                      ? `Not reported: ${missing.join(", ")} - left unchanged.`
+                      : null,
+                  ]
+                    .filter((part) => part != null)
+                    .join(" ");
 
                   dispatch(
                     setSnackBarText({
-                      text: "Successfully populated fields from XML or from cog/info.",
-                      severity: "success",
+                      text,
+                      severity: missing.length > 0 ? "warning" : "success",
                     })
                   );
                 },
                 (err) => {
+                  console.warn(err);
+                  const reason = err?.message ? `: ${err.message}` : ".";
                   dispatch(
                     setSnackBarText({
-                      text: "Could not find an XML or cog/info alongside that URL.",
+                      text: `Could not read a tilemapresource.xml or a TiTiler tilejson for that URL${reason}`,
                       severity: "error",
                     })
                   );
@@ -1852,12 +1873,31 @@ export default function Maker(props) {
 }
 
 // Helper funcs
+
+// A reported box as the Bounding Box field saves one - four strings of lng/lat
+// degrees - or null when what was reported is not in degrees. A projected
+// source reports its extent in its own CRS, and MMGIS reads a bounding box as
+// degrees whatever it holds, so such a box is refused rather than saved.
+//
+// parseBoundingBox in src/essence/Basics/Layers_/Layers_.js applies the same
+// rule when the map reads a saved box; configure/ is a separate package, so it
+// cannot import it.
+function lngLatBoundingBox(bounds) {
+  if (!Array.isArray(bounds) || bounds.length !== 4) return null;
+  const [west, south, east, north] = bounds.map(parseFloat);
+  if (![west, south, east, north].every(Number.isFinite)) return null;
+  if (Math.max(Math.abs(west), Math.abs(east)) > 180) return null;
+  if (Math.max(Math.abs(south), Math.abs(north)) > 90) return null;
+  return [west, south, east, north].map(String);
+}
+
 function tilePopulateFromX(
   layerType,
   url,
   demTileUrl,
   missionPath,
   throughTileServer,
+  tileMatrixSet,
   cb,
   errorCallback
 ) {
@@ -1877,19 +1917,34 @@ function tilePopulateFromX(
         }
       }
 
-      fullUrl = `${window.location.origin}/titiler/cog/info?url=${fullUrl}`;
+      // The tilejson of the pyramid MMGIS asks this layer's tiles from -
+      // ServiceUrls' buildTiTilerCogTilesUrl requests
+      // cog/tiles/{tileMatrixSet} and defaults the same way - so the zoom
+      // levels it reports are the ones the layer's requests are numbered in.
+      const tms = tileMatrixSet || "WebMercatorQuad";
+      fullUrl = `${getApiBase()}titiler/cog/${tms}/tilejson.json?url=${fullUrl}`;
 
       fetch(fullUrl)
-        .then((response) => response.json())
-        .then((json) => {
+        .then((response) => {
+          // TiTiler answers a bad url with a 4xx and a `{detail: ...}` body,
+          // which parses as cleanly as a tilejson. Refuse it here so
+          // errorCallback runs instead of a document with nothing in it.
+          if (!response.ok)
+            throw new Error(
+              `cog/${tms}/tilejson.json responded ${response.status} ${response.statusText}`
+            );
+          return response.json();
+        })
+        .then((tilejson) => {
           try {
-            const minZoom = json.minzoom;
-            const maxNativeZoom = json.maxzoom;
-
-            let boundingBox = ``;
-            if (json.bounds != null)
-              boundingBox = `${json.bounds[0]},${json.bounds[1]},${json.bounds[2]},${json.bounds[3]}`;
-            cb(minZoom, maxNativeZoom, boundingBox);
+            // A tilejson states `minzoom`, `maxzoom` and - per the TileJSON
+            // spec, whatever the tile matrix set's own CRS - `bounds` in
+            // lng/lat degrees.
+            cb(
+              tilejson.minzoom,
+              tilejson.maxzoom,
+              lngLatBoundingBox(tilejson.bounds)
+            );
           } catch (err) {
             errorCallback(err);
           }
@@ -1933,10 +1988,14 @@ function tilePopulateFromX(
             "," +
             xml.getElementsByTagName("BoundingBox")[0].attributes["maxy"].value;
 
+          // tilemapresource.xml states its BoundingBox in the tiles' own
+          // projection - gdal2tiles4extent writes a projected extent under
+          // the `raster` profile - so it gets the same degree filter the
+          // tilejson box does.
           cb(
             parseInt(minZoom),
             parseInt(maxNativeZoom),
-            boundingBox.split(",")
+            lngLatBoundingBox(boundingBox.split(","))
           );
         } catch (err) {
           errorCallback(err);

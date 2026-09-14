@@ -706,10 +706,12 @@ var mmgisAPI = {
      */
     setLayerTimeStatus: TimeControl.setLayerTimeStatus,
 
-    /** updateLayersTime - will synchronize every global time enabled layer with global times.
+    /** updateLayersTime - will synchronize every global time enabled layer with the
+     * global times: the layer's own times, the labels that read them, and - for a
+     * Leaflet raster tile layer - the options its per-tile urls are compiled from.
      * Probably should be a private function, but could be useful for edge cases when things
      * may need to be re-synchronized.
-     * @returns {array} - A list of layers that were reloaded
+     * @returns {array} - The names of the layers updated
      */
     updateLayersTime: TimeControl.updateLayersTime,
 

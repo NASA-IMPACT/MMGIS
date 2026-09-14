@@ -806,16 +806,16 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             refresh(layer, {
                 url: ctx.url,
                 tileOptions: ctx.tileOptions,
-                force: ctx.force,
             })
             return true
         }
 
         // A Leaflet tile layer recompiles its URL per tile from this.options,
         // which is what refresh() merges tileOptions into — that is why Leaflet
-        // keeps its tile cache where deck.gl cannot.
+        // keeps its tile cache where deck.gl cannot. Its `force` argument is
+        // never set from here: a tile whose URL did not change stays put.
         if (typeof layer.refresh !== 'function') return false
-        layer.refresh(ctx.url, ctx.force === true, ctx.tileOptions)
+        layer.refresh(ctx.url, false, ctx.tileOptions)
         return true
     }
 
