@@ -10,6 +10,7 @@ import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
 import { resolveTemporalExtent } from '../TimeControl_/layerTimePolicy'
+import { fetchLayerExtentSource } from '../TimeControl_/layerExtentSource'
 import {
     isRasterTileLayerType,
     MAP_ENGINE,
@@ -4510,8 +4511,20 @@ async function parseConfig(configData, urlOnLayers) {
     //We only care about the layers now
     const layers = L_.configData.layers
 
+    // A layer whose time extent comes from a URL is fetched while the walk
+    // below continues, and every fetch is awaited before this returns: the
+    // readers of a layer's data times — the coverage gate, the temporal
+    // extent provider, the timeline — first run after parseConfig resolves,
+    // so awaiting here is what lets them read the fetched values with no
+    // knowledge of the source. Started here rather than awaited per layer so
+    // a mission with many sources waits for the slowest, not their sum.
+    // fetchLayerExtentSource never rejects; allSettled is the backstop that
+    // keeps a slip there from failing the mission load.
+    const extentSourceFetches = []
+
     //Begin recursively going through those layers
     await expandLayers(layers, 0, null)
+    await Promise.allSettled(extentSourceFetches)
 
     async function expandLayers(d, level, prevName) {
         const stacRegex = /^stac(-((item)|(catalog)|(collection)))?:/i
@@ -4546,6 +4559,14 @@ async function parseConfig(configData, urlOnLayers) {
 
             // Create parsed layers named
             L_.layers.data[d[i].name] = d[i]
+
+            // The fetch writes into this same object, so the registered
+            // layer carries the fetched data times once it resolves.
+            // fetchLayerExtentSource resolves null, never rejects, for a
+            // layer with no source or a failed fetch.
+            extentSourceFetches.push(
+                fetchLayerExtentSource(d[i], { missionPath: L_.missionPath })
+            )
 
             if (d[i].display_name === 'TimeCogs') {
                 d[i].time.current = '2025-02-12T01:20:55Z'
@@ -4712,7 +4733,7 @@ async function parseConfig(configData, urlOnLayers) {
             var dNext = getSublayers(d[i])
             //If they are sublayers, call this function again and move up a level
             if (dNext != 0) {
-                expandLayers(dNext, level + 1, d[i].name)
+                await expandLayers(dNext, level + 1, d[i].name)
             }
         }
     }

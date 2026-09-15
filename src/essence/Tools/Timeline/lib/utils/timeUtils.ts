@@ -196,22 +196,19 @@ export function resolveLayerExtent(
 }
 
 /**
- * The days a layer lists data on, one moment per day at its first UTC instant,
- * ascending, with a day listed more than once collapsed to one — several
- * instants on one day being one day of data. `dataDates` is accepted as a list
- * or as a single bare string.
+ * The entries a layer lists data at, each read strictly as ISO 8601 in UTC,
+ * give or take the surrounding whitespace a comma-separated list picks up.
+ * `dataDates` is accepted as a list or as a single bare string. Anything
+ * else is dropped rather than guessed at, so a mistyped entry costs the layer
+ * that entry rather than its whole row.
  *
- * Days are read in UTC, matching every other instant the plugin handles;
- * reading them locally would shift each off the day it names by the viewer's
- * offset. A listed day must be written as ISO 8601, give or take the
- * surrounding whitespace a comma-separated list picks up — anything else is
- * dropped rather than guessed at, so a mistyped date costs the layer that day
- * rather than its whole row.
+ * Read in UTC, matching every other instant the plugin handles; reading
+ * locally would shift each entry off the day it names by the viewer's offset.
  *
- * The one reading of `dataDates`, so what a row navigates through cannot drift
- * from what its bar draws.
+ * The one parse of `dataDates`: the days a row draws and the instants it
+ * navigates through both come from here, so neither can drift from the other.
  */
-export function resolveListedDays(
+function parseListedEntries(
     time: LayerTimeConfig | undefined
 ): moment.Moment[] {
     const raw = time?.dataDates
@@ -221,18 +218,56 @@ export function resolveListedDays(
         ? [raw]
         : []
 
-    return [
-        ...new Set(
-            listed
-                .map((date) =>
-                    moment.utc(String(date).trim(), moment.ISO_8601, true)
-                )
-                .filter((day) => day.isValid())
-                .map((day) => day.startOf('day').valueOf())
-        ),
-    ]
-        .sort((a, b) => a - b)
-        .map((start) => moment.utc(start))
+    return listed
+        .map((date) => moment.utc(String(date).trim(), moment.ISO_8601, true))
+        .filter((entry) => entry.isValid())
+}
+
+const distinctAscending = (instants: number[]): moment.Moment[] =>
+    [...new Set(instants)].sort((a, b) => a - b).map((ms) => moment.utc(ms))
+
+/**
+ * The days a layer lists data on, one moment per day at its first UTC instant,
+ * ascending, with a day listed more than once collapsed to one — several
+ * instants on one day being one day of data.
+ */
+export function resolveListedDays(
+    time: LayerTimeConfig | undefined
+): moment.Moment[] {
+    return distinctAscending(
+        parseListedEntries(time).map((entry) => entry.startOf('day').valueOf())
+    )
+}
+
+/**
+ * The instants a layer's listed entries name, one per distinct entry,
+ * ascending. An entry given down to the second names an exact instant, and
+ * its instant is that value as written — precise beyond the second, as a
+ * fractional-second entry is, changes nothing. Anything coarser — a bare
+ * minute, hour, day, month or year — names a span instead, and its instant is
+ * the span's last one: the current time is the trailing edge of a layer's
+ * query window, so a stop at the span's first instant would close the window
+ * before the span's data fell inside it.
+ */
+export function resolveListedInstants(
+    time: LayerTimeConfig | undefined
+): moment.Moment[] {
+    return distinctAscending(
+        parseListedEntries(time).map((entry) => {
+            const format = String(entry.creationData().format ?? '')
+            if (format.includes('ss')) return entry.valueOf()
+            const unit = format.includes('mm')
+                ? 'minute'
+                : format.includes('HH')
+                ? 'hour'
+                : format.includes('D') || format.includes('E')
+                ? 'day'
+                : format.includes('MM')
+                ? 'month'
+                : 'year'
+            return entry.endOf(unit).valueOf()
+        })
+    )
 }
 
 /**
