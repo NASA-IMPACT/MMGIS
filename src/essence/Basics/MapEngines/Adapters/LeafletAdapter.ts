@@ -846,9 +846,9 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      * bottom first, its on-attachments just before it. Images also get a
      * z-index and a redraw. Anything else is left where it is.
      */
-    setLayerOrder(order: string[], ctx: LayerOrderContext = {}): void {
+    setLayerOrder(order: string[], ctx: LayerOrderContext): void {
         if (!this._map) return
-        const info = ctx.layers ?? {}
+        const info = ctx.layers
         const rank = (id: string) => order.length + 1 - order.indexOf(id)
         const readd: string[] = []
         const rasters: string[] = []
@@ -861,10 +861,10 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             if (type === 'vector' || type === 'image') {
                 if (type === 'vector') {
                     for (const a of info[id]?.attachments ?? []) {
-                        if (a.layer != null) this._map.removeLayer(a.layer)
+                        if (a.layer != null) this.removeLayer(a.layer)
                     }
                 }
-                this._map.removeLayer(layer)
+                this.removeLayer(layer)
                 readd.push(id)
             } else if (type === 'tile' || type === 'data') {
                 rasters.push(id)

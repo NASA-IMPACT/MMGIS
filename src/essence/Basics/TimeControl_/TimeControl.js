@@ -386,7 +386,7 @@ var TimeControl = {
         evenIfOff,
         evenIfControlled,
         forceRequery,
-        skipOrderedBringToFront
+        skipLayerOrderSync
     ) {
         // reload layer
         if (typeof layer == 'string') {
@@ -494,11 +494,11 @@ var TimeControl = {
                     if (wasOn) {
                         L_.toggleLayer(
                             L_.layers.data[layer.name],
-                            skipOrderedBringToFront
+                            skipLayerOrderSync
                         ) // turn off if on
                         L_.toggleLayer(
                             L_.layers.data[layer.name],
-                            skipOrderedBringToFront
+                            skipLayerOrderSync
                         ) // turn back on
                     }
                 }
@@ -582,7 +582,7 @@ var TimeControl = {
                                             )
                                     }
                                 },
-                                skipOrderedBringToFront
+                                skipLayerOrderSync
                             )
                         } finally {
                             // put the template back — refreshLayer has read

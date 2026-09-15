@@ -205,8 +205,8 @@ export type RefreshContext = {
  * deck.gl needs none of it.
  */
 export type LayerOrderContext = {
-    layers?: Record<
+    layers: Record<
         string,
-        { type?: string; attachments?: Array<{ layer: unknown; on: boolean }> }
+        { type?: LayerType; attachments?: Array<{ layer: unknown; on: boolean }> }
     >
 }

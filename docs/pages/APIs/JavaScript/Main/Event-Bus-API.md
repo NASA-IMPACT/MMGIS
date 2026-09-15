@@ -271,7 +271,7 @@ const MyPluginTool = {
 | `layer:visibilityChange` | `{ layerName, on }` | Fired when a layer is toggled on/off |
 | `layer:refreshStatusChange` | `{ layerName, failed }` | Fired when a layer refresh succeeds or fails |
 | `layer:headerStateChange` | `{ header_id, onState }` | Fired when a layer group header is expanded/collapsed |
-| `layers:orderChanged` | `{ order }` | Fired after a draw-order change is applied; `order` lists layer UUIDs top first. An add or remove with no prior reorder fires `layers:listChanged` only |
+| `layers:orderChanged` | `{ order }` | Fired after the draw order changes: a reorder, or a layer added or removed. `order` lists layer UUIDs top first |
 
 ```javascript
 window.mmgisAPI.on('layer:visibilityChange', ({ layerName, on }) => {
@@ -423,7 +423,7 @@ await window.mmgisAPI.request('map:panTo', { lat: 45, lng: -120 })
 | `layers:getConfig` | `layerUUID` | `object \| null` | Get layer configuration |
 | `layers:toggle` | `layerUUID` | `boolean \| null` | Toggle layer visibility |
 | `layers:getOrder` | none | `string[]` | Draw order as layer UUIDs, top first, headers excluded |
-| `layers:setOrder` | `{ order }` | `boolean` | Apply a full permutation of the draw order (UUIDs or display names). Returns `false` and changes nothing if a layer is missing, unknown, or repeated |
+| `layers:setOrder` | `{ order }` | `boolean` | Apply a full permutation of the draw order (UUIDs, or display names where the name is unique). Returns `false` and changes nothing if `order` is not an array or a layer is missing, unknown, or repeated. On Leaflet, vectors always draw above rasters whatever the order says |
 
 ```javascript
 // Get layer information

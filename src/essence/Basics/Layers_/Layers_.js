@@ -508,7 +508,8 @@ const L_ = {
                 // wipe it. `source` is accepted but unused — reserved for
                 // arbitrating between multiple writers later.
                 window.mmgisAPI.provide('layers:getListed', () => L_.layers.listed),
-                window.mmgisAPI.provide('layers:setListed', ({ updates, source } = {}) => {
+                window.mmgisAPI.provide('layers:setListed', (payload) => {
+                    const updates = payload?.updates
                     if (updates == null || typeof updates !== 'object')
                         return false
                     Object.entries(updates).forEach(([name, isListed]) => {
@@ -527,7 +528,8 @@ const L_ = {
                 window.mmgisAPI.provide('layers:getOrder', () => [
                     ...L_._layersOrdered,
                 ]),
-                window.mmgisAPI.provide('layers:setOrder', ({ order } = {}) => {
+                window.mmgisAPI.provide('layers:setOrder', (payload) => {
+                    const order = payload?.order
                     if (!Array.isArray(order)) return false
                     return L_.reorderLayers(
                         order.map((name) => L_.asLayerUUID(name))
@@ -815,7 +817,7 @@ const L_ = {
     //Takes in a config layer object
     toggleLayer: async function (
         s,
-        skipOrderedBringToFront,
+        skipLayerOrderSync,
         ignoreToggleStateChange
     ) {
         if (s == null) return
@@ -836,7 +838,7 @@ const L_ = {
                 on,
                 ignoreToggleStateChange,
                 null,
-                skipOrderedBringToFront
+                skipLayerOrderSync
             )
         } catch (e) {
             toggled = false
@@ -890,7 +892,7 @@ const L_ = {
         on,
         ignoreToggleStateChange,
         globeOnly,
-        skipOrderedBringToFront
+        skipLayerOrderSync
     ) {
         if (s.type !== 'header') {
             if (on) {
@@ -1240,7 +1242,7 @@ const L_ = {
             if (
                 !on &&
                 s.type === 'vector' &&
-                skipOrderedBringToFront !== true
+                skipLayerOrderSync !== true
             ) {
                 L_.syncLayerOrder()
             }
@@ -2993,6 +2995,12 @@ const L_ = {
     },
     // Trusts `order` to be a permutation of `_layersOrdered`.
     applyLayerOrder: function (order) {
+        if (
+            order.length === L_._layersOrdered.length &&
+            order.every((name, i) => name === L_._layersOrdered[i])
+        )
+            return
+
         // `_layersLoaded` is indexed like `_layersOrdered`, so it moves too.
         const loaded = {}
         L_._layersOrdered.forEach((name, i) => {
@@ -3022,7 +3030,7 @@ const L_ = {
                 L_.layers.attachments[name] || {}
             ).map((a) => ({
                 layer: L_.Map_.nativeLayer(a.layer),
-                on: a.on === true && a.type !== 'model',
+                on: Boolean(a.on) && a.type !== 'model',
             }))
             layers[name] = { type: L_.layers.data[name]?.type, attachments }
         })
@@ -3810,10 +3818,6 @@ const L_ = {
     modifyLayer: async function (data, layerName, type) {
         layerName = L_.asLayerUUID(layerName)
 
-        const newLayersOrdered = [...L_._layersOrdered]
-        const index = L_._layersOrdered.findIndex((name) => name === layerName)
-        newLayersOrdered.splice(index, 1)
-
         if (type === 'updateLayer' && layerName in L_.layers.data) {
             // Update layer
             await L_.TimeControl_.reloadLayer(layerName, true, true)
@@ -3824,9 +3828,13 @@ const L_ = {
         }
 
         // Notify subscribers (e.g. the modern-layout Layers panel) that the
-        // layer list changed, so they rebuild.
+        // layer list changed, so they rebuild. The order is a different list
+        // after an add or remove too, so it is announced as well.
         if (window.mmgisAPI) {
             window.mmgisAPI.emit('layers:listChanged')
+            window.mmgisAPI.emit('layers:orderChanged', {
+                order: [...L_._layersOrdered],
+            })
         }
 
         // The classic-layout LayersTool doesn't subscribe to the bus, so
@@ -3907,6 +3915,12 @@ const L_ = {
                 delete L_.layers.listed[layerUUID]
                 delete L_.layers.attachments[layerUUID]
                 delete L_.layers.opacity[layerUUID]
+
+                const at = L_._layersOrdered.indexOf(layerUUID)
+                if (at > -1) {
+                    L_._layersOrdered.splice(at, 1)
+                    L_._layersLoaded.splice(at, 1)
+                }
                 delete L_.layers.loadStatus[layerUUID]
             }
         }

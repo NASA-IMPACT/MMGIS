@@ -107,8 +107,9 @@ describe('layers:setOrder', () => {
         ['a layer repeats', { order: ['a', 'a', 'b'] }],
         ['the order is not an array', { order: 'a,b,c' }],
         ['there is no payload', undefined],
+        ['the payload is null', null],
     ])('refuses when %s and touches nothing', (_label, payload) => {
-        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        vi.spyOn(console, 'warn').mockImplementation(() => {})
 
         expect(providers['layers:setOrder'](payload)).toBe(false)
 
@@ -116,6 +117,41 @@ describe('layers:setOrder', () => {
         expect(L_._layersLoaded).toEqual([true, false, true])
         expect(engine.setLayerOrder).not.toHaveBeenCalled()
         expect(emitted).toEqual([])
+    })
+
+    test('accepts the order it already has without touching anything', () => {
+        expect(providers['layers:setOrder']({ order: ['a', 'b', 'c'] })).toBe(true)
+
+        expect(engine.setLayerOrder).not.toHaveBeenCalled()
+        expect(emitted).toEqual([])
+    })
+})
+
+describe('removing a layer', () => {
+    test('drops it from the order and the loaded flags, then announces both lists', async () => {
+        L_.layers.on = {}
+        L_.layers.listed = {}
+        L_.layers.opacity = {}
+
+        await L_.modifyLayer({}, 'b', 'removeLayer')
+
+        expect(L_._layersOrdered).toEqual(['a', 'c'])
+        expect(L_._layersLoaded).toEqual([true, true])
+        expect(providers['layers:getOrder']()).toEqual(['a', 'c'])
+        expect(emitted).toEqual([
+            ['layers:listChanged', undefined],
+            ['layers:orderChanged', { order: ['a', 'c'] }],
+        ])
+    })
+
+    test('a list built from the remaining layers is accepted as the new order', async () => {
+        L_.layers.on = {}
+        L_.layers.listed = {}
+        L_.layers.opacity = {}
+        await L_.modifyLayer({}, 'b', 'removeLayer')
+
+        expect(providers['layers:setOrder']({ order: ['c', 'a'] })).toBe(true)
+        expect(L_._layersOrdered).toEqual(['c', 'a'])
     })
 })
 

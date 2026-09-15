@@ -256,9 +256,11 @@ export interface IMapEngine<
 
     /**
      * Rank the whole stack at once. `order` lists layer ids top first; ids
-     * the engine does not hold or draw are skipped.
+     * the engine does not hold or draw are skipped. `ctx.layers` carries
+     * each layer's type and attachments: Leaflet orders only the ids it
+     * describes, deck.gl ranks from `order` alone.
      */
-    setLayerOrder(order: string[], ctx?: LayerOrderContext): void
+    setLayerOrder(order: string[], ctx: LayerOrderContext): void
 
     /**
      * Move a layer to the top of the stack.

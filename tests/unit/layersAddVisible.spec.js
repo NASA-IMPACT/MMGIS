@@ -34,7 +34,13 @@ const setEngine = () => {
     setLayerZIndex = vi.fn()
     setLayerVisibility = vi.fn()
     L_.Map_ = {
-        engine: { addLayer: vi.fn(), setLayerZIndex, setLayerVisibility },
+        engine: {
+            addLayer: vi.fn(),
+            setLayerZIndex,
+            setLayerVisibility,
+            setLayerOrder: vi.fn(),
+            bringToFront: vi.fn(),
+        },
         nativeLayer: (layer) =>
             layer && layer._deckLayer != null ? layer._deckLayer : layer,
     }

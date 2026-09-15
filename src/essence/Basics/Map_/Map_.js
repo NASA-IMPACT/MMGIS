@@ -624,7 +624,7 @@ let Map_ = {
     refreshLayer: async function (
         layerObj,
         cb,
-        skipOrderedBringToFront,
+        skipLayerOrderSync,
         stopLoops
     ) {
         // If it's a dynamic extent layer, just re-call its function

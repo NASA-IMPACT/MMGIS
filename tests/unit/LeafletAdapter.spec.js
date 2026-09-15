@@ -970,7 +970,24 @@ test.describe('LeafletAdapter - setLayerOrder', () => {
             ['add', bottom],
             ['add', top],
         ])
-        expect(tile.setZIndex).toHaveBeenCalledWith(3 + 1 - 1)
+        expect(tile.setZIndex).toHaveBeenCalledWith(3)
+    })
+
+    test('a data raster is ranked like a tile', () => {
+        const { adapter, onMap, calls } = setupOrder()
+        const data = makeLayer({ setZIndex: vi.fn() })
+        const tile = makeLayer({ setZIndex: vi.fn() })
+        adapter.registerLayer('data', data)
+        adapter.registerLayer('tile', tile)
+        onMap.add(data).add(tile)
+
+        adapter.setLayerOrder(['data', 'tile'], {
+            layers: { data: { type: 'data' }, tile: { type: 'tile' } },
+        })
+
+        expect(calls).toEqual([])
+        expect(data.setZIndex).toHaveBeenCalledWith(3)
+        expect(tile.setZIndex).toHaveBeenCalledWith(2)
     })
 
     test('re-adds a vector\'s on-attachments just before it and drops the off ones', () => {
@@ -1012,7 +1029,7 @@ test.describe('LeafletAdapter - setLayerOrder', () => {
         adapter.setLayerOrder(['other', 'img'], { layers: { img: { type: 'image' } } })
 
         expect(calls).toEqual([['remove', image], ['add', image]])
-        expect(image.setZIndex).toHaveBeenCalledWith(2 + 1 - 1)
+        expect(image.setZIndex).toHaveBeenCalledWith(2)
         expect(image.clearCache).toHaveBeenCalledTimes(1)
         expect(image.redraw).toHaveBeenCalledTimes(1)
     })

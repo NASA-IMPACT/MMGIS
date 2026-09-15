@@ -40,6 +40,8 @@ const makeEngine = (engineType = MAP_ENGINE.DECKGL) => {
         updateLayer: vi.fn(),
         setLayerOpacity: vi.fn(),
         setLayerZIndex: vi.fn(),
+        setLayerOrder: vi.fn(),
+        bringToFront: vi.fn(),
         refreshLayer: vi.fn(() => true),
     }
 }
@@ -136,6 +138,33 @@ describe('turning a layer on', () => {
         )
         expect(engine.addLayer).not.toHaveBeenCalled()
         expect(engine.setLayerZIndex).not.toHaveBeenCalled()
+    })
+
+    // A vector coming back has to land in its slot, so the whole stack is
+    // pushed. A raster keeps the rank it was given at creation.
+    test('pushes the draw order when a vector comes back, not for a raster', async () => {
+        const ROADS = {
+            name: 'Roads',
+            type: 'vector',
+            time: { enabled: false },
+            style: { fillColor: '#000', fillOpacity: 1, color: '#000', weight: 1, opacity: 1 },
+        }
+        L_._layersOrdered = [FLOOD.name, ROADS.name]
+        L_.layers.data[ROADS.name] = { ...ROADS }
+        L_.layers.layer[ROADS.name] = { id: ROADS.name, toGeoJSON: () => ({}) }
+        L_.layers.on[ROADS.name] = false
+        // Showing a vector also mirrors it to the globe, which is not under test.
+        L_.Globe_ = { litho: new Proxy({}, { get: () => vi.fn() }) }
+
+        await L_.toggleLayerHelper(L_.layers.data[FLOOD.name], false)
+        expect(engine.setLayerOrder).not.toHaveBeenCalled()
+
+        await L_.toggleLayerHelper(L_.layers.data[ROADS.name], false)
+        expect(engine.setLayerOrder).toHaveBeenCalledTimes(1)
+        expect(engine.setLayerOrder.mock.calls[0][0]).toEqual([
+            FLOOD.name,
+            ROADS.name,
+        ])
     })
 })
 

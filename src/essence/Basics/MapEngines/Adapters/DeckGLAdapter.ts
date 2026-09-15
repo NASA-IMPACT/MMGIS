@@ -1178,7 +1178,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     // Same rank formula as Layers_.layerZIndex, so a layer handed off later
     // lands where this order put its neighbours.
-    setLayerOrder(order: string[], _ctx?: LayerOrderContext): void {
+    setLayerOrder(order: string[], _ctx: LayerOrderContext): void {
         const top = order.length + 1
         order.forEach((id, index) => {
             if (this._layers.has(id)) this._layerZIndices.set(id, top - index)

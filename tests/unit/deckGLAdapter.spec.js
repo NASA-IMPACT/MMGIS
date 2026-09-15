@@ -359,8 +359,8 @@ test.describe('DeckGLAdapter', () => {
             ])
         })
 
-        // A layer handed off after a re-order is ranked with
-        // Layers_.layerZIndex: order.length + 1 - index. It must land in the
+        // A layer handed off after a re-order is ranked by Layers_.layerZIndex,
+        // which gives the middle of three the rank 3. It must land in the
         // slot the order gave it, not tie with a neighbour.
         test('setLayerOrder ranks agree with a later per-layer rank', () => {
             const adapter = makeAdapter()
@@ -368,7 +368,7 @@ test.describe('DeckGLAdapter', () => {
             adapter.addLayer(makeLayer('c'))
             adapter.setLayerOrder(['a', 'b', 'c'])
             adapter.addLayer(makeLayer('b'))
-            adapter.setLayerZIndex('b', 3 + 1 - 1)
+            adapter.setLayerZIndex('b', 3)
             expect(adapter.getLayers().map((l) => l.id)).toEqual(['c', 'b', 'a'])
         })
     })
