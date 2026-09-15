@@ -241,8 +241,10 @@ export function resolveListedDays(
 
 /**
  * The instants a layer's listed entries name, one per distinct entry,
- * ascending. An entry that carries a time of day names that instant exactly.
- * A bare date names a span — a day, a month or a year — and its instant is
+ * ascending. An entry given down to the second names an exact instant, and
+ * its instant is that value as written — precise beyond the second, as a
+ * fractional-second entry is, changes nothing. Anything coarser — a bare
+ * minute, hour, day, month or year — names a span instead, and its instant is
  * the span's last one: the current time is the trailing edge of a layer's
  * query window, so a stop at the span's first instant would close the window
  * before the span's data fell inside it.
@@ -253,13 +255,16 @@ export function resolveListedInstants(
     return distinctAscending(
         parseListedEntries(time).map((entry) => {
             const format = String(entry.creationData().format ?? '')
-            if (format.includes('HH')) return entry.valueOf()
-            const unit =
-                format.includes('D') || format.includes('E')
-                    ? 'day'
-                    : format.includes('MM')
-                    ? 'month'
-                    : 'year'
+            if (format.includes('ss')) return entry.valueOf()
+            const unit = format.includes('mm')
+                ? 'minute'
+                : format.includes('HH')
+                ? 'hour'
+                : format.includes('D') || format.includes('E')
+                ? 'day'
+                : format.includes('MM')
+                ? 'month'
+                : 'year'
             return entry.endOf(unit).valueOf()
         })
     )

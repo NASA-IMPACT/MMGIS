@@ -103,30 +103,29 @@ describe('resolveLayerNavigation', () => {
         ])
     })
 
-    test('stops on the instant itself when an entry carries a time', () => {
+    test('stops on the instant itself once an entry gives seconds', () => {
         const nav = resolve({
             enabled: true,
-            dataDates: [
-                '2026-09-09T13:35:56Z',
-                '2026-09-09T12:55:48.035905536Z',
-                '2020-03-04T14',
-            ],
+            dataDates: ['2026-09-09T13:35:56Z', '2026-09-09T12:55:48.035905536Z'],
         })
 
         expect(iso(nav?.stops)).toEqual([
-            '2020-03-04T14:00:00.000Z',
             '2026-09-09T12:55:48.035Z',
             '2026-09-09T13:35:56.000Z',
         ])
     })
 
-    test('stops on the last instant of a bare month or year', () => {
+    test('stops on the last instant of a bare hour, minute, month or year', () => {
+        // Each of these names a span, not an exact instant — no different
+        // from a bare day — so the stop closes it rather than opening it.
         const nav = resolve({
             enabled: true,
-            dataDates: ['2020-03', '2021'],
+            dataDates: ['2020-03-04T14', '2020-03-04T14:30', '2020-03', '2021'],
         })
 
         expect(iso(nav?.stops)).toEqual([
+            '2020-03-04T14:30:59.999Z',
+            '2020-03-04T14:59:59.999Z',
             '2020-03-31T23:59:59.999Z',
             '2021-12-31T23:59:59.999Z',
         ])
