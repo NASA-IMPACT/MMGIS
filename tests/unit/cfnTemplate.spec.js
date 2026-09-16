@@ -163,7 +163,7 @@ test.describe('renderCfnTemplate', () => {
         expect(template.Parameters).toBeUndefined()
     })
 
-    test('bakes the password into the Function code as a base64 constant', () => {
+    test('bakes the gate on and the password in as a base64 constant', () => {
         const body = renderCfnTemplate({ password: PASSWORD })
         const template = JSON.parse(body)
         const code =
@@ -171,7 +171,8 @@ test.describe('renderCfnTemplate', () => {
         const expected = Buffer.from(
             `${BASIC_AUTH_USER}:${PASSWORD}`
         ).toString('base64')
-        expect(code).toContain(`Basic ${expected}`)
+        expect(code).toContain('var REQUIRE_AUTH = true;')
+        expect(code).toContain(`var EXPECTED = 'Basic ${expected}';`)
         // The plaintext password never appears anywhere in the template
         expect(body).not.toContain(PASSWORD)
     })
@@ -244,22 +245,16 @@ test.describe('renderCfnTemplate', () => {
 
 // The shape an environment with dashboards_require_auth = false publishes.
 test.describe('renderCfnTemplate with requireAuth: false', () => {
-    // The invariant the whole flag rests on: the ungated function is the
-    // gated one with the marked span removed and nothing else touched. The
-    // cut here is line-based rather than the module's own regex, so a broken
-    // regex cannot agree with itself.
-    test('the ungated function is the gated one minus the marked span', () => {
-        const lines = renderAuthFunctionCode(PASSWORD).split('\n')
-        const start = lines.findIndex((l) => l.includes('MMGIS:AUTH-GATE-START'))
-        const end = lines.findIndex((l) => l.includes('MMGIS:AUTH-GATE-END'))
-        expect(start).toBeGreaterThanOrEqual(0)
-        expect(end).toBeGreaterThan(start)
-
-        const cut = lines
-            .slice(0, start)
-            .concat(lines.slice(end + 1))
-            .join('\n')
-        expect(renderAuthFunctionCode(null, false)).toBe(cut)
+    // What the flag does to the shipped body: the gate condition is flipped
+    // to false and the credential is left empty, so the 401 branch is both
+    // unreachable and has nothing to match against. The source's own
+    // `= true` line must be gone, not merely joined by a second one.
+    test('the ungated function flips the gate off and carries no credential', () => {
+        const code = renderAuthFunctionCode(null, false)
+        expect(code).toContain('var REQUIRE_AUTH = false;')
+        expect(code).not.toContain('var REQUIRE_AUTH = true;')
+        expect(code).toContain("var EXPECTED = 'Basic ';")
+        expect(code).not.toContain('<BASE64_BASIC_CREDENTIALS>')
     })
 
     // The association is the thing an ungated dashboard could plausibly lose
@@ -288,49 +283,5 @@ test.describe('renderCfnTemplate with requireAuth: false', () => {
         expect(body).not.toContain(
             Buffer.from(`${BASIC_AUTH_USER}:${PASSWORD}`).toString('base64')
         )
-    })
-})
-
-// A source file whose markers stop bracketing the gate would otherwise ship
-// a Function still carrying the un-substituted credentials line. Both guards
-// need a doctored source, so the read is stubbed.
-test.describe('renderAuthFunctionCode refuses a broken gate span', () => {
-    const fs = require('fs')
-    const path = require('path')
-    const REAL_SOURCE = fs.readFileSync(
-        path.join(
-            __dirname,
-            '..',
-            '..',
-            'infrastructure',
-            'cloudfront-function.js'
-        ),
-        'utf8'
-    )
-
-    afterEach(() => {
-        vi.restoreAllMocks()
-    })
-
-    const withSource = (source) =>
-        vi.spyOn(fs, 'readFileSync').mockReturnValue(source)
-
-    test('throws when the markers are gone', () => {
-        withSource(
-            REAL_SOURCE.replace('// MMGIS:AUTH-GATE-START', '// gate starts')
-        )
-        expect(() => renderAuthFunctionCode(null, false)).toThrow(/markers/)
-    })
-
-    test('throws when the placeholder survives the cut', () => {
-        // An END marker moved up to just after START: the span matches, the
-        // cut removes only the marker lines, and the credentials line stays.
-        withSource(
-            REAL_SOURCE.replace(
-                '    // MMGIS:AUTH-GATE-START\n',
-                '    // MMGIS:AUTH-GATE-START\n    // MMGIS:AUTH-GATE-END\n'
-            )
-        )
-        expect(() => renderAuthFunctionCode(null, false)).toThrow(/survives/)
     })
 })

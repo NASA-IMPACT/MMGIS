@@ -195,7 +195,7 @@ variable "overwrite_demo_mission" {
 }
 
 variable "dashboards_require_auth" {
-  description = "Whether published dashboards sit behind the shared HTTP Basic password, baked into each dashboard's viewer-request CloudFront Function. Defaults to gating them; false publishes them open to anyone holding the URL."
+  description = "Whether published dashboards sit behind the shared HTTP Basic password. Every dashboard gets the same viewer-request CloudFront Function; this value is baked into it at publish as the boolean deciding whether the password check runs, and the password is baked in with it only where it does. Defaults to gating them; false publishes them open to anyone holding the URL."
   type        = bool
   default     = true
 }

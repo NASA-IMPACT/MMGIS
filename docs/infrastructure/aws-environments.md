@@ -93,7 +93,7 @@ The database password exists in exactly one place, so there is no second copy to
 
 ## Dashboard stacks: app-created, environment-namespaced
 
-When someone publishes a dashboard, the app — not Terraform — creates its resources (bucket, CloudFront distribution, and a viewer-request Function carrying the password gate unless the environment sets `dashboards_require_auth = false`) as one CloudFormation *stack*: a bundle of resources AWS creates and deletes as a unit. Terraform's only involvement is granting the tasks permission over stack and bucket names starting with `mmgis-<env>-dashboard-`.
+When someone publishes a dashboard, the app — not Terraform — creates its resources (bucket, CloudFront distribution, and a viewer-request Function whose password gate is on unless the environment sets `dashboards_require_auth = false`) as one CloudFormation *stack*: a bundle of resources AWS creates and deletes as a unit. Terraform's only involvement is granting the tasks permission over stack and bucket names starting with `mmgis-<env>-dashboard-`.
 
 That prefix is built independently in three places, and all three must stay character-identical:
 
@@ -107,7 +107,7 @@ One rule follows: **the environment name is capped at 11 characters.** CloudForm
 
 ## Gating dashboards behind a password
 
-`dashboards_require_auth` decides whether the dashboards an environment publishes sit behind the shared HTTP Basic password: when it is on, the publish task carries `mmgis/<env>/dashboards-password` and bakes it into each dashboard's viewer-request Function, and when it is off that Function ships with only its path-prefix handling and the dashboard is open to anyone holding the URL. What an open dashboard hands its visitors is the mission configuration baked into its bundle: every layer in the mission, the service URLs those layers read from, and — where the mission uses a Mapbox base map — the public Mapbox token stored with it. Development sets it `true`; production sets it `false`. The secret shell and its CI bootstrap slot exist in both environments either way — only the publish task's injection and the execution role's grant on it follow the flag — so turning the gate on in production is that one line plus a deploy.
+`dashboards_require_auth` decides whether the dashboards an environment publishes sit behind the shared HTTP Basic password. Every dashboard gets the same viewer-request Function; what the flag changes is a boolean baked into that Function at publish. When it is on, the publish task carries `mmgis/<env>/dashboards-password` and bakes it in alongside the boolean, so the Function demands the password. When it is off, the Function ships with the check switched off and no password in it at all, and the dashboard is open to anyone holding the URL. What an open dashboard hands its visitors is the mission configuration baked into its bundle: every layer in the mission, the service URLs those layers read from, and — where the mission uses a Mapbox base map — the public Mapbox token stored with it. Development sets it `true`; production sets it `false`. The secret shell and its CI bootstrap slot exist in both environments either way — only the publish task's injection and the execution role's grant on it follow the flag — so turning the gate on in production is that one line plus a deploy.
 
 ## Keeping the demo mission in sync at boot
 

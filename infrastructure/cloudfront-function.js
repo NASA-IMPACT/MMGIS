@@ -1,25 +1,28 @@
 /**
  * The per-dashboard path-prefix handler, with a password gate in front of
- * it where the environment asks for one. This file IS what gets deployed:
- * renderAuthFunctionCode() in scripts/lib/cfn-template.js reads it at
- * publish time, strips this header comment, and — gated — bakes
- * base64("mmgis:" + MMGIS_DASHBOARDS_PASSWORD) into the
- * <BASE64_BASIC_CREDENTIALS> placeholder. The password lives in the
- * function body and never in a CloudFormation Parameter, because
- * parameters show up in DescribeStacks — which the admin's Deployments
- * list reads on every load.
+ * it that runs only where the environment asks for one. This file IS what
+ * gets deployed, and what stands here is the gated shape: real ES5 that
+ * parses on its own, with REQUIRE_AUTH already true and only the credential
+ * left as a placeholder inside its string. renderAuthFunctionCode() in
+ * scripts/lib/cfn-template.js reads it at publish time, strips this header
+ * comment, flips REQUIRE_AUTH to false for an ungated environment, and
+ * substitutes <BASE64_BASIC_CREDENTIALS> with base64("mmgis:" +
+ * MMGIS_DASHBOARDS_PASSWORD) when gated, an empty string when not. The
+ * password lives in the function body and never in a CloudFormation
+ * Parameter, because parameters show up in DescribeStacks — which the
+ * admin's Deployments list reads on every load.
  *
- * The password gate is per-environment: everything between the
- * MMGIS:AUTH-GATE-START and MMGIS:AUTH-GATE-END markers is the gate, and
- * renderAuthFunctionCode() drops those lines when the environment publishes
- * dashboards ungated (Terraform's dashboards_require_auth = false, carried
- * to the publish task as MMGIS_DASHBOARDS_REQUIRE_AUTH). The rest of the
- * handler — the X-Forwarded-Prefix work — ships either way, so the Function
- * and its viewer-request association exist in every dashboard stack.
+ * The password gate is per-environment: REQUIRE_AUTH carries that
+ * environment's answer (Terraform's dashboards_require_auth, reaching the
+ * publish task as MMGIS_DASHBOARDS_REQUIRE_AUTH), and the gate runs only
+ * when it is true. The whole handler ships either way — same Function, same
+ * viewer-request association, in every dashboard stack — so an ungated
+ * dashboard carries the 401 branch as unreachable code and no credential
+ * for it to match against.
  *
  * What the handler does, in order:
  *   1. password gate — wrong or missing Authorization → 401, nothing else
- *      runs; omitted entirely in an ungated environment
+ *      runs; skipped entirely when REQUIRE_AUTH is false
  *   2. read and validate X-Forwarded-Prefix (see trust model below);
  *      a missing or malformed header means: change nothing
  *   3. bare-prefix entry URL → 302 to the trailing-slash form, query
@@ -31,7 +34,8 @@
  * CloudFront — so validating it is load-bearing, not hygiene.
  *
  * Stay ES5: the cloudfront-js-1.0 runtime has no let/const (use var), and
- * a unit test parses this body with espree at ES5 to keep it that way.
+ * unit tests parse both this file and the rendered body with espree at ES5
+ * to keep it that way.
  *
  * Encoding: CloudFront hands querystring values over still percent-encoded.
  * That is undocumented in prose, but AWS's own normalize-query-string-parameters
@@ -47,11 +51,11 @@
 function handler(event) {
     var request = event.request;
     var headers = request.headers;
-    // MMGIS:AUTH-GATE-START
+    var REQUIRE_AUTH = true;
     var EXPECTED = 'Basic <BASE64_BASIC_CREDENTIALS>';
     var auth =
         headers.authorization && headers.authorization.value;
-    if (auth !== EXPECTED) {
+    if (REQUIRE_AUTH && auth !== EXPECTED) {
         return {
             statusCode: 401,
             statusDescription: 'Unauthorized',
@@ -62,7 +66,6 @@ function handler(event) {
             }
         };
     }
-    // MMGIS:AUTH-GATE-END
     var prefix = null;
     var encodedPrefix = null;
     var declared =

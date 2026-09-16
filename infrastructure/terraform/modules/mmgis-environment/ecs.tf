@@ -88,9 +88,10 @@ locals {
     { name = "MMGIS_SHARED_ASSET_BUCKET", value = local.asset_bucket_name },
     # Namespaces the dashboard stacks this task creates (local.dashboard_prefix).
     { name = "MMGIS_ENVIRONMENT", value = var.environment },
-    # Whether each dashboard's CloudFront Function carries the Basic-auth
-    # gate. scripts/publish-static.js reads it and treats only the exact
-    # string "false" as off.
+    # Whether each dashboard's CloudFront Function runs its Basic-auth check,
+    # baked into the Function body as a boolean at publish.
+    # scripts/publish-static.js reads it and treats only the exact string
+    # "false" as off.
     { name = "MMGIS_DASHBOARDS_REQUIRE_AUTH", value = tostring(var.dashboards_require_auth) },
   ])
 }

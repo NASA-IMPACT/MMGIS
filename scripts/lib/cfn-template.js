@@ -12,8 +12,9 @@
  *
  * Whether dashboards are gated is a per-environment choice
  * (Terraform's dashboards_require_auth, reaching the publish task as
- * MMGIS_DASHBOARDS_REQUIRE_AUTH). Ungated, the Function ships without its
- * auth block; everything else about the stack is identical.
+ * MMGIS_DASHBOARDS_REQUIRE_AUTH). The Function itself is the same either
+ * way — a boolean baked into its body at publish decides whether the
+ * password check runs — and so is everything else about the stack.
  */
 
 const fs = require("fs");
@@ -35,13 +36,11 @@ const AUTH_FUNCTION_SOURCE_PATH = path.join(
 
 const BASIC_AUTH_CREDENTIALS_PLACEHOLDER = "<BASE64_BASIC_CREDENTIALS>";
 
-// The marked span of infrastructure/cloudfront-function.js holding the
-// Basic-auth gate — matched whole (marker lines included) so an ungated
-// render drops it and keeps the rest of the handler byte-for-byte. No `g`
-// flag on purpose: the replace below cuts the first marked span only, and
-// the source carries exactly one.
-const AUTH_GATE_BLOCK =
-  /^[ \t]*\/\/ MMGIS:AUTH-GATE-START[\s\S]*?^[ \t]*\/\/ MMGIS:AUTH-GATE-END[ \t]*\r?\n/m;
+// The source file is the deployable GATED shape — valid ES5 on its own —
+// so its gate boolean already reads true. An ungated render swaps this one
+// line for its false form and changes nothing else.
+const REQUIRE_AUTH_GATED_LINE = "var REQUIRE_AUTH = true;";
+const REQUIRE_AUTH_UNGATED_LINE = "var REQUIRE_AUTH = false;";
 
 // Basic-auth username paired with the shared password.
 const BASIC_AUTH_USER = "mmgis";
@@ -114,10 +113,12 @@ function stackNameForDeployment(deploymentId) {
  * function body) with its leading doc-comment header stripped. See that file
  * for what the function itself does (auth gate, X-Forwarded-Prefix handling).
  *
- * When gated, the <BASE64_BASIC_CREDENTIALS> placeholder is substituted with
- * base64("mmgis:" + password). Ungated, the marked auth-gate block is cut out
- * and the password is never read; the prefix handling that is the rest of the
- * function ships unchanged.
+ * The source is already the gated shape, so gating only substitutes
+ * <BASE64_BASIC_CREDENTIALS> with base64("mmgis:" + password). Ungating
+ * flips the source's `var REQUIRE_AUTH = true;` line to `false` — the value
+ * the Function's own gate condition reads — and leaves the credential empty,
+ * so an ungated dashboard ships nothing for its (unreachable) 401 branch to
+ * match against and the password is never read.
  *
  * Only requireAuth === false ungates. Every other value — undefined, null, 0,
  * "" — gates and so demands the password, because a caller that mangles the
@@ -128,42 +129,32 @@ function renderAuthFunctionCode(password, requireAuth = true) {
 
   const body = source.replace(/^\/\*[\s\S]*?\*\/\s*/, "").trimEnd();
 
-  if (requireAuth === false) {
-    if (!AUTH_GATE_BLOCK.test(body))
+  for (const required of [
+    REQUIRE_AUTH_GATED_LINE,
+    BASIC_AUTH_CREDENTIALS_PLACEHOLDER,
+  ])
+    if (body.indexOf(required) === -1)
       throw new Error(
-        `renderAuthFunctionCode: ${AUTH_FUNCTION_SOURCE_PATH} is missing the ` +
-          "MMGIS:AUTH-GATE-START/END markers — cannot render the function " +
-          "without its auth gate."
+        `renderAuthFunctionCode: ${AUTH_FUNCTION_SOURCE_PATH} is missing ` +
+          `'${required}' — cannot render the function.`
       );
-    const ungated = body.replace(AUTH_GATE_BLOCK, "");
-    // The placeholder lives inside the gate; surviving it means the markers
-    // no longer bracket the whole gate, and the credentials line would ship
-    // un-substituted.
-    if (ungated.indexOf(BASIC_AUTH_CREDENTIALS_PLACEHOLDER) !== -1)
-      throw new Error(
-        `renderAuthFunctionCode: ${BASIC_AUTH_CREDENTIALS_PLACEHOLDER} ` +
-          "survives outside the MMGIS:AUTH-GATE markers — the markers do not " +
-          "bracket the whole auth gate."
-      );
-    return ungated;
-  }
 
-  if (password == null || password === "")
+  const gated = requireAuth !== false;
+
+  if (gated && (password == null || password === ""))
     throw new Error(
       "renderAuthFunctionCode requires the shared dashboards password (MMGIS_DASHBOARDS_PASSWORD)"
     );
 
-  if (body.indexOf(BASIC_AUTH_CREDENTIALS_PLACEHOLDER) === -1)
-    throw new Error(
-      `renderAuthFunctionCode: ${AUTH_FUNCTION_SOURCE_PATH} is missing the ` +
-        `${BASIC_AUTH_CREDENTIALS_PLACEHOLDER} placeholder — cannot bake in ` +
-        "the shared password."
-    );
+  const expected = gated
+    ? Buffer.from(`${BASIC_AUTH_USER}:${password}`).toString("base64")
+    : "";
 
-  const expected = Buffer.from(`${BASIC_AUTH_USER}:${password}`).toString(
-    "base64"
-  );
-  return body.replace(BASIC_AUTH_CREDENTIALS_PLACEHOLDER, expected);
+  const withGate = gated
+    ? body
+    : body.replace(REQUIRE_AUTH_GATED_LINE, REQUIRE_AUTH_UNGATED_LINE);
+
+  return withGate.replace(BASIC_AUTH_CREDENTIALS_PLACEHOLDER, expected);
 }
 
 /**

@@ -937,13 +937,27 @@ test.describe('dashboard CloudFront Function behavior', () => {
         const espree = require('espree')
         expect(() => espree.parse(code, { ecmaVersion: 5 })).not.toThrow()
     })
+
+    // The reference file is the deployable GATED shape, so it parses on its
+    // own — its only placeholder sits inside a string literal. That keeps it
+    // readable as real code in an editor, and it is what lets the renderer
+    // ungate by flipping one boolean rather than rewriting the source.
+    test('the reference source file is ES5 on its own', () => {
+        const espree = require('espree')
+        const source = fs.readFileSync(
+            path.join(INFRA, 'cloudfront-function.js'),
+            'utf8'
+        )
+        expect(() => espree.parse(source, { ecmaVersion: 5 })).not.toThrow()
+        expect(source).toContain('var REQUIRE_AUTH = true;')
+    })
 })
 
-test.describe('dashboard CloudFront Function without the auth gate', () => {
+test.describe('dashboard CloudFront Function with the gate baked off', () => {
     // The ungated shape an environment with dashboards_require_auth = false
     // publishes. The Function still exists and still runs on viewer-request:
     // the prefix work is what a dashboard served under a path prefix depends
-    // on, and it is not part of the gate.
+    // on, and the baked boolean does not switch it off.
     const { renderAuthFunctionCode } = require('../../scripts/lib/cfn-template')
     const code = renderAuthFunctionCode(null, false)
     const handler = new Function(`${code}; return handler;`)()
@@ -958,12 +972,12 @@ test.describe('dashboard CloudFront Function without the auth gate', () => {
         },
     })
 
-    test('carries no credentials, no 401 branch and no placeholder', () => {
-        expect(code).not.toContain('EXPECTED')
-        expect(code).not.toContain('401')
-        expect(code).not.toContain('www-authenticate')
+    // The 401 branch still ships — baked off, it is dead code — so the thing
+    // worth asserting is that no credential ships with it.
+    test('carries the gate baked off and no credential', () => {
+        expect(code).toContain('var REQUIRE_AUTH = false;')
+        expect(code).toContain("var EXPECTED = 'Basic ';")
         expect(code).not.toContain('<BASE64_BASIC_CREDENTIALS>')
-        expect(code).not.toContain('MMGIS:AUTH-GATE')
     })
 
     test('an unauthenticated request is served, not challenged', () => {
