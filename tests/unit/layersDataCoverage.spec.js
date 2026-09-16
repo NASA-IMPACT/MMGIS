@@ -114,6 +114,7 @@ describe('L_.assessLayerDataCoverage', () => {
         expect(L_.layers.dataCoverage['flood-uuid'].outOfDataRange).toBe(true)
 
         layer.time.start = '2020-03-04T14:00:00Z'
+        layer.time.end = '2020-03-04T14:30:00Z'
         expect(L_.assessLayerDataCoverage(layer)).toBe(true)
         expect(L_.layers.dataCoverage['flood-uuid'].outOfDataRange).toBe(false)
     })
@@ -136,6 +137,7 @@ describe('L_.assessLayerDataCoverage', () => {
         expect(L_.layers.coverageHidden['flood-uuid']).toBe(true)
 
         layer.time.start = '2020-03-04T14:00:00Z'
+        layer.time.end = '2020-03-04T14:30:00Z'
         L_.assessLayerDataCoverage(layer)
         expect(L_.layers.coverageHidden['flood-uuid']).toBeUndefined()
     })
