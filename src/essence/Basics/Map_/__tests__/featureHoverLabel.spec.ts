@@ -79,6 +79,50 @@ describe('resolveFeatureHoverLabel', () => {
         ).toBeNull()
     })
 
+    test('a point layer of plain records has no properties to name', () => {
+        const layers = { s: { type: 'ScatterplotLayer', variables: { useKeyAsName: ['name'] } } }
+        expect(
+            resolveFeatureHoverLabel(
+                { layerId: 's', feature: { name: 'Lafayette', coordinates: [0, 0] } },
+                layers,
+                deps,
+            ),
+        ).toBeNull()
+    })
+
+    test('raster and 3D layers never show a naming label', () => {
+        for (const type of ['TileLayer', 'BitmapLayer', 'Tile3DLayer', 'tile']) {
+            expect(
+                resolveFeatureHoverLabel(
+                    { layerId: 'r', feature: feature({ name: 'x' }) },
+                    { r: { type } },
+                    deps,
+                ),
+            ).toBeNull()
+        }
+    })
+
+    test('a vector feature whose properties are missing shows nothing', () => {
+        expect(
+            resolveFeatureHoverLabel(
+                { layerId: 'v', feature: { type: 'Feature', geometry: null } },
+                { v: { type: 'GeoJsonLayer' } },
+                deps,
+            ),
+        ).toBeNull()
+    })
+
+    test('empty Property slots do not count as configured on a vector tile layer', () => {
+        const layers = { t: { type: 'MVTLayer', variables: { useKeyAsName: [null, ''] }, style: {} } }
+        expect(
+            resolveFeatureHoverLabel(
+                { layerId: 't', feature: feature({ name: 'Johnson' }) },
+                layers,
+                deps,
+            ),
+        ).toBeNull()
+    })
+
     test('hovering off every feature clears the label', () => {
         expect(resolveFeatureHoverLabel({ feature: null }, {}, deps)).toBeNull()
     })

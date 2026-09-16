@@ -420,14 +420,23 @@ let Map_ = {
                 engineType !== MAP_ENGINE.LEAFLET &&
                 typeof engine.onFeatureHover === 'function'
             ) {
+                // The callback fires on every pointer move, feature or not.
+                // Hiding only when leaving a labelled feature, as Leaflet's
+                // mouseout does, leaves other tools' messages in that box alone.
+                let labelShown = false
                 const offHover = engine.onFeatureHover((info) => {
                     const label = resolveFeatureHoverLabel(
                         info,
                         L_.layers.data,
                         { getNamePropVal: L_.getLayersChosenNamePropVal }
                     )
-                    if (label == null) CursorInfo.hide(true)
-                    else CursorInfo.update(label, null, false)
+                    if (label != null) {
+                        CursorInfo.update(label, null, false)
+                        labelShown = true
+                    } else if (labelShown) {
+                        CursorInfo.hide(true)
+                        labelShown = false
+                    }
                 })
                 if (typeof offHover === 'function')
                     _providerCleanups.push(offHover)
@@ -2137,19 +2146,17 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
 
             L.DomEvent.stop(e)
         })
-        .on(
-            'mouseover',
-            (function (vtKey) {
-                return function (e, a, b, c) {
-                    if (vtKey != null)
-                        CursorInfo.update(
-                            vtKey + ': ' + e.layer.properties[vtKey],
-                            null,
-                            false
-                        )
-                }
-            })(layerObj.style.vtKey)
-        )
+        .on('mouseover', function (e) {
+            const label = resolveFeatureHoverLabel(
+                {
+                    layerId: layerObj.name,
+                    feature: { type: 'Feature', properties: e.layer.properties },
+                },
+                L_.layers.data,
+                { getNamePropVal: L_.getLayersChosenNamePropVal }
+            )
+            if (label != null) CursorInfo.update(label, null, false)
+        })
         .on('mouseout', function () {
             CursorInfo.hide()
         })

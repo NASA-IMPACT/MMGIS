@@ -1,3 +1,5 @@
+import { parseNamingProperties } from '../Layers_/namingProperty'
+
 /**
  * A feature pick reported by a map engine adapter.
  */
@@ -5,6 +7,13 @@ export interface FeaturePick {
     feature?: Record<string, any> | null
     layerId?: string
 }
+
+/**
+ * GeoJSON layer types, which Leaflet has always given a hover label. Other
+ * types reach the hover callback too — raster tiles, 3D tiles, and point
+ * layers of plain records — but carry no feature properties to name.
+ */
+const VECTOR_TYPES = new Set(['vector', 'query', 'GeoJsonLayer'])
 
 /**
  * Layer types served by makeVectorTileLayer. They carry their own
@@ -44,21 +53,22 @@ export const resolveFeatureHoverLabel = (
     const feature = pick?.feature
 
     if (!layerName || !feature) return null
+    if (feature.properties == null || typeof feature.properties !== 'object')
+        return null
 
     const config = layersData?.[layerName]
     if (!config) return null
 
-    const configured = config.variables?.useKeyAsName
-    const hasConfigured = Array.isArray(configured)
-        ? configured.some((p: unknown) => typeof p === 'string' && p !== '')
-        : typeof configured === 'string' && configured !== ''
+    const isVectorTile = VECTOR_TILE_TYPES.has(config.type)
+    if (!isVectorTile && !VECTOR_TYPES.has(config.type)) return null
 
-    if (hasConfigured) return deps.getNamePropVal(feature, layerName)
+    if (parseNamingProperties(config.variables?.useKeyAsName).length > 0)
+        return deps.getNamePropVal(feature, layerName)
 
-    if (VECTOR_TILE_TYPES.has(config.type)) {
+    if (isVectorTile) {
         const vtKey = config.style?.vtKey
         if (!vtKey) return null
-        const value = feature.properties?.[vtKey]
+        const value = feature.properties[vtKey]
         return value == null ? null : `${vtKey}: ${value}`
     }
 
