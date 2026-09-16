@@ -862,7 +862,7 @@
             {
               "field": "properties",
               "name": "Properties (JSON)",
-              "description": "Filterable metadata used by the LayerFilter plugin, e.g. { \"key\": \"aqs-pm25\", \"pollutant\": [\"PM2.5\"] }. `key` is the stable id catalogue entries use to reference this layer. Other keys are the layer.properties keys the LayerFilter plugin matches on.",
+              "description": "Extra metadata for the layer, used for filtering.",
               "type": "json",
               "width": 12,
               "height": "240px"
