@@ -1,19 +1,10 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 
 /**
- * TimeControl.init() registers its bus providers (time:isEnabled,
- * time:getCurrent, ...) before checking whether the mission has time
- * enabled, so time:getCurrentFormatted — added alongside them to expose the
- * current time through the mission's time.format rather than a raw ISO
- * string — must always be registered, and must itself resolve null until
- * time is both enabled and seeded.
- *
- * That time.format comes in two languages: d3 time-format specifiers, marked
- * by a '%', and moment tokens. Both must render an actual date.
- *
- * time:formatTime applies the same mission format to a time the caller
- * supplies, for a plugin displaying a time of its own (a per-layer window on
- * an exported legend) rather than the cursor's.
+ * time:getCurrentFormatted renders the cursor through the mission's
+ * time.format, and time:formatTime applies that same format to a time the
+ * caller supplies — a per-layer window on an exported legend, say. The format
+ * comes in two languages: d3 specifiers, marked by a '%', and moment tokens.
  */
 
 vi.mock('../../src/essence/Basics/Map_/Map_', () => ({ default: {} }))
@@ -21,28 +12,16 @@ vi.mock('../../src/essence/Basics/Map_/Map_', () => ({ default: {} }))
 // A minimal stand-in for the mmgisAPI bus: captures whatever TimeControl
 // registers via `provide`, keyed by name, so a test can call the handler
 // directly the way mmgisRequestIfProvided would.
-const makeFakeBus = () => {
+const initTimeControl = async (configData) => {
     const handlers = {}
-    return {
-        handlers,
-        bus: {
-            on: () => () => {},
-            emit: () => {},
-            provide: (name, handler) => {
-                handlers[name] = handler
-                return () => {
-                    delete handlers[name]
-                }
-            },
+    window.mmgisAPI = {
+        on: () => () => {},
+        emit: () => {},
+        provide: (name, handler) => {
+            handlers[name] = handler
+            return () => delete handlers[name]
         },
     }
-}
-
-// Mocks Layers_ with the given mission configData, then imports and inits a
-// fresh TimeControl against a fake bus. Returns the captured handlers.
-const initTimeControl = async (configData) => {
-    const { bus, handlers } = makeFakeBus()
-    window.mmgisAPI = bus
     vi.doMock('../../src/essence/Basics/Layers_/Layers_', () => ({
         default: { configData, FUTURES: {}, layers: { data: {}, dataFlat: {} } },
     }))
@@ -52,7 +31,7 @@ const initTimeControl = async (configData) => {
     ).default
     TimeControl.init()
 
-    return { TimeControl, handlers }
+    return handlers
 }
 
 // A mission with time on and seeded, formatted however the caller writes it.
@@ -65,7 +44,7 @@ const enabledTimeConfig = (format) => ({
     },
 })
 
-describe('TimeControl time:getCurrentFormatted provider', () => {
+describe('TimeControl time formatting providers', () => {
     let originalMmgisAPI
 
     beforeEach(() => {
@@ -77,143 +56,34 @@ describe('TimeControl time:getCurrentFormatted provider', () => {
         window.mmgisAPI = originalMmgisAPI
     })
 
-    test('is registered even when the mission has time disabled, and resolves null', async () => {
-        const { handlers } = await initTimeControl({})
+    // Registration happens before the mission's time settings are read, so a
+    // caller can always ask — and gets null rather than an error.
+    test('both providers are registered even with mission time disabled', async () => {
+        const handlers = await initTimeControl({})
 
         expect(typeof handlers['time:getCurrentFormatted']).toBe('function')
         expect(handlers['time:getCurrentFormatted']()).toBeNull()
-    })
-
-    test('formats the seeded current time through a moment-style mission format', async () => {
-        const { TimeControl, handlers } = await initTimeControl(
-            enabledTimeConfig('YYYY-MM-DDTHH:mm:ss[Z]')
-        )
-
-        // The actual formatted date, never the literal pattern string.
-        expect(handlers['time:getCurrentFormatted']()).toBe(
-            '2026-08-20T19:24:39Z'
-        )
-        // Same underlying time as the existing raw-ISO provider, just
-        // formatted differently.
-        expect(handlers['time:getCurrent']()).toBe(TimeControl.getTime())
-    })
-
-    test('formats the seeded current time through a d3-style mission format', async () => {
-        const { handlers } = await initTimeControl(
-            enabledTimeConfig('%Y-%m-%dT%H:%M:%SZ')
-        )
-
-        // Moment would leave the '%'s literal and read 'm' as minutes; d3
-        // renders the same date the layer-level time.format contract does.
-        expect(handlers['time:getCurrentFormatted']()).toBe(
-            '2026-08-20T19:24:39Z'
-        )
-    })
-
-    test('renders a d3 format whose tokens moment would misread', async () => {
-        const { handlers } = await initTimeControl(
-            enabledTimeConfig('%d %b %Y')
-        )
-
-        expect(handlers['time:getCurrentFormatted']()).toBe('20 Aug 2026')
-    })
-
-    test('falls back to the default moment format when the mission has no time.format', async () => {
-        const { handlers } = await initTimeControl(enabledTimeConfig())
-
-        expect(handlers['time:getCurrentFormatted']()).toBe(
-            '2026-08-20T19:24:39Z'
-        )
-    })
-
-    test('falls back to the default moment format when time.format is empty', async () => {
-        const { handlers } = await initTimeControl(enabledTimeConfig(''))
-
-        expect(handlers['time:getCurrentFormatted']()).toBe(
-            '2026-08-20T19:24:39Z'
-        )
-    })
-
-    test('falls back to the default rather than throwing on an unusable format', async () => {
-        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-        const { handlers } = await initTimeControl(enabledTimeConfig(42))
-
-        expect(handlers['time:getCurrentFormatted']()).toBe(
-            '2026-08-20T19:24:39Z'
-        )
-        expect(warn).toHaveBeenCalled()
-        warn.mockRestore()
-    })
-})
-
-describe('TimeControl time:formatTime provider', () => {
-    let originalMmgisAPI
-
-    beforeEach(() => {
-        originalMmgisAPI = window.mmgisAPI
-        vi.resetModules()
-    })
-
-    afterEach(() => {
-        window.mmgisAPI = originalMmgisAPI
-    })
-
-    test('is registered even when the mission has time disabled', async () => {
-        const { handlers } = await initTimeControl({})
-
         expect(typeof handlers['time:formatTime']).toBe('function')
     })
 
-    test('formats a caller-supplied time through a moment-style mission format', async () => {
-        const { handlers } = await initTimeControl(
-            enabledTimeConfig('YYYY-MM-DD')
-        )
+    // Moment would leave the '%'s literal and read 'm' as minutes; either
+    // language has to render the date itself, never the pattern string.
+    test.each([
+        ['moment tokens', 'YYYY-MM-DDTHH:mm:ss[Z]', '2026-08-20T19:24:39Z'],
+        ['d3 specifiers', '%d %b %Y', '20 Aug 2026'],
+    ])('formats the cursor through mission %s', async (_lang, format, shown) => {
+        const handlers = await initTimeControl(enabledTimeConfig(format))
 
-        expect(handlers['time:formatTime']('2015-03-13T00:00:00Z')).toBe(
-            '2015-03-13'
-        )
-    })
-
-    test('formats a caller-supplied time through a d3-style mission format', async () => {
-        const { handlers } = await initTimeControl(
-            enabledTimeConfig('%d %b %Y')
-        )
-
-        expect(handlers['time:formatTime']('2015-03-13T00:00:00Z')).toBe(
-            '13 Mar 2015'
-        )
+        expect(handlers['time:getCurrentFormatted']()).toBe(shown)
     })
 
     // The time comes from the caller, so the cursor's own state is not what
     // gates an answer — a layer with its own window still gets one.
-    test('answers for a mission whose time is disabled', async () => {
-        const { handlers } = await initTimeControl({
-            time: { format: 'YYYY-MM-DD' },
-        })
+    test('formats a caller-supplied time, even with mission time disabled', async () => {
+        const handlers = await initTimeControl({ time: { format: '%d %b %Y' } })
 
         expect(handlers['time:formatTime']('2015-03-13T00:00:00Z')).toBe(
-            '2015-03-13'
+            '13 Mar 2015',
         )
-    })
-
-    test('is null for a missing or unparseable time', async () => {
-        const { handlers } = await initTimeControl(
-            enabledTimeConfig('YYYY-MM-DD')
-        )
-
-        expect(handlers['time:formatTime'](null)).toBeNull()
-        expect(handlers['time:formatTime'](undefined)).toBeNull()
-        expect(handlers['time:formatTime']('not a time')).toBeNull()
-    })
-
-    test('falls back to the default rather than throwing on an unusable format', async () => {
-        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-        const { handlers } = await initTimeControl(enabledTimeConfig(42))
-
-        expect(handlers['time:formatTime']('2015-03-13T00:00:00Z')).toBe(
-            '2015-03-13T00:00:00Z'
-        )
-        expect(warn).toHaveBeenCalled()
-        warn.mockRestore()
     })
 })

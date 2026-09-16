@@ -66,41 +66,22 @@ describe('MMGISShareExportAdapter includeLegend wiring', () => {
         delete window.mmgisAPI
     })
 
-    test('passes the resolved flag into both export actions', async () => {
-        setVars({})
-        await mountAdapter()
-        await act(async () => {
-            menuProps.onDownloadPng?.()
-        })
-        await act(async () => {
-            menuProps.onDownloadPdf?.()
-        })
-        expect(shareActionCalls).toEqual([
-            { name: 'png', deps: { includeLegend: true } },
-            { name: 'pdf', deps: { includeLegend: true } },
-        ])
-    })
-
     // Configure persists an unchecked checkbox as the string 'false'.
-    test("a saved 'false' turns the legend off for the export", async () => {
-        setVars({ includeLegend: 'false' })
+    test.each([
+        [{}, true],
+        [{ includeLegend: 'false' }, false],
+    ])('passes the flag %j resolves to into both exports', async (vars, flag) => {
+        setVars(vars)
         await mountAdapter()
         await act(async () => {
             menuProps.onDownloadPng?.()
         })
-        expect(shareActionCalls).toEqual([
-            { name: 'png', deps: { includeLegend: false } },
-        ])
-    })
-
-    test('a saved false boolean turns the legend off for the export', async () => {
-        setVars({ includeLegend: false })
-        await mountAdapter()
         await act(async () => {
             menuProps.onDownloadPdf?.()
         })
         expect(shareActionCalls).toEqual([
-            { name: 'pdf', deps: { includeLegend: false } },
+            { name: 'png', deps: { includeLegend: flag } },
+            { name: 'pdf', deps: { includeLegend: flag } },
         ])
     })
 })

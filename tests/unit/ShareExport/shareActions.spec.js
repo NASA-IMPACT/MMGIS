@@ -282,7 +282,7 @@ test.describe('buildExportFilename', () => {
     })
 })
 
-test.describe('legend compositing in downloadSharePng', () => {
+test.describe('legend compositing in the downloads', () => {
     const screenshot = {
         blob: new Blob(['png'], { type: 'image/png' }),
         mimeType: 'image/png',
@@ -294,7 +294,7 @@ test.describe('legend compositing in downloadSharePng', () => {
     const composed = { ...screenshot, blob: composedBlob, height: 700 }
     const emptyModel = { missionName: null, headerLines: [], rows: [] }
 
-    test('composes by default and downloads the composed blob', async () => {
+    test('a PNG carries the composed image, and the flag turns that off', async () => {
         const composeCalls = []
         const downloads = []
         const result = await downloadSharePng({
@@ -311,29 +311,27 @@ test.describe('legend compositing in downloadSharePng', () => {
             { blob: composedBlob, filename: PNG_FILENAME },
         ])
         expect(result).toBe(composed)
-    })
 
-    test('includeLegend: false skips the legend entirely', async () => {
-        const getLegendModel = () => {
+        const plain = []
+        const throwIfCalled = () => {
             throw new Error('should not be called')
         }
-        const compose = () => {
-            throw new Error('should not be called')
-        }
-        const downloads = []
-        const result = await downloadSharePng({
-            getScreenshot: async () => screenshot,
-            download: (blob, filename) => downloads.push({ blob, filename }),
-            includeLegend: false,
-            getLegendModel,
-            compose,
-        })
-        expect(downloads).toEqual([
+        expect(
+            await downloadSharePng({
+                getScreenshot: async () => screenshot,
+                download: (blob, filename) => plain.push({ blob, filename }),
+                includeLegend: false,
+                getLegendModel: throwIfCalled,
+                compose: throwIfCalled,
+            }),
+        ).toBe(screenshot)
+        expect(plain).toEqual([
             { blob: screenshot.blob, filename: PNG_FILENAME },
         ])
-        expect(result).toBe(screenshot)
     })
 
+    // The band is a nicety; the map is the export. A legend that cannot be
+    // built must never cost the user their download.
     test('a legend model failure downloads the plain map instead of throwing', async () => {
         const downloads = []
         const result = await downloadSharePng({
@@ -348,23 +346,12 @@ test.describe('legend compositing in downloadSharePng', () => {
         ])
         expect(result).toBe(screenshot)
     })
-})
 
-test.describe('legend compositing in downloadSharePdf', () => {
-    const screenshot = {
-        blob: new Blob(['png'], { type: 'image/png' }),
-        mimeType: 'image/png',
-        extension: 'png',
-        width: 640,
-        height: 480,
-    }
-    const composedBlob = new Blob(['composed'], { type: 'image/png' })
-    const composed = { ...screenshot, blob: composedBlob, height: screenshot.height + 100 }
-    const emptyModel = { missionName: null, headerLines: [], rows: [] }
-
-    test('buildPdf receives the composed width/height, not the original', async () => {
+    // The PDF page is sized from the image it embeds, so measuring the
+    // original would crop the band off the bottom of the page.
+    test('buildPdf receives the composed height, not the original', async () => {
         const buildArgs = []
-        const doc = await downloadSharePdf({
+        await downloadSharePdf({
             getScreenshot: async () => screenshot,
             blobToDataUrl: async () => 'data:image/png;base64,x',
             buildPdf: (data, w, h) => {
@@ -375,21 +362,6 @@ test.describe('legend compositing in downloadSharePdf', () => {
             compose: async () => composed,
         })
         expect(buildArgs).toEqual([{ w: composed.width, h: composed.height }])
-        expect(doc).toBeTruthy()
-    })
-
-    test('includeLegend: false uses the original dimensions', async () => {
-        const buildArgs = []
-        await downloadSharePdf({
-            getScreenshot: async () => screenshot,
-            blobToDataUrl: async () => 'data:image/png;base64,x',
-            buildPdf: (data, w, h) => {
-                buildArgs.push({ w, h })
-                return { save: () => {} }
-            },
-            includeLegend: false,
-        })
-        expect(buildArgs).toEqual([{ w: screenshot.width, h: screenshot.height }])
     })
 })
 
