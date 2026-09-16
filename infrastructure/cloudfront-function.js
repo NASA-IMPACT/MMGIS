@@ -1,24 +1,34 @@
 /**
- * The per-dashboard password gate + path-prefix handler. This file IS what
- * gets deployed: renderAuthFunctionCode() in scripts/lib/cfn-template.js
- * reads it at publish time, strips this header comment, and bakes
+ * The per-dashboard path-prefix handler, with a password gate in front of
+ * it where the environment asks for one. This file IS what gets deployed:
+ * renderAuthFunctionCode() in scripts/lib/cfn-template.js reads it at
+ * publish time, strips this header comment, and — gated — bakes
  * base64("mmgis:" + MMGIS_DASHBOARDS_PASSWORD) into the
  * <BASE64_BASIC_CREDENTIALS> placeholder. The password lives in the
  * function body and never in a CloudFormation Parameter, because
  * parameters show up in DescribeStacks — which the admin's Deployments
  * list reads on every load.
  *
+ * The password gate is per-environment: everything between the
+ * MMGIS:AUTH-GATE-START and MMGIS:AUTH-GATE-END markers is the gate, and
+ * renderAuthFunctionCode() drops those lines when the environment publishes
+ * dashboards ungated (Terraform's dashboards_require_auth = false, carried
+ * to the publish task as MMGIS_DASHBOARDS_REQUIRE_AUTH). The rest of the
+ * handler — the X-Forwarded-Prefix work — ships either way, so the Function
+ * and its viewer-request association exist in every dashboard stack.
+ *
  * What the handler does, in order:
- *   1. password gate — wrong or missing Authorization → 401, nothing else runs
+ *   1. password gate — wrong or missing Authorization → 401, nothing else
+ *      runs; omitted entirely in an ungated environment
  *   2. read and validate X-Forwarded-Prefix (see trust model below);
  *      a missing or malformed header means: change nothing
  *   3. bare-prefix entry URL → 302 to the trailing-slash form, query
  *      string carried along (unsafe characters escaped, see below)
  *   4. prefixed request → strip the prefix so the S3 lookup is prefix-blind
  *
- * Trust model: the header is unauthenticated input. Anyone holding the
- * shared password can send it straight to this distribution, bypassing any
- * fronting CloudFront — so validating it is load-bearing, not hygiene.
+ * Trust model: the header is unauthenticated input. Anyone who can reach
+ * this distribution can send it straight here, bypassing any fronting
+ * CloudFront — so validating it is load-bearing, not hygiene.
  *
  * Stay ES5: the cloudfront-js-1.0 runtime has no let/const (use var), and
  * a unit test parses this body with espree at ES5 to keep it that way.
@@ -36,8 +46,9 @@
  */
 function handler(event) {
     var request = event.request;
-    var EXPECTED = 'Basic <BASE64_BASIC_CREDENTIALS>';
     var headers = request.headers;
+    // MMGIS:AUTH-GATE-START
+    var EXPECTED = 'Basic <BASE64_BASIC_CREDENTIALS>';
     var auth =
         headers.authorization && headers.authorization.value;
     if (auth !== EXPECTED) {
@@ -51,6 +62,7 @@ function handler(event) {
             }
         };
     }
+    // MMGIS:AUTH-GATE-END
     var prefix = null;
     var encodedPrefix = null;
     var declared =

@@ -2,15 +2,15 @@ import { test, expect } from 'vitest'
 
 // Tests for the lean deployment's AWS recipes in infrastructure/.
 // These cover both static checks on the recipes and the runtime behavior of
-// the rendered password-gate Function: every JSON file must parse, the IAM must stay
-// least-privilege (no `Resource: "*"` except the unscopeable
+// the rendered viewer-request Function: every JSON file must parse, the IAM
+// must stay least-privilege (no `Resource: "*"` except the unscopeable
 // ecr:GetAuthorizationToken, dashboard grants pinned to the
 // mmgis-dashboard-* prefix, PassRole for both publish roles), the task
 // definitions must carry every env var the publish flow's code actually
 // reads (publish-only vars like MMGIS_DASHBOARDS_PASSWORD on the publish
-// task, the rest on the admin task), and the password-gate Function
-// renders correctly from infrastructure/cloudfront-function.js via the
-// generator in scripts/lib/cfn-template.js.
+// task, the rest on the admin task), and the Function renders correctly from
+// infrastructure/cloudfront-function.js via the generator in
+// scripts/lib/cfn-template.js — in both the gated and the ungated shape.
 
 const fs = require('fs')
 const path = require('path')
@@ -206,6 +206,29 @@ test.describe('infrastructure/ recipes (JSON and Terraform)', () => {
         ).toBeGreaterThanOrEqual(9)
     })
 
+    test('production publishes dashboards ungated and development gated (policy lock)', () => {
+        // Which environment gates is a decision, not an implementation
+        // detail — this pins the two roots' answers so neither flips by
+        // accident. That the flag then reaches the publish task is the
+        // task-definition cross-check below.
+        //
+        // Each pattern is anchored to the start of a line (allowing only
+        // indentation) and ends at the end of one: a commented-out
+        // assignment starts with '#', so it can never satisfy the lock, and
+        // neither can the same words inside a comment's prose.
+        const readEnvRoot = (env) =>
+            fs.readFileSync(
+                path.join(INFRA, 'terraform', 'environments', env, 'main.tf'),
+                'utf8'
+            )
+        expect(readEnvRoot('production')).toMatch(
+            /^\s*dashboards_require_auth\s*=\s*false\s*$/m
+        )
+        expect(readEnvRoot('development')).toMatch(
+            /^\s*dashboards_require_auth\s*=\s*true\s*$/m
+        )
+    })
+
     test('admin task role can complete inline DeleteStack teardown', () => {
         // The DELETE handler calls DeleteStack with no CloudFormation
         // service role, so CloudFormation deletes the dashboard's S3 bucket
@@ -275,7 +298,10 @@ test.describe('infrastructure/ recipes (JSON and Terraform)', () => {
         // Vars only the publish-side code (scripts/publish-static.js and the
         // template renderer it calls) reads. They ride the PUBLISH task
         // definition; the admin task deliberately does not carry them.
-        const PUBLISH_ONLY = ['MMGIS_DASHBOARDS_PASSWORD']
+        const PUBLISH_ONLY = [
+            'MMGIS_DASHBOARDS_PASSWORD',
+            'MMGIS_DASHBOARDS_REQUIRE_AUTH',
+        ]
 
         const wanted = new Set()
         const pattern =
@@ -294,7 +320,7 @@ test.describe('infrastructure/ recipes (JSON and Terraform)', () => {
             }
         }
         // Sanity: the grep found the publish-flow configuration set.
-        expect(wanted.size).toBeGreaterThanOrEqual(8)
+        expect(wanted.size).toBeGreaterThanOrEqual(9)
 
         function providedBy(taskDefFile) {
             const container = readJson(taskDefFile).containerDefinitions[0]
@@ -908,6 +934,55 @@ test.describe('dashboard CloudFront Function behavior', () => {
         // A real parse rather than a keyword-blocklist regex: it also
         // catches ES6+ shapes a regex would miss (classes, for-of/for-const,
         // spread, shorthand methods) and needs no upkeep as the source grows.
+        const espree = require('espree')
+        expect(() => espree.parse(code, { ecmaVersion: 5 })).not.toThrow()
+    })
+})
+
+test.describe('dashboard CloudFront Function without the auth gate', () => {
+    // The ungated shape an environment with dashboards_require_auth = false
+    // publishes. The Function still exists and still runs on viewer-request:
+    // the prefix work is what a dashboard served under a path prefix depends
+    // on, and it is not part of the gate.
+    const { renderAuthFunctionCode } = require('../../scripts/lib/cfn-template')
+    const code = renderAuthFunctionCode(null, false)
+    const handler = new Function(`${code}; return handler;`)()
+
+    const makeEvent = (uri, prefix) => ({
+        request: {
+            method: 'GET',
+            uri,
+            querystring: {},
+            headers:
+                prefix != null ? { 'x-forwarded-prefix': { value: prefix } } : {},
+        },
+    })
+
+    test('carries no credentials, no 401 branch and no placeholder', () => {
+        expect(code).not.toContain('EXPECTED')
+        expect(code).not.toContain('401')
+        expect(code).not.toContain('www-authenticate')
+        expect(code).not.toContain('<BASE64_BASIC_CREDENTIALS>')
+        expect(code).not.toContain('MMGIS:AUTH-GATE')
+    })
+
+    test('an unauthenticated request is served, not challenged', () => {
+        const result = handler(makeEvent('/build/x.js'))
+        expect(result.statusCode).toBeUndefined()
+        expect(result.uri).toBe('/build/x.js')
+    })
+
+    test('prefix handling is unaffected', () => {
+        expect(handler(makeEvent('/d/v/build/x.js', '/d/v')).uri).toBe(
+            '/build/x.js'
+        )
+        expect(handler(makeEvent('/d/v/', '/d/v')).uri).toBe('/index.html')
+        const redirect = handler(makeEvent('/d/v', '/d/v'))
+        expect(redirect.statusCode).toBe(302)
+        expect(redirect.headers.location.value).toBe('/d/v/')
+    })
+
+    test('generated function body is ES5 only', () => {
         const espree = require('espree')
         expect(() => espree.parse(code, { ecmaVersion: 5 })).not.toThrow()
     })

@@ -84,7 +84,7 @@ The table describes **runtime dashboard behavior** and is variant-invariant. Bur
 | `get` | `/api/configure/get` | Bake | Mission config baked into `STATIC_MISSION_CONFIG`. |
 | `get_generaloptions` | `/api/configure/getGeneralOptions` | Bake | General options baked at publish. |
 | `missions` | `/api/configure/missions` | Bake | One mission per dashboard; baked mission list. |
-| `login` | `/api/users/login` | Drop | Dashboards are anonymous read-only; CloudFront Function gates access. |
+| `login` | `/api/users/login` | Drop | Dashboards are anonymous read-only; any access gate is the CloudFront Function's, per environment. |
 | `signup` | `/api/users/signup` | Drop | No user management in dashboards. |
 | `logout` | `/api/users/logout` | Drop | No session to clear. |
 | `getbands` | `/api/utils/getbands` | Drop | Plain-`.tif` pixel queries; Identifier forces `trueValue=false` in static mode, falling back to legend-matched RGB. |
