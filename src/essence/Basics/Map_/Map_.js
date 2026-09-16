@@ -46,6 +46,7 @@ import {
     DeckGLAdapter,
 } from '../MapEngines/index'
 import { buildDeckLayer, buildDeckCOGLayer } from '../MapEngines/Adapters/DeckGLHelpers'
+import { resolveFeatureHoverLabel } from './featureHoverLabel'
 import MapComparison from './MapComparison'
 
 import GeoRasterLayer from '../../../external/georaster-layer-for-leaflet/georaster-layer-for-leaflet.ts'
@@ -410,6 +411,35 @@ let Map_ = {
                     window.mmgisAPI.emit('map:featureClick', info)
                 )
                 if (typeof off === 'function') _providerCleanups.push(off)
+            }
+
+            // Hover labels. Leaflet binds mouseover per feature while building
+            // a GeoJSON layer, which engines that pick their own features
+            // never do, so they resolve the label here instead.
+            if (
+                engineType !== MAP_ENGINE.LEAFLET &&
+                typeof engine.onFeatureHover === 'function'
+            ) {
+                // The callback fires on every pointer move, feature or not.
+                // Hiding only when leaving a labelled feature, as Leaflet's
+                // mouseout does, leaves other tools' messages in that box alone.
+                let labelShown = false
+                const offHover = engine.onFeatureHover((info) => {
+                    const label = resolveFeatureHoverLabel(
+                        info,
+                        L_.layers.data,
+                        { getNamePropVal: L_.getLayersChosenNamePropVal }
+                    )
+                    if (label != null) {
+                        CursorInfo.update(label, null, false)
+                        labelShown = true
+                    } else if (labelShown) {
+                        CursorInfo.hide(true)
+                        labelShown = false
+                    }
+                })
+                if (typeof offHover === 'function')
+                    _providerCleanups.push(offHover)
             }
         }
 
@@ -1112,9 +1142,13 @@ async function makeLayer(
 //Default is onclick show full properties and onhover show 1st property
 Map_.onEachFeatureDefault = onEachFeatureDefault
 function onEachFeatureDefault(feature, layer) {
-    const pv = L_.getLayersChosenNamePropVal(feature, layer)
+    const nameEntries = L_.getLayersChosenNameEntries(feature, layer)
+    const pv = L_.nameEntriesToPropVal(nameEntries)
 
-    layer['useKeyAsName'] = Object.keys(pv)[0]
+    // The property, not the key shown beside the value: consumers of
+    // useKeyAsName look the value up on the feature again, which a display
+    // label cannot do.
+    layer['useKeyAsName'] = nameEntries[0]?.prop
     if (
         layer.hasOwnProperty('options') &&
         layer.options.hasOwnProperty('layerName')
@@ -1978,21 +2012,6 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
             interactive: true,
             nativeOptions: {
                 autoHighlight: layerObj.style?.hoverHighlight === true,
-                onHover: (info) => {
-                    const properties = info?.object?.properties
-                    const vtKey = layerObj.style?.vtKey
-
-                    if (properties == null || vtKey == null || properties[vtKey] == null) {
-                        CursorInfo.hide(true)
-                        return
-                    }
-
-                    CursorInfo.update(
-                        vtKey + ': ' + properties[vtKey],
-                        null,
-                        false
-                    )
-                },
             },
         })
         L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
@@ -2140,19 +2159,17 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
 
             L.DomEvent.stop(e)
         })
-        .on(
-            'mouseover',
-            (function (vtKey) {
-                return function (e, a, b, c) {
-                    if (vtKey != null)
-                        CursorInfo.update(
-                            vtKey + ': ' + e.layer.properties[vtKey],
-                            null,
-                            false
-                        )
-                }
-            })(layerObj.style.vtKey)
-        )
+        .on('mouseover', function (e) {
+            const label = resolveFeatureHoverLabel(
+                {
+                    layerId: layerObj.name,
+                    feature: { type: 'Feature', properties: e.layer.properties },
+                },
+                L_.layers.data,
+                { getNamePropVal: L_.getLayersChosenNamePropVal }
+            )
+            if (label != null) CursorInfo.update(label, null, false)
+        })
         .on('mouseout', function () {
             CursorInfo.hide()
         })

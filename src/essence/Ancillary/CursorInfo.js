@@ -14,6 +14,15 @@ var CursorInfo = {
     forcedPos: false,
     _lockTimeout: null,
     _locked: false,
+    // Mission-wide colours from the look configuration. Null, or a blank
+    // entry, leaves the built-in colour in place.
+    _defaults: { background: null, color: null },
+    setDefaults: function (defaults) {
+        CursorInfo._defaults = {
+            background: defaults?.background || null,
+            color: defaults?.color || null,
+        }
+    },
     //Creates that div and adds the mousemove event so it follows the cursor
     init: function () {
         CursorInfo.cursorInfoDiv = $('<div>')
@@ -95,11 +104,12 @@ var CursorInfo = {
         CursorInfo.cursorInfoDiv
             .css('background-color', function () {
                 if (forceColor != null) return forceColor
-                return isError ? '#cd0437' : 'var(--color-a)'
+                if (isError) return '#cd0437'
+                return CursorInfo._defaults.background || 'var(--color-a)'
             })
             .css('color', function () {
                 if (forceFontColor != null) return forceFontColor
-                return '#DCDCDC'
+                return CursorInfo._defaults.color || '#DCDCDC'
             })
             .css('border', function () {
                 return isError || withBorder

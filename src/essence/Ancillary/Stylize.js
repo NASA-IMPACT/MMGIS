@@ -4,8 +4,17 @@
 import $ from 'jquery'
 import L_ from '../Basics/Layers_/Layers_'
 import F_ from '../Basics/Formulae_/Formulae_'
+import CursorInfo from './CursorInfo'
 
 export function stylize() {
+    // The cursor readout repaints itself on every message, so its colours are
+    // handed to it as defaults rather than set on the element. Applied even
+    // with no look section, so a mission swap never keeps the last one's.
+    CursorInfo.setDefaults({
+        background: L_.configData.look?.hovercolor,
+        color: L_.configData.look?.hovertextcolor,
+    })
+
     if (L_.configData.look) {
         if (L_.configData.look.pagename && L_.configData.look.pagename != '')
             document.title = L_.configData.look.pagename + ' - ' + L_.mission

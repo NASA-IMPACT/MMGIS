@@ -652,7 +652,7 @@
         {
           "name": "Interface",
           "subname": "Hover Feature Label",
-          "subdescription": "The property key whose value should be the hover text of each feature. If left unset, the hover key and value will be the first one listed in the feature's properties.",
+          "subdescription": "The property keys whose values should be the hover text of each feature. Add a display label after a pipe to show something other than the property name, e.g. 'density_rank|Density Rank'. If left unset, the hover key and value will be the first one listed in the feature's properties.",
           "components": [
             {
               "new": true,

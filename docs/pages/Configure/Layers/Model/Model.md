@@ -154,7 +154,7 @@ Vector Layer Raw Variables
 
 ```json
 {
-  "useKeyAsName": "propKey || [propKey1, propKey2, ...]",
+  "useKeyAsName": "propKey || propKey|Display Label || [propKey1, propKey2|Label 2, ...]",
   "markerAttachments": {
     "model": {
       "pathProp": "images.0.url",

@@ -14,6 +14,7 @@ import calls from '../../../pre/calls'
 import tippy from 'tippy.js'
 import Dropy from '../../../external/Dropy/dropy'
 import { parseTimeWithOffset } from './timeUtils'
+import { parseNamingProperties } from '../Layers_/namingProperty'
 
 import { TempusDominus, Namespace } from '@eonasdan/tempus-dominus'
 import '@eonasdan/tempus-dominus/dist/css/tempus-dominus.css'
@@ -1801,8 +1802,7 @@ const TimeUI = {
                 feature.feature.id ||
                 F_.getIn(
                     feature.feature.properties,
-                    L_.layers.data[feature.layer.options.layerName]?.variables
-                        ?.useKeyAsName
+                    namingPropOf(feature.layer.options.layerName)
                 ) ||
                 feature.feature.properties.name ||
                 null,
@@ -2505,7 +2505,7 @@ const TimeUI = {
                         sublayer.feature.id ||
                         F_.getIn(
                             sublayer.feature.properties,
-                            L_.layers.data[layerName]?.variables?.useKeyAsName
+                            namingPropOf(layerName)
                         ) ||
                         sublayer.feature.properties.name
 
@@ -3458,6 +3458,14 @@ function interfaceWithMMWebGIS() {
         //Clear it
         tools.empty()
     }
+}
+
+// The first property a layer names its features by, or undefined. A display
+// label is dropped, since this is read back off the feature to identify it.
+function namingPropOf(layerName) {
+    return parseNamingProperties(
+        L_.layers.data[layerName]?.variables?.useKeyAsName
+    )[0]?.prop
 }
 
 export default TimeUI
