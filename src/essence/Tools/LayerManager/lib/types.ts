@@ -37,8 +37,8 @@ export type CoverageSpan = {
 }
 
 /**
- * Whether the host is holding a layer back for lack of data in the window it
- * would request, and the declared coverage that decided it. `outOfDataRange`
+ * Whether the host is holding a layer back for lack of data at the current
+ * time, and the declared coverage that decided it. `outOfDataRange`
  * is only ever true for a time-enabled layer that declares coverage; `kind`
  * is null for any other.
  */
@@ -48,7 +48,7 @@ export type DataCoverage = {
   kind: 'continuous' | 'sparse' | null
   /** Sparse: one span per listed entry, ordered by start. Continuous: one. */
   spans: CoverageSpan[] | null
-  /** The window the layer would request; the instant asked for is its end. */
+  /** The window the layer would request; the verdict tests its end. */
   requestedWindow: CoverageSpan | null
 }
 
