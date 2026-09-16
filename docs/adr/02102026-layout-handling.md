@@ -333,8 +333,8 @@ makeTool: function(name, idx) {
 
   // Check if tool is already active
   if (PanelManager_.isActive(name)) {
-    // Toggle visibility or bring to front
-    PanelManager_.togglePanel(name);
+    // Collapse it
+    mmgisAPI.request('panels:hide', { panelId: name });
   } else {
     // Make new tool (first time opening)
     tool.make(this);

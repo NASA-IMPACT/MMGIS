@@ -16,6 +16,26 @@ export type MapScreenshotResult = {
     height: number
 }
 
+/** The subset of a mission layer config that plugins read off the bus. */
+export type LayerConfig = {
+    name?: string
+    display_name?: string
+    time?: {
+        enabled?: boolean
+        /** As authored: a concrete ISO datetime or a policy string ("now",
+         *  "now - P1D"). A periodic layer may also carry an `interval`
+         *  cadence, already folded into the resolved extent. Ask
+         *  mmgisGetTemporalExtents for the dates. */
+        dataStartTime?: string
+        dataEndTime?: string
+        // The days a sparse layer holds data on, when it holds data on a
+        // scattered few rather than continuously across its extent.
+        dataDates?: string[] | string
+        [key: string]: unknown
+    }
+    [key: string]: unknown
+}
+
 export type ViewState = {
     missionName: string | null
     time: string | null
@@ -50,6 +70,12 @@ export const mmgisProvide = (name: string, handler: (...args: unknown[]) => unkn
     return window.mmgisAPI.provide(name, handler)
 }
 
+/**
+ * Whether this core build registers a handler under `name` — not whether it
+ * currently has anything to serve. The panel and plugin providers register at
+ * module scope, so their names read true with no layout mounted; a command's
+ * own `layout-inactive` refusal is what reports that.
+ */
 export const mmgisHasHandler = (name: string): boolean => {
     return window.mmgisAPI?.hasHandler?.(name) === true
 }
@@ -85,6 +111,409 @@ export const mmgisGetMapScreenshot = (): Promise<
 /** View metadata (mission, time, center, zoom); fields null until loaded. */
 export const mmgisGetViewState = (): Promise<ViewState | null> => {
     return mmgisRequestIfProvided<ViewState>('map:getViewState')
+}
+
+/**
+ * Every layer's config, keyed by layer UUID. Core registers this handler in
+ * Layers_.fina(), after the mission's layers load and after tools mount, so
+ * drive the call with useMMGISHandlerReady rather than requesting at mount.
+ */
+export const mmgisGetLayerConfigs = (): Promise<Record<
+    string,
+    LayerConfig
+> | null> => {
+    return mmgisRequestIfProvided<Record<string, LayerConfig>>(
+        'layers:getAllConfigs',
+    )
+}
+
+/** Per-layer visibility, keyed by layer UUID. Registered as late as
+ *  mmgisGetLayerConfigs; the same readiness caveat applies. */
+export const mmgisGetVisibleLayers = (): Promise<Record<
+    string,
+    boolean
+> | null> => {
+    return mmgisRequestIfProvided<Record<string, boolean>>('layers:getVisible')
+}
+
+/** Runtime "shown in layer lists" flags, keyed by layer UUID; absent =
+ *  listed, false = hidden (e.g. filtered out by the LayerFilter plugin). */
+export const mmgisGetListedLayers = (): Promise<Record<
+    string,
+    boolean
+> | null> => {
+    return mmgisRequestIfProvided<Record<string, boolean>>('layers:getListed')
+}
+
+/**
+ * What a layer's COG colormap supports: `hasColormap` for whether there is a
+ * ramp to draw a legend from, `canChangeColormap` for whether that ramp can be
+ * changed (via `layers:updateConfig` + `layers:refresh`). An `image` layer
+ * has the first without the second.
+ */
+export type CogCapabilities = {
+    hasColormap: boolean
+    canChangeColormap: boolean
+}
+
+/**
+ * COG capabilities for every layer, keyed by layer UUID.
+ *
+ * Registered as late as mmgisGetLayerConfigs; the same readiness caveat
+ * applies. Null against a core that does not register the handler, in which
+ * case callers leave the colormap controls out.
+ */
+export const mmgisGetCogCapabilities = (): Promise<Record<
+    string,
+    CogCapabilities
+> | null> => {
+    return mmgisRequestIfProvided<Record<string, CogCapabilities>>(
+        'layers:getCogCapabilities',
+    )
+}
+
+/**
+ * COG capabilities for one layer. Core resolves a display name to its UUID,
+ * so callers holding either identifier get the same answer — unlike indexing
+ * the bulk map, which is UUID-keyed.
+ *
+ * Null when the layer is unknown, or against a core without the handler.
+ */
+export const mmgisGetLayerCogCapabilities = (
+    layerUUID: string,
+): Promise<CogCapabilities | null> => {
+    return mmgisRequestIfProvided<CogCapabilities>(
+        'layers:getCogCapabilities',
+        layerUUID,
+    )
+}
+
+/** The unit a listed Data Dates entry names; nothing finer than the hour. */
+export type CoverageUnit = 'year' | 'month' | 'day' | 'hour'
+
+/**
+ * A span of time, epoch milliseconds. An open bound is -Infinity / Infinity.
+ * A span from a listed entry also carries that entry's `unit` and its `at`
+ * timestamp — the entry as written, any part left out filled with its start
+ * — which is where navigation moves the timeline to. An extent's span
+ * carries neither.
+ */
+export type CoverageSpan = {
+    start: number
+    end: number
+    at?: number
+    unit?: CoverageUnit
+}
+
+/**
+ * Whether core is suppressing a layer's requests for lack of data in the
+ * window it would request, and the declared coverage that decided it.
+ * Complete on purpose: a consumer renders this without a second lookup.
+ */
+export type LayerDataCoverage = {
+    outOfDataRange: boolean
+    /** 'sparse' from listed times, 'continuous' from an extent, null when never gated. */
+    kind: 'continuous' | 'sparse' | null
+    /**
+     * What the gate tests against. Sparse: one span per listed entry, each
+     * covering the whole unit it names, ordered by start. Continuous: one
+     * span across the extent.
+     */
+    spans: CoverageSpan[] | null
+    requestedWindow: CoverageSpan | null
+}
+
+/** The wire shape of 'layers:dataCoverageChanged'. */
+export type LayerDataCoverageChange = LayerDataCoverage & { layerName: string }
+
+/**
+ * Data coverage for every layer, keyed by layer UUID.
+ *
+ * Registered as late as mmgisGetLayerConfigs; the same readiness caveat
+ * applies. Null against a core that does not register the handler, in which
+ * case callers fall back to treating every layer as unconstrained.
+ */
+export const mmgisGetDataCoverage = (): Promise<Record<
+    string,
+    LayerDataCoverage
+> | null> => {
+    return mmgisRequestIfProvided<Record<string, LayerDataCoverage>>(
+        'layers:getDataCoverage',
+    )
+}
+
+/**
+ * Data coverage for one layer. Core resolves a display name to its UUID, so
+ * callers holding either identifier get the same answer — unlike indexing
+ * the bulk map, which is UUID-keyed.
+ *
+ * Null when the layer is unknown, or against a core without the handler.
+ */
+export const mmgisGetLayerDataCoverage = (
+    layerUUID: string,
+): Promise<LayerDataCoverage | null> => {
+    return mmgisRequestIfProvided<LayerDataCoverage>(
+        'layers:getDataCoverage',
+        layerUUID,
+    )
+}
+
+/** When a layer has data, as ISO datetimes; null where unset or unreadable. */
+export type TemporalExtent = {
+    start: string | null
+    end: string | null
+}
+
+/**
+ * Temporal extent for every layer, keyed by layer UUID, resolved by core at
+ * the moment of asking. Null against a core without the handler.
+ */
+export const mmgisGetTemporalExtents = (): Promise<Record<
+    string,
+    TemporalExtent
+> | null> => {
+    return mmgisRequestIfProvided<Record<string, TemporalExtent>>(
+        'layers:getTemporalExtent',
+    )
+}
+
+/** Temporal extent for one layer, by UUID or display name. */
+export const mmgisGetLayerTemporalExtent = (
+    layerUUID: string,
+): Promise<TemporalExtent | null> => {
+    return mmgisRequestIfProvided<TemporalExtent>(
+        'layers:getTemporalExtent',
+        layerUUID,
+    )
+}
+
+/** Follow a layer's coverage state as the time window moves. */
+export const mmgisOnDataCoverageChanged = (
+    handler: (change: LayerDataCoverageChange) => void,
+): EventCleanup =>
+    mmgisOn('layers:dataCoverageChanged', (payload) =>
+        handler(payload as LayerDataCoverageChange),
+    )
+
+/** A geographic extent as `[[south, west], [north, east]]`. */
+export type LayerBounds = [[number, number], [number, number]]
+
+/**
+ * Where a layer sits on the map.
+ *
+ * Null when the layer has no extent core can work out — a vector layer whose
+ * features have not loaded, a raster layer with no configured footprint — and
+ * null against a core that does not register the handler, in which case callers
+ * leave the controls that depend on an extent inert.
+ *
+ * Registered as late as mmgisGetLayerConfigs; the same readiness caveat applies.
+ */
+export const mmgisGetLayerBounds = (
+    layerUUID: string,
+): Promise<LayerBounds | null> => {
+    return mmgisRequestIfProvided<LayerBounds>('layers:getBounds', layerUUID)
+}
+
+/**
+ * Moves the map so the given extent fills the view. True when core accepted it;
+ * false against a core without the handler.
+ *
+ * `padding` is in screen pixels. `maxZoom` caps how far in the fit may go,
+ * which matters for a zero-area extent — a single point otherwise resolves to
+ * maximum zoom.
+ */
+export const mmgisFitBounds = async (
+    bounds: LayerBounds,
+    options?: { padding?: number; maxZoom?: number },
+): Promise<boolean> => {
+    const fitted = await mmgisRequestIfProvided<boolean>('map:fitBounds', {
+        bounds,
+        options,
+    })
+    return fitted === true
+}
+
+/**
+ * Where each layer's tiling service lives, keyed by layer UUID, already
+ * resolved through the per-layer and mission-wide overrides core applies. An
+ * entry is null when no service is reachable for that layer.
+ *
+ * Registered as late as mmgisGetLayerConfigs; the same readiness caveat
+ * applies. Null against a core without the handler, in which case callers
+ * have no service to reach.
+ */
+export const mmgisGetTiTilerUrls = (): Promise<Record<
+    string,
+    string | null
+> | null> => {
+    return mmgisRequestIfProvided<Record<string, string | null>>(
+        'layers:getTiTilerUrl',
+    )
+}
+
+/**
+ * Where the active mission's files are served from, e.g. `Missions/MSL/`.
+ * Uploads configured through the Configure page are stored as paths relative
+ * to this. Null before a mission loads, or against a core without the handler.
+ */
+export const mmgisGetMissionPath = (): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('app:getMissionPath')
+}
+
+/** Whether the mission has time enabled at all. */
+export const mmgisIsTimeEnabled = (): Promise<boolean | null> => {
+    return mmgisRequestIfProvided<boolean>('time:isEnabled')
+}
+
+export type PanelState = 'collapsed' | 'expanded' | 'iconified' | 'focused'
+export type PluginState = 'unloaded' | 'hidden' | 'visible'
+
+/**
+ * Every panel and plugin bus name this client speaks, and the only place they
+ * are written. `tests/unit/providers/busReconciliation.spec.js` checks each
+ * against the handlers core registers.
+ */
+export const PANEL_PLUGIN_BUS = {
+    getPanels: 'panels:getAll',
+    setPanelState: 'panels:setState',
+    showPanel: 'panels:show',
+    hidePanel: 'panels:hide',
+    getPlugins: 'plugins:getAll',
+    setPluginState: 'plugins:setState',
+    showPlugin: 'plugins:show',
+    hidePlugin: 'plugins:hide',
+} as const
+
+/**
+ * Events core broadcasts when the layout moves. Each payload carries the same
+ * listing its `getAll` request returns, so a subscriber has nothing to
+ * re-request.
+ */
+export const PANEL_PLUGIN_EVENTS = {
+    panelsChanged: 'panels:changed',
+    pluginsChanged: 'plugins:changed',
+} as const
+
+/** One panel in the layout, as much of it as a plugin needs to target it. */
+export type PanelInfo = {
+    id: string
+    position: string
+    state: PanelState
+    /** Tool ids the panel holds — how a plugin finds the panel it lives in. */
+    toolIds: string[]
+}
+
+export type PluginInfo = {
+    id: string
+    state: PluginState
+}
+
+/**
+ * Why a command was refused. `PanelManager_/types/layout.ts` carries core's
+ * copy of this list and defines each reason.
+ *
+ * `layout-inactive` covers two causes a caller cannot tell apart: a core with
+ * no layout currently mounted, reported by the providers, and a core too old
+ * to register the handler, synthesized below by `command`.
+ */
+export const COMMAND_REFUSAL_REASONS = [
+    'bad-request',
+    'not-found',
+    'state-not-allowed',
+    'no-visible-state',
+    'layout-inactive',
+    'load-failed',
+    'transition-failed',
+] as const
+export type CommandRefusalReason = (typeof COMMAND_REFUSAL_REASONS)[number]
+
+export type CommandResult =
+    | { ok: true; state: PanelState | PluginState; changed: boolean }
+    | { ok: false; reason: CommandRefusalReason }
+
+const UNREACHABLE: CommandResult = { ok: false, reason: 'layout-inactive' }
+
+/** Against a core too old to register the handler, synthesizes the same
+ *  layout-inactive result a current core reports for an inactive layout. */
+const command = async (name: string, params: unknown): Promise<CommandResult> => {
+    const result = await mmgisRequestIfProvided<CommandResult>(name, params)
+    return result ?? UNREACHABLE
+}
+
+/**
+ * Every panel in the layout, ordered by priority. Empty against a core with no
+ * layout or no handler — follow state with the `panels:changed` event rather
+ * than polling.
+ */
+export const mmgisGetPanels = async (): Promise<PanelInfo[]> => {
+    return (await mmgisRequestIfProvided<PanelInfo[]>(PANEL_PLUGIN_BUS.getPanels)) ?? []
+}
+
+/** Move a panel to a state. Naming the state makes repeats and retries safe. */
+export const mmgisSetPanelState = (panelId: string, state: PanelState): Promise<CommandResult> =>
+    command(PANEL_PLUGIN_BUS.setPanelState, { panelId, state })
+
+/** Restore a collapsed panel to the state it last held. */
+export const mmgisShowPanel = (panelId: string): Promise<CommandResult> =>
+    command(PANEL_PLUGIN_BUS.showPanel, { panelId })
+
+/** Collapse a panel without destroying its contents. */
+export const mmgisHidePanel = (panelId: string): Promise<CommandResult> =>
+    command(PANEL_PLUGIN_BUS.hidePanel, { panelId })
+
+/** Every plugin known to the layout and its lifecycle state. */
+export const mmgisGetPlugins = async (): Promise<PluginInfo[]> => {
+    return (await mmgisRequestIfProvided<PluginInfo[]>(PANEL_PLUGIN_BUS.getPlugins)) ?? []
+}
+
+/** Move a plugin to a lifecycle state, loading it first if that is required. */
+export const mmgisSetPluginState = (pluginId: string, state: PluginState): Promise<CommandResult> =>
+    command(PANEL_PLUGIN_BUS.setPluginState, { pluginId, state })
+
+/** Reveal a plugin, loading it first if it is unloaded. */
+export const mmgisShowPlugin = (pluginId: string): Promise<CommandResult> =>
+    command(PANEL_PLUGIN_BUS.showPlugin, { pluginId })
+
+/** Hide a plugin without destroying its instance or state. */
+export const mmgisHidePlugin = (pluginId: string): Promise<CommandResult> =>
+    command(PANEL_PLUGIN_BUS.hidePlugin, { pluginId })
+
+/** Subscribe to layout changes; the payload carries the full panel listing. */
+export const mmgisOnPanelsChanged = (
+    handler: (panels: PanelInfo[]) => void,
+): EventCleanup =>
+    mmgisOn(PANEL_PLUGIN_EVENTS.panelsChanged, (payload) =>
+        handler(((payload as { panels?: PanelInfo[] })?.panels) ?? []),
+    )
+
+/** Subscribe to plugin lifecycle changes; the payload carries every plugin. */
+export const mmgisOnPluginsChanged = (
+    handler: (plugins: PluginInfo[]) => void,
+): EventCleanup =>
+    mmgisOn(PANEL_PLUGIN_EVENTS.pluginsChanged, (payload) =>
+        handler(((payload as { plugins?: PluginInfo[] })?.plugins) ?? []),
+    )
+
+/**
+ * The time window's opening instant as an ISO string. Null both when core has
+ * no such handler and when the mission's timeline is enabled but not yet
+ * seeded, so callers that need to tell those apart ask mmgisIsTimeEnabled.
+ *
+ * TimeControl registers this during mission load, after tools can mount; drive
+ * the first call with useMMGISHandlerReady rather than requesting at mount.
+ */
+export const mmgisGetTimeStart = (): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('time:getStart')
+}
+
+/** The time window's closing instant; same null cases as mmgisGetTimeStart. */
+export const mmgisGetTimeEnd = (): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('time:getEnd')
+}
+
+/** Where the timeline currently sits; same null cases as mmgisGetTimeStart. */
+export const mmgisGetTimeCurrent = (): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('time:getCurrent')
 }
 
 /**

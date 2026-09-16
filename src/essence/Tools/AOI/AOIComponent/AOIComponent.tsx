@@ -30,8 +30,6 @@ export interface AOIComponentProps {
     isDrawing: boolean
     drawVerticesCount: number
     onDrawShapeChange: (shape: AOIShape) => void
-    onDrawConfirm: () => void
-    onDrawCancel: () => void
 
     uploadStatus: UploadStatus
     uploadError?: string
@@ -47,11 +45,14 @@ export interface AOIComponentProps {
     onClose: () => void
 }
 
+// `icon` names an .aoi-icon--* modifier, which masks the matching SVG exported
+// from the design. The glyph takes its color from the tab, so one file serves
+// the default, hover and selected states.
 const MODES: Array<{ id: AOIMode; label: string; icon: string }> = [
-    { id: 'search', label: 'Search', icon: 'magnify' },
-    { id: 'inspect', label: 'Inspect', icon: 'hand-pointing-up' },
-    { id: 'draw', label: 'Draw', icon: 'vector-polyline' },
-    { id: 'upload', label: 'Upload', icon: 'tray-arrow-up' },
+    { id: 'search', label: 'Search', icon: 'search' },
+    { id: 'inspect', label: 'Inspect', icon: 'inspect' },
+    { id: 'draw', label: 'Draw', icon: 'draw' },
+    { id: 'upload', label: 'Upload', icon: 'upload' },
 ]
 
 export function AOIComponent(props: AOIComponentProps) {
@@ -61,18 +62,21 @@ export function AOIComponent(props: AOIComponentProps) {
         <div className="aoi-tool" role="region" aria-label="Analyze areas">
             <header className="aoi-tool__header">
                 <div className="aoi-tool__title">
-                    <i className="mdi mdi-chart-bar aoi-tool__title-icon" aria-hidden="true" />
+                    <span
+                        className="aoi-icon aoi-icon--analyze aoi-tool__title-icon"
+                        aria-hidden="true"
+                    />
                     <span>Analyze areas</span>
                 </div>
-                <Button
-                    type="button"
-                    unstyled
-                    className="aoi-tool__close"
-                    onClick={props.onClose}
-                    aria-label="Close"
-                >
-                    <i className="mdi mdi-close" aria-hidden="true" />
-                </Button>
+                <div className="aoi-tool__header-actions">
+                    <button
+                        type="button"
+                        className="aoi-tool__exit"
+                        onClick={props.onClose}
+                    >
+                        EXIT
+                    </button>
+                </div>
             </header>
 
             {props.analysisError ? (
@@ -98,44 +102,46 @@ export function AOIComponent(props: AOIComponentProps) {
                 </div>
             ) : null}
 
-            {isAnalyzing ? (
-                <AnalyzingPanel
-                    label={props.analysisLabel || 'Area of interest'}
-                    done={props.analysisDone ?? 0}
-                    total={props.analysisTotal ?? 0}
-                />
-            ) : (
-                <>
-                    <nav className="aoi-tool__tabs" role="tablist" aria-label="AOI selection mode">
-                        {MODES.map((m) => (
-                            <button
-                                key={m.id}
-                                type="button"
-                                role="tab"
-                                aria-selected={props.mode === m.id}
-                                className={
-                                    'aoi-tool__tab' +
-                                    (props.mode === m.id ? ' aoi-tool__tab--active' : '')
-                                }
-                                onClick={() => props.onModeChange(m.id)}
-                            >
-                                <i
-                                    className={`mdi mdi-${m.icon} aoi-tool__tab-icon`}
-                                    aria-hidden="true"
-                                />
-                                <span className="aoi-tool__tab-label">{m.label}</span>
-                            </button>
-                        ))}
-                    </nav>
+            <div className="aoi-tool__content">
+                {isAnalyzing ? (
+                    <AnalyzingPanel
+                        label={props.analysisLabel || 'Area of interest'}
+                        done={props.analysisDone ?? 0}
+                        total={props.analysisTotal ?? 0}
+                    />
+                ) : (
+                    <>
+                        <nav className="aoi-tool__tabs" role="tablist" aria-label="AOI selection mode">
+                            {MODES.map((m) => (
+                                <button
+                                    key={m.id}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={props.mode === m.id}
+                                    className={
+                                        'aoi-tool__tab' +
+                                        (props.mode === m.id ? ' aoi-tool__tab--active' : '')
+                                    }
+                                    onClick={() => props.onModeChange(m.id)}
+                                >
+                                    <span
+                                        className={`aoi-icon aoi-icon--${m.icon}`}
+                                        aria-hidden="true"
+                                    />
+                                    <span className="aoi-tool__tab-label">{m.label}</span>
+                                </button>
+                            ))}
+                        </nav>
 
-                    <div className="aoi-tool__body" role="tabpanel">
-                        {props.mode === 'search' && <SearchPanel {...props} />}
-                        {props.mode === 'inspect' && <InspectPanel />}
-                        {props.mode === 'draw' && <DrawPanel {...props} />}
-                        {props.mode === 'upload' && <UploadPanel {...props} />}
-                    </div>
-                </>
-            )}
+                        <div className="aoi-tool__body" role="tabpanel">
+                            {props.mode === 'search' && <SearchPanel {...props} />}
+                            {props.mode === 'inspect' && <InspectPanel />}
+                            {props.mode === 'draw' && <DrawPanel {...props} />}
+                            {props.mode === 'upload' && <UploadPanel {...props} />}
+                        </div>
+                    </>
+                )}
+            </div>
         </div>
     )
 }
@@ -194,7 +200,10 @@ function SearchPanel(props: AOIComponentProps) {
                     disabled={inputDisabled}
                     onChange={(e) => props.onSearchQueryChange(e.target.value)}
                 />
-                <i className="mdi mdi-magnify aoi-search__icon" aria-hidden="true" />
+                <span
+                    className="aoi-icon aoi-icon--search aoi-search__icon"
+                    aria-hidden="true"
+                />
             </label>
 
             {props.searchLoading && (
@@ -290,51 +299,44 @@ function DrawShapePickerPanel(props: AOIComponentProps) {
     )
 }
 
-const MIN_VERTICES_BY_SHAPE: Record<AOIShape, number> = {
-    point: 1,
-    linestring: 2,
-    polygon: 3,
-    rectangle: 2,
-    circle: 2,
+// The finish gestures of polygon and line are inert until the shape has enough
+// vertices to close, so name them only from that vertex on.
+function vertexHint(count: number, min: number, finish: string): string {
+    return (
+        `Click on the map to add vertices. ${count} placed (need ${min}+). ` +
+        (count >= min ? `${finish} ` : '') +
+        'Esc to cancel.'
+    )
 }
 
-const HINT_BY_SHAPE: Record<AOIShape, (count: number, min: number) => string> = {
-    point: () => 'Click on the map to place the point.',
+// Two-click shapes (rectangle, circle) finish on their final click, so their
+// hints must not advertise Enter/double-click — only gestures that work.
+const HINT_BY_SHAPE: Record<AOIShape, (count: number) => string> = {
+    point: () => 'Click on the map to place the point. Esc to cancel.',
     linestring: (count) =>
-        `Click to add vertices. ${count} placed (need 2+). Double-click or Enter to finish.`,
-    polygon: (count, min) =>
-        `Click on the map to add vertices. ${count} placed (need ${min}+).`,
-    rectangle: () => 'Click two corners to define the rectangle.',
-    circle: () => 'Click the centre, then click the edge to define the circle.',
+        vertexHint(count, 2, 'Press Enter or double-click to finish.'),
+    polygon: (count) =>
+        vertexHint(
+            count,
+            3,
+            'Press Enter, double-click, or click the first vertex to finish.'
+        ),
+    rectangle: (count) =>
+        count < 1
+            ? 'Click the first corner of the rectangle. Esc to cancel.'
+            : 'Click the opposite corner to finish. Esc to cancel.',
+    circle: (count) =>
+        count < 1
+            ? 'Click the center of the circle. Esc to cancel.'
+            : 'Click the edge to set the radius and finish. Esc to cancel.',
 }
 
 function DrawInProgressPanel(props: AOIComponentProps) {
-    const shape = props.drawShape!
-    const minVertices = MIN_VERTICES_BY_SHAPE[shape]
-    const valid = props.drawVerticesCount >= minVertices
-    const hint = HINT_BY_SHAPE[shape](props.drawVerticesCount, minVertices)
+    const hint = HINT_BY_SHAPE[props.drawShape!](props.drawVerticesCount)
 
     return (
         <div className="aoi-panel aoi-panel--draw">
             <p className="aoi-panel__hint">{hint}</p>
-            <div className="aoi-draw__actions" role="group" aria-label="Drawing actions">
-                <Button
-                    type="button"
-                    className="aoi-draw__confirm"
-                    onClick={props.onDrawConfirm}
-                    disabled={!valid}
-                >
-                    Confirm
-                </Button>
-                <Button
-                    type="button"
-                    outline
-                    className="aoi-draw__cancel"
-                    onClick={props.onDrawCancel}
-                >
-                    Cancel
-                </Button>
-            </div>
         </div>
     )
 }
@@ -349,7 +351,6 @@ function UploadPanel(props: AOIComponentProps) {
 
             <Button
                 type="button"
-                outline
                 className="aoi-upload__button"
                 onClick={() => inputRef.current?.click()}
                 disabled={props.uploadStatus === 'parsing'}
@@ -374,7 +375,7 @@ function UploadPanel(props: AOIComponentProps) {
                 </Alert>
             )}
 
-            <p className="aoi-panel__hint aoi-panel__hint--secondary">
+            <p className="aoi-panel__hint">
                 Supported formats:
             </p>
             <ul className="aoi-upload__formats">

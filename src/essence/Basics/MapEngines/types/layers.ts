@@ -16,6 +16,21 @@ export interface LayerOptions {
     interactive?: boolean
     visible?: boolean
     style?: Record<string, unknown>
+    /**
+     * The layer's legend rows (`L_.layers.data[<layer>]._legend`). Rows flagged
+     * `styleMatching` double as a style specification, colouring each feature
+     * from one of its property values; see LegendStyle. With no legend, or none
+     * carrying such rows, the engine styles from `style` alone.
+     */
+    legend?: unknown
+    /**
+     * Whether the mission configures a legend at all, including one still
+     * being fetched. Distinct from `legend` above, which is the legend once it
+     * has arrived: a `legend:` CSV path routinely lands after the layer is
+     * built, and a vector tile layer has to know at build time — see the
+     * `vectortile` case in buildDeckLayer.
+     */
+    legendConfigured?: boolean
     metadata?: Record<string, unknown>
 }
 
@@ -40,6 +55,8 @@ export interface TileLayerOptions extends LayerOptions {
     maxNativeZoom?: number
     tileSize?: number
     tileElevation?: number
+    /** 'wms' => deck.gl WMSLayer; else a {z}/{x}/{y} url template. */
+    tileformat?: string
     nativeOptions?: Record<string, unknown>
 }
 
@@ -162,4 +179,21 @@ export interface OverlayOptions {
     id: string
     latlng: LatLngLike
     mount: (node: HTMLElement) => (() => void) | void
+}
+
+/**
+ * What a caller knows about a refresh, independent of engine. `url` is the
+ * *uncompiled* tile source URL — Leaflet recompiles per tile from
+ * `tileOptions`, deck.gl bakes them in with `compileTileUrl`. A refresher that
+ * derives its own URL (client-side COG) ignores both.
+ *
+ * `url` is nullable, not merely optional: a source that resolves to nothing —
+ * a `COG:` layer with no TiTiler service behind it — yields null, and callers
+ * pass it through so the refresher, not the call site, decides what to do
+ * with it. The domain-side refresher registered in `Map_.makeTileLayer` tests `ctx.url == null`.
+ */
+export type RefreshContext = {
+    url?: string | null
+    tileOptions?: Record<string, unknown>
+    force?: boolean
 }

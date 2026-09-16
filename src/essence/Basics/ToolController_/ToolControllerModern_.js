@@ -2,6 +2,7 @@ import PanelManager_ from '../PanelManager_/PanelManager_'
 import { toolModules } from '../../../pre/tools'
 import { generateToolMetadata } from './ToolMetadataUtils'
 import { createLogger } from '../Logger_/Logger_'
+import { mmgisAPI } from '../../mmgisAPI/mmgisAPI'
 
 const logger = createLogger('ToolControllerModern')
 
@@ -37,11 +38,14 @@ const deferredTools = new Map()
  * @returns {string|null} Panel ID if found, otherwise null
  */
 const _findPanel = (metadata, registeredPanels) => {
+    // A panel already at maxTools would throw on add, so it is not a candidate.
+    const canTake = p =>
+        PanelManager_.isToolCompatible(p.id, metadata) && PanelManager_.hasCapacity(p.id)
+
     // Try preferred position first if specified
     if (metadata.preferredPosition) {
         const preferredPanel = registeredPanels.find(p =>
-            p.config.position === metadata.preferredPosition &&
-            PanelManager_.isToolCompatible(p.id, metadata)
+            p.config.position === metadata.preferredPosition && canTake(p)
         )
 
         if (preferredPanel) {
@@ -51,9 +55,7 @@ const _findPanel = (metadata, registeredPanels) => {
     }
 
     // Fall back to any compatible panel
-    const compatiblePanel = registeredPanels.find(p =>
-        PanelManager_.isToolCompatible(p.id, metadata)
-    )
+    const compatiblePanel = registeredPanels.find(canTake)
 
     if (compatiblePanel) {
         logger.debug(`Assigning "${metadata.name}" to compatible panel "${compatiblePanel.id}"`)
@@ -174,6 +176,12 @@ const ToolControllerModern_ = {
     /**
      * Assign tools explicitly defined in panel configurations
      *
+     * A panel names its tools in two ordered lists: `pinnedTools`, which
+     * render in the panel's non-scrolling region, and `panelTools`, which
+     * render in the scrolling body below it. Pinned entries are assigned first
+     * so the pinned region keeps its configured order, and a tool named in both
+     * lists stays pinned rather than being placed twice.
+     *
      * @param {Array} registeredPanels - List of registered panels
      * @param {Function} getToolData - Function to get tool data by name or ID
      * @param {Set} assignedToolIds - Set to track assigned tool IDs
@@ -181,13 +189,25 @@ const ToolControllerModern_ = {
     assignExplicitTools: function (registeredPanels, getToolData, assignedToolIds) {
         registeredPanels.forEach(panelState => {
             const panelConfig = panelState.config
+            const pinnedTools = panelConfig.pinnedTools || []
             const panelTools = panelConfig.panelTools || []
 
-            if (panelTools.length > 0) {
-                logger.debug(`Explicit assignment for panel "${panelConfig.id}":`, panelTools)
+            if (pinnedTools.length > 0 && !PanelManager_.canPinTools(panelConfig.id)) {
+                logger.warn(
+                    `Panel "${panelConfig.id}" (${panelConfig.position}) has no pinned region — ` +
+                    `its pinned tools are assigned to the panel body instead`
+                )
             }
 
-            panelTools.forEach(toolIdentifier => {
+            if (pinnedTools.length > 0 || panelTools.length > 0) {
+                logger.debug(`Explicit assignment for panel "${panelConfig.id}":`, { pinnedTools, panelTools })
+            }
+
+            // Tool ids already placed in this panel, so a name in both lists
+            // keeps its first slot and is reported once.
+            const placedInPanel = new Set()
+
+            const assignToPanel = (toolIdentifier, pinned) => {
                 const toolData = getToolData(toolIdentifier)
 
                 if (!toolData) {
@@ -198,6 +218,13 @@ const ToolControllerModern_ = {
                 try {
                     const { metadata } = toolData
 
+                    // A tool named in both of a panel's lists belongs to the
+                    // list that claimed it first, which is the pinned one.
+                    if (placedInPanel.has(metadata.id)) {
+                        logger.warn(`Tool "${metadata.name}" is listed twice in panel "${panelConfig.id}" — keeping the first placement`)
+                        return
+                    }
+
                     // Check compatibility
                     if (!PanelManager_.isToolCompatible(panelConfig.id, metadata)) {
                         logger.warn(`Tool "${metadata.name}" is not compatible with panel "${panelConfig.id}"`)
@@ -205,12 +232,16 @@ const ToolControllerModern_ = {
                     }
 
                     // Add tool to panel
-                    PanelManager_.addToolToPanel(panelConfig.id, metadata)
+                    PanelManager_.addToolToPanel(panelConfig.id, metadata, { pinned })
+                    placedInPanel.add(metadata.id)
                     assignedToolIds.add(metadata.id)
                 } catch (error) {
                     logger.error(`Failed to add tool "${toolIdentifier}" to panel "${panelConfig.id}":`, error)
                 }
-            })
+            }
+
+            pinnedTools.forEach(toolIdentifier => assignToPanel(toolIdentifier, true))
+            panelTools.forEach(toolIdentifier => assignToPanel(toolIdentifier, false))
         })
     },
 
@@ -269,7 +300,7 @@ const ToolControllerModern_ = {
     /**
      * Assign tools to panels based on dashboard configuration
      * Tools are assigned in two passes:
-     * 1. Explicit assignment via panel.tools arrays
+     * 1. Explicit assignment via each panel's pinnedTools and panelTools arrays
      * 2. Fallback assignment for unassigned tools (if tool.on !== false)
      *
      * @param {Array} tools - Array of tool configurations from mission config
@@ -288,7 +319,7 @@ const ToolControllerModern_ = {
         logger.debug('Starting tool assignment...')
         logger.debug(`${tools.length} tools configured, ${registeredPanels.length} panels registered`)
 
-        // First pass: Assign tools based on panel.toolNames array
+        // First pass: Assign tools named by the panels themselves
         ToolControllerModern_.assignExplicitTools(registeredPanels, getToolData, assignedToolIds)
 
         // Second pass: Assign remaining tools to compatible panels (fallback)
@@ -445,6 +476,7 @@ const ToolControllerModern_ = {
      */
     destroyAllTools: function () {
         const targetIds = Array.from(loadedTools.keys())
+        const hadPlugins = toolIdToTargetId.size > 0 || deferredTools.size > 0
 
         logger.debug(`Destroying ${targetIds.length} loaded tools`)
 
@@ -454,6 +486,8 @@ const ToolControllerModern_ = {
 
         // Clear deferred registry (destroyTool already clears toolIdToTargetId and hiddenTools)
         deferredTools.clear()
+
+        if (hadPlugins) this.notifyPluginsChanged()
     },
 
     /**
@@ -644,7 +678,114 @@ const ToolControllerModern_ = {
      */
     isPluginHidden: function (pluginId) {
         return hiddenTools.has(pluginId) || deferredTools.has(pluginId)
-    }
+    },
+
+    /**
+     * A plugin's lifecycle state:
+     * - unloaded: registered but make() has not run; DOM container is empty
+     * - hidden:   loaded, instance and state intact, not visible
+     * - visible:  loaded and on screen
+     *
+     * @param {string} pluginId - Tool ID
+     * @returns {'unloaded'|'hidden'|'visible'|null} null when the id is unknown
+     */
+    getPluginState: function (pluginId) {
+        if (deferredTools.has(pluginId)) return 'unloaded'
+        if (!toolIdToTargetId.has(pluginId)) return null
+        return hiddenTools.has(pluginId) ? 'hidden' : 'visible'
+    },
+
+    /**
+     * Move a plugin to a lifecycle state, taking whatever intermediate steps the
+     * transition needs — asking for 'visible' on an unloaded plugin loads it.
+     * Idempotent: asking for the state a plugin already holds changes nothing.
+     *
+     * @param {string} pluginId - Tool ID
+     * @param {'unloaded'|'hidden'|'visible'} state - Target state
+     * @returns {object} { ok: true, state, changed } or { ok: false, reason }
+     */
+    setPluginState: function (pluginId, state) {
+        if (!['unloaded', 'hidden', 'visible'].includes(state)) {
+            return { ok: false, reason: 'bad-request' }
+        }
+
+        const current = this.getPluginState(pluginId)
+        if (current === null) return { ok: false, reason: 'not-found' }
+        if (current === state) return { ok: true, state, changed: false }
+
+        let succeeded = false
+        if (state === 'unloaded') {
+            succeeded = this.unloadPlugin(pluginId)
+        } else {
+            // Both 'hidden' and 'visible' require a loaded instance.
+            if (current === 'unloaded' && !this.loadPlugin(pluginId)) {
+                return { ok: false, reason: 'load-failed' }
+            }
+            succeeded = state === 'visible'
+                ? this.showPlugin(pluginId)
+                : this.hidePlugin(pluginId)
+        }
+
+        // getPluginState already resolved the plugin, so a mutator refusing it
+        // here means the lifecycle registries disagree about where it lives.
+        // That is this controller failing, not the caller naming a plugin that
+        // isn't there, and the reason has to say so or it sends a debugger
+        // looking for a typo in the id.
+        if (!succeeded) return { ok: false, reason: 'transition-failed' }
+
+        this.notifyPluginsChanged()
+        return { ok: true, state, changed: true }
+    },
+
+    /**
+     * Public projection of every known plugin: just id and state, stripped of
+     * the live `tools` map and other core references, so it clones cleanly
+     * across a sandbox postMessage boundary. Frozen on top of that so a
+     * subscriber holding a reference can't mutate core's plugin state.
+     *
+     * @returns {Array<{id: string, state: string}>}
+     */
+    listPlugins: function () {
+        const ids = new Set([...toolIdToTargetId.keys(), ...deferredTools.keys()])
+        return Object.freeze(
+            Array.from(ids).map((id) =>
+                Object.freeze({ id, state: this.getPluginState(id) })
+            )
+        )
+    },
+
+    /**
+     * Run a batch of queued load and register functions, then broadcast once.
+     *
+     * A batch is one settling of the layout, so it reports one complete listing
+     * rather than a partial one per plugin. Broadcasting per plugin would also
+     * expose states no command asked for — loading a plugin bound for 'hidden'
+     * passes through 'visible' on the way.
+     *
+     * A plugin that throws while loading is reported and skipped so the rest of
+     * the batch still loads.
+     *
+     * @param {Array<function>} queue - Load or register calls to run in order
+     */
+    runLoadQueue: function (queue) {
+        queue.forEach((loadFn) => {
+            try {
+                loadFn()
+            } catch (error) {
+                logger.error('Failed to load tool:', error)
+            }
+        })
+        this.notifyPluginsChanged()
+    },
+
+    /**
+     * Broadcast that plugin lifecycle state moved.
+     */
+    notifyPluginsChanged: function () {
+        mmgisAPI.emit('plugins:changed', Object.freeze({
+            plugins: this.listPlugins(),
+        }))
+    },
 }
 
 export default ToolControllerModern_

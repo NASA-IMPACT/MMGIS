@@ -23,7 +23,7 @@
           "name": "Theme",
           "description": "The USWDS theme to apply to the modern interface.",
           "type": "dropdown",
-          "options": ["default", "disasters", "earthgov"],
+          "options": ["default", "disasters", "horizon", "air4us", "earthgov"],
           "default": "default",
           "width": 6
         }
@@ -181,7 +181,7 @@
             {
               "field": "capabilities.minSize",
               "name": "Min Size (px)",
-              "description": "Minimum size in pixels when resizing (requires resizable: true).",
+              "description": "Minimum size in pixels when drag-resizing (requires resizable: true).",
               "type": "number",
               "width": 6,
               "min": 0
@@ -189,44 +189,37 @@
             {
               "field": "capabilities.maxSize",
               "name": "Max Size (px)",
-              "description": "Maximum size in pixels when resizing (requires resizable: true).",
+              "description": "Maximum size in pixels. Caps drag-resizing and caps a content-sized panel (one with no Expanded Size) so overflow scrolls internally. Works with or without resizable. Leave empty for no cap.",
               "type": "number",
               "width": 6,
-              "min": 0
+              "min": 1
             },
             {
               "field": "dimensions.iconifiedSize",
-              "name": "Iconified Size (px)",
-              "description": "Size of icon bar when in iconified state (width for left/right, height for top/bottom).",
-              "type": "number",
-              "width": 6,
-              "min": 0
-            },
-            {
-              "field": "dimensions.focusedWidth",
-              "name": "Focused Width (px)",
-              "description": "Width when in focused state (for vertical/left/right panels). Use number or 'content'.",
-              "type": "text",
-              "width": 6
-            },
-            {
-              "field": "dimensions.focusedHeight",
-              "name": "Focused Height (px)",
-              "description": "Height when in focused state (for horizontal/top/bottom panels). Use number or 'content'.",
+              "name": "Iconified Size",
+              "description": "Size of the icon bar when iconified (width for left/right, height for top/bottom). Leave empty for the default 3.5rem. A plain number is pixels (e.g. 56); add a unit to use it instead (e.g. 3.5rem). The icons scale with the bar, so a smaller bar means smaller icons.",
               "type": "text",
               "width": 6
             },
             {
               "field": "dimensions.expandedSize",
-              "name": "Expanded Size (px)",
-              "description": "Size when in expanded state (width for left/right, height for top/bottom). Use number or 'content'.",
+              "name": "Expanded Size",
+              "description": "Size when expanded (width for left/right, height for top/bottom). The panel is exactly this size and its content scrolls; leave empty to size to content. A plain number is pixels (e.g. 320); add a unit to use it instead (e.g. 40vh, 30%, 20rem).",
               "type": "text",
               "width": 6
             },
             {
+              "field": "pinnedTools",
+              "name": "Pinned Tools",
+              "description": "Tool identifiers to hold in this panel's pinned region. They render above Panel Tools, in the order listed, and stay in place while the rest of the panel scrolls. Only left and right panels have a pinned region. Same identifiers as Panel Tools; a tool belongs to one list or the other.",
+              "type": "textarray",
+              "default": [],
+              "width": 24
+            },
+            {
               "field": "panelTools",
               "name": "Panel Tools",
-              "description": "Tool identifiers to assign to this panel. Can be tool names (e.g., 'Title') or tool IDs (e.g., 'Title_instance1') for multiple instances. Must match values in the mission's tools array. Example: Title,Layers,Draw",
+              "description": "Tool identifiers to assign to this panel's scrolling body. Can be tool names (e.g., 'Title') or tool IDs (e.g., 'Title_instance1') for multiple instances. Must match values in the mission's tools array. Example: Title,Layers,Draw",
               "type": "textarray",
               "default": [],
               "width": 24
@@ -269,6 +262,13 @@
               "width": 6
             },
             {
+              "field": "title",
+              "name": "Title",
+              "description": "Display title shown in the header (only relevant when Has Header is enabled).",
+              "type": "text",
+              "width": 4
+            },
+            {
               "field": "hasHeader",
               "name": "Has Header",
               "description": "Whether the panel shows a title bar with control buttons.",
@@ -277,11 +277,12 @@
               "defaultChecked": false
             },
             {
-              "field": "title",
-              "name": "Title",
-              "description": "Display title shown in the header (only relevant when Has Header is enabled).",
-              "type": "text",
-              "width": 4
+              "field": "transparent",
+              "name": "Transparent",
+              "description": "Draw no background, border or shadow for this panel or for the cards behind its tools, so the map shows through and tools that draw their own boxes (like Map Control) sit directly on it.",
+              "type": "checkbox",
+              "width": 4,
+              "defaultChecked": false
             },
             {
               "field": "stateConstraints.allowedStates",
@@ -383,7 +384,7 @@
         {
           "field": "msv.basemap.provider",
           "name": "Provider",
-          "description": "Renders a vector-tile basemap beneath deck.gl layers using MapboxOverlay. Has no effect on Leaflet-engine missions. 'maplibre' is open-source and requires no token. 'mapbox' requires an access token.",
+          "description": "Renders a vector-tile basemap beneath map layers using MapLibre or Mapbox GL. Works with both Leaflet and deck.gl engine missions. 'maplibre' is open-source and requires no token. 'mapbox' requires an access token.",
           "type": "dropdown",
           "options": ["none", "maplibre", "mapbox"],
           "default": "none",

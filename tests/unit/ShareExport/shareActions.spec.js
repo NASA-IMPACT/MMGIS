@@ -6,7 +6,7 @@ import {
     PNG_FILENAME,
     PDF_FILENAME,
     buildExportFilename,
-} from '../../../src/essence/Tools/ShareExport/adapters/shareActions.ts'
+} from '../../../src/essence/Tools/_shared/adapters/shareActions.ts'
 import {
     mmgisCopyText,
     mmgisWriteCoordinateURL,

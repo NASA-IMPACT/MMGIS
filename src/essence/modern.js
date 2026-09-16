@@ -107,6 +107,9 @@ class ModernInterface {
 
         // Validate configuration before proceeding
         const validationResult = validateModernConfig(config)
+        if (validationResult.warnings?.length) {
+            console.warn('[Modern Interface] Configuration warnings:', validationResult.warnings)
+        }
         if (!validationResult.valid) {
             console.error('[Modern Interface] Configuration validation failed:', validationResult.errors)
             throw new Error('Invalid modern interface configuration')
@@ -236,6 +239,11 @@ class ModernInterface {
         // Initialize the User Interface with the sorted panels from PanelManager
         UserInterfaceModern_.init(activePanels, layoutStyle, theme)
 
+        // TimeControl must initialize ahead of Map_ because it seeds each
+        // time-enabled layer's time window, which Map_.init reads when it
+        // builds the layers.
+        TimeControl.init()
+
         // Initialize Map with proper error handling
         Map_.init(() => {
             try {
@@ -247,9 +255,6 @@ class ModernInterface {
 
         // Coordinates.init()
         ContextMenu.init()
-
-        // Make the time control
-        TimeControl.init()
     }
 
     /**
@@ -358,7 +363,7 @@ class ModernInterface {
      *
      * Performs comprehensive cleanup in the following order:
      * 1. Cleanup the UserInterfaceModern (tools, event listeners, DOM)
-     * 2. Unregisters all panels from PanelManager
+     * 2. Clears all panels from PanelManager
      * 3. Clears layers via L_
      * 4. Clears viewer images
      * 5. Clears map resources
@@ -376,17 +381,10 @@ class ModernInterface {
             UserInterfaceModern_.destroy()
         }
 
-        // Clean up all registered panels
-        const panels = PanelManager_.getAllPanelsByPriority()
-        panels.forEach(panel => {
-            if (PanelManager_.unregisterPanel && typeof PanelManager_.unregisterPanel === 'function') {
-                try {
-                    PanelManager_.unregisterPanel(panel.id)
-                } catch (err) {
-                    console.warn(`[Modern Interface] Failed to unregister panel ${panel.id}:`, err)
-                }
-            }
-        })
+        // Drop all panels
+        if (PanelManager_ && typeof PanelManager_.clear === 'function') {
+            PanelManager_.clear()
+        }
 
         // Clean up layers
         if (L_ && typeof L_.clear === 'function') {

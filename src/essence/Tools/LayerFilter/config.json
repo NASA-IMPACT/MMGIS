@@ -1,0 +1,139 @@
+{
+    "defaults": {
+        "variables": {
+            "themes": [
+                {
+                    "id": "need",
+                    "title": "Need",
+                    "description": "Filter by sector to explore Earth-science datasets relevant to your operational needs.",
+                    "filters": [
+                        {
+                            "id": "sector",
+                            "label": "Sector",
+                            "property": "sector",
+                            "multi": true,
+                            "allLabel": "All Sectors"
+                        }
+                    ]
+                },
+                {
+                    "id": "hazard",
+                    "title": "Hazard",
+                    "description": "Explore datasets by hazard type to understand conditions, impacts, and response context.",
+                    "filters": [
+                        {
+                            "id": "hazard",
+                            "label": "Hazard",
+                            "property": "hazard",
+                            "allLabel": "All Hazards"
+                        }
+                    ]
+                },
+                {
+                    "id": "event",
+                    "title": "Event",
+                    "description": "Filter the activation catalogue by hazard, location and year.",
+                    "catalog": "activations",
+                    "filters": [
+                        {
+                            "id": "hazardType",
+                            "label": "Hazard Type",
+                            "property": "hazards",
+                            "from": "catalog",
+                            "allLabel": "All Hazards"
+                        },
+                        {
+                            "id": "location",
+                            "label": "Location",
+                            "from": "catalog",
+                            "type": "geocode",
+                            "allLabel": "Search places\u2026"
+                        },
+                        {
+                            "id": "year",
+                            "label": "Year",
+                            "from": "catalog",
+                            "derived": "datetimes",
+                            "allLabel": "All Years"
+                        },
+                        {
+                            "id": "activation",
+                            "label": "Activation",
+                            "from": "catalog",
+                            "isEntry": true,
+                            "allLabel": "Select an activation",
+                            "countLabel": "activations"
+                        }
+                    ]
+                }
+            ],
+            "catalog": {
+                "type": "FeatureCollection",
+                "features": []
+            },
+            "geocoder": {
+                "url": ""
+            }
+        }
+    },
+    "name": "LayerFilter",
+    "defaultIcon": "filter-outline",
+    "description": "Two-step, configurable layer filter panel. Step 1 (a separate LayerFilterThemes rail) picks a theme; step 2 shows that theme's filters. Configure each theme's filters here under ids matching the rail's entries. Emits the matched layer set on the event bus. Events \u2014 emits: plugin:layerfilter:changed { themeId, selections, matchedLayerUUIDs }; subscribes: plugin:layerfilterthemes:selectedThemeChanged.",
+    "hasVars": true,
+    "width": 320,
+    "height": 0,
+    "paths": {
+        "LayerFilterTool": "essence/Tools/LayerFilter/LayerFilterTool"
+    },
+    "metadata": {
+        "icon": "filter-outline",
+        "requiredOrientation": "vertical",
+        "compatiblePositions": [
+            "left",
+            "right"
+        ],
+        "preferredPosition": "left",
+        "modernLayoutSupport": true,
+        "width": 320,
+        "height": 0
+    },
+    "config": {
+        "rows": [
+            {
+                "components": [
+                    {
+                        "field": "variables.geocoder.url",
+                        "name": "Geocoder URL",
+                        "description": "Nominatim-style search endpoint for 'geocode' Location filters. Leave empty to hide those controls.",
+                        "type": "text",
+                        "width": 12
+                    }
+                ]
+            },
+            {
+                "components": [
+                    {
+                        "field": "variables.themes",
+                        "name": "Themes & filters (JSON)",
+                        "description": "The panel half of the two-step filter config. Each theme: { id, title, description, catalog?, filters: [...] } — `id` must match an entry in the LayerFilterThemes rail's config, which owns the rail label and icon. Filters default to matching layer.properties[property]; `multi: true` allows several values (`matchAll: true` = contains-all); `from: \"catalog\"` reads catalogue entry properties, with `derived: \"datetimes\"` for a Year filter, `isEntry: true` for a pick-one-entry control, and `type: \"geocode\"` for a place search that keeps entries by geometry intersection (layer themes test the layer's own properties.bbox [west, south, east, north] first). Options and counts are always derived from the data, never enumerated here.",
+                        "type": "json",
+                        "width": 12,
+                        "height": "440px"
+                    }
+                ]
+            },
+            {
+                "components": [
+                    {
+                        "field": "variables.catalog",
+                        "name": "Catalogue (GeoJSON)",
+                        "description": "FeatureCollection of catalogue entries (e.g. activations): id, tag properties, datetimes, geometry, and the layer keys each entry pairs with. See SCHEMA.md.",
+                        "type": "json",
+                        "width": 12,
+                        "height": "300px"
+                    }
+                ]
+            }
+        ]
+    }
+}

@@ -10,50 +10,100 @@
  * surface in DescribeStacks output, which the Deployments list reads.
  */
 
-const STACK_NAME_PREFIX = "mmgis-dashboard-";
+const fs = require("fs");
+const path = require("path");
+
+const DEFAULT_STACK_NAME_PREFIX = "mmgis-dashboard-";
+
+// The readable source of the viewer-request CloudFront Function, resolved
+// from this module's own location so it works regardless of the process's
+// cwd. See renderAuthFunctionCode's read error for the packaging
+// requirement this implies.
+const AUTH_FUNCTION_SOURCE_PATH = path.join(
+  __dirname,
+  "..",
+  "..",
+  "infrastructure",
+  "cloudfront-function.js"
+);
+
+const BASIC_AUTH_CREDENTIALS_PLACEHOLDER = "<BASE64_BASIC_CREDENTIALS>";
 
 // Basic-auth username paired with the shared password.
 const BASIC_AUTH_USER = "mmgis";
 
+// Mirrors the environment validation in
+// infrastructure/terraform/modules/mmgis-environment/variables.tf.
+const ENVIRONMENT_PATTERN = /^[a-z][a-z0-9-]*$/;
+
+// 11 = the S3 bucket-name budget for CFN-generated dashboard bucket names;
+// see the length validation in
+// infrastructure/terraform/modules/mmgis-environment/variables.tf.
+const MAX_ENVIRONMENT_LENGTH = 11;
+
+/**
+ * The stack-name prefix for this runtime. When MMGIS_ENVIRONMENT is set
+ * (the Terraform module sets it to the environment name, e.g. "development"),
+ * dashboards are namespaced per environment: "mmgis-<env>-dashboard-".
+ * Unset/empty => the legacy shared prefix "mmgis-dashboard-" (the hand-built
+ * environment never sets the variable and must keep today's names).
+ * LOCKSTEP: the composed shape must match the IAM patterns in
+ * infrastructure/terraform/modules/mmgis-environment/iam.tf. A value the
+ * module's own validation would reject is rejected here too, so a malformed
+ * name fails loudly instead of as an AccessDenied at publish time.
+ */
+function stackNamePrefix() {
+  const env = process.env.MMGIS_ENVIRONMENT;
+  if (env == null || env === "") return DEFAULT_STACK_NAME_PREFIX;
+  if (!ENVIRONMENT_PATTERN.test(env))
+    throw new Error(
+      `MMGIS_ENVIRONMENT '${env}' must be lowercase alphanumeric/hyphen ` +
+        "(matching the Terraform module's environment validation)"
+    );
+  if (env.length > MAX_ENVIRONMENT_LENGTH)
+    throw new Error(
+      `MMGIS_ENVIRONMENT '${env}' must be at most ${MAX_ENVIRONMENT_LENGTH} ` +
+        "characters — longer names blow the 63-character S3 bucket-name " +
+        "budget for CFN-generated dashboard buckets"
+    );
+  return `mmgis-${env}-dashboard-`;
+}
+
 /**
  * The deterministic stack name for a deployment row id, e.g.
- * stackNameForDeployment(12) === "mmgis-dashboard-12".
+ * stackNameForDeployment(12) === "mmgis-dashboard-12" by default, or
+ * "mmgis-development-dashboard-12" when MMGIS_ENVIRONMENT=development.
  */
 function stackNameForDeployment(deploymentId) {
   if (deploymentId == null || `${deploymentId}`.length === 0)
     throw new Error("stackNameForDeployment requires a deployment id");
-  return `${STACK_NAME_PREFIX}${deploymentId}`;
+  return `${stackNamePrefix()}${deploymentId}`;
 }
 
 /**
- * The viewer-request CloudFront Function source. The expected
- * "Basic <base64>" Authorization value is baked in as a constant.
+ * The viewer-request CloudFront Function source, read from
+ * infrastructure/cloudfront-function.js (the single source of truth for the
+ * function body) with its leading doc-comment header stripped and the
+ * <BASE64_BASIC_CREDENTIALS> placeholder substituted with
+ * base64("mmgis:" + password). See that file for what the function itself
+ * does (auth gate, X-Forwarded-Prefix handling).
  */
 function renderAuthFunctionCode(password) {
+  const source = fs.readFileSync(AUTH_FUNCTION_SOURCE_PATH, "utf8");
+
+  const body = source.replace(/^\/\*[\s\S]*?\*\/\s*/, "").trimEnd();
+
+  if (body.indexOf(BASIC_AUTH_CREDENTIALS_PLACEHOLDER) === -1)
+    throw new Error(
+      `renderAuthFunctionCode: ${AUTH_FUNCTION_SOURCE_PATH} is missing the ` +
+        `${BASIC_AUTH_CREDENTIALS_PLACEHOLDER} placeholder — cannot bake in ` +
+        "the shared password."
+    );
+
   const expected = Buffer.from(`${BASIC_AUTH_USER}:${password}`).toString(
     "base64"
   );
-  return [
-    "function handler(event) {",
-    "    var request = event.request;",
-    `    var EXPECTED = 'Basic ${expected}';`,
-    "    var headers = request.headers;",
-    "    var auth =",
-    "        headers.authorization && headers.authorization.value;",
-    "    if (auth !== EXPECTED) {",
-    "        return {",
-    "            statusCode: 401,",
-    "            statusDescription: 'Unauthorized',",
-    "            headers: {",
-    "                'www-authenticate': {",
-    "                    value: 'Basic realm=\"MMGIS Dashboard\"'",
-    "                }",
-    "            }",
-    "        };",
-    "    }",
-    "    return request;",
-    "}",
-  ].join("\n");
+  return body.replace(BASIC_AUTH_CREDENTIALS_PLACEHOLDER, expected);
 }
 
 /**
@@ -213,8 +263,9 @@ function renderCfnTemplate({ password } = {}) {
 }
 
 module.exports = {
-  STACK_NAME_PREFIX,
+  DEFAULT_STACK_NAME_PREFIX,
   BASIC_AUTH_USER,
+  stackNamePrefix,
   stackNameForDeployment,
   renderAuthFunctionCode,
   renderCfnTemplate,

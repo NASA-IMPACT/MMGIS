@@ -82,6 +82,24 @@ const getServiceUrl = (serviceName, layerConfig = null) => {
 }
 
 /**
+ * Whether a service resolves to a configured endpoint rather than falling
+ * through to the same-origin proxy. The resolved URL alone cannot tell the two
+ * apart, and only the latter obliges this deployment to serve the service.
+ *
+ * @param {string} serviceName - Name of the service (titiler, stac, etc.)
+ * @param {object} [layerConfig] - Layer configuration (optional, for per-layer override)
+ * @returns {boolean} True when an external URL is configured for the service
+ */
+const hasExternalServiceUrl = (serviceName, layerConfig = null) => {
+    const configKey = SERVICE_CONFIG[serviceName]?.configKey
+    if (!configKey) return false
+    return Boolean(
+        layerConfig?.[configKey] ||
+            window.mmgisglobal?.options?.services?.[configKey]
+    )
+}
+
+/**
  * Create a service URL getter for a specific service
  * @param {string} serviceName - Name of the service
  * @returns {function} Function that takes optional layerConfig and returns URL
@@ -276,6 +294,7 @@ const ServiceUrls = {
     getLocalBaseUrl,
     getServiceUrl,
     createServiceGetter,
+    hasExternalServiceUrl,
 
     // Service-specific getters
     getTiTilerUrl,

@@ -1,0 +1,130 @@
+{
+    "defaultIcon": "layers",
+    "description": "Floating map control bar: basemap switcher, search, measure, zoom, share, and a configurable action button.",
+    "descriptionFull": {
+        "title": "A floating horizontal toolbar rendered over the map. Basemap switcher, search, measure, zoom and share each have their own toggle; the action button appears whenever Button Link is set."
+    },
+    "hasVars": true,
+    "name": "MapControl",
+    "toolbarPriority": 5,
+    "paths": {
+        "MapControlTool": "essence/Tools/MapControl/MapControlTool"
+    },
+    "metadata": {
+        "icon": "layers",
+        "compatiblePositions": [
+            "float-top-left",
+            "float-top-center",
+            "float-top-right",
+            "float-bottom-left",
+            "float-bottom-center",
+            "float-bottom-right"
+        ],
+        "preferredPosition": "float-top-right",
+        "modernLayoutSupport": true
+    },
+    "config": {
+        "rows": [
+            {
+                "components": [
+                    {
+                        "field": "variables.showBasemapSwitcher",
+                        "name": "Basemap switcher",
+                        "description": "Show the basemap style selector button.",
+                        "type": "checkbox",
+                        "width": 3,
+                        "defaultChecked": true
+                    },
+                    {
+                        "field": "variables.showSearch",
+                        "name": "Search",
+                        "description": "Show the geocode search button.",
+                        "type": "checkbox",
+                        "width": 3,
+                        "defaultChecked": true
+                    },
+                    {
+                        "field": "variables.showMeasure",
+                        "name": "Measure",
+                        "description": "Show the distance measure button.",
+                        "type": "checkbox",
+                        "width": 3,
+                        "defaultChecked": true
+                    },
+                    {
+                        "field": "variables.showZoom",
+                        "name": "Zoom",
+                        "description": "Show the zoom in / zoom out buttons.",
+                        "type": "checkbox",
+                        "width": 3,
+                        "defaultChecked": true
+                    },
+                    {
+                        "field": "variables.showShare",
+                        "name": "Share",
+                        "description": "Show the share button (copy link, export PNG/PDF).",
+                        "type": "checkbox",
+                        "width": 3,
+                        "defaultChecked": true
+                    }
+                ]
+            },
+            {
+                "name": "Action Button",
+                "description": "An optional action button at the end of the control bar.",
+                "components": [
+                    {
+                        "field": "variables.actionButtonText",
+                        "name": "Button Text",
+                        "description": "Text shown on the action button. Left empty, a configured icon shows on its own; with neither text nor icon the button reads 'Analyze area'.",
+                        "type": "text",
+                        "width": 6
+                    },
+                    {
+                        "field": "variables.actionButtonLink",
+                        "name": "Button Link",
+                        "description": "An external http(s) URL (opened in a new tab); one of 'panels:show:PANEL_ID', 'panels:hide:PANEL_ID', 'plugins:show:PLUGIN_ID', 'plugins:hide:PLUGIN_ID' (e.g. 'panels:hide:left-panel', 'plugins:show:DrawTool'); or a custom event name, which is emitted as-is. Event names should be namespaced (e.g. 'plugin:mapcontrol:analyze'). Leave empty to hide the button.",
+                        "type": "text",
+                        "width": 6
+                    }
+                ]
+            },
+            {
+                "name": "Action Button Icon",
+                "description": "An optional glyph shown ahead of the button text. Pick a source, then fill in the matching field. Any icon is drawn in the button's own color.",
+                "components": [
+                    {
+                        "field": "variables.actionButtonIconSource",
+                        "name": "Icon Source",
+                        "description": "Which of the three fields beside this one supplies the glyph. If the named field is empty, the first one that is filled in supplies it instead.",
+                        "type": "dropdown",
+                        "width": 3,
+                        "options": ["upload", "link", "mdi"]
+                    },
+                    {
+                        "field": "variables.actionButtonIconUpload",
+                        "name": "Upload Icon",
+                        "description": "An SVG or PNG for the button. Drawn as a silhouette in the button's color, so a single-color glyph on a transparent background works best.",
+                        "type": "upload",
+                        "subdir": "MapControl",
+                        "width": 3
+                    },
+                    {
+                        "field": "variables.actionButtonIconUrl",
+                        "name": "Icon Link",
+                        "description": "URL of an icon hosted elsewhere. Drawn as a silhouette, the same as an uploaded one.",
+                        "type": "text",
+                        "width": 3
+                    },
+                    {
+                        "field": "variables.actionButtonIconMdi",
+                        "name": "MDI Icon Name",
+                        "description": "A Material Design Icons name, e.g. 'poll'. The 'mdiPoll' and 'mdi mdi-poll' spellings are accepted too.",
+                        "type": "text",
+                        "width": 3
+                    }
+                ]
+            }
+        ]
+    }
+}

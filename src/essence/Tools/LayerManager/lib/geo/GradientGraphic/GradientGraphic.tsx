@@ -1,9 +1,8 @@
 import React from 'react'
 import { useState, useCallback, useRef, type MouseEvent } from 'react'
 import { scaleLinear } from 'd3'
-import { ColormapControl } from '../ColormapControl/ColormapControl'
-import { useColormapGradient } from '../../hooks/useColormapGradient'
-import { useClickOutside } from '../../hooks/useClickOutside'
+import { useColormapColors } from '../../hooks/useColormapColors'
+import { buildGradientCss, isReversedColormap } from '../../utils/colormaps'
 import type { CogData } from '../../types'
 
 export type GradientGraphicProps = {
@@ -12,17 +11,6 @@ export type GradientGraphicProps = {
     max: number | string
     unit?: { label: string } | null
     cog?: CogData | null
-    layerId: string
-    onColormapChange?: (layerId: string, colormap: string) => void
-    onRescaleChange?: (layerId: string, min: number, max: number) => void
-}
-
-const makeGradient = (stops: string[] | null | undefined): string => {
-    if (!stops || stops.length === 0) return 'transparent'
-    if (stops.length === 1) return stops[0]
-    const d = 100 / (stops.length - 1)
-    const steps = stops.map((s, i) => `${s} ${i * d}%`)
-    return `linear-gradient(to right, ${steps.join(', ')})`
 }
 
 const formatLegendValue = (val: number | string): string | number => {
@@ -46,34 +34,19 @@ const formatTooltipValue = (rawVal: number, unit?: { label: string } | null): st
     return unit?.label ? `${value} ${unit.label}` : String(value)
 }
 
-export function GradientGraphic({
-    stops,
-    min,
-    max,
-    unit,
-    cog,
-    layerId,
-    onColormapChange,
-    onRescaleChange,
-}: GradientGraphicProps) {
+export function GradientGraphic({ stops, min, max, unit, cog }: GradientGraphicProps) {
     const [hoverVal, setHoverVal] = useState<number | null>(null)
     const [tooltipPos, setTooltipPos] = useState({ x: 0 })
-    const [isCogExpanded, setIsCogExpanded] = useState(false)
     const barRef = useRef<HTMLDivElement | null>(null)
-    const cogBtnRef = useRef<HTMLButtonElement | null>(null)
-    const cogPopoverRef = useRef<HTMLDivElement | null>(null)
 
     const hasCogSettings = cog?.isCog === true
-    const { colors: colormapColors } = useColormapGradient(
+    // A raster layer's bar paints the ramp the tiling service is applying;
+    // everything else falls back to the stops the layer's legend declares.
+    const { colors: colormapColors } = useColormapColors(
         cog?.colormap,
+        isReversedColormap(cog?.colormap),
+        cog?.titilerUrl,
         hasCogSettings,
-        cog,
-    )
-
-    useClickOutside(
-        [cogPopoverRef, cogBtnRef],
-        useCallback(() => setIsCogExpanded(false), []),
-        isCogExpanded,
     )
 
     const handleMouseMove = useCallback(
@@ -99,7 +72,7 @@ export function GradientGraphic({
 
     const hasNumericLegend = !isNaN(Number(min) + Number(max))
     const gradientStops = hasCogSettings && colormapColors ? colormapColors : stops
-    const gradientStyle = { background: makeGradient(gradientStops) }
+    const gradientStyle = { background: buildGradientCss(gradientStops) }
 
     return (
         <div className="blocks-gradient-graphic">
@@ -117,34 +90,6 @@ export function GradientGraphic({
                         >
                             {formatTooltipValue(hoverVal, unit)}
                         </div>
-                    )}
-                </div>
-                <div className="blocks-gradient-graphic__cog-wrapper">
-                    {hasCogSettings && cog && (
-                        <>
-                            <button
-                                ref={cogBtnRef}
-                                className={`blocks-gradient-graphic__expand-btn ${isCogExpanded ? 'blocks-gradient-graphic__expand-btn--active' : ''}`}
-                                onClick={() => setIsCogExpanded(!isCogExpanded)}
-                                title={isCogExpanded ? 'Hide COG settings' : 'Show COG settings'}
-                            >
-                                <i className={`mdi mdi-chevron-${isCogExpanded ? 'up' : 'down'} mdi-18px`} />
-                            </button>
-                            {isCogExpanded && (
-                                <div ref={cogPopoverRef} className="blocks-gradient-graphic__cog-popover">
-                                    <ColormapControl
-                                        layerName={layerId}
-                                        colormap={cog.colormap}
-                                        min={cog.min}
-                                        max={cog.max}
-                                        units={cog.units}
-                                        titilerUrl={cog.titilerUrl}
-                                        onColormapChange={onColormapChange}
-                                        onRescaleChange={onRescaleChange}
-                                    />
-                                </div>
-                            )}
-                        </>
                     )}
                 </div>
             </div>

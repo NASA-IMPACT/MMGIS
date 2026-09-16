@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
-import { getTiTilerBaseUrl } from '../utils/titiler'
-
-type Options = { titilerUrl: string | null } | null
+import { resolveTiTilerBase } from '../utils/colormapCache'
+import { parseColormapList } from '../utils/colormaps'
 
 type Result = {
     colormaps: string[] | null
@@ -9,22 +8,24 @@ type Result = {
     error: Error | null
 }
 
-declare global {
-    interface Window {
-        mmgisglobal?: { WITH_TITILER?: string }
-    }
-}
-
-export const useAvailableColormaps = (layerConfig: Options = null): Result => {
+/**
+ * Ramp names the tiling service reports, sorted with each ramp's reversed
+ * variant directly after its forward form. Resolves to null whenever no list
+ * can be obtained — no service supplied, or the request failed — which callers
+ * surface as "ramps unavailable" rather than an empty list.
+ */
+export const useAvailableColormaps = (titilerUrl: string | null = null): Result => {
+    const baseUrl = resolveTiTilerBase(titilerUrl)
     const [colormaps, setColormaps] = useState<string[] | null>(null)
-    const [loading, setLoading] = useState(false)
+    // A reachable service is presumed to be loading from the first render,
+    // before the effect has had a chance to start the request. Without that,
+    // the empty initial list is indistinguishable from "no ramps exist" and
+    // callers flash an unavailable state on every mount.
+    const [loading, setLoading] = useState(() => baseUrl != null)
     const [error, setError] = useState<Error | null>(null)
-    const titilerUrl = layerConfig?.titilerUrl || null
 
     useEffect(() => {
-        const hasTiTiler =
-            window.mmgisglobal?.WITH_TITILER === 'true' || titilerUrl != null
-        if (!hasTiTiler) {
+        if (baseUrl == null) {
             setColormaps(null)
             setLoading(false)
             setError(null)
@@ -35,19 +36,15 @@ export const useAvailableColormaps = (layerConfig: Options = null): Result => {
             setLoading(true)
             setError(null)
             try {
-                const baseUrl = titilerUrl
-                    ? titilerUrl.replace(/\/$/, '')
-                    : getTiTilerBaseUrl()
-                if (baseUrl == null) {
-                    // No TiTiler available (static build without one configured)
+                const response = await fetch(`${baseUrl}/colorMaps`)
+                if (!response.ok) throw new Error(`Failed to fetch colormaps: ${response.status}`)
+                const data = await response.json()
+                if (cancelled) return
+                const colormapList = parseColormapList(data)
+                if (colormapList == null) {
                     setColormaps(null)
                     return
                 }
-                const response = await fetch(`${baseUrl}/colorMaps`)
-                if (!response.ok) throw new Error(`Failed to fetch colormaps: ${response.status}`)
-                const data = (await response.json()) as { colorMaps?: string[] }
-                if (cancelled) return
-                const colormapList = data.colorMaps || []
                 const sorted = [...colormapList].sort((a, b) => {
                     const aBase = a.replace(/_r$/, '')
                     const bBase = b.replace(/_r$/, '')
@@ -69,7 +66,7 @@ export const useAvailableColormaps = (layerConfig: Options = null): Result => {
         return () => {
             cancelled = true
         }
-    }, [titilerUrl])
+    }, [baseUrl])
 
     return { colormaps, loading, error }
 }

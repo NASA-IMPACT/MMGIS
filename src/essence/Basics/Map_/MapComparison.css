@@ -1,0 +1,125 @@
+/* The bar the two sides of a comparison meet at: a thin white rule down the
+   map, a round grab handle at its middle, and a caption either side naming
+   what that side is drawing. Every value resolves against the global design
+   tokens exported by src/styles/_theme-export.scss; the literal after each is
+   the air4us value, used only when no theme bundle is loaded. */
+
+.mmgis-comparison-divider {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--theme-color-white, #ffffff);
+    cursor: ew-resize;
+    z-index: 1000;
+    transform: translateX(-50%);
+    pointer-events: all;
+    /* Lifts the rule off imagery either side of it, which a white line over a
+       pale basemap needs as much as one over a dark scene. */
+    box-shadow: 0 0 4px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
+}
+
+/* The grab handle: a disc on the rule, ringed in white so it holds its edge
+   over dark and light imagery alike. Its glyph is a mask filled by the handle's
+   own colour, so the artwork lives in an icon file rather than in the
+   controller. */
+.mmgis-comparison-handle {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: var(--theme-color-primary, #005ea2);
+    border: var(--theme-border-width-md, 2px) solid var(--theme-color-white, #ffffff);
+    border-radius: 50%;
+    color: var(--theme-color-white, #ffffff);
+    user-select: none;
+    box-shadow: 0 2px 6px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
+}
+
+.mmgis-comparison-handle__glyph {
+    display: block;
+    width: 18px;
+    height: 18px;
+    background-color: currentColor;
+    -webkit-mask: url('./icons/comparison-handle-swipe.svg') no-repeat center / contain;
+    mask: url('./icons/comparison-handle-swipe.svg') no-repeat center / contain;
+}
+
+/* Side-by-side is a seam between two panes rather than a wipe across one, and
+   the handle says so. */
+.mmgis-comparison-divider--side-by-side .mmgis-comparison-handle__glyph {
+    -webkit-mask-image: url('./icons/comparison-handle-side-by-side.svg');
+    mask-image: url('./icons/comparison-handle-side-by-side.svg');
+}
+
+.mmgis-comparison-pane {
+    /* Panes tile the container edge to edge; the divider draws over the join. */
+    background: var(--theme-color-base-darkest, #1b1b1b);
+}
+
+/* ── Side captions ───────────────────────────────────────────────────────── */
+
+/* The captions hang off the divider, so they share the fraction of the
+   container it sits at. Set on the overlay rather than on each caption, which
+   leaves one property to write as the divider moves. */
+.mmgis-comparison-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 999;
+    /* Captions are read, not clicked; the map keeps the pointer. */
+    pointer-events: none;
+    --mmgis-comparison-position: 50%;
+}
+
+/* Names the layer or the date its side is drawing. A chip on the map rather
+   than a label in the panel, so it carries its own ground and rule to stay
+   legible over imagery, and gives up what it cannot fit rather than running
+   across the rule. */
+.mmgis-comparison-label {
+    position: absolute;
+    top: var(--theme-spacing-105, 12px);
+    max-width: 38%;
+    overflow: hidden;
+    padding: var(--theme-spacing-05, 4px) 10px;
+    background: var(--theme-color-white, #ffffff);
+    border: var(--theme-border-width-sm, 1px) solid var(--theme-color-base-lighter, #dfe1e2);
+    border-radius: var(--theme-radius-sm, 2px);
+    color: var(--theme-color-ink, #1c1d1f);
+    font-family: var(--theme-font-body, 'Public Sans', system-ui, sans-serif);
+    font-size: var(--theme-font-size-3xs, 12px);
+    font-weight: var(--theme-font-weight-semibold, 600);
+    line-height: 1.35;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    box-shadow: 0 1px 2px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
+}
+
+/* A side with nothing to name draws no chip, rather than an empty one. */
+.mmgis-comparison-label:empty {
+    display: none;
+}
+
+/* Either side of the rule, clear of it by the gutter they hold off the top. */
+.mmgis-comparison-label--left {
+    right: calc(100% - var(--mmgis-comparison-position) + var(--theme-spacing-105, 12px));
+}
+
+.mmgis-comparison-label--right {
+    left: calc(var(--mmgis-comparison-position) + var(--theme-spacing-105, 12px));
+}
+
+/* Two panes read side by side are two views, not one wipe, so each caption
+   moves to the corner of the pane it names instead of flanking the seam. */
+.mmgis-comparison-overlay--side-by-side .mmgis-comparison-label--left {
+    right: auto;
+    left: var(--theme-spacing-105, 12px);
+}
+
+.mmgis-comparison-overlay--side-by-side .mmgis-comparison-label--right {
+    left: calc(var(--mmgis-comparison-position) + var(--theme-spacing-105, 12px));
+}

@@ -1,0 +1,34 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is git-ignored — it
+# carries account-specific network ids that must never be committed.
+
+# AWS region (optional; defaults to us-west-2).
+# region = "us-west-2"
+
+# Existing VPC and >= 2 private subnets (different AZs) with NAT egress.
+vpc_id             = "vpc-xxxxxxxxxxxxxxxxx"
+private_subnet_ids = ["subnet-xxxxxxxxxxxxxxxxx", "subnet-yyyyyyyyyyyyyyyyy"]
+
+# The image the tasks run. CI supplies it on every apply (TF_VAR_deployed_image).
+# For a hand apply, set it to the image the service is currently serving
+# (discovery recipe in the README's break-glass section) — the module refuses an
+# empty value unless `greenfield = true`.
+# deployed_image = "ACCOUNT.dkr.ecr.us-west-2.amazonaws.com/mmgis-development:COMMIT_SHA"
+
+# IAM permissions-boundary policy every module-created role carries (created by
+# the bootstrap root).
+permissions_boundary = "arn:aws:iam::ACCOUNT:policy/POLICY_NAME"
+
+# base64 of the region's RDS CA bundle. Generate with:
+#   curl -s https://truststore.pki.rds.amazonaws.com/us-west-2/us-west-2-bundle.pem | base64 | tr -d '\n'
+rds_ca_bundle_base64 = "PASTE_BASE64_HERE"
+
+# ── Express inputs (empty only under greenfield = true) ──
+# Discovered from the live service before every hand apply — recipe in the
+# README's "Hand applies (break-glass)" section.
+# express_internal_alb_arn = "arn:aws:elasticloadbalancing:us-west-2:ACCOUNT:loadbalancer/app/ecs-express-gateway-alb-xxxx/xxxx"
+# express_onaws_endpoint   = "mm-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.ecs.us-west-2.on.aws"
+
+# First build of a brand-new environment ONLY: makes the empty live facts
+# legal. First builds are CI's job; the hand path exists for the bootstrap
+# root's scratch verification.
+# greenfield = true

@@ -30,7 +30,7 @@ They differ only in `PORT` and `DB_NAME`, against one shared container:
 
 - **One shared Postgres container.** `docker-compose.db.yml` hardcodes host `5432:5432`, so only one can run. Start it once from the main checkout (`npm run db:start`); every deployment points at `localhost:5432` with a distinct `DB_NAME`. Coexisting deployments launch with `start:no-docker`.
 - **Ports stepped by 10** (dev burns `PORT` and `PORT+1`), starting at 8888 and skipping any already in an `.env` or listening.
-- **`.env` and `node_modules` are gitignored** — never present in a fresh worktree; each deployment provisions its own (`npm install --force`; `--force` is required by this dependency tree, not `--legacy-peer-deps`).
+- **`.env` and `node_modules` are gitignored** — never present in a fresh worktree; each deployment provisions its own with plain `npm ci`, which resolves this dependency tree cleanly. Never use `--legacy-peer-deps` — it silently drops the deck.gl peer packages.
 
 ## Config: how a deployment gets a working dashboard
 

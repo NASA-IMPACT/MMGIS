@@ -10,9 +10,19 @@ import {
     type TransitionInterpolator,
 } from '@deck.gl/core'
 import { GeoJsonLayer, BitmapLayer, PointCloudLayer, ScatterplotLayer } from '@deck.gl/layers'
-import { TileLayer, Tile3DLayer, MVTLayer } from '@deck.gl/geo-layers'
+// _WMSLayer is experimental (underscore prefix): deck.gl gives no semver
+// guarantee, so re-verify WMS rendering on every deck.gl upgrade. It also
+// behaves unlike the tile layers — one whole-viewport GetMap request per view
+// change instead of per-tile fetches.
+import { TileLayer, Tile3DLayer, MVTLayer, _WMSLayer as WMSLayer } from '@deck.gl/geo-layers'
 import { Tiles3DLoader } from '@loaders.gl/3d-tiles'
+// Transitive dep of @deck.gl/geo-layers (same experimental WMS family as
+// _WMSLayer) — import the same (hoisted) copy the WMSLayer uses so its
+// `data instanceof ImageSource` check holds.
+import { WMSImageSource } from '@loaders.gl/wms'
 import { color as parseColor } from 'd3'
+
+import { compileLegendStyle, resolveLegendStyle } from '../../Layers_/LegendStyle'
 
 import type { LatLng, LatLngLike, BoundsLike, PointLike, PaddingLike } from '../types/geometry'
 import type { LayerOptions, TileLayerOptions, GeoJSONLayerOptions, VectorTileLayerOptions, PointCloudLayerOptions } from '../types/layers'
@@ -147,16 +157,29 @@ export function pickInfoToResult(info: PickingInfo): FeaturePickResult {
 }
 
 /**
+ * The bag a feature's property names are looked up against: a GeoJSON
+ * feature's `.properties`, or a plain data record read directly.
+ * @param object - GeoJSON feature or plain data record.
+ * @returns Null when there is nothing to read properties from.
+ */
+function featureProperties(object: unknown): Record<string, unknown> | null {
+    if (object == null || typeof object !== 'object') return null
+    return (
+        (object as { properties?: Record<string, unknown> }).properties ??
+        (object as Record<string, unknown>)
+    )
+}
+
+/**
  * Reads a nested value from a GeoJSON feature or plain object by dot-notation path.
  * Checks `.properties` first, then the object itself.
  * @param object - GeoJSON feature or plain data record.
  * @param path - Dot-notation key path, e.g. `"meta.score"`.
  */
 function getPropValue(object: unknown, path: string | undefined): unknown {
-    if (!path || object == null || typeof object !== 'object') return undefined
-    const source =
-        (object as { properties?: Record<string, unknown> }).properties ??
-        (object as Record<string, unknown>)
+    if (!path) return undefined
+    const source = featureProperties(object)
+    if (source == null) return undefined
     return path
         .split('.')
         .reduce(
@@ -168,10 +191,259 @@ function getPropValue(object: unknown, path: string | undefined): unknown {
         )
 }
 
+/** The part of a fetch Response that {@link isImageTileResponse} reads. */
+interface TileResponseLike {
+    ok: boolean
+    headers: { get(name: string): string | null }
+}
+
+/**
+ * True when a tile response carries image bytes.
+ *
+ * Tile servers signal an absent tile inconsistently. Some answer 404, but a
+ * STAC-backed raster service fronted by a CDN answers 200 with its HTML
+ * browser page when asked for a timestamp it holds no item for. The content
+ * type is therefore the reliable test; the status code alone is not.
+ */
+export function isImageTileResponse(response: TileResponseLike): boolean {
+    if (!response.ok) return false
+    const contentType = response.headers.get('content-type') ?? ''
+    return contentType.toLowerCase().startsWith('image/')
+}
+
+/**
+ * Fetches one raster tile, resolving to null for anything that is not an
+ * image so an absent tile is drawn as absent rather than handed to the
+ * decoder as a texture.
+ *
+ * `premultiplyAlpha: 'none'` mirrors the ImageLoader options deck.gl registers
+ * for its own tile pipeline, so alpha is composited identically either way.
+ */
+async function fetchImageTile(
+    url?: string | null,
+    signal?: AbortSignal
+): Promise<ImageBitmap | null> {
+    if (!url) return null
+    const response = await fetch(url, signal ? { signal } : undefined)
+    if (!isImageTileResponse(response)) return null
+    return await createImageBitmap(await response.blob(), {
+        premultiplyAlpha: 'none',
+    })
+}
+
+/**
+ * Split a full WMS url into its service endpoint and LAYERS list. Mirrors the
+ * param parsing Leaflet's WMSColorFilter does, so a single layer url renders
+ * the same way in both engines.
+ */
+// Per-request params the engine computes per viewport (or props we set
+// explicitly) — forwarding stale pasted values would corrupt every request.
+// TILED is a GeoServer cache directive expecting grid-aligned tile requests;
+// WMSLayer issues one whole-viewport GetMap, which a cache grid rejects.
+const WMS_MANAGED_KEYS = new Set([
+    'service',
+    'request',
+    'layers',
+    'bbox',
+    'width',
+    'height',
+    'srs',
+    'crs',
+    'tiled',
+])
+// Standard GetMap params loaders.gl accepts as typed wmsParameters (it handles
+// version-specific encoding itself, e.g. SRS= for 1.1.1 vs CRS= for 1.3.0).
+const WMS_STANDARD_KEYS = new Set([
+    'version',
+    'format',
+    'transparent',
+    'styles',
+    'time',
+    'elevation',
+])
+
+// The base URL must be split from its query string: loaders.gl appends
+// '?SERVICE=WMS&...' to it blindly, so a leftover '?' would malform every
+// request. LAYERS becomes the layers prop; recognized GetMap params become
+// wmsParameters; everything else (API keys, vendor params) is preserved as
+// vendorParameters.
+function parseWmsUrl(url: string): {
+    base: string
+    layers: string[]
+    wmsParameters: Record<string, unknown>
+    vendorParameters: Record<string, unknown>
+} {
+    const qIdx = url.indexOf('?')
+    const base = qIdx === -1 ? url : url.slice(0, qIdx)
+    const search = qIdx === -1 ? '' : url.slice(qIdx + 1)
+    let layersVal = ''
+    const wmsParameters: Record<string, unknown> = {}
+    const vendorParameters: Record<string, unknown> = {}
+    for (const [key, val] of new URLSearchParams(search)) {
+        const lower = key.toLowerCase()
+        if (lower === 'layers') {
+            layersVal = val
+        } else if (WMS_STANDARD_KEYS.has(lower)) {
+            wmsParameters[lower] = lower === 'transparent' ? val.toLowerCase() === 'true' : val
+        } else if (!WMS_MANAGED_KEYS.has(lower)) {
+            vendorParameters[key] = val
+        }
+    }
+    const layers = layersVal ? layersVal.split(',').filter(Boolean) : []
+    return { base, layers, wmsParameters, vendorParameters }
+}
+
+/**
+ * Resolve the per-feature style accessors shared by the `vector` and
+ * `vectortile` layers.
+ *
+ * Each `*Prop` field in a layer's style names the feature property to read a
+ * value from, and the matching flat field is the fallback for features that do
+ * not carry that property. When no `*Prop` is configured the accessor is
+ * returned as a plain constant, so deck.gl skips per-feature evaluation.
+ *
+ * `legendData` is the layer's legend, which doubles as a style specification
+ * (see LegendStyle). Its colours outrank both the `*Prop` and the flat fields,
+ * matching the precedence the Leaflet vector path has always applied. It is
+ * compiled here, once per layer build, because deck.gl re-runs an accessor
+ * over every feature whenever it regenerates that attribute — on a data
+ * change, on an updateTrigger change, and for each newly loaded tile — so
+ * anything hoistable belongs outside the accessor. A legend that specifies no
+ * styling leaves the constants intact.
+ */
+function resolveStyleAccessors(
+    style: Record<string, unknown>,
+    legendData?: unknown,
+    legendConfigured?: boolean
+) {
+    const legend = compileLegendStyle(legendData)
+
+    // A digest of the compiled legend, for the `vectortile` case's
+    // updateTriggers. deck.gl compares accessor props as always equal, so an
+    // accessor closing over a different legend needs a trigger value that
+    // differs before it is re-run. Legends are a handful of rows.
+    const legendFingerprint = legend ? JSON.stringify(legend) : ''
+
+    const staticFillColor = hexToRgba(
+        style.fillColor as string | undefined,
+        style.fillOpacity !== undefined ? Number(style.fillOpacity) : 0.8,
+        [0, 120, 255, 200]
+    )
+    const staticLineColor = hexToRgba(
+        style.color as string | undefined,
+        style.opacity !== undefined ? Number(style.opacity) : 1,
+        [255, 255, 255, 220]
+    )
+    const staticLineWidth = style.weight !== undefined ? Number(style.weight) : 1
+    const staticPointRadius = style.radius !== undefined ? Number(style.radius) : 6
+
+    const fillColorProp = style.fillColorProp as string | undefined
+    const fillOpacityProp = style.fillOpacityProp as string | undefined
+    const colorProp = style.colorProp as string | undefined
+    const opacityProp = style.opacityProp as string | undefined
+    const weightProp = style.weightProp as string | undefined
+    const radiusProp = style.radiusProp as string | undefined
+
+    const getFillColor =
+        fillColorProp || fillOpacityProp || legend
+            ? (feature: Record<string, unknown>) => {
+                  // A feature the legend does not cover — no such property,
+                  // or a non-numeric value — resolves to undefined here and
+                  // drops through to the *Prop and flat colours below, so it
+                  // keeps the layer's fixed colour rather than drawing black.
+                  const legendVal = legend
+                      ? resolveLegendStyle(legend, featureProperties(feature))?.fillColor
+                      : undefined
+                  const hexVal = fillColorProp
+                      ? (getPropValue(feature, fillColorProp) as string | undefined)
+                      : undefined
+                  const alphaVal = fillOpacityProp
+                      ? getPropValue(feature, fillOpacityProp)
+                      : undefined
+                  if (legendVal === undefined && hexVal === undefined && alphaVal === undefined)
+                      return staticFillColor
+                  return hexToRgba(
+                      legendVal ?? hexVal ?? (style.fillColor as string | undefined),
+                      alphaVal !== undefined
+                          ? Number(alphaVal)
+                          : style.fillOpacity !== undefined
+                            ? Number(style.fillOpacity)
+                            : 0.8,
+                      staticFillColor
+                  )
+              }
+            : staticFillColor
+
+    const getLineColor =
+        colorProp || opacityProp || legend
+            ? (feature: Record<string, unknown>) => {
+                  const legendVal = legend
+                      ? resolveLegendStyle(legend, featureProperties(feature))?.color
+                      : undefined
+                  const hexVal = colorProp
+                      ? (getPropValue(feature, colorProp) as string | undefined)
+                      : undefined
+                  const alphaVal = opacityProp
+                      ? getPropValue(feature, opacityProp)
+                      : undefined
+                  if (legendVal === undefined && hexVal === undefined && alphaVal === undefined)
+                      return staticLineColor
+                  return hexToRgba(
+                      legendVal ?? hexVal ?? (style.color as string | undefined),
+                      alphaVal !== undefined
+                          ? Number(alphaVal)
+                          : style.opacity !== undefined
+                            ? Number(style.opacity)
+                            : 1,
+                      staticLineColor
+                  )
+              }
+            : staticLineColor
+
+    const getLineWidth = weightProp
+        ? (feature: Record<string, unknown>) => {
+              const v = getPropValue(feature, weightProp)
+              return v !== undefined ? Number(v) : staticLineWidth
+          }
+        : staticLineWidth
+
+    const getPointRadius = radiusProp
+        ? (feature: Record<string, unknown>) => {
+              const v = getPropValue(feature, radiusProp)
+              return v !== undefined ? Number(v) : staticPointRadius
+          }
+        : staticPointRadius
+
+    // Whether the layer ever reads a feature property. Vector tile layers
+    // need this to pick a tile decoding format: see the `vectortile` case in
+    // buildDeckLayer. A configured legend counts even before it has arrived,
+    // because the layer built without it is the one deck.gl settles the
+    // format on.
+    const readsFeatureProperties = Boolean(
+        legend ||
+            legendConfigured ||
+            fillColorProp ||
+            fillOpacityProp ||
+            colorProp ||
+            opacityProp ||
+            weightProp ||
+            radiusProp
+    )
+
+    return {
+        getFillColor,
+        getLineColor,
+        getLineWidth,
+        getPointRadius,
+        readsFeatureProperties,
+        legendFingerprint,
+    }
+}
+
 /**
  * Construct a deck.gl layer from a {@link LayerOptions} spec.
- * Supports `'tile'` (TileLayer + BitmapLayer), `'vector'` (GeoJsonLayer),
- * and `'pointcloud'` (PointCloudLayer).
+ * Supports `'tile'` (TileLayer + BitmapLayer, or WMSLayer when tileformat is
+ * 'wms'), `'vector'` (GeoJsonLayer), and `'pointcloud'` (PointCloudLayer).
  * DeckGL class names (e.g. `'GeoJsonLayer'`) are automatically normalised
  * via {@link toCanonicalLayerType}. Use `nativeOptions` for deck.gl-specific props.
  *
@@ -183,6 +455,29 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
         case 'tile': {
             const o = options as TileLayerOptions
             const tileElevation = Number(o.tileElevation)
+
+            // WMS can't be a {z}/{x}/{y} template — the GetMap BBOX is computed
+            // per view. Route to deck.gl's WMSLayer, parsing the service URL and
+            // LAYERS out of the full WMS url (same params Leaflet reads).
+            if (o.tileformat === 'wms') {
+                const { base, layers, wmsParameters, vendorParameters } =
+                    parseWmsUrl(o.url)
+                return new WMSLayer({
+                    id,
+                    // A pre-built source (instead of the base-URL string) is the
+                    // only channel WMSLayer offers for forwarding the pasted
+                    // URL's GetMap/vendor params on every request.
+                    data: new WMSImageSource(base, {
+                        wms: { wmsParameters, vendorParameters },
+                    } as ConstructorParameters<typeof WMSImageSource>[1]),
+                    serviceType: 'wms',
+                    layers,
+                    srs: 'EPSG:3857',
+                    opacity: o.opacity ?? 1,
+                    ...(o.nativeOptions ?? {}),
+                }) as unknown as Layer
+            }
+
             return new TileLayer({
                 id,
                 data: o.url,
@@ -190,7 +485,18 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 minZoom: o.minZoom,
                 maxZoom: o.maxNativeZoom ?? o.maxZoom,
                 opacity: o.opacity ?? 1,
+                getTileData: (tile: { url?: string | null; signal?: AbortSignal }) =>
+                    fetchImageTile(tile.url, tile.signal),
+                onTileError: (error: Error) => {
+                    console.warn(
+                        `DeckGL tile request failed for layer '${id}':`,
+                        error?.message ?? error
+                    )
+                },
                 renderSubLayers: (props: Record<string, unknown>) => {
+                    // deck.gl still renders sublayers for a tile that failed or
+                    // resolved empty, so a tile carrying no image draws nothing.
+                    if (props.data == null) return null
                     const bbox = (props.tile as { bbox: { west: number; south: number; east: number; north: number } }).bbox
                     const bounds = Number.isFinite(tileElevation)
                         ? [
@@ -218,83 +524,8 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                     ? (o.style as Record<string, unknown>)
                     : {}
 
-            const staticFillColor = hexToRgba(
-                style.fillColor as string | undefined,
-                style.fillOpacity !== undefined ? Number(style.fillOpacity) : 0.8,
-                [0, 120, 255, 200]
-            )
-            const staticLineColor = hexToRgba(
-                style.color as string | undefined,
-                style.opacity !== undefined ? Number(style.opacity) : 1,
-                [255, 255, 255, 220]
-            )
-            const staticLineWidth = style.weight !== undefined ? Number(style.weight) : 1
-            const staticPointRadius = style.radius !== undefined ? Number(style.radius) : 6
-
-            const fillColorProp = style.fillColorProp as string | undefined
-            const fillOpacityProp = style.fillOpacityProp as string | undefined
-            const colorProp = style.colorProp as string | undefined
-            const opacityProp = style.opacityProp as string | undefined
-            const weightProp = style.weightProp as string | undefined
-            const radiusProp = style.radiusProp as string | undefined
-
-            const getFillColor =
-                fillColorProp || fillOpacityProp
-                    ? (feature: Record<string, unknown>) => {
-                          const hexVal = fillColorProp
-                              ? (getPropValue(feature, fillColorProp) as string | undefined)
-                              : undefined
-                          const alphaVal = fillOpacityProp
-                              ? getPropValue(feature, fillOpacityProp)
-                              : undefined
-                          if (hexVal === undefined && alphaVal === undefined) return staticFillColor
-                          return hexToRgba(
-                              hexVal ?? (style.fillColor as string | undefined),
-                              alphaVal !== undefined
-                                  ? Number(alphaVal)
-                                  : style.fillOpacity !== undefined
-                                    ? Number(style.fillOpacity)
-                                    : 0.8,
-                              staticFillColor
-                          )
-                      }
-                    : staticFillColor
-
-            const getLineColor =
-                colorProp || opacityProp
-                    ? (feature: Record<string, unknown>) => {
-                          const hexVal = colorProp
-                              ? (getPropValue(feature, colorProp) as string | undefined)
-                              : undefined
-                          const alphaVal = opacityProp
-                              ? getPropValue(feature, opacityProp)
-                              : undefined
-                          if (hexVal === undefined && alphaVal === undefined) return staticLineColor
-                          return hexToRgba(
-                              hexVal ?? (style.color as string | undefined),
-                              alphaVal !== undefined
-                                  ? Number(alphaVal)
-                                  : style.opacity !== undefined
-                                    ? Number(style.opacity)
-                                    : 1,
-                              staticLineColor
-                          )
-                      }
-                    : staticLineColor
-
-            const getLineWidth = weightProp
-                ? (feature: Record<string, unknown>) => {
-                      const v = getPropValue(feature, weightProp)
-                      return v !== undefined ? Number(v) : staticLineWidth
-                  }
-                : staticLineWidth
-
-            const getPointRadius = radiusProp
-                ? (feature: Record<string, unknown>) => {
-                      const v = getPropValue(feature, radiusProp)
-                      return v !== undefined ? Number(v) : staticPointRadius
-                  }
-                : staticPointRadius
+            const { getFillColor, getLineColor, getLineWidth, getPointRadius } =
+                resolveStyleAccessors(style, o.legend)
 
             const markerIcon = o.variables?.markerIcon
             const iconUrl = markerIcon?.iconUrl
@@ -306,6 +537,7 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
             return new GeoJsonLayer({
                 id,
                 data: o.geojson as unknown as ConstructorParameters<typeof GeoJsonLayer>[0]['data'],
+                opacity: o.opacity ?? 1,
                 filled: o.filled ?? true,
                 stroked: o.stroked ?? true,
                 extruded: o.extruded ?? false,
@@ -340,6 +572,18 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 o.style && typeof o.style === 'object' && !Array.isArray(o.style)
                     ? (o.style as Record<string, unknown>)
                     : {}
+            // The layer configuration UI offers vector tile layers the same
+            // per-feature style fields as vector layers, so resolve them the
+            // same way.
+            const {
+                getFillColor,
+                getLineColor,
+                getLineWidth,
+                getPointRadius,
+                readsFeatureProperties,
+                legendFingerprint,
+            } = resolveStyleAccessors(style, o.legend, o.legendConfigured)
+
             return new MVTLayer({
                 id,
                 data: o.url,
@@ -347,18 +591,51 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 maxZoom: o.maxNativeZoom ?? o.maxZoom,
                 opacity: o.opacity ?? 1,
                 pickable: o.interactive ?? true,
-                getFillColor: hexToRgba(
-                    style.fillColor as string | undefined,
-                    style.fillOpacity !== undefined ? Number(style.fillOpacity) : 0.8,
-                    [0, 120, 255, 200]
-                ),
-                getLineColor: hexToRgba(
-                    style.color as string | undefined,
-                    style.opacity !== undefined ? Number(style.opacity) : 1,
-                    [255, 255, 255, 220]
-                ),
-                getLineWidth: style.weight !== undefined ? Number(style.weight) : 1,
+                // deck.gl decodes vector tiles into a binary form by default,
+                // which hoists every numeric property into one tile-wide typed
+                // array covering every feature in the tile. A feature that
+                // never carried the property gets the array's zero fill, and
+                // the whole set is merged into the object accessors are handed
+                // - so `{class: 'grass'}` arrives as `{class: 'grass', ele: 0}`
+                // and a missing measurement is indistinguishable from a real
+                // zero. Nothing in the binary payload records presence: the
+                // string properties it keeps alongside simply omit the key,
+                // and there is no mask. So whenever an accessor reads a
+                // feature property, decode to GeoJSON instead, where an absent
+                // key is genuinely absent. Everything else keeps the binary
+                // fast path. Picking, autoHighlight and uniqueIdProperty all
+                // work in either mode - MVTLayer carries a branch for each,
+                // and GlobeView already forces this same setting.
+                //
+                // Read from what the mission configures rather than from the
+                // legend in hand, because deck.gl reads this prop once, in
+                // initializeState, and a layer rebuilt under the same id when
+                // its legend lands late is an update rather than a fresh
+                // initialisation. The cost is that a legend configured for
+                // display alone also gives up the binary fast path.
+                binary: !readsFeatureProperties,
+                getFillColor,
+                getLineColor,
+                getLineWidth,
                 lineWidthUnits: 'pixels',
+                getPointRadius,
+                // deck.gl defaults point radius to 1 *metre*, which is
+                // sub-pixel at every practical zoom and leaves a point tileset
+                // invisible. Line width above already pins its unit; points
+                // were missed.
+                pointRadiusUnits: 'pixels',
+                // A legend arriving late rebuilds the layer under the same id,
+                // which reaches deck.gl as a prop update. Accessor props
+                // compare as always equal there, so without a trigger value
+                // that changed, the colours already generated for every loaded
+                // tile would stand. Keyed per accessor rather than `all`:
+                // TileLayer reads `all` and `getTileData` as a data change and
+                // would refetch every tile instead of restyling the ones it
+                // holds.
+                updateTriggers: {
+                    getFillColor: legendFingerprint,
+                    getLineColor: legendFingerprint,
+                },
                 ...(o.nativeOptions ?? {}),
             } as ConstructorParameters<typeof MVTLayer>[0]) as unknown as Layer
         }
@@ -465,3 +742,5 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
             )
     }
 }
+
+export { buildDeckCOGLayer } from './DeckCOGLayer'

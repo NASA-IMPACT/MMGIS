@@ -61,6 +61,16 @@ export function cardsFromAnalysisData(
     return out
 }
 
+export function cardKey(card: ResultCard): string {
+    return `${card.layerName}__${card.assetName}`
+}
+
+/** The layer name, plus the asset when the same layer produced several cards. */
+export function cardLabel(card: ResultCard, cards: ResultCard[]): string {
+    const siblings = cards.filter((c) => c.layerName === card.layerName)
+    return siblings.length > 1 ? `${card.layerName} (${card.assetName})` : card.layerName
+}
+
 /** Layer names that came back as null (errored or non-2xx). */
 export function emptyLayers(
     data: AnalysisData | null | undefined

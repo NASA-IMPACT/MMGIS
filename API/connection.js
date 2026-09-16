@@ -2,6 +2,10 @@ const Sequelize = require("sequelize");
 const logger = require("./logger");
 const fs = require("fs");
 require("dotenv").config();
+const {
+  getDbPassword,
+  withPasswordRefreshRetry,
+} = require("./Backend/Utils/dbPassword");
 
 // create a sequelize instance with our local postgres database information.
 const sequelize = new Sequelize(
@@ -12,6 +16,14 @@ const sequelize = new Sequelize(
     host: process.env.DB_HOST,
     port: process.env.DB_PORT || "5432",
     dialect: "postgres",
+    hooks: {
+      // Supply the DB password per new physical connection so the app tracks
+      // RDS-managed password rotation (API/Backend/Utils/dbPassword.js). In
+      // full/local mode this returns process.env.DB_PASS unchanged.
+      beforeConnect: async (connectionConfig) => {
+        connectionConfig.password = await getDbPassword();
+      },
+    },
     dialectOptions: {
       ssl:
         process.env.DB_SSL === "true"
@@ -58,6 +70,12 @@ const sequelizeSTAC =
         host: process.env.DB_HOST,
         port: process.env.DB_PORT || "5432",
         dialect: "postgres",
+        hooks: {
+          // Same per-connection password fetch as the main instance above.
+          beforeConnect: async (connectionConfig) => {
+            connectionConfig.password = await getDbPassword();
+          },
+        },
         dialectOptions: {
           ssl:
             process.env.DB_SSL === "true"
@@ -98,8 +116,7 @@ const sequelizeSTAC =
     : null;
 
 // Source: http://docs.sequelizejs.com/manual/installation/getting-started.html
-sequelize
-  .authenticate()
+withPasswordRefreshRetry(() => sequelize.authenticate())
   .then(() => {
     logger(
       "info",

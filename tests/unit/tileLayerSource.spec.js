@@ -36,6 +36,7 @@ vi.mock('../../src/essence/Basics/Formulae_/Formulae_', () => ({
 
 const {
     resolveTileLayerSource,
+    resolveDeckCOGFileUrl,
     syncTileFormatToConfig,
     getActiveTileLevel,
     getTileLevelElevation,
@@ -237,6 +238,47 @@ describe('resolveTileLayerSource', () => {
             })
             expect(splitColonType).toBe('COG')
             expect(url).toContain('titiler(')
+        })
+    })
+
+    describe('resolveDeckCOGFileUrl', () => {
+        const timedLayer = () => ({
+            name: 'cog',
+            type: 'tile',
+            url: 'https://example.com/cogs/tasmax_{time}.tif',
+            cogTransform: true,
+            cogColormap: 'viridis',
+            cogMin: 0,
+            cogMax: 100,
+            time: {
+                enabled: true,
+                format: '%Y%m',
+                start: '2010-01-15T00:00:00Z',
+                end: '2010-06-15T00:00:00Z',
+            },
+        })
+
+        test('substitutes time placeholders using the layer time format', () => {
+            const url = resolveDeckCOGFileUrl(timedLayer())
+            expect(url).toBe('resolved(https://example.com/cogs/tasmax_201006.tif)')
+        })
+
+        test('never appends query params — a file URL takes no COG/TMS/datetime params', () => {
+            const url = resolveDeckCOGFileUrl(timedLayer())
+            expect(url).not.toContain('?')
+            expect(url).not.toContain('colormap')
+            expect(url).not.toContain('datetime')
+        })
+
+        test('returns the resolved file URL unchanged when there are no placeholders', () => {
+            const layer = { name: 'c', type: 'tile', url: 'https://example.com/a.tif' }
+            expect(resolveDeckCOGFileUrl(layer)).toBe('resolved(https://example.com/a.tif)')
+        })
+
+        test('uses a precomputed tileSource instead of re-resolving', () => {
+            const layer = timedLayer()
+            const tileSource = { fileUrl: 'https://pre/{time}.tif', splitColonType: 'COG', tileFormat: 'wmts' }
+            expect(resolveDeckCOGFileUrl(layer, tileSource)).toBe('https://pre/201006.tif')
         })
     })
 

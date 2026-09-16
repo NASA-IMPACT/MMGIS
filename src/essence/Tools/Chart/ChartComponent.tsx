@@ -1,12 +1,13 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import ChartJS from 'chart.js/auto'
-import './theme.css'
 import './ChartComponent.css'
 import {
     AnalysisData,
     AssetStats,
     ResultCard,
     cardsFromAnalysisData,
+    cardKey,
+    cardLabel,
     emptyLayers,
     buildHistogramBins,
     formatStat,
@@ -23,6 +24,9 @@ export function ChartComponent({ analysisData, onClose }: ChartComponentProps) {
     const cards = cardsFromAnalysisData(analysisData)
     const empties = emptyLayers(analysisData)
     const isIdle = !analysisData
+    const [pickedKey, setPickedKey] = useState('')
+    // A pick that no longer exists (new results arrived) falls back to the first card.
+    const picked = cards.find((card) => cardKey(card) === pickedKey) ?? cards[0]
 
     return (
         <div className="chart-tool" role="region" aria-label="Analysis results">
@@ -58,12 +62,24 @@ export function ChartComponent({ analysisData, onClose }: ChartComponentProps) {
                             </p>
                         )}
 
-                        {cards.map((card) => (
-                            <ResultCardView
-                                key={`${card.layerName}__${card.assetName}`}
-                                card={card}
-                            />
-                        ))}
+                        {cards.length > 1 && (
+                            <label className="chart-tool__picker">
+                                <span className="chart-tool__picker-label">Layer</span>
+                                <select
+                                    className="chart-tool__picker-select"
+                                    value={cardKey(picked)}
+                                    onChange={(e) => setPickedKey(e.target.value)}
+                                >
+                                    {cards.map((card) => (
+                                        <option key={cardKey(card)} value={cardKey(card)}>
+                                            {cardLabel(card, cards)}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                        )}
+
+                        {picked && <ResultCardView key={cardKey(picked)} card={picked} />}
 
                         {empties.map((layerName) => (
                             <EmptyCard key={`empty__${layerName}`} layerName={layerName} />
@@ -143,12 +159,15 @@ function Histogram({ stats }: { stats: AssetStats }) {
         const canvas = canvasRef.current
         if (!canvas || bins.length === 0) return
 
+        // The canvas is painted by script rather than by the stylesheet, so the
+        // design tokens are read off the element instead of referenced. Each
+        // fallback is the horizon value, matching ChartComponent.css.
         const styles = getComputedStyle(canvas)
         const themeVar = (name: string, fallback: string) =>
             styles.getPropertyValue(name).trim() || fallback
-        const accent = themeVar('--chart-accent', '#137480')
-        const grid = themeVar('--chart-border', '#dfe1e2')
-        const muted = themeVar('--chart-fg-muted', '#565c65')
+        const accent = themeVar('--theme-color-primary', '#1c67e3')
+        const grid = themeVar('--theme-color-base-lighter', '#e3e3e3')
+        const muted = themeVar('--theme-color-base-dark', '#58585b')
 
         chartRef.current = new ChartJS(canvas, {
             type: 'bar',

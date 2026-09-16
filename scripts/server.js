@@ -11,7 +11,7 @@ var bodyParser = require("body-parser");
 const cookieParser = require("cookie-parser");
 const express = require("express");
 var swaggerUi = require("swagger-ui-express");
-var swaggerDocumentMain = require("../docs/mmgis-openapi.json");
+var swaggerDocumentMain = require("../API/mmgis-openapi.json");
 
 const createError = require("http-errors");
 const cors = require("cors");
@@ -59,6 +59,11 @@ const createDevServerConfig = require("../configuration/webpackDevServer.config"
 const middleware = require("./middleware").middleware;
 
 const { isFull } = require("../API/Backend/Utils/deploymentMode");
+const {
+  getDbPassword,
+  refreshDbPassword,
+  isPasswordAuthError,
+} = require("../API/Backend/Utils/dbPassword");
 
 const isDevEnv = process.env.NODE_ENV === "development";
 
@@ -108,7 +113,7 @@ const pool = new Pool({
   user: process.env.DB_USER,
   host: process.env.DB_HOST,
   database: process.env.DB_NAME,
-  password: process.env.DB_PASS,
+  password: getDbPassword,
   port: process.env.DB_PORT || "5432",
   ssl:
     process.env.DB_SSL === "true"
@@ -127,6 +132,15 @@ const pool = new Pool({
               : false,
         }
       : false,
+});
+// If a new pooled connection fails password auth because RDS rotated the master
+// password out from under the cached value, drop the cache so the next
+// connection re-fetches it (see API/Backend/Utils/dbPassword.js).
+pool.on("error", (err) => {
+  // Fire-and-forget, but never let the refetch reject unhandled: a Secrets
+  // Manager hiccup here would otherwise crash the process during the exact
+  // rotation this handler exists for. The interval refresh self-heals anyway.
+  if (isPasswordAuthError(err)) refreshDbPassword().catch(() => {});
 });
 app.use(
   session({
@@ -480,8 +494,8 @@ function ensureUser() {
 }
 
 var swaggerOptions = {
-  customCssUrl: "/docs/swagger/swaggerCSS.css",
-  customJs: "/docs/swagger/swaggerJS.js",
+  customCssUrl: "/public/swagger/swaggerCSS.css",
+  customJs: "/public/swagger/swaggerJS.js",
 };
 
 const useSwaggerSchema =
@@ -618,15 +632,6 @@ setups.getBackendSetups(function (setups) {
     express.static(path.join(rootDir, "/build"))
   );
   app.use(
-    `${ROOT_PATH}/docs`,
-    ensureUser(),
-    express.static(path.join(rootDir, "/docs"))
-  );
-  app.use(
-    `${ROOT_PATH}/README.md`,
-    express.static(path.join(rootDir, "/README.md"))
-  );
-  app.use(
     `${ROOT_PATH}/configure/build`,
     ensureUser(),
     express.static(path.join(rootDir, "/configure/build"))
@@ -759,6 +764,7 @@ setups.getBackendSetups(function (setups) {
             IS_DOCKER: process.env.IS_DOCKER,
             SKIP_CLIENT_INITIAL_LOGIN: process.env.SKIP_CLIENT_INITIAL_LOGIN,
             THIRD_PARTY_COOKIES: process.env.THIRD_PARTY_COOKIES,
+            WITH_TITILER: process.env.WITH_TITILER,
             PORT: process.env.PORT,
             ROOT_PATH: ROOT_PATH,
             WEBSOCKET_ROOT_PATH: process.env.WEBSOCKET_ROOT_PATH,

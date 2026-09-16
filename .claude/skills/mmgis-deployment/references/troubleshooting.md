@@ -44,7 +44,7 @@
 |---------|-------|-----|
 | e2e passes but didn't seem to test your changes | Playwright `reuseExistingServer` attached to another server on 8888 | `test.sh e2e` refuses when 8888 is busy; stop the other server and re-run |
 | e2e can't start its server | Port 8888 occupied | Free it; `test.sh` reports the conflict |
-| Unit tests fail to import modules | `node_modules` missing/incomplete | `npm install --force` in the deployment |
+| Unit tests fail to import modules | `node_modules` missing/incomplete | `npm ci` in the deployment (never `--legacy-peer-deps` — it drops the deck.gl peer packages) |
 
 ## Stray containers
 

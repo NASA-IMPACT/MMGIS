@@ -4,7 +4,8 @@ import { mmgisAPI, mmgisAPI_ } from '../../mmgisAPI/mmgisAPI'
 import ToolControllerModern_ from '../ToolController_/ToolControllerModern_'
 import { getValidIconClass } from '../ToolController_/ToolMetadataUtils'
 import { createLogger } from '../Logger_/Logger_'
-import { FLOAT_POSITIONS } from '../PanelManager_/types/layout'
+import { PANEL_STATE, FLOAT_POSITIONS } from '../PanelManager_/types/layout'
+import { toCssDimension, toPixelNumber } from '../PanelManager_/dimensions'
 import './UserInterfaceModern_.css'
 
 const logger = createLogger('UserInterfaceModern')
@@ -17,7 +18,6 @@ let panels = []
 let layoutStyle = ''
 let toolLoadQueue = []
 let cleanupLayoutListener = null
-let cleanupCoreCommandDispatcher = null
 let _resizeObserver = null
 
 // --- DOM Builder Helpers ---
@@ -42,8 +42,8 @@ const _createPanelIconTray = (panel) => {
             .append(iconSpan)
 
         iconBtn.on('click', () => {
-            if (panel.state === 'focused' && panel.activeToolId === toolId) {
-                PanelManager_.setPanelState(panel.id, 'iconified')
+            if (panel.state === PANEL_STATE.FOCUSED && panel.activeToolId === toolId) {
+                _panelCommand('panels:setState', panel.id, { state: PANEL_STATE.ICONIFIED })
             } else {
                 PanelManager_.focusTool(panel.id, toolId)
             }
@@ -53,44 +53,63 @@ const _createPanelIconTray = (panel) => {
     return iconsContainer
 }
 
+/**
+ * Issue a panel command over the bus and surface a refusal. Every control goes
+ * through here, so a command the constraints reject leaves a diagnosable trace
+ * instead of a dead click.
+ */
+const _panelCommand = (name, panelId, extra = {}) => {
+    mmgisAPI.request(name, { panelId, ...extra })
+        .then((result) => {
+            if (!result?.ok) {
+                logger.warn(`Panel command "${name}" on "${panelId}" refused: ${result?.reason}`)
+            }
+        })
+        .catch((err) => {
+            logger.warn(`Panel command "${name}" on "${panelId}" failed:`, err)
+        })
+}
+
 const _createPanelHeader = (panel) => {
-    const allowed = panel.config.stateConstraints?.allowedStates || []
     const header = $('<div class="ui-panel-header"></div>')
     const title = $('<h3 class="ui-panel-title"></h3>').text(panel.config.title || panel.id)
     const headerButtons = $('<div class="ui-panel-header-buttons"></div>')
 
-    if (allowed.includes('iconified') || allowed.includes('collapsed')) {
-        const minBtn = $('<button class="ui-panel-btn ui-panel-btn-minimize" title="Minimize"><span class="mdi mdi-window-minimize"></span></button>')
-        minBtn.on('click', () => {
-            const target = allowed.includes('iconified') ? 'iconified' : 'collapsed'
-            PanelManager_.setPanelState(panel.id, target)
-        })
-        headerButtons.append(minBtn)
+    const addButton = (className, titleText, icon, onClick) => {
+        const btn = $(`<button class="ui-panel-btn ${className}" title="${titleText}"><span class="mdi ${icon}"></span></button>`)
+        btn.on('click', onClick)
+        headerButtons.append(btn)
     }
 
-    if (allowed.includes('expanded')) {
-        const maxBtn = $('<button class="ui-panel-btn ui-panel-btn-maximize" title="Maximize"><span class="mdi mdi-window-maximize"></span></button>')
-        maxBtn.on('click', () => {
-            PanelManager_.setPanelState(panel.id, 'expanded')
-        })
-        headerButtons.append(maxBtn)
+    // Minimize prefers iconified — it keeps the tool icons reachable — and falls
+    // back to collapsing outright when the panel has no iconified state.
+    const minimizeTarget = PanelManager_.canSetState(panel.id, PANEL_STATE.ICONIFIED)
+        ? PANEL_STATE.ICONIFIED
+        : PanelManager_.canSetState(panel.id, PANEL_STATE.COLLAPSED)
+            ? PANEL_STATE.COLLAPSED
+            : null
+
+    if (minimizeTarget) {
+        addButton('ui-panel-btn-minimize', 'Minimize', 'mdi-window-minimize', () =>
+            _panelCommand('panels:setState', panel.id, { state: minimizeTarget })
+        )
     }
 
-    if (allowed.includes('collapsed')) {
-        const closeBtn = $('<button class="ui-panel-btn ui-panel-btn-close" title="Close"><span class="mdi mdi-close"></span></button>')
-        closeBtn.on('click', () => {
-            PanelManager_.setPanelState(panel.id, 'collapsed')
-        })
-        headerButtons.append(closeBtn)
+    if (PanelManager_.canSetState(panel.id, PANEL_STATE.EXPANDED)) {
+        addButton('ui-panel-btn-maximize', 'Maximize', 'mdi-window-maximize', () =>
+            _panelCommand('panels:setState', panel.id, { state: PANEL_STATE.EXPANDED })
+        )
+    }
+
+    if (PanelManager_.canSetState(panel.id, PANEL_STATE.COLLAPSED)) {
+        addButton('ui-panel-btn-close', 'Close', 'mdi-close', () =>
+            _panelCommand('panels:hide', panel.id)
+        )
     }
 
     header.append(title).append(headerButtons)
     return header
 }
-
-// Converts a dimension value to a CSS string.
-// Numbers are treated as px; strings are passed through as-is (e.g. "40%", "50vh").
-const _toCssValue = (v) => (typeof v === 'number' ? v + 'px' : v)
 
 const _renderFloatRegions = (floatPanels) => {
     if (!floatPanels || floatPanels.length === 0) return null
@@ -118,13 +137,22 @@ const _renderFloatRegions = (floatPanels) => {
                 .attr('id', panel.containerId)
                 .attr('data-panel-state', panel.state)
 
+            // Strips every layout-drawn surface from the panel and its tool cards,
+            // leaving the tools' own boxes sitting directly on the map
+            if (panel.config.transparent) {
+                panelDiv.addClass('ui-panel-transparent')
+            }
+
             const dims = panel.config.dimensions || {}
 
             // Width constraints go on the panel container
             const panelCss = {}
-            if (dims.defaultWidth)  panelCss['width']     = _toCssValue(dims.defaultWidth)
-            if (dims.minWidth)      panelCss['min-width'] = _toCssValue(dims.minWidth)
-            if (dims.maxWidth)      panelCss['max-width'] = _toCssValue(dims.maxWidth)
+            const width    = toCssDimension(dims.defaultWidth)
+            const minWidth = toCssDimension(dims.minWidth)
+            const maxWidth = toCssDimension(dims.maxWidth)
+            if (width)    panelCss['width']     = width
+            if (minWidth) panelCss['min-width'] = minWidth
+            if (maxWidth) panelCss['max-width'] = maxWidth
             if (Object.keys(panelCss).length) panelDiv.css(panelCss)
 
             if (panel.config.hasHeader) {
@@ -138,9 +166,12 @@ const _renderFloatRegions = (floatPanels) => {
             // Applying max-height only to the panel won't constrain the flex body's actual height,
             // so the body scroll never fires; setting it on the body directly fixes this.
             const bodyCss = {}
-            if (dims.defaultHeight) bodyCss['height']     = _toCssValue(dims.defaultHeight)
-            if (dims.minHeight)     bodyCss['min-height'] = _toCssValue(dims.minHeight)
-            if (dims.maxHeight)     bodyCss['max-height'] = _toCssValue(dims.maxHeight)
+            const height    = toCssDimension(dims.defaultHeight)
+            const minHeight = toCssDimension(dims.minHeight)
+            const maxHeight = toCssDimension(dims.maxHeight)
+            if (height)    bodyCss['height']     = height
+            if (minHeight) bodyCss['min-height'] = minHeight
+            if (maxHeight) bodyCss['max-height'] = maxHeight
             if (Object.keys(bodyCss).length) body.css(bodyCss)
             toolsMetadata.forEach(toolMetadata => {
                 const { toolCard, loadTool, targetId } = UserInterfaceModern_.createToolCard(toolMetadata, panel.containerId)
@@ -187,14 +218,22 @@ const _renderRegion = (regionName, regionPanels) => {
             panelDiv.append($('<div></div>').addClass(`ui-panel-drag-handle ui-panel-drag-handle-${regionName}`))
         }
 
+        // Pinned region, above the body so its tools hold their place while
+        // everything below them scrolls. Null unless the panel pins anything.
+        const pinnedRegion = UserInterfaceModern_.renderPinnedRegion(panel)
+        if (pinnedRegion) {
+            contentWrapper.append(pinnedRegion)
+        }
+
         // Tools rendering
-        if (panel.tools && panel.tools.size > 0) {
+        const scrollingTools = PanelManager_.getScrollingToolsForPanel(panel.id)
+        if (scrollingTools.length > 0) {
             if (panel.config.layoutType === 'tabbed') {
                 UserInterfaceModern_.renderTabbedLayout(panel, body)
             } else {
                 UserInterfaceModern_.renderStackedLayout(panel, body)
             }
-        } else {
+        } else if (!pinnedRegion) {
             body.append('<p class="ui-empty-text">No tools configured</p>')
         }
 
@@ -206,6 +245,27 @@ const _renderRegion = (regionName, regionPanels) => {
     return regionDiv
 }
 
+
+/**
+ * Builds a card per tool into `container` and queues each tool's load (or its
+ * deferred registration, for tools configured to start unloaded) for after the
+ * DOM is in place.
+ *
+ * @param {jQuery} container - Element the cards are appended to
+ * @param {Array} toolsMetadata - Tool metadata in render order
+ * @param {string} containerId - Panel container ID the cards belong to
+ */
+const _appendToolCards = (container, toolsMetadata, containerId) => {
+    toolsMetadata.forEach(toolMetadata => {
+        const { toolCard, loadTool, targetId } = UserInterfaceModern_.createToolCard(toolMetadata, containerId)
+        container.append(toolCard)
+        if (toolMetadata.startUnloaded) {
+            toolLoadQueue.push(() => ToolControllerModern_.registerDeferred(toolMetadata, targetId))
+        } else {
+            toolLoadQueue.push(loadTool)
+        }
+    })
+}
 
 /**
  * Modern User Interface Module
@@ -235,17 +295,13 @@ const UserInterfaceModern_ = {
 
         this.render()
 
-        // Wire plugin lifecycle API into mmgisAPI so plugins and core can call
-        // showPlugin/hidePlugin/loadPlugin/unloadPlugin without a direct import
+        // Expose the controller and manager instances so the panels/plugins
+        // bus providers can read live state without a direct import.
         mmgisAPI_._pluginController = ToolControllerModern_
         mmgisAPI_._panelManager = PanelManager_
 
-        if (!cleanupCoreCommandDispatcher) {
-            cleanupCoreCommandDispatcher = mmgisAPI_._initCoreCommandDispatcher()
-        }
-
         if (!cleanupLayoutListener) {
-            cleanupLayoutListener = mmgisAPI.on('mmgis-panel-layout-changed', this.syncDOMState.bind(this))
+            cleanupLayoutListener = mmgisAPI.on('panels:changed', this.syncDOMState.bind(this))
         }
 
         // Set up ResizeObserver to dispatch resize events when the center map area changes size
@@ -267,10 +323,6 @@ const UserInterfaceModern_ = {
     destroy: function () {
         ToolControllerModern_.destroyAllTools()
         toolLoadQueue = [] // Clear any pending loads
-        if (cleanupCoreCommandDispatcher) {
-            cleanupCoreCommandDispatcher()
-            cleanupCoreCommandDispatcher = null
-        }
         if (cleanupLayoutListener) {
             cleanupLayoutListener()
             cleanupLayoutListener = null
@@ -348,7 +400,7 @@ const UserInterfaceModern_ = {
         const tabBar = $('<div class="ui-panel-tabs"></div>')
         const tabContentArea = $('<div class="ui-panel-tab-content-area"></div>')
 
-        const toolsMetadata = PanelManager_.getToolsForPanel(panel.id) || []
+        const toolsMetadata = PanelManager_.getScrollingToolsForPanel(panel.id) || []
 
         // Pick the first tool that isn't starting hidden/unloaded to be the
         // active tab, so we don't land on a tab whose content is invisible.
@@ -420,18 +472,30 @@ const UserInterfaceModern_ = {
             return
         }
 
-        const toolsMetadata = PanelManager_.getToolsForPanel(panel.id) || []
+        _appendToolCards(body, PanelManager_.getScrollingToolsForPanel(panel.id), panel.containerId)
+    },
 
-        toolsMetadata.forEach(toolMetadata => {
-            const { toolCard, loadTool, targetId } = this.createToolCard(toolMetadata, panel.containerId)
-            body.append(toolCard)
-            // Queue tool loading (or deferred registration) for after DOM is fully rendered
-            if (toolMetadata.startUnloaded) {
-                toolLoadQueue.push(() => ToolControllerModern_.registerDeferred(toolMetadata, targetId))
-            } else {
-                toolLoadQueue.push(loadTool)
-            }
-        })
+    /**
+     * Renders a panel's pinned region — the tools that sit above the panel body
+     * and don't scroll with it. Cards are built exactly as stacked body cards
+     * are, so a tool behaves the same wherever it is placed.
+     *
+     * @param {Object} panel - Panel configuration object
+     * @returns {jQuery|null} The pinned region, or null if the panel pins nothing
+     */
+    renderPinnedRegion: function (panel) {
+        if (!panel || !panel.id || !panel.containerId) {
+            logger.error('Invalid panel object in renderPinnedRegion:', panel)
+            return null
+        }
+
+        const toolsMetadata = PanelManager_.getPinnedToolsForPanel(panel.id)
+        if (toolsMetadata.length === 0) return null
+
+        const pinnedRegion = $('<div class="ui-panel-pinned"></div>')
+        _appendToolCards(pinnedRegion, toolsMetadata, panel.containerId)
+
+        return pinnedRegion
     },
 
     /**
@@ -556,16 +620,7 @@ const UserInterfaceModern_ = {
             logger.debug(`Loading ${toolLoadQueue.length} queued tools`)
             const queue = toolLoadQueue;
             toolLoadQueue = [] // Clear the queue
-            setTimeout(() => {
-                queue.forEach(loadFn => {
-                    try {
-                        loadFn()
-                    } catch (error) {
-                        logger.error('Failed to load tool:', error)
-                        // Continue loading other tools even if one fails
-                    }
-                })
-            }, 0)
+            setTimeout(() => ToolControllerModern_.runLoadQueue(queue), 0)
         }
 
         this.attachResizeEvents()
@@ -579,10 +634,6 @@ const UserInterfaceModern_ = {
      * @param {Object} e Layout changed event payload
      */
     syncDOMState: function (e) {
-        if (e && e.panels) {
-            this.panels = e.panels
-        }
-
         panels.forEach(panel => {
             const isFloatingPanel = FLOAT_POSITIONS.has(panel.config?.position)
 
@@ -609,29 +660,82 @@ const UserInterfaceModern_ = {
                 $panel.find('.ui-panel-icon-btn').removeClass('active')
             }
 
-            // Float panels are sized via dimensions.defaultWidth/defaultHeight applied
-            // once at render time (see _renderFloatRegions) — the edge-panel
-            // expandedSize/iconifiedSize logic below doesn't apply and would clobber them.
+            // A float panel takes its size once at render time from
+            // dimensions.defaultWidth/defaultHeight (see _renderFloatRegions). The
+            // edge-panel sizing below would overwrite that.
             if (isFloatingPanel) {
                 // no-op
             } else if (panel.state === 'iconified') {
-                $panel.css({ width: '', height: '', flex: 'none' })
+                // Shrink-wrap the panel to its icon bar. The inline min-/max-* the
+                // expanded branch writes are cleared, or the panel would stay held
+                // to its expanded floor and cap. The bar itself is sized below.
+                $panel.css({ width: '', height: '', minWidth: '', maxWidth: '',
+                             minHeight: '', maxHeight: '', flex: 'none' })
             } else if (panel.state === 'expanded' || panel.state === 'focused') {
-                let targetSize = panel.currentSize;
+                // Size the panel on its resize axis — width for left/right, height
+                // for top/bottom. A drag wins; failing that a configured expandedSize
+                // fixes the size, applied with flex:none so content scrolls inside
+                // rather than growing the panel; with neither, the panel sizes to its
+                // content. maxSize caps whichever of those applies. Every property is
+                // written each pass, to '' or a value, so inline styles left by the
+                // drag handler cannot linger.
+                const region = panel.config.position
+                if (region === 'left' || region === 'right' || region === 'top' || region === 'bottom') {
+                    const capabilities = panel.config.capabilities || {}
+                    const expandedSize = toCssDimension(panel.config.dimensions?.expandedSize)
+                    const draggedSize = panel.currentSize
+                    // DEFAULT_MAX_PANEL_SIZE (9999) is a drag-clamp sentinel rather
+                    // than a real maximum, so a CSS cap is written only for a usable
+                    // maxSize. A cleared Configure field means no cap.
+                    const maxSize = toPixelNumber(capabilities.maxSize)
+                    const maxPx = maxSize !== null ? maxSize + 'px' : ''
 
-                if (!targetSize) {
-                    targetSize = panel.config.dimensions?.expandedSize;
-                }
+                    const isVertical = region === 'left' || region === 'right'
+                    const size = isVertical ? 'width' : 'height'
+                    const min = isVertical ? 'minWidth' : 'minHeight'
+                    const max = isVertical ? 'maxWidth' : 'maxHeight'
+                    const crossMin = isVertical ? 'minHeight' : 'minWidth'
+                    const crossMax = isVertical ? 'maxHeight' : 'maxWidth'
 
-                if (targetSize) {
-                    const region = panel.config.position
-                    if (region === 'left' || region === 'right') {
-                        $panel.css({ width: targetSize + 'px', flex: 'none' })
-                    } else if (region === 'top' || region === 'bottom') {
-                        $panel.css({ height: targetSize + 'px', flex: 'none' })
+                    if (!draggedSize && !expandedSize && !maxPx) {
+                        // Nothing configured — leave the panel to the stylesheet.
+                        $panel.css({ width: '', height: '', minWidth: '', maxWidth: '',
+                                     minHeight: '', maxHeight: '', flex: '' })
+                    } else {
+                        // min-* is always cleared, so a panel has no floor; max-* takes
+                        // the maxSize cap.
+                        const fixedSize = draggedSize
+                            ? draggedSize + 'px'
+                            : (expandedSize || '')
+                        $panel.css({ flex: 'none', [size]: fixedSize,
+                                     [min]: '', [max]: maxPx,
+                                     [crossMin]: '', [crossMax]: '' })
                     }
-                } else {
-                    $panel.css({ width: '', height: '', flex: '' })
+                }
+            }
+
+            // Icon-bar sizing, shared by the iconified and focused states so the bar
+            // looks the same in both. Its axis — width for left/right, height for
+            // top/bottom — is pinned to --ui-icon-bar-size, which the stylesheet
+            // gives a default and iconifiedSize overrides. The buttons divide up that
+            // same measure, so they stay in proportion at any bar size. Sizing the
+            // bar rather than the panel keeps the bar's padding intact.
+            if (!isFloatingPanel && (panel.state === 'iconified' || panel.state === 'focused')) {
+                const iconifiedSize = toCssDimension(panel.config.dimensions?.iconifiedSize)
+                const region = panel.config.position
+                const $icons = $panel.children('.ui-panel-icons')
+                if ($icons.length) {
+                    const barSize = 'var(--ui-icon-bar-size)'
+                    if (region === 'left' || region === 'right') {
+                        $icons.css({ width: barSize, height: '' })
+                    } else if (region === 'top' || region === 'bottom') {
+                        $icons.css({ width: '', height: barSize })
+                    } else {
+                        $icons.css({ width: '', height: '' })
+                    }
+
+                    if (iconifiedSize) $icons[0].style.setProperty('--ui-icon-bar-size', iconifiedSize)
+                    else $icons[0].style.removeProperty('--ui-icon-bar-size')
                 }
             }
         })
@@ -704,8 +808,13 @@ const UserInterfaceModern_ = {
             if (!isResizing || !$currentPanel || !currentRegion) return
 
             const capabilities = currentConfig?.capabilities || {}
-            const minSize = capabilities.minSize !== undefined ? capabilities.minSize : DEFAULT_MIN_PANEL_SIZE
-            const maxSize = capabilities.maxSize !== undefined ? capabilities.maxSize : DEFAULT_MAX_PANEL_SIZE
+            // An unusable or cleared bound falls back to its default. A non-numeric
+            // one reaching the clamp would make every comparison NaN and leave the
+            // drag unbounded.
+            const configuredMin = toPixelNumber(capabilities.minSize, { allowZero: true })
+            const configuredMax = toPixelNumber(capabilities.maxSize)
+            const minSize = configuredMin !== null ? configuredMin : DEFAULT_MIN_PANEL_SIZE
+            const maxSize = configuredMax !== null ? configuredMax : DEFAULT_MAX_PANEL_SIZE
 
             const strategy = resizeStrategies[currentRegion]
             if (!strategy) return
@@ -752,3 +861,4 @@ const UserInterfaceModern_ = {
 }
 
 export default UserInterfaceModern_
+export { _createPanelHeader, _createPanelIconTray, _renderRegion }

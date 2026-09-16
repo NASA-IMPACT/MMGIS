@@ -12,7 +12,7 @@ import {
     copyShareLink,
     downloadSharePng,
     downloadSharePdf,
-} from './adapters/shareActions'
+} from '../_shared/adapters/shareActions'
 
 const PLUGIN_ID = 'shareexport'
 const DEFAULT_FORMATS: ShareFormats = { png: true, pdf: true }

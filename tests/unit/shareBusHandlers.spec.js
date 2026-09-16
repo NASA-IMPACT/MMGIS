@@ -1,9 +1,9 @@
 import { test, expect, vi, beforeEach, afterEach } from 'vitest'
 
-// Viewer_ pulls in Photosphere/ModelViewer/PDFViewer, which are JSX written in
-// .js files that vite's import-analysis can't parse. Nothing in this test needs
-// the real viewers, so stub the aggregator to keep the mmgisAPI import chain
-// parseable in the jsdom test env.
+// Viewer_ drags the photosphere, model and PDF viewers in with it, and
+// with them a bundled THREE build, react-pdf and WebVR. Nothing in this
+// test touches a viewer, so stub the aggregator to keep the mmgisAPI
+// import chain light in the jsdom test env.
 vi.mock('../../src/essence/Basics/Viewer_/Viewer_', () => ({ default: {} }))
 
 import { mmgisAPI, mmgisAPI_ } from '../../src/essence/mmgisAPI/mmgisAPI'

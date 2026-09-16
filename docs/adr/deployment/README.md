@@ -13,6 +13,6 @@ Two angles were explored:
 
 ## Layout
 
-- [`lean/`](./lean/) — the chosen angle: the ADR, API call dispositions, feature gaps, and the implementation sequenced as per-PR docs in [`prs/`](./lean/prs/) (see [`pr-breakdown.md`](./lean/pr-breakdown.md)), with [`implementation-plan-keep.md`](./lean/implementation-plan-keep.md) as the phase-level companion. The chosen disposition env-gates the unused surfaces; the `burn` alternative — delete them — was rejected per ADR decision D2.
+- [`lean/`](./lean/) — the chosen angle: the ADR ([`adr.md`](./lean/adr.md)), the API call dispositions ([`api.md`](./lean/api.md)), and the feature gaps ([`feature-gaps.md`](./lean/feature-gaps.md)). The chosen disposition env-gates the unused surfaces; the `burn` alternative — delete them — was rejected per ADR decision D2.
 - [`preserve/`](./preserve/) — the superseded angle, kept for reference.
 - [`shared/features.md`](./shared/features.md) — the authoritative per-feature inventory and drop/survive disposition matrix, shared by both angles. Rows carry stable identifiers cited as `#NN`.

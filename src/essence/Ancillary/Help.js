@@ -1,13 +1,10 @@
 import $ from 'jquery'
 import Modal from './Modal'
-import showdown from 'showdown'
+import { renderMarkdown, MARKDOWN_CLASS } from '../Basics/Markdown_/Markdown_'
 
 import './Help.css'
 
-showdown.setFlavor('github')
-
 const Help = {
-    converter: new showdown.Converter(),
     getComponent: function (helpKey) {
         return `<div id='helpModal_${helpKey}' class='mmgisButton5 mmgisHelpButton' title='Help'><i class='mdi mdi-help-rhombus-outline mdi-18px'></i></div>`
     },
@@ -26,8 +23,8 @@ const Help = {
                                 `<div><i class='mdi mdi-help-rhombus-outline mdi-18px'></i><div>Help</div></div>`,
                                 `<div id='HelpModalClose'><i class='mmgisHoverBlue mdi mdi-close mdi-18px'></i></div>`,
                             `</div>`,
-                            `<div id='HelpModalContent'>`,
-                                Help.converter.makeHtml(doc),
+                            `<div id='HelpModalContent' class='${MARKDOWN_CLASS}'>`,
+                                renderMarkdown(doc),
                             `</div>`,
                         `</div>`
                     ].join('\n'),

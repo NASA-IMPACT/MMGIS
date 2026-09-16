@@ -21,6 +21,9 @@ test.describe('resolveImageUrl', () => {
         expect(
             resolveImageUrl('data:image/png;base64,AAAA', 'Missions/MSL/'),
         ).toBe('data:image/png;base64,AAAA')
+    })
+
+    test('an already-rooted value that is not an upload shape passes through unchanged', () => {
         expect(resolveImageUrl('/already/rooted.png', 'Missions/MSL/')).toBe(
             '/already/rooted.png',
         )
@@ -36,6 +39,47 @@ test.describe('resolveImageUrl', () => {
         expect(resolveImageUrl('CardPlugin/uploads/a.png', null)).toBe(
             'CardPlugin/uploads/a.png',
         )
+    })
+
+    test('leaves dashboard-root-relative assets/ paths unprefixed', () => {
+        expect(
+            resolveImageUrl(
+                'assets/M/CardPlugin/uploads/a.png',
+                'Missions/M/',
+            ),
+        ).toBe('assets/M/CardPlugin/uploads/a.png')
+    })
+
+    test('rebases legacy rooted /assets/ paths to the dashboard-relative form', () => {
+        expect(
+            resolveImageUrl(
+                '/assets/M/CardPlugin/uploads/a.png',
+                'Missions/M/',
+            ),
+        ).toBe('assets/M/CardPlugin/uploads/a.png')
+    })
+
+    test('an assets/ value without /uploads/ is not the writer\'s shape, stays mission-relative', () => {
+        expect(resolveImageUrl('assets/logo.png', 'Missions/M/')).toBe(
+            'Missions/M/assets/logo.png',
+        )
+    })
+
+    test('the assets/ discriminator is case-sensitive', () => {
+        expect(
+            resolveImageUrl(
+                'Assets/M/CardPlugin/uploads/a.png',
+                'Missions/M/',
+            ),
+        ).toBe('Missions/M/Assets/M/CardPlugin/uploads/a.png')
+    })
+
+    // Why this lookalike is not an upload key: see the ASSETS_UPLOAD_KEY
+    // comment in src/essence/Tools/Card/adapters/buildCardData.ts.
+    test('the full-mode "assets/uploads/x.png" shape (subdir "assets") stays mission-relative', () => {
+        expect(
+            resolveImageUrl('assets/uploads/x.png', 'Missions/M/'),
+        ).toBe('Missions/M/assets/uploads/x.png')
     })
 })
 

@@ -1,0 +1,12 @@
+/* Styles for the portal FloatingPopover renders into. The portal is attached to
+   document.body, outside any plugin's root, so these rules are scoped to the
+   portal class rather than to a host element. */
+
+/* Core's global `*:focus { outline: none }` strips the native ring, so every
+   focusable control inside the portal restores one here. */
+.floating-popover-portal button:focus-visible,
+.floating-popover-portal input:focus-visible,
+.floating-popover-portal [tabindex]:focus-visible {
+    outline: 2px solid var(--theme-color-primary, #0e7482);
+    outline-offset: 2px;
+}

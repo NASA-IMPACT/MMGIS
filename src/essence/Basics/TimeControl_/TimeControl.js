@@ -6,18 +6,62 @@ import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
 import Map_ from '../Map_/Map_'
 import { parseTimeWithOffset, parseTimeToSeconds } from './timeUtils'
-import {
-    compileTileUrl,
-    formatLayerTime,
-    buildTileUrlOptions,
-} from '../Layers_/tileUrlUtils'
+import { evaluateLayerDataCoverage } from './layerDataCoverage'
+import { formatLayerTime, buildTileUrlOptions } from '../Layers_/tileUrlUtils'
 import { resolveTileLayerSource } from '../Layers_/tileLayerSource'
-import { MAP_ENGINE, isRasterTileLayerType } from '../MapEngines/types/engine'
+import { isRasterTileLayerType } from '../MapEngines/types/engine'
 
 import './TimeControl.css'
 
 // Provider cleanup functions for re-initialization
 let _providerCleanups = []
+
+// What a `{key}` in a tile URL becomes when its urlReplacement service could
+// not supply a value. Leaflet's URL template throws on a `{key}` it has no
+// value for, so the placeholder can never be left in place.
+const UNRESOLVED_URL_REPLACEMENT = 'MMGIS_UNRESOLVED'
+
+// How long the service gets to answer before the request is abandoned. A
+// server that accepts the connection and then goes quiet never fails the
+// fetch on its own, and every caller awaits this one, so without a deadline
+// a time step or a colormap pick waits for the rest of the session.
+const URL_REPLACEMENT_TIMEOUT_MS = 15000
+
+/**
+ * Asks a urlReplacement's service for the value that fills its `{key}`.
+ * Throws whenever there is no usable value — a failed request, a silence
+ * longer than URL_REPLACEMENT_TIMEOUT_MS, an error status, a non-JSON body,
+ * or a body with nothing at `r.return` — so the caller has one path for
+ * every way this can fail.
+ *
+ * @param {object} r - One entry of `layer.variables.urlReplacements`.
+ * @param {object} layer - Layer config, for the time range in the body.
+ * @param {(time: unknown) => string} layerTimeFormat - Formats a time the
+ *   way the layer's `time.format` says.
+ * @returns {Promise<unknown>} The value at `r.return` in the response.
+ */
+async function fetchUrlReplacement(r, layer, layerTimeFormat) {
+    const response = await fetch(r.url, {
+        method: r.type,
+        headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+        },
+        body: JSON.stringify(r.body)
+            .replaceAll('{starttime}', layerTimeFormat(layer.time.start))
+            .replaceAll('{endtime}', layerTimeFormat(layer.time.end)),
+        signal: AbortSignal.timeout(URL_REPLACEMENT_TIMEOUT_MS),
+    })
+    if (!response.ok)
+        throw new Error(`${response.status} ${response.statusText}`)
+    // Absent, not falsy: F_.getIn answers null for a key it could not walk
+    // to, and 0 or '' is a value a service may legitimately return.
+    const replacement = F_.getIn(await response.json(), r.return)
+    // eslint-disable-next-line no-eq-null, eqeqeq
+    if (replacement == null)
+        throw new Error(`the response has no value at '${r.return}'`)
+    return replacement
+}
 
 // Can be either hh:mm:ss or just seconds
 const relativeTimeFormat = new RegExp(
@@ -55,6 +99,9 @@ var TimeControl = {
                             timeInputChange(startTime, endTime, currentTime)
                     }
                 ),
+                // Separates "time is off for this mission" from "on but not yet
+                // seeded"; the getters below return null for both.
+                window.mmgisAPI.provide('time:isEnabled', () => TimeControl.enabled === true),
                 window.mmgisAPI.provide('time:getCurrent', () => TimeControl.getTime()),
                 window.mmgisAPI.provide('time:getStart', () => TimeControl.getStartTime()),
                 window.mmgisAPI.provide('time:getEnd', () => TimeControl.getEndTime()),
@@ -351,8 +398,48 @@ var TimeControl = {
         if (L_.layers.layer[layer.name] === null) return false
 
         const layerTimeFormat = formatLayerTime(layer.time?.format)
-        layer.time.current = TimeControl.currentTime // keeps track of when layer was refreshed
 
+        // Records the time the layer was refreshed at, so only when it will
+        // be. Stamped unconditionally, a layer that is off — which the gates
+        // below skip — would go on looking current however far the time bar
+        // moved, and nothing could tell it had fallen behind.
+        const mayTouch = evenIfControlled === true || layer.controlled !== true
+        const willRefresh = mayTouch && (L_.layers.on[layer.name] || evenIfOff)
+        if (willRefresh) layer.time.current = TimeControl.currentTime
+
+        // Whether the layer holds data in the window it is about to request,
+        // decided before any URL work so an out-of-coverage layer makes no
+        // urlReplacement call and no tile request. A caller that may not
+        // touch the layer only records the verdict.
+        //
+        // Engine visibility is written only on a transition: on deck.gl every
+        // visibility write re-syncs every held layer, and this runs for every
+        // time-enabled layer on every time step.
+        let restoreAfterRefresh = false
+        if (mayTouch) {
+            const wasHidden = L_.layers.coverageHidden[layer.name] === true
+            if (!L_.assessLayerDataCoverage(layer, evenIfControlled)) {
+                if (!wasHidden && Map_.engine)
+                    Map_.engine.setLayerVisibility(layer.name, false)
+                return true
+            }
+            // Restored after the refresh below, never before: a layer added
+            // back holding the URL it was hidden with would fetch a round of
+            // stale tiles first.
+            restoreAfterRefresh = wasHidden && L_.layers.on[layer.name] === true
+        } else {
+            const record = evaluateLayerDataCoverage(layer)
+            L_.setLayerDataCoverage(layer.name, record)
+            if (record.outOfDataRange) return true
+        }
+
+        // The config URL is the template — `{starttime}`, `{endtime}` and a
+        // urlReplacement's `{key}` all live in it. The branches below
+        // overwrite it with the substituted URL because the refresh reads the
+        // layer object, and every one of them puts it back: a key overwritten
+        // for good is a key no later time step or successful lookup can fill,
+        // so one blip from a urlReplacement service would break the layer
+        // until the page is reloaded.
         let originalUrl = layer.url
 
         // A raster tile layer resolves its source URL first and runs the
@@ -390,7 +477,6 @@ var TimeControl = {
                 TimeControl.setLayerWmsParams(layer)
             }
             if (evenIfControlled === true || layer.controlled !== true) {
-                const tileLayer = L_.layers.layer[layer.name]
                 if (L_.layers.on[layer.name] || evenIfOff) {
                     // resolveTileLayerSource is what layer creation uses, so
                     // the refreshed URL keeps the layer's active tile level and
@@ -408,25 +494,22 @@ var TimeControl = {
                         tileFormat
                     )
 
-                    // TODO: Refactor this to push URL compilation and refreshing
-                    // into the map engine adapters so TimeControl doesn't branch
-                    // on Map_.engine.engineType
-                    // https://github.com/NASA-IMPACT/MMGIS/issues/212 tracks this
-                    if (tileLayer && typeof tileLayer.refresh === 'function') {
-                        // refresh() copies every key onto this.options, which the
-                        // per-tile getTileUrl then reads. Safe to pass whole:
-                        // buildTileUrlOptions returns only tile-URL keys.
-                        // It also re-applies the creation-time URL normalization
-                        // ({t} rewriting, the WMS base/params split).
-                        tileLayer.refresh(
-                            resolvedUrl,
-                            forceRequery === true,
-                            tileOptions
+                    // The engine decides whether this means mutating,
+                    // cloning or rebuilding; the layer's registered refresher
+                    // supplies the how for kinds that need one.
+                    const refreshed = Map_.engine?.refreshLayer(layer.name, {
+                        url: resolvedUrl,
+                        tileOptions,
+                        force: forceRequery === true,
+                    })
+                    // false means the engine had nothing to refresh — the
+                    // layer was never registered with it, or it has no way to
+                    // recompute it. The time change is then silently lost, so
+                    // say so rather than leaving stale tiles unexplained.
+                    if (refreshed === false)
+                        console.warn(
+                            `TimeControl.reloadLayer: the map engine had no layer to refresh for '${layer.name}'; its time change was not applied.`
                         )
-                    } else if (Map_.engine?.engineType === MAP_ENGINE.DECKGL) {
-                        const newUrl = compileTileUrl(resolvedUrl, tileOptions)
-                        Map_.engine.updateLayer(layer.name, { url: newUrl })
-                    }
                 }
             }
         } else if (layer.type == 'velocity') {
@@ -497,15 +580,14 @@ var TimeControl = {
                 // refresh map
                 if (evenIfControlled === true || layer.controlled !== true)
                     if (L_.layers.on[layer.name] || evenIfOff) {
-                        return await Map_.refreshLayer(
-                            layer,
-                            () => {
-                                if (layer.time && layer.time.enabled === true) {
-                                    // put start/endtime keywords back
-                                    layer.url = originalUrl
-
+                        try {
+                            await Map_.refreshLayer(
+                                layer,
+                                () => {
                                     // if requery was force, remember to timeFilter after load
                                     if (
+                                        layer.time &&
+                                        layer.time.enabled === true &&
                                         layer.type === 'vector' &&
                                         layer.time.type === 'local' &&
                                         layer.time.endProp != null &&
@@ -525,15 +607,28 @@ var TimeControl = {
                                                 ).getTime()
                                             )
                                     }
-                                }
-                            },
-                            skipOrderedBringToFront
-                        )
+                                },
+                                skipOrderedBringToFront
+                            )
+                        } finally {
+                            // put the template back — refreshLayer has read
+                            // the substituted URL by now, and this is the one
+                            // spot every path out of it goes through.
+                            layer.url = originalUrl
+                        }
                     }
             }
         }
-        // put start/endtime keywords back
-        if (layer.time && layer.time.enabled === true) layer.url = originalUrl
+        // put the template back
+        layer.url = originalUrl
+        // Time steps overlap when the timeline is scrubbed, and a later one
+        // may have hidden the layer again while this one was refreshing.
+        if (
+            restoreAfterRefresh &&
+            Map_.engine &&
+            L_.layers.coverageHidden[layer.name] !== true
+        )
+            Map_.engine.setLayerVisibility(layer.name, true)
         return true
     },
     performTimeUrlReplacements: async function (
@@ -542,49 +637,47 @@ var TimeControl = {
         forceRequery,
         type
     ) {
-        return new Promise(async (resolve, reject) => {
-            const layerTimeFormat = formatLayerTime(layer.time?.format)
+        const layerTimeFormat = formatLayerTime(layer.time?.format)
 
-            let nextUrl = url
-            if (layer.variables?.urlReplacements) {
-                const keys = Object.keys(layer.variables.urlReplacements)
-                for (let i = 0; i < keys.length; i++) {
-                    const r = layer.variables.urlReplacements[keys[i]]
-                    if (r.on === 'timeChange') {
-                        const response = await fetch(r.url, {
-                            method: r.type,
-                            headers: {
-                                accept: 'application/json',
-                                'content-type': 'application/json',
-                            },
-                            body: JSON.stringify(r.body)
-                                .replaceAll(
-                                    '{starttime}',
-                                    layerTimeFormat(layer.time.start)
-                                )
-                                .replaceAll(
-                                    '{endtime}',
-                                    layerTimeFormat(layer.time.end)
-                                ),
-                        })
-                        const res = await response.json()
-                        const replacement = F_.getIn(res, r.return)
-                        if (replacement)
-                            nextUrl = nextUrl.replace(
-                                `{${keys[i]}}`,
-                                encodeURIComponent(replacement)
-                            )
-                    }
+        let nextUrl = url
+        if (layer.variables?.urlReplacements) {
+            const keys = Object.keys(layer.variables.urlReplacements)
+            for (let i = 0; i < keys.length; i++) {
+                const r = layer.variables.urlReplacements[keys[i]]
+                if (r.on !== 'timeChange') continue
+                // What does the caller get when the service fails? Always a
+                // URL with no `{key}` left in it: Leaflet's URL template
+                // throws on an unfilled key. A value the service could not
+                // supply becomes the marker, so that layer's tile requests
+                // fail and it draws nothing — and the console warning below
+                // is the only place that failure is named.
+                let replacement
+                try {
+                    replacement = await fetchUrlReplacement(
+                        r,
+                        layer,
+                        layerTimeFormat
+                    )
+                } catch (err) {
+                    console.warn(
+                        `TimeControl.performTimeUrlReplacements: the '${keys[i]}' urlReplacement for '${layer.name}' failed, so '{${keys[i]}}' became '${UNRESOLVED_URL_REPLACEMENT}'.`,
+                        err
+                    )
+                    replacement = UNRESOLVED_URL_REPLACEMENT
                 }
+                nextUrl = nextUrl.replace(
+                    `{${keys[i]}}`,
+                    encodeURIComponent(replacement)
+                )
             }
+        }
 
-            if (forceRequery === true) {
-                nextUrl += `${
-                    nextUrl.indexOf('?') === -1 ? '?' : '&'
-                }nocache=${new Date().getTime()}`
-            }
-            resolve(nextUrl)
-        })
+        if (forceRequery === true) {
+            nextUrl += `${
+                nextUrl.indexOf('?') === -1 ? '?' : '&'
+            }nocache=${new Date().getTime()}`
+        }
+        return nextUrl
     },
     reloadTimeLayers: function () {
         // refresh time enabled layers

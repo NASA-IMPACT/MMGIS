@@ -16,11 +16,18 @@ import CursorInfo from '../../Ancillary/CursorInfo'
 import Description from '../../Ancillary/Description'
 import QueryURL from '../../Ancillary/QueryURL'
 import MetadataCapturer from '../Layers_/MetadataCapturer.js'
-import { compileTileUrl, buildTileUrlOptions } from '../Layers_/tileUrlUtils'
+import {
+    compileTileUrl,
+    buildTileUrlOptions,
+    shouldUseDeckRaster,
+} from '../Layers_/tileUrlUtils'
 import {
     resolveTileLayerSource,
+    resolveDeckCOGFileUrl,
     syncTileFormatToConfig,
 } from '../Layers_/tileLayerSource'
+import { makeDeckCOGRefresher } from '../Layers_/deckCOGRefresher'
+import { handOffLayerToEngine } from '../Layers_/engineLayerHandoff'
 import { Kinds } from '../../../pre/tools'
 import DataShaders from '../../Ancillary/DataShaders'
 import calls from '../../../pre/calls'
@@ -38,7 +45,11 @@ import {
     LeafletAdapter,
     DeckGLAdapter,
 } from '../MapEngines/index'
-import { buildDeckLayer } from '../MapEngines/Adapters/DeckGLHelpers'
+import { buildDeckLayer, buildDeckCOGLayer } from '../MapEngines/Adapters/DeckGLHelpers'
+import MapComparison from './MapComparison'
+
+import GeoRasterLayer from '../../../external/georaster-layer-for-leaflet/georaster-layer-for-leaflet.ts'
+import georaster from 'georaster'
 
 let L = window.L
 
@@ -47,14 +58,50 @@ let essenceFina = function () {}
 mapEngineRegistry.register(MAP_ENGINE.LEAFLET, LeafletAdapter)
 mapEngineRegistry.register(MAP_ENGINE.DECKGL, DeckGLAdapter)
 
-import GeoRasterLayer from '../../../external/georaster-layer-for-leaflet/georaster-layer-for-leaflet.ts'
-import georaster from 'georaster'
 
 // The default color ramp used for image layer types
 const IMAGE_DEFAULT_COLOR_RAMP = 'binary'
 
 // Provider cleanup functions for re-initialization
 let _providerCleanups = []
+
+let _basemapStyles = []
+let _basemapActiveIndex = 0
+
+function _resolveBasemapStyles(basemapConfig, engineType) {
+    const isLeaflet = engineType === MAP_ENGINE.LEAFLET
+
+    const MAPBOX_DEFAULTS = [
+        { name: 'Streets', style: 'mapbox://styles/mapbox/streets-v12' },
+        { name: 'Satellite', style: 'mapbox://styles/mapbox/satellite-streets-v12' },
+        { name: 'Outdoors', style: 'mapbox://styles/mapbox/outdoors-v12' },
+        { name: 'Light', style: 'mapbox://styles/mapbox/light-v11' },
+        { name: 'Dark', style: 'mapbox://styles/mapbox/dark-v11' },
+    ]
+
+    const MAPLIBRE_DEFAULTS_DECKGL = [
+        { name: 'Streets', style: 'https://tiles.openfreemap.org/styles/liberty' },
+        { name: 'Light', style: 'https://tiles.openfreemap.org/styles/positron' },
+        { name: 'Dark', style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json' },
+    ]
+    const MAPLIBRE_DEFAULTS_LEAFLET = [
+        { name: 'Streets', style: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png' },
+        { name: 'Light', style: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png' },
+        { name: 'Dark', style: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png' },
+        { name: 'Terrain', style: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png' },
+    ]
+
+    const maplibreDefaults = isLeaflet ? MAPLIBRE_DEFAULTS_LEAFLET : MAPLIBRE_DEFAULTS_DECKGL
+
+    const styles =
+        basemapConfig.styles && basemapConfig.styles.length > 0
+            ? [...basemapConfig.styles]
+            : basemapConfig.provider === 'mapbox'
+                ? [...MAPBOX_DEFAULTS]
+                : [...maplibreDefaults]
+
+    return styles
+}
 
 let Map_ = {
     /** The native map object (L.Map for Leaflet, Deck for deck.gl). Kept for backward compatibility with existing callers. */
@@ -250,18 +297,17 @@ let Map_ = {
                     return true
                 }),
                 // Drawing — wraps the IMapEngine drawing primitives from spec 013
-                window.mmgisAPI.provide('map:enableDrawing', ({ shape, options } = {}) => {
-                    engine.enableDrawing(shape, options)
+                window.mmgisAPI.provide('map:enableDrawing', ({ shape } = {}) => {
+                    engine.enableDrawing(shape)
                     return true
                 }),
                 window.mmgisAPI.provide('map:disableDrawing', () => {
                     engine.disableDrawing()
                     return true
                 }),
-                window.mmgisAPI.provide('map:finishDrawing', () => {
+                window.mmgisAPI.provide('map:finishDrawing', () =>
                     engine.finishDrawing()
-                    return true
-                }),
+                ),
                 window.mmgisAPI.provide('map:isDrawing', () => engine.isDrawing()),
                 // Layer management — engine-agnostic CRUD on vector layers
                 window.mmgisAPI.provide('map:createLayer', (spec) => {
@@ -282,6 +328,61 @@ let Map_ = {
                     engine.removeOverlay(id)
                     return true
                 }),
+                window.mmgisAPI.provide('map:setBasemap', (styleName) => {
+                    const index = _basemapStyles.findIndex((s) => s.name === styleName)
+                    if (index === -1) {
+                        console.warn(`[map:setBasemap] No basemap style found with name: "${styleName}"`)
+                        return false
+                    }
+                    const selectedStyle = _basemapStyles[index]
+                    if (!Map_.engine || typeof Map_.engine.setBasemapStyle !== 'function') {
+                        console.warn('[map:setBasemap] The active engine does not support basemap switching')
+                        return false
+                    }
+                    if (Map_.engine.setBasemapStyle(selectedStyle.style) === false) {
+                        console.warn(`[map:setBasemap] Engine could not apply style: "${styleName}"`)
+                        return false
+                    }
+                    _basemapActiveIndex = index
+                    return true
+                }),
+                window.mmgisAPI.provide('map:getBasemap', () => {
+                    if (_basemapStyles.length === 0) return null
+                    return { ..._basemapStyles[_basemapActiveIndex] }
+                }),
+                window.mmgisAPI.provide('map:getBasemapStyles', () => {
+                    return [..._basemapStyles]
+                }),
+                window.mmgisAPI.provide('map:zoomIn', () => {
+                    if (!Map_.engine || typeof Map_.engine.getZoom !== 'function') return false
+                    const current = Map_.engine.getZoom()
+                    const max = typeof Map_.engine.getMaxZoom === 'function'
+                        ? Map_.engine.getMaxZoom()
+                        : Infinity
+                    const next = Math.min(current + 1, max)
+                    if (next === current) return false
+                    Map_.engine.setZoom(next)
+                    return true
+                }),
+                window.mmgisAPI.provide('map:zoomOut', () => {
+                    if (!Map_.engine || typeof Map_.engine.getZoom !== 'function') return false
+                    const current = Map_.engine.getZoom()
+                    const min = typeof Map_.engine.getMinZoom === 'function'
+                        ? Map_.engine.getMinZoom()
+                        : -Infinity
+                    const next = Math.max(current - 1, min)
+                    if (next === current) return false
+                    Map_.engine.setZoom(next)
+                    return true
+                }),
+                window.mmgisAPI.provide('map:latLngToContainerPoint', (latlng) => {
+                    if (!Map_.engine || typeof Map_.engine.latLngToContainerPoint !== 'function') {
+                        return null
+                    }
+                    if (!latlng || latlng.lat == null || latlng.lng == null) return null
+                    const p = Map_.engine.latLngToContainerPoint(latlng)
+                    return p ? { x: p.x, y: p.y } : null
+                }),
             ]
 
             // Engine event re-emits — translate adapter events onto the bus
@@ -296,6 +397,9 @@ let Map_ = {
             reEmit('drawcancel', 'map:drawcancel')
             reEmit('move', 'map:move')
             reEmit('moveend', 'map:moveend')
+            // Pointer streams consumed by plugins (e.g. measure tools, overlays).
+            reEmit('click', 'map:click')
+            reEmit('mousemove', 'map:mousemove')
 
             // Feature click → bus. Plugins (e.g. AOI Inspect) consume
             // `map:featureClick` to react to clicks on layers created via
@@ -308,6 +412,11 @@ let Map_ = {
                 if (typeof off === 'function') _providerCleanups.push(off)
             }
         }
+
+        // Initialise comparison controller with the active engine so it can
+        // inject the divider DOM, delegate rendering calls, and register its
+        // own `map:comparison:*` providers on the event bus.
+        MapComparison.init(engine)
 
         //Make our layers
         makeLayers(L_.layers.dataFlat)
@@ -368,6 +477,24 @@ let Map_ = {
         }
 
         buildToolBar()
+
+        const basemapConfig = L_.configData?.msv?.basemap
+        if (basemapConfig && basemapConfig.provider && basemapConfig.provider !== 'none') {
+            _basemapStyles = _resolveBasemapStyles(basemapConfig, engineType)
+            let activeIndex = _basemapStyles.findIndex(
+                (s) => s.style === basemapConfig.style
+            )
+            // A configured style outside the resolved list must still be
+            // reported (and switchable) as the active basemap.
+            if (activeIndex === -1 && basemapConfig.style) {
+                _basemapStyles.unshift({
+                    name: 'Default',
+                    style: basemapConfig.style,
+                })
+                activeIndex = 0
+            }
+            _basemapActiveIndex = Math.max(activeIndex, 0)
+        }
 
         TimeControl.updateLayersTime()
     },
@@ -574,11 +701,7 @@ let Map_ = {
                 L_.layers.data[L_._layersOrdered[hasIndex[i]]].type === 'image'
             ) {
                 L_.layers.layer[L_._layersOrdered[hasIndex[i]]].setZIndex(
-                    L_._layersOrdered.length +
-                        1 -
-                        L_._layersOrdered.indexOf(
-                            L_._layersOrdered[hasIndex[i]]
-                        )
+                    L_.layerZIndex(L_._layersOrdered[hasIndex[i]])
                 )
                 L_.layers.layer[L_._layersOrdered[hasIndex[i]]].clearCache()
                 L_.layers.layer[L_._layersOrdered[hasIndex[i]]].redraw()
@@ -591,11 +714,7 @@ let Map_ = {
         // They're separate because its better to only change the raster z-index
         for (let i = 0; i < hasIndexRaster.length; i++) {
             L_.layers.layer[L_._layersOrdered[hasIndexRaster[i]]].setZIndex(
-                L_._layersOrdered.length +
-                    1 -
-                    L_._layersOrdered.indexOf(
-                        L_._layersOrdered[hasIndexRaster[i]]
-                    )
+                L_.layerZIndex(L_._layersOrdered[hasIndexRaster[i]])
             )
         }
 
@@ -633,28 +752,37 @@ let Map_ = {
             if (typeof cb === 'function') cb()
             return true
         }
-
-        // We need to find and remove all points on the map that belong to the layer
-        // Not sure if there is a cleaner way of doing this
         for (var i = L_._layersOrdered.length - 1; i >= 0; i--) {
             if (
                 L_.layers.data[L_._layersOrdered[i]] &&
-                L_.layers.data[L_._layersOrdered[i]].type == 'vector' &&
                 L_.layers.data[L_._layersOrdered[i]].name == layerObj.name
             ) {
                 // Original
                 if (L_._layersBeingMade[layerObj.name] !== true) {
                     // makeLayer now handles all layer swapping internally for refresh operations
+                    const wasOn = L_.layers.on[layerObj.name]
                     L_.layers.on[layerObj.name] = true
-                    await makeLayer(
-                        layerObj,
-                        true,
-                        null,
-                        null,
-                        null,
-                        stopLoops,
-                        true
-                    )
+                    try {
+                        await makeLayer(
+                            layerObj,
+                            true,
+                            null,
+                            null,
+                            null,
+                            stopLoops,
+                            true
+                        )
+                    } catch (e) {
+                        console.error(
+                            `ERROR - refreshLayer: Failed to make layer ${layerObj.display_name}/${layerObj.name}`,
+                            e
+                        )
+                        // the layer never actually built, so don't leave it
+                        // marked on
+                        L_.layers.on[layerObj.name] = wasOn
+                        if (typeof cb === 'function') cb()
+                        return false
+                    }
                     L_.addVisible(Map_, [layerObj.name])
 
                     L_.enforceVisibilityCutoffs()
@@ -805,10 +933,42 @@ let Map_ = {
 }
 
 //Takes an array of layer objects and makes them map layers
+/**
+ * Hand a layer that has just been built to the main map's engine, in the
+ * state the mission configured it. See handOffLayerToEngine. Layers that were
+ * never built — a header, a globe-only model, a failed load — are ignored
+ * there.
+ *
+ * Main map only: `Map_.engine` is always the main map's, so a secondary ctx
+ * would collide with its entry under the same uuid.
+ */
+function handOffToEngine(layerObj, ctx) {
+    if (ctx.default !== true) return
+    // A layer built while the time window lies outside its declared coverage
+    // is held hidden, so it never fetches. TimeControl.init seeds the window
+    // before Map_.init in both layouts; a builder that hands off before it is
+    // readable gets "has data", costing one round of requests that the first
+    // reload corrects.
+    const on = ctx.layerRegistry.on[layerObj.name] === true
+    handOffLayerToEngine(
+        Map_.engine,
+        layerObj.name,
+        Map_.nativeLayer(ctx.layerRegistry.layer[layerObj.name]),
+        L_.layerZIndex(layerObj.name),
+        on && L_.assessLayerDataCoverage(layerObj)
+    )
+}
+
 function makeLayers(layersObj) {
     //Make each layer (backwards to maintain draw order)
     for (var i = layersObj.length - 1; i >= 0; i--) {
-        makeLayer(layersObj[i])
+        const layerObj = layersObj[i]
+        makeLayer(layerObj).catch((e) => {
+            console.error(
+                `ERROR - makeLayers: Failed to make layer ${layerObj.display_name}/${layerObj.name}`,
+                e
+            )
+        })
     }
 }
 //Takes the layer object and makes it a map layer
@@ -828,17 +988,16 @@ async function makeLayer(
         layerRegistry: L_.layers,
         default: true,
     }
-    return new Promise(async (resolve, reject) => {
-        const layerName = L_.asLayerUUID(layerObj.name)
-        if (forceMake !== true && L_._layersBeingMade[layerName] === true) {
-            console.error(
-                `ERROR - makeLayer: Cannot make layer ${layerObj.display_name}/${layerObj.name} as it's already being made!`
-            )
-            resolve(false)
-            return
-        } else {
-            L_._layersBeingMade[layerName] = true
-        }
+    const layerName = L_.asLayerUUID(layerObj.name)
+    if (forceMake !== true && L_._layersBeingMade[layerName] === true) {
+        console.error(
+            `ERROR - makeLayer: Cannot make layer ${layerObj.display_name}/${layerObj.name} as it's already being made!`
+        )
+        return false
+    } else {
+        L_._layersBeingMade[layerName] = true
+    }
+    try {
         //Decide what kind of layer it is
         //Headers do not need to be made
         if (layerObj.type != 'header') {
@@ -864,7 +1023,7 @@ async function makeLayer(
                     )
                     break
                 case 'tile':
-                    makeTileLayer(layerObj, mapContext)
+                    await makeTileLayer(layerObj, mapContext)
                     break
                 case 'vectortile':
                     makeVectorTileLayer(layerObj, mapContext)
@@ -905,19 +1064,23 @@ async function makeLayer(
                     break
                 case 'TileLayer':
                 case 'BitmapLayer':
-                    makeTileLayer(layerObj, mapContext)
+                    await makeTileLayer(layerObj, mapContext)
                     break
                 case 'MVTLayer':
                     makeVectorTileLayer(layerObj, mapContext)
                     break
                 case 'PointCloudLayer':
                 case 'Tile3DLayer':
-                    makeTileLayer(layerObj, mapContext)
+                    await makeTileLayer(layerObj, mapContext)
                     break
                 default:
                     console.warn('Unknown layer type: ' + layerObj.type)
             }
         }
+
+        // Every builder above is awaited, so the layer exists by now. Image
+        // and video finish on their own schedule and hand off themselves.
+        handOffToEngine(layerObj, mapContext)
 
         // release hold on layer
         L_._layersBeingMade[layerName] = false
@@ -926,8 +1089,20 @@ async function makeLayer(
             Filtering.updateGeoJSON(layerObj.name)
             Filtering.triggerFilter(layerObj.name)
         }
-        resolve(true)
-    })
+        return true
+    } catch (e) {
+        console.error(
+            `ERROR - makeLayer: Failed to make layer ${layerObj.display_name}/${layerObj.name}`,
+            e
+        )
+        // release hold on layer so it can be remade
+        L_._layersBeingMade[layerName] = false
+        // count this layer as done (unsuccessfully) so a failed layer
+        // doesn't stall allLayersLoaded()/essenceFina() for the mission
+        L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
+        allLayersLoaded()
+        throw e
+    }
 }
 
 //Default is onclick show full properties and onhover show 1st property
@@ -1135,14 +1310,15 @@ async function makeVectorLayer(
                 }
 
                 layerObj.style = layerObj.style || {}
-                layerObj.style.opacity =
-                    ctx.layerRegistry.opacity[layerObj.name] || 1
+                // Layer opacity rides the deck.gl `opacity` prop alone — the
+                // one prop setLayerOpacity updates. style.opacity is the
+                // configured stroke alpha; deck multiplies the two.
                 ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(
                     layerObj.name,
                     {
                         type: layerObj.type,
                         data,
-                        opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+                        opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
                         style: layerObj.style || {},
                         variables: layerObj.variables || {},
                         interactive: true,
@@ -1221,19 +1397,24 @@ async function makeVectorLayer(
             layerObj.style = layerObj.style || {}
             layerObj.style.layerName = layerObj.name
 
-            layerObj.style.opacity =
-                ctx.layerRegistry.opacity[layerObj.name] || 1
-            //layerObj.style.fillOpacity = ctx.layerRegistry.opacity[layerObj.name]
-
             if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
+                // Layer opacity rides the deck.gl `opacity` prop alone — the
+                // one prop setLayerOpacity updates. style.opacity is the
+                // configured stroke alpha; deck multiplies the two.
                 ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(
                     layerObj.name,
                     {
                         type: layerObj.type || 'vector',
                         geojson: data,
-                        opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+                        opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
                         style: layerObj.style || {},
                         variables: layerObj.variables || {},
+                        // The legend doubles as a style specification, so
+                        // the engine needs it to colour features by property
+                        // value. A layer legended from a `legend:` CSV path
+                        // fetches it after the layer is built, so that layer
+                        // gets no legend styling until it is next rebuilt.
+                        legend: L_.layers.data[layerObj.name]?._legend,
                         interactive: true,
                     }
                 )
@@ -1245,6 +1426,10 @@ async function makeVectorLayer(
                 return
             }
 
+            // Leaflet carries layer opacity in the style itself
+            layerObj.style.opacity =
+                ctx.layerRegistry.opacity[layerObj.name] ?? 1
+
             const vl = constructVectorLayer(
                 data,
                 layerObj,
@@ -1252,13 +1437,16 @@ async function makeVectorLayer(
                 Map_ // Keep passing Map_ - constructVectorLayer expects this
             )
 
-            // For refresh operations, toggle off old layer and handle seamless swap
+            // For refresh operations, toggle off old layer and handle seamless
+            // swap. A layer the coverage gate hid is off the map, but its
+            // attachments are not, and the toggle is what takes them down.
             let wasOnForRefresh = false
             if (
                 isRefresh &&
                 ctx.layerRegistry.on[layerObj.name] &&
                 ctx.layerRegistry.layer[layerObj.name] &&
-                ctx.map.hasLayer(ctx.layerRegistry.layer[layerObj.name])
+                (ctx.map.hasLayer(ctx.layerRegistry.layer[layerObj.name]) ||
+                    ctx.layerRegistry.coverageHidden[layerObj.name] === true)
             ) {
                 wasOnForRefresh = true
                 L_.toggleLayer(
@@ -1268,6 +1456,11 @@ async function makeVectorLayer(
                 )
             }
 
+            // Only Leaflet vector layers reach here — the deck.gl branch above
+            // returns first. Attachments are therefore Leaflet-only:
+            // L_.layers.attachments has no entry for a deck.gl-built layer, so
+            // L_.setLayerOpacity's per-attachment loop has nothing to iterate
+            // for one.
             ctx.layerRegistry.attachments[layerObj.name] = vl.sublayers
             ctx.layerRegistry.layer[layerObj.name] = vl.layer
 
@@ -1533,6 +1726,38 @@ async function makeTileLayer(layerObj, mapContext = null) {
     )
 
     if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
+        // Client-side COG rendering via ColormappedCOGLayer (bypasses TiTiler).
+        // resolveDeckCOGFileUrl yields the bare, time-substituted .tif URL —
+        // the same derivation every rebuild path uses.
+        if (shouldUseDeckRaster(Map_.engine.engineType, splitColonType, layerObj)) {
+            ctx.layerRegistry.layer[layerObj.name] = buildDeckCOGLayer(layerObj.name, {
+                rawCogUrl: resolveDeckCOGFileUrl(layerObj, tileSource),
+                layerObj,
+                // ?? not ||: an opacity of 0 is a real value, not "default to 1"
+                opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
+            })
+            // Map_.engine is always the MAIN map's engine. A non-default ctx
+            // targets a different map with its own registry, so registering
+            // into Map_.engine here would collide with the main map's entry
+            // under the same uuid. Guarded to the main path only.
+            if (ctx.default === true) {
+                // The layer kind supplies how it rebuilds; the engine executes
+                // it. Registered here because this is where the deckRaster
+                // classification happens.
+                //
+                // No registerLayer call here, unlike the Leaflet tail below:
+                // a deck layer already carries its own id and the engine
+                // adopts it when added, so only the refresher is missing.
+                Map_.engine.setLayerRefresher(
+                    layerObj.name,
+                    makeDeckCOGRefresher(layerObj.name, layerObj)
+                )
+            }
+            L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
+            allLayersLoaded()
+            return
+        }
+
         // DeckGL needs a static URL upfront, so we bake in whatever params Leaflet
         // would normally add per-tile in getTileUrl.
         layerUrl = compileTileUrl(
@@ -1543,12 +1768,67 @@ async function makeTileLayer(layerObj, mapContext = null) {
         ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
             type: layerObj.type || 'tile',
             url: layerUrl,
-            opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+            tileformat: tileFormat,
+            opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
             minZoom: parseInt(layerObj.minZoom),
             maxNativeZoom: parseInt(layerObj.maxNativeZoom),
             maxZoom: parseInt(layerObj.maxZoom),
             tileElevation,
+            nativeOptions:
+                tileFormat === 'wms'
+                    ? {
+                          onImageLoad: () =>
+                              L_.setLayerLoadStatus(layerObj.name, 'ok'),
+                          onImageLoadError: (requestId, error) =>
+                              L_.setLayerLoadStatus(
+                                  layerObj.name,
+                                  'error',
+                                  `WMS request failed: ${
+                                      error?.message || error
+                                  }`
+                              ),
+                      }
+                    : {
+                          onTileLoad: () =>
+                              L_.setLayerLoadStatus(layerObj.name, 'ok'),
+                          onTileError: (error) =>
+                              L_.setLayerLoadStatus(
+                                  layerObj.name,
+                                  'error',
+                                  `Tile request failed: ${
+                                      error?.message || error
+                                  }`
+                              ),
+                      },
         })
+
+        // A plain deck tile layer takes one static URL, so the per-tile params
+        // Leaflet adds in getTileUrl have to be baked in on every refresh too.
+        // Registered here, on the domain side, because compileTileUrl is not
+        // generic — it branches on MMGIS service prefixes (stac-collection,
+        // COG, titiler-url) and injects COG fields. An adapter must not know
+        // any of that; it only knows it has a function to call.
+        // Guarded to the main map for the same reason registerLayer below is:
+        // Map_.engine is always the MAIN map's engine, so a non-default ctx
+        // would collide with the main map's entry under the same uuid.
+        if (ctx.default === true) {
+            Map_.engine.setLayerRefresher(
+                layerObj.name,
+                (layer, refreshCtx) => {
+                    // No source URL, or one that compiles to nothing: return
+                    // nothing so the engine keeps the instance it holds.
+                    // Handing deck an empty url would blank the layer.
+                    if (refreshCtx.url == null) return
+                    const compiled = compileTileUrl(
+                        refreshCtx.url,
+                        refreshCtx.tileOptions ?? {}
+                    )
+                    if (!compiled) return
+                    return layer.clone({ data: compiled })
+                }
+            )
+        }
+
         L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
         allLayersLoaded()
         return
@@ -1581,13 +1861,25 @@ async function makeTileLayer(layerObj, mapContext = null) {
 
     L_.setLayerOpacity(
         layerObj.name,
-        ctx.layerRegistry.opacity[layerObj.name] || 1
+        ctx.layerRegistry.opacity[layerObj.name] ?? 1
     )
 
     L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
     ctx.layerRegistry.layer[layerObj.name].off('loading')
     ctx.layerRegistry.layer[layerObj.name].on('loading', () => {
         L_.setGlobalLoading(layerObj.name)
+    })
+    ctx.layerRegistry.layer[layerObj.name].off('tileload')
+    ctx.layerRegistry.layer[layerObj.name].on('tileload', () => {
+        L_.setLayerLoadStatus(layerObj.name, 'ok')
+    })
+    ctx.layerRegistry.layer[layerObj.name].off('tileerror')
+    ctx.layerRegistry.layer[layerObj.name].on('tileerror', (e) => {
+        L_.setLayerLoadStatus(
+            layerObj.name,
+            'error',
+            `Tile request failed: ${e?.tile?.src || layerUrl}`
+        )
     })
     ctx.layerRegistry.layer[layerObj.name].off('load')
     ctx.layerRegistry.layer[layerObj.name].on('load', () => {
@@ -1655,11 +1947,21 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
         ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
             type: layerObj.type || 'vectortile',
             url: layerUrl,
-            opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+            opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
             minZoom: parseInt(layerObj.minZoom),
             maxNativeZoom: parseInt(layerObj.maxNativeZoom),
             maxZoom: parseInt(layerObj.maxZoom),
             style: layerObj.style || {},
+            // The legend doubles as a style specification; see makeVectorLayer
+            // for the caveat on legends fetched from a `legend:` CSV path.
+            legend: L_.layers.data[layerObj.name]?._legend,
+            // Whether one is configured at all, which the builder needs even
+            // when the legend itself has not arrived yet: a vector tile layer
+            // settles its tile decoding format the first time deck.gl
+            // initialises it and never revisits it.
+            legendConfigured: Boolean(
+                layerObj.legend ?? layerObj.variables?.legend
+            ),
             interactive: true,
             nativeOptions: {
                 autoHighlight: layerObj.style?.hoverHighlight === true,
@@ -2131,12 +2433,14 @@ function makeImageLayer(layerObj, mapContext = null) {
             L_.layers.layer[layerObj.name].clearCache()
 
             L_.layers.layer[layerObj.name].setZIndex(
-                L_._layersOrdered.length +
-                    1 -
-                    L_._layersOrdered.indexOf(layerObj.name)
+                L_.layerZIndex(layerObj.name)
             )
 
             L_.setLayerOpacity(layerObj.name, L_.layers.opacity[layerObj.name])
+
+            // Here, not in makeLayer: this builder finishes after that
+            // hand-off has already run.
+            handOffToEngine(layerObj, ctx)
 
             L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
             allLayersLoaded()
@@ -2229,12 +2533,14 @@ function makeVideoLayer(layerObj, mapContext = null) {
         }
 
         L_.layers.layer[layerObj.name].setZIndex(
-            L_._layersOrdered.length +
-                1 -
-                L_._layersOrdered.indexOf(layerObj.name)
+            L_.layerZIndex(layerObj.name)
         )
 
         L_.setLayerOpacity(layerObj.name, L_.layers.opacity[layerObj.name])
+
+        // Here, not in makeLayer: this builder finishes after that hand-off
+        // has already run.
+        handOffToEngine(layerObj, ctx)
 
         L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
         allLayersLoaded()

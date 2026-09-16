@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useSelector, useDispatch } from "react-redux";
 
 import { calls } from "../../../../core/calls";
+import { publishTaskUnconfirmedNotice } from "../../../../core/deploymentStatus";
 
 import { setModal, setSnackBarText } from "../../../../core/ConfigureStore";
 
@@ -86,6 +87,12 @@ const useStyles = makeStyles((theme) => ({
     margin: "10px !important",
     color: theme.palette.swatches.grey[300],
   },
+  unconfirmed: {
+    fontStyle: "italic",
+    fontSize: "14px !important",
+    margin: "10px !important",
+    color: theme.palette.warning.main,
+  },
   confirmInput: {
     width: "100%",
     margin: "10px 0px 4px 0px !important",
@@ -124,6 +131,8 @@ const DeleteDeploymentModal = (props) => {
   const [deploymentName, setDeploymentName] = useState("");
 
   const deployment = modal?.deployment;
+  const unconfirmedNotice =
+    deployment != null ? publishTaskUnconfirmedNotice(deployment) : null;
 
   const handleClose = () => {
     setDeploymentName("");
@@ -164,12 +173,19 @@ const DeleteDeploymentModal = (props) => {
         handleClose();
       },
       (res) => {
+        // A refusal means the row's publish task is confirmed alive: say
+        // so, refetch so the row shows it, and close, since the delete
+        // cannot proceed until the task finishes. Any other failure keeps
+        // the modal open for a retry.
+        const refused = res?.reason != null;
         dispatch(
           setSnackBarText({
             text: res?.message || `Failed to delete '${deployment.name}'.`,
-            severity: "error",
+            severity: refused ? "warning" : "error",
           })
         );
+        queryDeployments();
+        if (refused) handleClose();
       }
     );
   };
@@ -209,6 +225,15 @@ const DeleteDeploymentModal = (props) => {
           This tears down the dashboard's hosting — its bucket is emptied and
           its CloudFormation stack is deleted. The published URL stops working.
         </Typography>
+        {unconfirmedNotice != null ? (
+          <Typography
+            className={
+              unconfirmedNotice.tone === "warning" ? c.unconfirmed : c.warning
+            }
+          >
+            {unconfirmedNotice.modalText}
+          </Typography>
+        ) : null}
         <TextField
           className={c.confirmInput}
           label="Confirm Deployment Name"

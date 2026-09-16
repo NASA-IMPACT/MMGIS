@@ -1,5 +1,11 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { STATUS } from "../../core/deploymentStatus";
+import {
+  STATUS,
+  IN_FLIGHT_STATUSES,
+  updateDisabledReason,
+  deleteDisabledReason,
+  publishTaskNotice,
+} from "../../core/deploymentStatus";
 import { useSelector, useDispatch } from "react-redux";
 import { makeStyles } from "@mui/styles";
 
@@ -22,6 +28,11 @@ import MenuItem from "@mui/material/MenuItem";
 import FormControl from "@mui/material/FormControl";
 import Select from "@mui/material/Select";
 import Link from "@mui/material/Link";
+import Dialog from "@mui/material/Dialog";
+import DialogTitle from "@mui/material/DialogTitle";
+import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
+import DialogActions from "@mui/material/DialogActions";
 
 import RocketLaunchIcon from "@mui/icons-material/RocketLaunch";
 import RefreshIcon from "@mui/icons-material/Refresh";
@@ -136,12 +147,20 @@ const useStyles = makeStyles((theme) => ({
       ? theme.palette.swatches.red[400]
       : "#e57373",
   },
-  lastError: {
+  rowText: {
     fontSize: "11px",
     fontStyle: "italic",
-    color: "#e57373",
     lineHeight: "16px",
     padding: "0px 16px 8px 76px",
+  },
+  lastError: {
+    color: "#e57373",
+  },
+  taskNote: {
+    color: theme.palette.swatches.grey[300],
+  },
+  taskWarning: {
+    color: theme.palette.warning.main,
   },
   empty: {
     padding: "40px 0px",
@@ -167,6 +186,12 @@ export default function Deployments() {
 
   const [publishMission, setPublishMission] = useState("");
   const [publishName, setPublishName] = useState("");
+  // True while a publish request is in flight; disables the Publish button
+  // so a double-click cannot send two.
+  const [publishing, setPublishing] = useState(false);
+  // The `exists` refusal from the publish route, while the admin is being
+  // asked whether they really want a second dashboard for the mission.
+  const [duplicatePrompt, setDuplicatePrompt] = useState(null);
 
   const queryDeployments = useCallback(() => {
     queryDeploymentsCall(dispatch);
@@ -176,7 +201,8 @@ export default function Deployments() {
     queryDeployments();
   }, [queryDeployments]);
 
-  const publish = () => {
+  // `force` resends after the admin confirmed a second dashboard.
+  const publish = (force) => {
     if (publishMission === "") {
       dispatch(
         setSnackBarText({
@@ -186,10 +212,16 @@ export default function Deployments() {
       );
       return;
     }
+    setPublishing(true);
     calls.api(
       "publishDeployment",
-      { mission: publishMission, name: publishName || publishMission },
+      {
+        mission: publishMission,
+        name: publishName || publishMission,
+        ...(force ? { force: true } : {}),
+      },
       () => {
+        setPublishing(false);
         dispatch(
           setSnackBarText({
             text: "Publishing… This runs in the background; status refreshes automatically.",
@@ -200,6 +232,11 @@ export default function Deployments() {
         queryDeployments();
       },
       (res) => {
+        setPublishing(false);
+        if (res?.reason === "exists") {
+          setDuplicatePrompt(res);
+          return;
+        }
         dispatch(
           setSnackBarText({
             text: res?.message || "Failed to publish.",
@@ -209,6 +246,22 @@ export default function Deployments() {
       }
     );
   };
+
+  const confirmDuplicatePublish = () => {
+    setDuplicatePrompt(null);
+    publish(true);
+  };
+  // The dashboard the `exists` refusal named. Update on its row is offered
+  // as the alternative only where the row allows it: not while its own
+  // publish is still running, and not on a failed row that never got a
+  // dashboard (nothing to refresh there).
+  const existingDeployment = duplicatePrompt?.body?.deployment;
+  const existingInFlight =
+    existingDeployment != null &&
+    IN_FLIGHT_STATUSES.includes(existingDeployment.status);
+  const existingUpdatable =
+    existingDeployment != null &&
+    updateDisabledReason(existingDeployment) == null;
 
   const update = (deployment) => {
     calls.api(
@@ -224,12 +277,16 @@ export default function Deployments() {
         queryDeployments();
       },
       (res) => {
+        // A refusal carries the reason the row cannot be updated right now;
+        // it is information, not a failure, and the refetch brings a stale
+        // tab's row text and buttons up to date.
         dispatch(
           setSnackBarText({
             text: res?.message || "Failed to update.",
-            severity: "error",
+            severity: res?.reason != null ? "warning" : "error",
           })
         );
+        queryDeployments();
       }
     );
   };
@@ -298,9 +355,10 @@ export default function Deployments() {
             className={c.publishButton}
             variant="contained"
             endIcon={<PublishIcon />}
-            onClick={publish}
+            disabled={publishing}
+            onClick={() => publish(false)}
           >
-            Publish
+            {publishing ? "Publishing…" : "Publish"}
           </Button>
         </div>
         <div className={c.listHeader}>
@@ -314,67 +372,133 @@ export default function Deployments() {
         {deployments.length === 0 ? (
           <div className={c.empty}>No published dashboards yet.</div>
         ) : (
-          deployments.map((d) => (
-            <div key={d.id}>
-              <div className={c.listItem}>
-                <div className={c.colId}>{d.id}</div>
-                <div className={c.colName} title={d.name}>
-                  {d.name}
-                </div>
-                <div className={c.colMission} title={d.mission}>
-                  {d.mission}
-                </div>
-                <div
-                  className={clsx(c.colStatus, {
-                    [c.statusError]: d.status === STATUS.FAILED,
-                  })}
-                  title={d.stack_status_reason || d.stack_status || d.status}
-                >
-                  {d.status}
-                  {d.stack_status ? ` — ${d.stack_status}` : ""}
-                </div>
-                <div className={c.colUrl}>
-                  {d.cloudfront_url ? (
-                    <Link
-                      href={d.cloudfront_url}
-                      target="_blank"
-                      rel="noopener"
+          deployments.map((d) => {
+            const updateBlocked = updateDisabledReason(d);
+            const deleteBlocked = deleteDisabledReason(d);
+            const taskNotice = publishTaskNotice(d);
+            return (
+              <div key={d.id}>
+                <div className={c.listItem}>
+                  <div className={c.colId}>{d.id}</div>
+                  <div className={c.colName} title={d.name}>
+                    {d.name}
+                  </div>
+                  <div className={c.colMission} title={d.mission}>
+                    {d.mission}
+                  </div>
+                  <div
+                    className={clsx(c.colStatus, {
+                      [c.statusError]: d.status === STATUS.FAILED,
+                    })}
+                    title={d.stack_status_reason || d.stack_status || d.status}
+                  >
+                    {d.status}
+                    {d.stack_status ? ` — ${d.stack_status}` : ""}
+                  </div>
+                  <div className={c.colUrl}>
+                    {d.cloudfront_url ? (
+                      <Link
+                        href={d.cloudfront_url}
+                        target="_blank"
+                        rel="noopener"
+                      >
+                        {d.cloudfront_url}
+                      </Link>
+                    ) : (
+                      "—"
+                    )}
+                  </div>
+                  <div className={c.colActions}>
+                    {/* A disabled button fires no pointer events, so the
+                        tooltip that explains the block hangs off a span. */}
+                    <Tooltip
+                      title={
+                        updateBlocked ||
+                        "Update: republish against the mission's latest configuration (same URL)"
+                      }
+                      placement="top"
+                      arrow
                     >
-                      {d.cloudfront_url}
-                    </Link>
-                  ) : (
-                    "—"
-                  )}
+                      <span>
+                        <IconButton
+                          size="small"
+                          disabled={updateBlocked != null}
+                          onClick={() => update(d)}
+                        >
+                          <UpgradeIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                    <Tooltip
+                      title={
+                        deleteBlocked ||
+                        "Delete: tear down the dashboard's hosting (retries a stuck teardown)"
+                      }
+                      placement="top"
+                      arrow
+                    >
+                      <span>
+                        <IconButton
+                          size="small"
+                          disabled={deleteBlocked != null}
+                          onClick={() => remove(d)}
+                        >
+                          <DeleteForeverIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  </div>
                 </div>
-                <div className={c.colActions}>
-                  <Tooltip
-                    title="Update — republish against the mission's latest configuration (same URL)"
-                    placement="top"
-                    arrow
+                {taskNotice ? (
+                  <div
+                    className={clsx(
+                      c.rowText,
+                      taskNotice.tone === "warning"
+                        ? c.taskWarning
+                        : c.taskNote
+                    )}
                   >
-                    <IconButton size="small" onClick={() => update(d)}>
-                      <UpgradeIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                  <Tooltip
-                    title="Delete — tear down the dashboard's hosting (retries a stuck teardown)"
-                    placement="top"
-                    arrow
-                  >
-                    <IconButton size="small" onClick={() => remove(d)}>
-                      <DeleteForeverIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </div>
+                    {taskNotice.text}
+                  </div>
+                ) : null}
+                {d.stack_status_error ? (
+                  <div className={clsx(c.rowText, c.taskWarning)}>
+                    {`Could not read the stack status: ${d.stack_status_error}`}
+                  </div>
+                ) : null}
+                {d.last_error ? (
+                  <div className={clsx(c.rowText, c.lastError)}>
+                    {d.last_error}
+                  </div>
+                ) : null}
               </div>
-              {d.last_error ? (
-                <div className={c.lastError}>{d.last_error}</div>
-              ) : null}
-            </div>
-          ))
+            );
+          })
         )}
       </div>
       <DeleteDeploymentModal queryDeployments={queryDeployments} />
+      <Dialog
+        open={duplicatePrompt != null}
+        onClose={() => setDuplicatePrompt(null)}
+      >
+        <DialogTitle>Publish a second dashboard for this mission?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {duplicatePrompt?.message}{" "}
+            {existingInFlight
+              ? "Publishing again creates a separate dashboard with its own URL and hosting. To refresh the existing dashboard instead, wait for the running publish on its row."
+              : existingUpdatable
+              ? "Publishing again creates a separate dashboard with its own URL and hosting; the existing one keeps working. To refresh the existing dashboard instead, use Update on its row."
+              : "That publish failed before its dashboard was created, so there is nothing to update. Publishing again creates a fresh dashboard; the failed row can then be deleted."}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDuplicatePrompt(null)}>Cancel</Button>
+          <Button variant="contained" onClick={confirmDuplicatePublish}>
+            Publish another
+          </Button>
+        </DialogActions>
+      </Dialog>
     </div>
   );
 }

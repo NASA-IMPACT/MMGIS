@@ -1,20 +1,12 @@
 import { ToolOrientation, ToolMetadata } from '../../ToolController_/types/tool';
-import { 
+import {
     PanelPosition,
     EdgePanelPosition,
     FloatPanelPosition,
     PanelState,
-    PanelLayoutType,    
+    PanelLayoutType,
+    CommandRefusalReason,
 } from './layout';
-
-/**
- * Panel size configuration.
- * Can be fixed pixels, full viewport, content-based, or constrained.
- */
-export type PanelSize =
-    | number                                    // Fixed pixels (e.g., 300)
-    | 'content'                                 // Size based on content (grows to fit)
-    | { min?: number; max?: number };           // Content-based with constraints
 
 /**
  * Panel layout priority for viewport space allocation.
@@ -49,32 +41,30 @@ export interface PanelStateConstraints {
  */
 export interface PanelDimensions {
     /**
-     * Size of the icon bar when in iconified state (pixels).
-     * Always a fixed number.
-     * - For left/right panels: width of vertical icon bar
-     * - For top/bottom panels: height of horizontal icon bar
+     * Size of the icon bar in the iconified and focused states, padding included:
+     * width for a left/right panel, height for a top/bottom one. A number, or a
+     * numeric string, is pixels; a string with a unit is that CSS length. The icon
+     * buttons divide up this measure, so a smaller bar carries smaller icons.
+     * Omitted, the bar takes the size its stylesheet sets.
      */
-    iconifiedSize?: number;
+    iconifiedSize?: number | string;
 
     /**
-     * Size when a single tool is opened from iconified state (focused state).
+     * Expanded-state size: height for top/bottom panels, width for left/right.
+     * A number, or a numeric string, is pixels; a string with a unit is that CSS
+     * length (e.g. "320px", "40vh"). The panel is exactly this size and its content
+     * scrolls inside. Omitted or empty, the panel sizes to its content. A drag
+     * overrides it with a pixel currentSize.
      */
-    focusedHeight?: PanelSize;
-    focusedWidth?: PanelSize;
+    expandedSize?: number | string;
 
     /**
-     * Size when all tools are visible (expanded state).
-     * - For top/bottom: this is the height
-     * - For left/right: this is the width
-     */
-    expandedSize?: PanelSize;
-
-    /**
-     * CSS sizing for floating panels — applied directly as CSS properties on the panel element.
-     * Numbers are treated as px; strings are passed through as-is (e.g. "50%", "40vh", "300px").
+     * CSS sizing for floating panels, applied as properties on the panel element.
+     * A number, or a numeric string, is pixels; a string with a unit is that CSS
+     * length (e.g. "50%", "40vh").
      *
-     * Distinct from PanelCapabilities.minSize/maxSize, which constrain drag-resize handles
-     * (single-axis, pixels only). These apply to both axes and support all CSS units.
+     * These cover both axes and take any CSS unit, unlike
+     * PanelCapabilities.minSize/maxSize, which bound a drag on one axis in pixels.
      */
     defaultWidth?: number | string;
     defaultHeight?: number | string;
@@ -110,14 +100,15 @@ export interface PanelCapabilities {
     resizable?: boolean;
 
     /**
-     * Minimum size constraint for user resizing (pixels).
+     * Minimum size constraint for drag-resizing (pixels).
      * Only relevant if resizable = true.
      */
     minSize?: number;
 
     /**
-     * Maximum size constraint for user resizing (pixels).
-     * Only relevant if resizable = true.
+     * Maximum size constraint (pixels). Caps a drag, caps a content-sized panel
+     * so its overflow scrolls rather than growing the panel, and bounds an
+     * expandedSize larger than itself.
      */
     maxSize?: number;
 }
@@ -160,6 +151,16 @@ interface BasePanelConfig {
      * Can be tool names (e.g., "Title") or tool IDs (e.g., "Title_instance1") for multiple instances.
      */
     panelTools?: string[];
+
+    /**
+     * Tools held in the panel's pinned region: they render above `panelTools`
+     * and stay put while the rest of the panel scrolls. Same name-or-ID
+     * vocabulary as `panelTools`, and a tool belongs to one list or the other.
+     *
+     * Only honoured on left/right panels (see PINNABLE_POSITIONS); elsewhere
+     * the tools still join the panel, just not pinned.
+     */
+    pinnedTools?: string[];
 }
 
 /**
@@ -204,6 +205,15 @@ export interface FloatPanelConfig extends BasePanelConfig {
 
     /** Floats can't be drag-resized; `resizable` must be false/omitted */
     capabilities?: Omit<PanelCapabilities, 'resizable'> & { resizable?: false };
+
+    /**
+     * Whether the layout paints no surface for this panel — no background,
+     * border or shadow on the panel, and none on the cards behind its tools.
+     * Tools keep whatever surfaces they draw themselves, so a tool that brings
+     * its own boxes (map controls, for instance) sits directly on the map.
+     * Default: false
+     */
+    transparent?: boolean;
 }
 
 /**
@@ -244,6 +254,13 @@ export interface PanelStateObject {
     tools: Map<string, ToolMetadata>;
 
     /**
+     * IDs of the tools in the panel's pinned region, in render order.
+     * A subset of `tools` — pinned tools are ordinary members of the panel
+     * that additionally render in the non-scrolling region above the body.
+     */
+    pinnedToolIds: string[];
+
+    /**
      * Current actual size in pixels (dynamically updated).
      * Useful for animations, transitions, and layout calculations.
      */
@@ -254,6 +271,28 @@ export interface PanelStateObject {
      */
     lastVisibleState?: PanelState;
 }
+
+/** Options accepted when adding a tool to a panel. */
+export interface AddToolOptions {
+    /**
+     * Place the tool in the panel's pinned region rather than its scrolling
+     * body. Ignored by panels that can't pin.
+     */
+    pinned?: boolean;
+}
+
+/** Result of a state-changing panel command. */
+export type PanelCommandResult =
+    | { ok: true; state: PanelState; changed: boolean }
+    | { ok: false; reason: CommandRefusalReason };
+
+/** The public shape of a panel — everything a caller needs to target one. */
+export type PanelInfo = {
+    id: string;
+    position: string;
+    state: PanelState;
+    toolIds: string[];
+};
 
 /**
  * Interface for the PanelManager singleton.
@@ -279,16 +318,23 @@ export interface PanelManager {
     unregisterPanel(panelId: string): void;
 
     /**
+     * Drop every panel at once, as a layout teardown does.
+     * Broadcasts the resulting empty layout once rather than once per panel.
+     */
+    clear(): void;
+
+    /**
      * Add a tool to a panel region.
      * Tools are assigned at dashboard creation time.
      * Validates tool compatibility against panel capabilities.
      *
      * @param panelId ID of the panel to add tool to
      * @param toolMetadata Tool metadata (orientation, compatibility, etc.)
+     * @param options Placement options, e.g. `{ pinned: true }`
      * @throws Error if tool is incompatible with panel
      * @throws Error if panel is at max capacity
      */
-    addToolToPanel(panelId: string, toolMetadata: ToolMetadata): void;
+    addToolToPanel(panelId: string, toolMetadata: ToolMetadata, options?: AddToolOptions): void;
 
     /**
      * Remove a tool from a panel.
@@ -318,14 +364,57 @@ export interface PanelManager {
     getToolsForPanel(panelId: string): ToolMetadata[];
 
     /**
+     * Whether the panel can take another tool. A panel without a `maxTools`
+     * capability is unbounded.
+     *
+     * @param panelId Panel identifier
+     * @returns true if the panel is below its tool capacity
+     */
+    hasCapacity(panelId: string): boolean;
+
+    /**
+     * Whether this panel supports a pinned region at all.
+     *
+     * @param panelId Panel identifier
+     * @returns true if tools may be pinned in this panel
+     */
+    canPinTools(panelId: string): boolean;
+
+    /**
+     * Tools in the panel's pinned region, in render order.
+     *
+     * @param panelId Panel identifier
+     * @returns Array of tool metadata, empty if the panel has no pinned tools
+     */
+    getPinnedToolsForPanel(panelId: string): ToolMetadata[];
+
+    /**
+     * Tools in the panel's scrolling body — every tool that isn't pinned,
+     * in assignment order.
+     *
+     * @param panelId Panel identifier
+     * @returns Array of tool metadata or empty array if panel not found
+     */
+    getScrollingToolsForPanel(panelId: string): ToolMetadata[];
+
+    /**
+     * Whether a panel may enter the given state.
+     *
+     * @param panelId Panel identifier
+     * @param newState Candidate state
+     * @returns true if the transition is allowed
+     */
+    canSetState(panelId: string, newState: PanelState): boolean;
+
+    /**
      * Change a panel's visual state.
      * Validates transition is allowed based on stateConstraints.
      *
      * @param panelId Panel identifier
      * @param newState Target state
-     * @throws Error if transition is not allowed
+     * @returns Command result: `{ ok: true, state, changed }` or `{ ok: false, reason }`
      */
-    setPanelState(panelId: string, newState: PanelState): void;
+    setPanelState(panelId: string, newState: PanelState): PanelCommandResult;
 
     /**
      * When in iconified or focused state, focus on a specific tool.
@@ -339,16 +428,14 @@ export interface PanelManager {
     focusTool(panelId: string, toolId: string): void;
 
     /**
-     * Toggle a panel's collapsed state.
+     * Restore a collapsed panel to a visible state.
      * Behavior depends on current state and constraints:
      * - collapsed -> last visible state (or default state, or first available visible state)
-     * - iconified/focused/expanded -> collapsed
-     * 
+     *
      * @param panelId Panel identifier
-     * @throws Error if panel not found
-     * @throws Error if toggle cannot be performed due to state constraints
+     * @returns Command result: `{ ok: true, state, changed }` or `{ ok: false, reason }`
      */
-    togglePanelCollapsed(panelId: string): void;
+    showPanel(panelId: string): PanelCommandResult;
 
     /**
      * Get all panels for a specific position, ordered by priority.
@@ -367,12 +454,19 @@ export interface PanelManager {
     getAllPanelsByPriority(): PanelStateObject[];
 
     /**
-     * Notify UI layer that panel state has changed and layout needs updating.
+     * Public projection of every panel, ordered by priority.
+     *
+     * @returns Frozen array of the public panel shape
+     */
+    list(): PanelInfo[];
+
+    /**
+     * Broadcast that panel state has changed and layout needs updating.
      * Should be called whenever:
      * - Panel state changes
      * - Panel is added/removed
      */
-    notifyLayoutChanged(): void;
+    notifyChanged(): void;
 
     /**
      * Validate if a tool is compatible with a panel.

@@ -7,8 +7,10 @@ import path from 'path'
 // Tests for the Upload module's lean-mode storage repoint: in lean mode the
 // router writes validated images to the shared S3 asset bucket (via an
 // injected mock client — no test here ever calls real AWS) and returns a
-// root-relative /assets/… path; in full mode it keeps writing to Missions/
-// on disk and never touches S3.
+// dashboard-root-relative assets/… path (no leading slash — a published
+// dashboard may be served under a customer path prefix, so the stored value
+// must resolve against the document base); in full mode it keeps writing to
+// Missions/ on disk and never touches S3.
 //
 // The router resolves the deployment mode through
 // API/Backend/Utils/deploymentMode.js, which reads the env once at load — so
@@ -125,7 +127,7 @@ test.describe('upload router lean-mode S3 storage', () => {
         delete require.cache[require.resolve(ROUTER_PATH)]
     })
 
-    test('lean: PutObject to the asset bucket, root-relative /assets/ path, nothing on disk', async () => {
+    test('lean: PutObject to the asset bucket, dashboard-root-relative assets/ path, nothing on disk', async () => {
         const mission = `LeanUploadSpec${Date.now()}`
         const routerModule = freshRouterModule({
             MMGIS_DEPLOYMENT_MODE: 'lean',
@@ -143,10 +145,10 @@ test.describe('upload router lean-mode S3 storage', () => {
             expect(res.status).toBe(200)
             const body = res.body
             expect(body.status).toBe('success')
-            // Root-relative (leading slash), mission-scoped, uuid filename.
+            // Slash-less, mission-scoped, uuid filename.
             expect(body.path).toMatch(
                 new RegExp(
-                    `^/assets/${mission}/CardPlugin/uploads/[0-9a-f-]{36}\\.png$`
+                    `^assets/${mission}/CardPlugin/uploads/[0-9a-f-]{36}\\.png$`
                 )
             )
 
@@ -154,8 +156,8 @@ test.describe('upload router lean-mode S3 storage', () => {
             const cmd = s3.calls[0]
             expect(cmd.constructor.name).toBe('PutObjectCommand')
             expect(cmd.input.Bucket).toBe('test-asset-bucket')
-            // The S3 key is the response path without the leading slash.
-            expect(cmd.input.Key).toBe(body.path.slice(1))
+            // The S3 key is exactly the response path.
+            expect(cmd.input.Key).toBe(body.path)
             expect(cmd.input.ContentType).toBe('image/png')
             expect(Buffer.compare(cmd.input.Body, PNG_BYTES)).toBe(0)
             expect(cmd.input.ContentLength).toBe(PNG_BYTES.length)

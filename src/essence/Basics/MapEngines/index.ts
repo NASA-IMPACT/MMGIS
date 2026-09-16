@@ -38,7 +38,6 @@ export type {
     FeatureInteractionHandler,
     QueryFeaturesOptions,
     DrawShape,
-    DrawingOptions,
     DrawStartEvent,
     DrawVertexEvent,
     DrawCompleteEvent,

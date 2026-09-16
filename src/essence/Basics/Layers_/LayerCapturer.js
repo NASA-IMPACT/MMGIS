@@ -583,6 +583,7 @@ export const captureVector = (layerObj, options, cb, dynamicCb) => {
                 data.features = data.Features
                 delete data.Features
             }
+            L_.setLayerLoadStatus(layerObj.name, 'ok')
             cb(data)
         }).fail((jqXHR, textStatus, errorThrown) => {
             //Tell the console council about what happened
@@ -593,6 +594,15 @@ export const captureVector = (layerObj, options, cb, dynamicCb) => {
                     layerUrl +
                     ' /// ' +
                     errorThrown
+            )
+            // status 0 = the browser blocked or lost the request (CORS,
+            // network) and hides the reason from us.
+            L_.setLayerLoadStatus(
+                layerObj.name,
+                'error',
+                jqXHR?.status
+                    ? `Fetch failed (HTTP ${jqXHR.status})`
+                    : 'Fetch failed — likely CORS, a bad host, or a network error'
             )
             cb(null)
         })

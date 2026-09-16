@@ -126,6 +126,15 @@ agree.
    `buildTileUrlOptions` (never read from globals here)
 3. TMS `starttime` / `time` / `composite` params
 
+**The URL template's own params win.** Every injection step skips a param the
+template already spells out — `datetime` here, the COG params in
+`applyCogFieldsToUrl`, `starttime` / `time` / `composite` in the TMS step. A
+layer whose url configures its own window, e.g.
+`?datetime={time}T00:00:00Z/{time}T23:59:59Z`, keeps exactly that: appending a
+second `datetime` would leave two on the request, and a server that resolves a
+repeated scalar to the last value would use the injected range instead of the
+configured one.
+
 **Step 1 must stay ahead of step 2.** `applyCogFieldsToUrl` round-trips the
 whole query string through `URLSearchParams`, which percent-encodes braces —
 `{time}` becomes `%7Btime%7D` and no longer matches the replacement. Leaflet
