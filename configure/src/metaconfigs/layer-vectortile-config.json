@@ -855,6 +855,23 @@
       ]
     },
     {
+      "name": "Properties",
+      "rows": [
+        {
+          "components": [
+            {
+              "field": "properties",
+              "name": "Properties (JSON)",
+              "description": "Extra metadata for the layer, used for filtering.",
+              "type": "json",
+              "width": 12,
+              "height": "240px"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "Information",
       "rows": [
         {
