@@ -46,6 +46,7 @@ import {
     DeckGLAdapter,
 } from '../MapEngines/index'
 import { buildDeckLayer, buildDeckCOGLayer } from '../MapEngines/Adapters/DeckGLHelpers'
+import { resolveFeatureHoverLabel } from './featureHoverLabel'
 import MapComparison from './MapComparison'
 
 import GeoRasterLayer from '../../../external/georaster-layer-for-leaflet/georaster-layer-for-leaflet.ts'
@@ -410,6 +411,26 @@ let Map_ = {
                     window.mmgisAPI.emit('map:featureClick', info)
                 )
                 if (typeof off === 'function') _providerCleanups.push(off)
+            }
+
+            // Hover labels. Leaflet binds mouseover per feature while building
+            // a GeoJSON layer, which engines that pick their own features
+            // never do, so they resolve the label here instead.
+            if (
+                engineType !== MAP_ENGINE.LEAFLET &&
+                typeof engine.onFeatureHover === 'function'
+            ) {
+                const offHover = engine.onFeatureHover((info) => {
+                    const label = resolveFeatureHoverLabel(
+                        info,
+                        L_.layers.data,
+                        { getNamePropVal: L_.getLayersChosenNamePropVal }
+                    )
+                    if (label == null) CursorInfo.hide(true)
+                    else CursorInfo.update(label, null, false)
+                })
+                if (typeof offHover === 'function')
+                    _providerCleanups.push(offHover)
             }
         }
 
@@ -1965,21 +1986,6 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
             interactive: true,
             nativeOptions: {
                 autoHighlight: layerObj.style?.hoverHighlight === true,
-                onHover: (info) => {
-                    const properties = info?.object?.properties
-                    const vtKey = layerObj.style?.vtKey
-
-                    if (properties == null || vtKey == null || properties[vtKey] == null) {
-                        CursorInfo.hide(true)
-                        return
-                    }
-
-                    CursorInfo.update(
-                        vtKey + ': ' + properties[vtKey],
-                        null,
-                        false
-                    )
-                },
             },
         })
         L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
