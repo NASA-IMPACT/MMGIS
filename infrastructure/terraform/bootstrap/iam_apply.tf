@@ -351,6 +351,31 @@ resource "aws_iam_role_policy" "terraform_apply" {
         Resource = "*"
       },
       {
+        # CreateVpcOrigin authorizes the CALLER's ability to read the load
+        # balancer the origin fronts, even though the VPC-side work is
+        # CloudFront's own. ELB describe calls take no resource scope.
+        Sid      = "DescribeVpcOriginLoadBalancer"
+        Effect   = "Allow"
+        Action   = ["elasticloadbalancing:DescribeLoadBalancers"]
+        Resource = "*"
+      },
+      {
+        # CreateVpcOrigin also authorizes the caller for the service-linked
+        # role CloudFront runs VPC origins under, which an account acquires on
+        # its first VPC origin. Pinned to that one role path and conditioned on
+        # the service that may claim it, so no other service-linked role is
+        # reachable from here.
+        Sid      = "CreateCloudFrontVpcOriginServiceLinkedRole"
+        Effect   = "Allow"
+        Action   = ["iam:CreateServiceLinkedRole"]
+        Resource = "arn:aws:iam::${local.account_id}:role/aws-service-role/vpcorigin.cloudfront.amazonaws.com/AWSServiceRoleForCloudFrontVPCOrigin*"
+        Condition = {
+          StringLike = {
+            "iam:AWSServiceName" = "vpcorigin.cloudfront.amazonaws.com"
+          }
+        }
+      },
+      {
         # Secrets are PATH-style (mmgis/<env>/db, …), a different convention
         # from the mmgis-<env>-* prefix; no separator before the * so the
         # scratch environment and the random -XXXXXX ARN suffix match.
