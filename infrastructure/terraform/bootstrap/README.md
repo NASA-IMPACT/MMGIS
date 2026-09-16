@@ -1,6 +1,6 @@
 # Bootstrap Terraform root
 
-Applied **by a human**, rarely, under operator credentials. Everything else in `infrastructure/terraform/` is applied by CI — this root exists so that CI never owns the things that would let it grant itself more: the CI roles themselves, the permissions boundaries that cap CI-created roles, and the state buckets. It also owns the KMS key (`alias/mmgis-master-secret`) that encrypts each environment's RDS-managed database admin password, which lives here because an AWS-managed key cannot be granted on by IAM and the CI apply role has to be.
+Applied **by a human**, rarely, under operator credentials. Everything else in `infrastructure/terraform/` is applied by CI — this root exists so that CI never owns the things that would let it grant itself more: the CI roles themselves, the permissions boundaries that cap CI-created roles, and the state buckets. It also owns the KMS key (`alias/mmgis-master-secret`) that encrypts each environment's RDS-managed database admin password, which lives here because an AWS-managed key cannot be granted on by IAM and the CI apply role has to be. And it owns the service-linked role CloudFront runs both environments' VPC origins under, which CI could only create with an IAM grant outside its name fence.
 
 This README is operational: how to apply this root and verify it. The conceptual layer — the two-root model, the identity and trust-subject design, the boundary + escalation-fence containment story, and the per-service scoping honesty table — lives in [docs/infrastructure/identity.md](../../../docs/infrastructure/identity.md), part of the [infrastructure reference hub](../../../docs/infrastructure/README.md).
 
@@ -8,6 +8,7 @@ This README is operational: how to apply this root and verify it. The conceptual
 
 - Operator credentials in the target AWS account with enough privilege to create S3 buckets, IAM roles, an IAM policy and a KMS key (admin-ish; this is the one place that needs it).
 - **The GitHub OIDC provider must already exist** in the account (`token.actions.githubusercontent.com`). This root only *references* it via a data source and will fail fast if it is absent — creating it here would make the provider's lifecycle a Terraform concern shared with everything else in the account.
+- **If anyone has ever created a CloudFront VPC origin in the account**, the service-linked role `AWSServiceRoleForCloudFrontVPCOrigin` is already there — AWS creates it implicitly on that first origin — and the apply fails on the name until it is in state. Import it before the first apply: `terraform import aws_iam_service_linked_role.cloudfront_vpc_origin arn:aws:iam::<ACCOUNT_ID>:role/aws-service-role/vpcorigin.cloudfront.amazonaws.com/AWSServiceRoleForCloudFrontVPCOrigin`. A fresh account needs nothing.
 - Terraform >= 1.11 (S3-native state locking, `use_lockfile`).
 - Region: `us-west-2` by default (`var.region`).
 

@@ -351,6 +351,15 @@ resource "aws_iam_role_policy" "terraform_apply" {
         Resource = "*"
       },
       {
+        # CreateVpcOrigin authorizes the CALLER's ability to read the load
+        # balancer the origin fronts, even though the VPC-side work is
+        # CloudFront's own. ELB describe calls take no resource scope.
+        Sid      = "DescribeVpcOriginLoadBalancer"
+        Effect   = "Allow"
+        Action   = ["elasticloadbalancing:DescribeLoadBalancers"]
+        Resource = "*"
+      },
+      {
         # Secrets are PATH-style (mmgis/<env>/db, …), a different convention
         # from the mmgis-<env>-* prefix; no separator before the * so the
         # scratch environment and the random -XXXXXX ARN suffix match.
