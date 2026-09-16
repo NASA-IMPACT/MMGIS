@@ -39,7 +39,7 @@ sequenceDiagram
 | `mmgis-development-github-deploy` | Update the running app image only, dev | `repo:NASA-IMPACT/MMGIS:environment:development` |
 | `mmgis-production-github-deploy` | Update the running app image only, prod | `repo:NASA-IMPACT/MMGIS:environment:production` |
 
-The bootstrap root also creates the three state buckets, the two permissions boundaries (`mmgis-ci-role-boundary-<env>`, attached to every CI-created role), and the KMS key that encrypts the database admin password's secret.
+The bootstrap root also creates the three state buckets, the two permissions boundaries (`mmgis-ci-role-boundary-<env>`, attached to every CI-created role), the KMS key that encrypts the database admin password's secret, and the service-linked role CloudFront runs both environments' VPC origins under.
 
 ### OIDC subjects: environment vs pull_request
 
