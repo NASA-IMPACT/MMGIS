@@ -287,6 +287,10 @@ export interface IMapEngine<
 
     /**
      * Subscribe to a map event (click, moveend, zoomend, etc).
+     *
+     * Clicks belonging to a drawing session are not reported: neither the ones
+     * the session takes as vertices, nor the ones its finishing gesture leaves
+     * the engine to deliver once the session is over.
      */
     on(
         eventName: string,
@@ -365,10 +369,10 @@ export interface IMapEngine<
      * Circle: first click sets center, second click sets radius. The
      *   completed feature is a 32-segment Polygon approximation.
      *
-     * Calling `enableDrawing` while a session is already active first
-     * disables the prior session (emitting `drawcancel`), then starts a new
-     * one — there is never more than one drawing session at a time on an
-     * engine.
+     * Calling `enableDrawing` while a session is already active cancels that
+     * session (emitting `drawcancel` for the shape it was drawing) before
+     * emitting `drawstart` for the new one — there is never more than one
+     * drawing session at a time on an engine.
      *
      * Engines emit four lifecycle events through the existing `on(name, …)`:
      *   - `drawstart`    payload: {@link DrawStartEvent}
@@ -408,6 +412,18 @@ export interface IMapEngine<
      * Whether a drawing session is currently active.
      */
     isDrawing(): boolean
+
+    /**
+     * Whether the click made from `source` belongs to the drawing session that
+     * just ended — the finishing gesture's clicks, which the engine delivers
+     * after the session is over.
+     *
+     * `source` is the native DOM event the click was made from. For consumers
+     * that hear clicks from the map library directly rather than through
+     * {@link on}, whose click path filters these clicks out already. An engine
+     * that does not support drawing returns false.
+     */
+    ownsDrawEndClick(source: unknown): boolean
 
     /**
      * Attach an HTML overlay anchored to a geographic point.
