@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { parseNamingProperty } from '../namingProperty'
+import { parseNamingProperty, parseNamingProperties } from '../namingProperty'
 
 describe('parseNamingProperty', () => {
     test('uses the property name as its own label when none is given', () => {
@@ -50,5 +50,32 @@ describe('parseNamingProperty', () => {
             prop: '',
             label: '',
         })
+    })
+})
+
+describe('parseNamingProperties', () => {
+    test('accepts the single-string form', () => {
+        expect(parseNamingProperties('density_rank|Density Rank')).toEqual([
+            { prop: 'density_rank', label: 'Density Rank' },
+        ])
+    })
+
+    test('skips the empty slots a partly filled Property list saves', () => {
+        // Filling only Property 3 on the Configure page saves [null, null, x]
+        expect(parseNamingProperties([null, null, 'name', '', '  '])).toEqual([
+            { prop: 'name', label: 'name' },
+        ])
+    })
+
+    test('an entry that is only a label names no property', () => {
+        expect(parseNamingProperties(['|Orphan label', 'id'])).toEqual([
+            { prop: 'id', label: 'id' },
+        ])
+    })
+
+    test('returns nothing when nothing is configured', () => {
+        expect(parseNamingProperties(undefined)).toEqual([])
+        expect(parseNamingProperties(null)).toEqual([])
+        expect(parseNamingProperties([])).toEqual([])
     })
 })

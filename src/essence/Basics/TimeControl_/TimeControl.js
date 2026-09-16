@@ -6,6 +6,7 @@ import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
 import Map_ from '../Map_/Map_'
 import { parseTimeWithOffset, parseTimeToSeconds } from './timeUtils'
+import { parseNamingProperties } from '../Layers_/namingProperty'
 import { evaluateLayerDataCoverage } from './layerDataCoverage'
 import { formatLayerTime, buildTileUrlOptions } from '../Layers_/tileUrlUtils'
 import { resolveTileLayerSource } from '../Layers_/tileLayerSource'
@@ -705,7 +706,8 @@ var TimeControl = {
                 // If the layer has useKeyAsId or useKeyAsName, save the key/value
                 const keyProp =
                     activeLayer.variables?.useKeyAsId ||
-                    activeLayer.variables?.useKeyAsName
+                    parseNamingProperties(activeLayer.variables?.useKeyAsName)[0]
+                        ?.prop
                 if (keyProp && L_.activeFeature.feature.properties) {
                     // keyProp might be a path like "properties.id" or just "id"
                     const keyPath = keyProp.includes('.')

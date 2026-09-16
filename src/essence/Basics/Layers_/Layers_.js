@@ -1,7 +1,7 @@
 // Holds all layer data
 import { isStaticBuild } from '../../../pre/capabilities'
 import { compileLegendStyle } from './LegendStyle'
-import { parseNamingProperty } from './namingProperty'
+import { parseNamingProperties } from './namingProperty'
 import F_ from '../Formulae_/Formulae_'
 import Description from '../../Ancillary/Description'
 import Search from '../../Ancillary/Search'
@@ -2878,10 +2878,11 @@ const L_ = {
             })
         }
         if (layerData?.variables?.useKeyAsName) {
+            // The server is asked for properties, so display labels are dropped
             dynamicProps = dynamicProps.concat(
-                typeof layerData.variables.useKeyAsName === 'string'
-                    ? [layerData.variables.useKeyAsName]
-                    : layerData.variables.useKeyAsName
+                parseNamingProperties(layerData.variables.useKeyAsName).map(
+                    (p) => p.prop
+                )
             )
         }
         return dynamicProps
@@ -4119,7 +4120,7 @@ const L_ = {
     // Returns one entry per name to show: `prop` is where the value was read
     // from and `label` is what to show beside it, which differ when the
     // configuration gives the property a display label.
-    _resolveLayersChosenNameEntries(feature, layer) {
+    getLayersChosenNameEntries(feature, layer) {
         let entries = []
         let foundThroughVariables = false
 
@@ -4132,9 +4133,9 @@ const L_ = {
                 l.hasOwnProperty('variables') &&
                 l.variables.hasOwnProperty('useKeyAsName')
             ) {
-                let configured = l.variables['useKeyAsName']
-                if (typeof configured === 'string') configured = [configured]
-                entries = configured.map(parseNamingProperty).map((p) => {
+                entries = parseNamingProperties(
+                    l.variables['useKeyAsName']
+                ).map((p) => {
                     let value = null
                     if (
                         feature.properties.hasOwnProperty(p.prop) ||
@@ -4153,7 +4154,11 @@ const L_ = {
             for (let key in feature.properties) {
                 //Default to show geometry type
                 entries = [
-                    { prop: 'Type', label: 'Type', value: feature.geometry.type },
+                    {
+                        prop: 'Type',
+                        label: 'Type',
+                        value: feature.geometry?.type ?? null,
+                    },
                 ]
 
                 //Be certain we have that key in the feature
@@ -4172,19 +4177,17 @@ const L_ = {
         }
         return entries
     },
-    getLayersChosenNamePropVal(feature, layer) {
-        const entries = L_._resolveLayersChosenNameEntries(feature, layer)
+    // The entries above as the label-to-value object hover and menus display.
+    nameEntriesToPropVal(entries) {
         return F_.stitchArrays(
             entries.map((e) => e.label),
             entries.map((e) => e.value)
         )
     },
-    // The property a feature's name is read from, which is what consumers
-    // that look the value up again need — a display label cannot be used for
-    // that. Null when the feature carries no usable property at all.
-    getLayersChosenNameProp(feature, layer) {
-        const entries = L_._resolveLayersChosenNameEntries(feature, layer)
-        return entries.length > 0 ? entries[0].prop : null
+    getLayersChosenNamePropVal(feature, layer) {
+        return L_.nameEntriesToPropVal(
+            L_.getLayersChosenNameEntries(feature, layer)
+        )
     },
     // Returns all feature at a leaflet map click
     // e = {latlng: {lat, lng}, containerPoint?: {x, y}}

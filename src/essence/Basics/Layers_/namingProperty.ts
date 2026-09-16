@@ -30,3 +30,19 @@ export const parseNamingProperty = (entry: string): NamingProperty => {
     const label = entry.slice(separator + 1).trim()
     return { prop, label: label || prop }
 }
+
+/**
+ * Parses a layer's whole naming configuration, `variables.useKeyAsName`.
+ *
+ * It may be a single entry or a list. Entries that name no property are
+ * dropped: the Configure page saves a partly filled Property list with null
+ * holes, and a blank or label-only entry has nothing to read off a feature.
+ */
+export const parseNamingProperties = (
+    configured: string | Array<string | null | undefined> | null | undefined,
+): NamingProperty[] => {
+    const entries = Array.isArray(configured) ? configured : [configured]
+    return entries
+        .map((entry) => parseNamingProperty(entry as string))
+        .filter((p) => p.prop !== '')
+}
