@@ -1,13 +1,20 @@
 /**
  * cfn-template.js
  * Renders the CloudFormation template for a single published dashboard:
- * a private S3 bucket fronted by a CloudFront distribution whose
- * viewer-request CloudFront Function enforces a shared password
- * (HTTP Basic auth).
+ * a private S3 bucket fronted by a CloudFront distribution with a
+ * viewer-request CloudFront Function. The Function handles path prefixes
+ * always, and — where the environment asks for it — enforces a shared
+ * password (HTTP Basic auth).
  *
  * The shared password is baked into the Function source as a base64
  * constant. It is deliberately NOT a CloudFormation Parameter — parameters
  * surface in DescribeStacks output, which the Deployments list reads.
+ *
+ * Whether dashboards are gated is a per-environment choice
+ * (Terraform's dashboards_require_auth, reaching the publish task as
+ * MMGIS_DASHBOARDS_REQUIRE_AUTH). The Function itself is the same either
+ * way — a boolean baked into its body at publish decides whether the
+ * password check runs — and so is everything else about the stack.
  */
 
 const fs = require("fs");
@@ -29,8 +36,28 @@ const AUTH_FUNCTION_SOURCE_PATH = path.join(
 
 const BASIC_AUTH_CREDENTIALS_PLACEHOLDER = "<BASE64_BASIC_CREDENTIALS>";
 
+// The source file is the deployable GATED shape — valid ES5 on its own —
+// so its gate boolean already reads true. An ungated render swaps this one
+// line for its false form and changes nothing else.
+const REQUIRE_AUTH_GATED_LINE = "var REQUIRE_AUTH = true;";
+const REQUIRE_AUTH_UNGATED_LINE = "var REQUIRE_AUTH = false;";
+
 // Basic-auth username paired with the shared password.
 const BASIC_AUTH_USER = "mmgis";
+
+/**
+ * Whether the dashboards this runtime publishes carry the password gate,
+ * decided from the raw MMGIS_DASHBOARDS_REQUIRE_AUTH value. Only the exact
+ * string "false" ungates them; every other value — unset, empty, "False",
+ * "0", " false" — gates them, so a missing or garbled variable fails closed.
+ *
+ * FromEnv because the argument is the raw variable, not a decision already
+ * made: a boolean `false` here is not the string "false", so it GATES —
+ * the opposite of what requireAuth: false means to renderCfnTemplate.
+ */
+function dashboardsAuthRequiredFromEnv(value) {
+  return value !== "false";
+}
 
 // Mirrors the environment validation in
 // infrastructure/terraform/modules/mmgis-environment/variables.tf.
@@ -83,27 +110,51 @@ function stackNameForDeployment(deploymentId) {
 /**
  * The viewer-request CloudFront Function source, read from
  * infrastructure/cloudfront-function.js (the single source of truth for the
- * function body) with its leading doc-comment header stripped and the
- * <BASE64_BASIC_CREDENTIALS> placeholder substituted with
- * base64("mmgis:" + password). See that file for what the function itself
- * does (auth gate, X-Forwarded-Prefix handling).
+ * function body) with its leading doc-comment header stripped. See that file
+ * for what the function itself does (auth gate, X-Forwarded-Prefix handling).
+ *
+ * The source is already the gated shape, so gating only substitutes
+ * <BASE64_BASIC_CREDENTIALS> with base64("mmgis:" + password). Ungating
+ * flips the source's `var REQUIRE_AUTH = true;` line to `false` — the value
+ * the Function's own gate condition reads — and leaves the credential empty,
+ * so an ungated dashboard ships nothing for its (unreachable) 401 branch to
+ * match against and the password is never read.
+ *
+ * Only requireAuth === false ungates. Every other value — undefined, null, 0,
+ * "" — gates and so demands the password, because a caller that mangles the
+ * flag must fail toward the gate, never away from it.
  */
-function renderAuthFunctionCode(password) {
+function renderAuthFunctionCode(password, requireAuth = true) {
   const source = fs.readFileSync(AUTH_FUNCTION_SOURCE_PATH, "utf8");
 
   const body = source.replace(/^\/\*[\s\S]*?\*\/\s*/, "").trimEnd();
 
-  if (body.indexOf(BASIC_AUTH_CREDENTIALS_PLACEHOLDER) === -1)
+  for (const required of [
+    REQUIRE_AUTH_GATED_LINE,
+    BASIC_AUTH_CREDENTIALS_PLACEHOLDER,
+  ])
+    if (body.indexOf(required) === -1)
+      throw new Error(
+        `renderAuthFunctionCode: ${AUTH_FUNCTION_SOURCE_PATH} is missing ` +
+          `'${required}' — cannot render the function.`
+      );
+
+  const gated = requireAuth !== false;
+
+  if (gated && (password == null || password === ""))
     throw new Error(
-      `renderAuthFunctionCode: ${AUTH_FUNCTION_SOURCE_PATH} is missing the ` +
-        `${BASIC_AUTH_CREDENTIALS_PLACEHOLDER} placeholder — cannot bake in ` +
-        "the shared password."
+      "renderAuthFunctionCode requires the shared dashboards password (MMGIS_DASHBOARDS_PASSWORD)"
     );
 
-  const expected = Buffer.from(`${BASIC_AUTH_USER}:${password}`).toString(
-    "base64"
-  );
-  return body.replace(BASIC_AUTH_CREDENTIALS_PLACEHOLDER, expected);
+  const expected = gated
+    ? Buffer.from(`${BASIC_AUTH_USER}:${password}`).toString("base64")
+    : "";
+
+  const withGate = gated
+    ? body
+    : body.replace(REQUIRE_AUTH_GATED_LINE, REQUIRE_AUTH_UNGATED_LINE);
+
+  return withGate.replace(BASIC_AUTH_CREDENTIALS_PLACEHOLDER, expected);
 }
 
 /**
@@ -111,17 +162,23 @@ function renderAuthFunctionCode(password) {
  * dashboard. No Parameters block — everything is baked.
  *
  * Outputs: BucketName, DistributionId, DistributionDomainName.
+ *
+ * Only requireAuth === false ungates the dashboard; any other value gates it
+ * and requires the password.
  */
-function renderCfnTemplate({ password } = {}) {
-  if (password == null || password === "")
+function renderCfnTemplate({ password, requireAuth = true } = {}) {
+  const gated = requireAuth !== false;
+
+  if (gated && (password == null || password === ""))
     throw new Error(
       "renderCfnTemplate requires the shared dashboards password (MMGIS_DASHBOARDS_PASSWORD)"
     );
 
   const template = {
     AWSTemplateFormatVersion: "2010-09-09",
-    Description:
-      "MMGIS published dashboard: private S3 bucket + CloudFront distribution with a shared-password viewer-request Function. Managed by the MMGIS Deployments feature.",
+    Description: gated
+      ? "MMGIS published dashboard: private S3 bucket + CloudFront distribution with a shared-password viewer-request Function. Managed by the MMGIS Deployments feature."
+      : "MMGIS published dashboard: private S3 bucket + CloudFront distribution with a path-prefix viewer-request Function and no password gate. Managed by the MMGIS Deployments feature.",
     Resources: {
       DashboardBucket: {
         Type: "AWS::S3::Bucket",
@@ -198,10 +255,12 @@ function renderCfnTemplate({ password } = {}) {
           Name: { "Fn::Sub": "${AWS::StackName}-auth" },
           AutoPublish: true,
           FunctionConfig: {
-            Comment: "Shared-password (Basic auth) gate for the dashboard",
+            Comment: gated
+              ? "Shared-password (Basic auth) gate + path-prefix handler for the dashboard"
+              : "Path-prefix handler for the dashboard",
             Runtime: "cloudfront-js-1.0",
           },
-          FunctionCode: renderAuthFunctionCode(password),
+          FunctionCode: renderAuthFunctionCode(password, gated),
         },
       },
       DashboardDistribution: {
@@ -265,6 +324,7 @@ function renderCfnTemplate({ password } = {}) {
 module.exports = {
   DEFAULT_STACK_NAME_PREFIX,
   BASIC_AUTH_USER,
+  dashboardsAuthRequiredFromEnv,
   stackNamePrefix,
   stackNameForDeployment,
   renderAuthFunctionCode,
