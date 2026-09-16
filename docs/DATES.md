@@ -1,21 +1,28 @@
 # How dates work in MMGIS
 
-Three different kinds of date show up in this app, and every date a user sees anywhere (the Timeline, the Layers panel, an exported map) is one of them. They are easy to confuse and the confusion is costly: a reader who sees an unlabeled date on a map assumes it is the date the data was collected, which is the one date the app can least often produce.
-
-This page names the three kinds, then catalogues where each value actually comes from in the code, so a feature that needs to show a date can pick the right one and know its limits.
+Roughly speaking, there are three broad date categories in MMGIS
+- time data was originally collected
+- time the map controls are set to
+- time of the end user
 
 ## The three kinds of date
 
-**Acquisition time: when the data was collected.** Every layer's data was collected at some point in the real world, whether or not the layer responds to the time slider. It is usually a range rather than an instant: a satellite pass, a month of composited scenes, a multi-year campaign. This is the date readers assume a map carries.
+**Acquisition time: when the data was collected.** Every layer's data was collected at some point in the real world, and this collection date can be independent of the map control time slider. Collection dates can be ranges such as 2022-2025, or they can be timestamped instants such as 2025.05.05:15.18.58. In our legend, this is the date we most want to show the user.
 
 **Interface time: where the user put the slider.** The Time Control's state. It is a control input, a request the user is making, not a fact about any data. It matters because it decides what the app asks the tile servers for.
 
-**Export time: when the picture was made.** The wall-clock moment a screenshot or export was produced. It is always true and trivially available, and it is what makes an open-ended date like "to present" readable later.
+**Export time: when the picture was made.** The wall-clock moment a screenshot or export was produced. It is always true and trivially available.
 
-Two things the vocabulary hides:
+Layers with periodic data.
+- Some layers don't correspond to a single date range or date moment. They contain multiple periods of data which can be accessed independently by requesting the associated time.
+- So, you might have a layer that goes from 2022-2025, but in monthly chunks.
+- If this layer is *time-enabled* then at any one moment, you aren't seeing 2022-2025, you will only be seeing a single month that corresponds to the cursor location (this level of implementation detail might need to be separated out)
 
-- A **time-enabled layer** is one whose config has `time.enabled` set. The slider changes what it shows. A layer that is not time-enabled ignores the slider entirely, but its data still has an acquisition time; the slider can sit on 2024 while a layer collected in 2016 stays on screen.
-- For a time-enabled layer, the layer as a whole may cover a long span (say two decades of monthly data) while what is on the map right now is one slice of it. The date worth communicating is the slice, not the span.
+
+Gotchas:
+- A **time-enabled layer** is one whose config has `time.enabled` set. The slider changes what period of data from this layer the map displays.
+- A layer that is not time-enabled ignores the slider entirely, but its data still has an acquisition time. This means you can be in a situation where the slider says 2024 while a layer collected in 2016 is still shown on the map.
+
 
 ## Interface time: the Time Control
 
@@ -29,22 +36,33 @@ The Time Control keeps three values, all ISO strings truncated to whole seconds 
 
 Two things about these values are not obvious from the names:
 
-- **The window's right edge is never sent to a server.** Requests run from `startTime` to the cursor, never to `endTime`. Printing "start to end" describes a span the map never asked for.
+- **The window's right edge is never sent to a server.** Requests run from `startTime` to the cursor, never to `endTime`. Printing "start to end" describes a span the map never requests any API for.
 - **The slider has a mode that is not on the bus.** `TimeUI.js` has a Range mode and a Point mode. Switching to Point mode sets the window start to the epoch, 1970, and switching back restores the saved range start. A feature reading `startTime` raw will, in Point mode, print "since 1970." Nothing over the bus says which mode is active.
 
 Two more bus requests render a time as text, both using the mission's time format (see below): `time:getCurrentFormatted` returns the cursor, or `null` until time is enabled and seeded; `time:formatTime` takes any time the caller holds and formats it the same way, or `null` if it cannot be parsed.
 
+## The two kinds of time-enabled layer
+
+A time-enabled layer has a `time.type`, set by the **Time Type** dropdown on the layer's Configure page. The dropdown offers two values:
+
+- **`requery`**: the layer is re-fetched from its server every time the slider moves, with the current window written into its URL. This is what a tiled raster from STAC or TiTiler is, and what almost every time-enabled layer in a mission is.
+- **`local`**: the layer is fetched once and never re-requested for time. It is for a vector layer whose features each carry their own timestamp property; the dashboard hides and shows features on the client by comparing that property to the window. The layer's config names the property in `time.endProp`.
+
+A third value, `global`, appears in older configs. The code treats it exactly as `requery`; Configure no longer offers it.
+
 ## How the cursor reaches a layer's tile request
 
-Every time the slider moves, `updateLayersTime` in `TimeControl.js` writes onto every layer with `time.enabled` set:
+Every time the slider moves, `updateLayersTime` in `TimeControl.js` sets two fields on the in-memory copy of every layer with `time.enabled` set, whatever its type:
 
 - `time.start` = the Time Control's `startTime`
 - `time.end` = the Time Control's `currentTime`, the cursor
 
-so every time-enabled layer is stamped with the same window, start to cursor. A layer's `time.type` decides what happens next:
+These two fields live only in the running dashboard's layer object. They are not saved to the database, an admin cannot type them (Configure has no Start or End input for a layer's time block), and they are separate from the Data Time Extent fields, which the stamp never touches. A `start` or `end` that shows up in a saved config is stale runtime state that was exported at some point; the dashboard overwrites it on the first slider move.
 
-- `global` and `requery` layers follow the cursor and are reloaded when it moves.
-- `local` layers keep a window of their own in `time.start` and `time.end` and are not restamped.
+So every time-enabled layer carries the same window, start to cursor. What happens next depends on `time.type`:
+
+- A `requery` layer has the window written into its URL and is re-fetched. This is the request the rest of this page is about.
+- A `local` layer keeps its URL as authored and is not re-fetched. Its features are filtered on the client against the same window.
 
 `compileTileUrl` in `src/essence/Tools/_shared/adapters/tileUrlUtils.ts` then puts the window into the URL. It does this two ways, and a feature that inspects URLs to guess "does this layer vary with time" has to know both:
 
@@ -117,3 +135,4 @@ On any `Collected` line, a range whose two ends print as the same label — a si
 | no interval, or unparseable | `2026-07-03` |
 
 Every date on a row, whether in a `Collected` or `Requested` line, prints at that precision, and a range prints both ends at it. The two header lines are the exception: the cursor and the export time are instants, not periods, and go through core — the cursor through `time:getCurrentFormatted`, the export time through `time:formatTime` — so they read the way the mission's own Time Control writes them. `renderLegendBand.ts` draws each date line under its row's name, and the header lines under the mission name.
+
