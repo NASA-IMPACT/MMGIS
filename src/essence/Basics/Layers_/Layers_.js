@@ -1,6 +1,7 @@
 // Holds all layer data
 import { isStaticBuild } from '../../../pre/capabilities'
 import { compileLegendStyle } from './LegendStyle'
+import { parseNamingProperty } from './namingProperty'
 import F_ from '../Formulae_/Formulae_'
 import Description from '../../Ancillary/Description'
 import Search from '../../Ancillary/Search'
@@ -4114,9 +4115,12 @@ const L_ = {
         })
     },
     //Specific internal functions likely only to be used once
-    getLayersChosenNamePropVal(feature, layer) {
-        //These are what you'd think they'd be (Name could be thought of as key)
-        let propertyNames, propertyValues
+    // Resolves a feature against its layer's configured naming properties.
+    // Returns one entry per name to show: `prop` is where the value was read
+    // from and `label` is what to show beside it, which differ when the
+    // configuration gives the property a display label.
+    _resolveLayersChosenNameEntries(feature, layer) {
+        let entries = []
         let foundThroughVariables = false
 
         let layerName =
@@ -4128,22 +4132,18 @@ const L_ = {
                 l.hasOwnProperty('variables') &&
                 l.variables.hasOwnProperty('useKeyAsName')
             ) {
-                propertyNames = l.variables['useKeyAsName']
-                if (typeof propertyNames === 'string')
-                    propertyNames = [propertyNames]
-                propertyValues = Array(propertyNames.length).fill(null)
-                propertyNames.forEach((propertyName, idx) => {
+                let configured = l.variables['useKeyAsName']
+                if (typeof configured === 'string') configured = [configured]
+                entries = configured.map(parseNamingProperty).map((p) => {
+                    let value = null
                     if (
-                        feature.properties.hasOwnProperty(propertyName) ||
+                        feature.properties.hasOwnProperty(p.prop) ||
                         l.getFeaturePropertiesOnClick === true
                     ) {
-                        propertyValues[idx] = F_.getIn(
-                            feature.properties,
-                            propertyName
-                        )
-                        if (propertyValues[idx] != null)
-                            foundThroughVariables = true
+                        value = F_.getIn(feature.properties, p.prop)
+                        if (value != null) foundThroughVariables = true
                     }
+                    return { ...p, value }
                 })
             }
         }
@@ -4152,8 +4152,9 @@ const L_ = {
         if (!foundThroughVariables) {
             for (let key in feature.properties) {
                 //Default to show geometry type
-                propertyNames = ['Type']
-                propertyValues = [feature.geometry.type]
+                entries = [
+                    { prop: 'Type', label: 'Type', value: feature.geometry.type },
+                ]
 
                 //Be certain we have that key in the feature
                 if (
@@ -4161,16 +4162,29 @@ const L_ = {
                     (typeof feature.properties[key] === 'string' ||
                         typeof feature.properties[key] === 'number')
                 ) {
-                    //Store the current feature's key
-                    propertyNames = [key]
-                    //Store the current feature's value
-                    propertyValues = [feature.properties[key]]
+                    entries = [
+                        { prop: key, label: key, value: feature.properties[key] },
+                    ]
                     //Break out of for loop since we're done
                     break
                 }
             }
         }
-        return F_.stitchArrays(propertyNames, propertyValues)
+        return entries
+    },
+    getLayersChosenNamePropVal(feature, layer) {
+        const entries = L_._resolveLayersChosenNameEntries(feature, layer)
+        return F_.stitchArrays(
+            entries.map((e) => e.label),
+            entries.map((e) => e.value)
+        )
+    },
+    // The property a feature's name is read from, which is what consumers
+    // that look the value up again need — a display label cannot be used for
+    // that. Null when the feature carries no usable property at all.
+    getLayersChosenNameProp(feature, layer) {
+        const entries = L_._resolveLayersChosenNameEntries(feature, layer)
+        return entries.length > 0 ? entries[0].prop : null
     },
     // Returns all feature at a leaflet map click
     // e = {latlng: {lat, lng}, containerPoint?: {x, y}}

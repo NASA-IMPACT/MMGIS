@@ -72,7 +72,7 @@ Example:
 
 ```javascript
 {
-    "useKeyAsName": "propKey || [propKey1, propKey2, ...]",
+    "useKeyAsName": "propKey || propKey|Display Label || [propKey1, propKey2|Label 2, ...]",
     "datasetLinks": [
         {
             "prop": "{prop}",
@@ -116,7 +116,7 @@ Example:
 }
 ```
 
-- `useKeyAsName`: The property key whose value should be the hover text of each feature. If left unset, the hover key and value will be the first one listed in the feature's properties. This may also be an array of keys.
+- `useKeyAsName`: The property key whose value should be the hover text of each feature. If left unset, the hover key and value will be the first one listed in the feature's properties. This may also be an array of keys. Each key may carry a display label after a pipe, as in `density_rank|Density Rank`, to show a readable name beside the value instead of the raw property key. Only the first pipe separates, so a label may contain further ones, and an empty label falls back to the property key. Dot notation still reaches nested properties, as in `stores.food.candy|Candy`.
 - `links`: Configure deep links to other sites based on the properties on a selected feature. This requires the "Minimalist" option in the Look Tab to be unchecked. Upon clicking a feature, a list of deep links are put into the top bar and can be clicked on to navigate to any other page.
   - `name`: The name of the deep link. It should be unique.
   - `link`: A url template. Curly brackets are included. On feature click, all `{prop}` are replaced with the corresponding `features[i].properties.prop` value. Multiple `{prop}` are supported as are access to nested props using dot notation `{stores.food.candy}`.

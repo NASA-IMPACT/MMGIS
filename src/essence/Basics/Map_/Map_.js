@@ -1131,7 +1131,10 @@ Map_.onEachFeatureDefault = onEachFeatureDefault
 function onEachFeatureDefault(feature, layer) {
     const pv = L_.getLayersChosenNamePropVal(feature, layer)
 
-    layer['useKeyAsName'] = Object.keys(pv)[0]
+    // The property, not the key shown beside the value: consumers of
+    // useKeyAsName look the value up on the feature again, which a display
+    // label cannot do.
+    layer['useKeyAsName'] = L_.getLayersChosenNameProp(feature, layer)
     if (
         layer.hasOwnProperty('options') &&
         layer.options.hasOwnProperty('layerName')

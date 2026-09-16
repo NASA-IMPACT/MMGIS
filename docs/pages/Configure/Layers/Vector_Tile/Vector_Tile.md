@@ -96,7 +96,7 @@ Each feature of the vector tileset needs a property with a unique value to ident
 #### Use Key as Name
 
 _type:_ string _optional_
-The property key whose value should be the hover text of each feature. This is the same as the `useKeyAsName` raw variable within Vector layers
+The property key whose value should be the hover text of each feature. A key may carry a display label after a pipe, as in `density_rank|Density Rank`. This is the same as the `useKeyAsName` raw variable within Vector layers
 
 #### Raw Variables
 
