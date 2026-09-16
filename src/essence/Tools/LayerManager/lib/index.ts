@@ -13,18 +13,9 @@ export { FloatingPopover, type FloatingPopoverProps } from './FloatingPopover'
 export {
     DataCoverageWarning,
     type DataCoverageWarningProps,
-    type GetDataCoverage,
 } from './geo/DataCoverageWarning/DataCoverageWarning'
 
-export type {
-    Layer,
-    LegendType,
-    CategoricalStop,
-    CogData,
-    DataCoverage,
-    CoverageSpan,
-    CoverageUnit,
-} from './types'
+export type { Layer, LegendType, CategoricalStop, CogData } from './types'
 
 // Side-effect import of the component stylesheet.
 import './styles/index.scss'

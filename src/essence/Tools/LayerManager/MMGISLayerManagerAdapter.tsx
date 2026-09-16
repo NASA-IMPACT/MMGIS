@@ -18,9 +18,8 @@ import {
 } from './adapters/handlers'
 import {
     mmgisGetLayerBounds,
-    mmgisGetLayerDataCoverage,
+    mmgisGetTimeCurrent,
     mmgisOnDataCoverageChanged,
-    type LayerDataCoverage,
     type LayerDataCoverageChange,
 } from '../_shared/adapters/mmgisAPI'
 
@@ -36,20 +35,14 @@ const report = (action: string, result: Promise<void>): void => {
 }
 
 /**
- * The rows with the given layers' coverage records swapped in, keyed by layer
- * UUID — which is what both row ids and core's announcements use. The same
- * array when no row is named, so an announcement for a layer the list does
- * not hold re-renders nothing.
+ * The rows with the given layers' no-data flags swapped in, keyed by layer
+ * UUID, which both row ids and core's announcements use. The same array when
+ * no row is named, so an announcement for another layer re-renders nothing.
  */
-const withCoverage = (
-    rows: Layer[],
-    records: Map<string, LayerDataCoverage>,
-): Layer[] => {
-    if (!rows.some((row) => records.has(row.id))) return rows
+const withOutOfRange = (rows: Layer[], flags: Map<string, boolean>): Layer[] => {
+    if (!rows.some((row) => flags.has(row.id))) return rows
     return rows.map((row) =>
-        records.has(row.id)
-            ? { ...row, dataCoverage: records.get(row.id) }
-            : row,
+        flags.has(row.id) ? { ...row, outOfDataRange: flags.get(row.id) } : row,
     )
 }
 
@@ -68,16 +61,16 @@ export function MMGISLayerManagerAdapter() {
     // per refresh in flight. A refresh reads every layer's coverage before its
     // rows land, and a change announced in between would otherwise be
     // overwritten by that older read until the layer next changes.
-    const inFlight = useRef(new Set<Map<string, LayerDataCoverage>>())
+    const inFlight = useRef(new Set<Map<string, boolean>>())
 
     const refresh = useCallback(async () => {
-        const announced = new Map<string, LayerDataCoverage>()
+        const announced = new Map<string, boolean>()
         inFlight.current.add(announced)
         try {
             const data = await getVisibleLayersWithLegends({
                 showOnlyVisible: toolVars.showOnlyVisible === true,
             })
-            setLayers(withCoverage(data, announced))
+            setLayers(withOutOfRange(data, announced))
         } catch (err) {
             console.error('LayerManager: refresh failed', err)
             setLayers([])
@@ -90,10 +83,14 @@ export function MMGISLayerManagerAdapter() {
     // Core announces a layer's record whenever its verdict or coverage
     // changes, so this keeps each row's warning current between refreshes.
     const applyCoverageChange = useCallback(
-        ({ layerName, ...record }: LayerDataCoverageChange) => {
+        ({ layerName, outOfDataRange }: LayerDataCoverageChange) => {
             if (!layerName) return
-            for (const announced of inFlight.current) announced.set(layerName, record)
-            setLayers((rows) => withCoverage(rows, new Map([[layerName, record]])))
+            for (const announced of inFlight.current) {
+                announced.set(layerName, outOfDataRange)
+            }
+            setLayers((rows) =>
+                withOutOfRange(rows, new Map([[layerName, outOfDataRange]])),
+            )
         },
         [],
     )
@@ -122,6 +119,18 @@ export function MMGISLayerManagerAdapter() {
     // mission's layers first become available).
     useMMGISHandlerReady('layers:getAll', refresh)
 
+    // The timeline's current time, named by the no-data warning.
+    const [selectedTime, setSelectedTime] = useState<string | null>(null)
+    const readSelectedTime = useCallback(() => {
+        mmgisGetTimeCurrent().then(setSelectedTime, () => {})
+    }, [])
+    useMMGISHandlerReady('time:getCurrent', readSelectedTime)
+    const followSelectedTime = useCallback((payload?: unknown) => {
+        const { currentTime } = (payload ?? {}) as { currentTime?: string }
+        if (currentTime) setSelectedTime(currentTime)
+    }, [])
+    useMMGISEvent('time:changed', followSelectedTime)
+
     return (
         <LayerManagerPanel
             layers={layers}
@@ -133,7 +142,7 @@ export function MMGISLayerManagerAdapter() {
             onRescaleChange={(id, mn, mx) => { report('setRescale', setRescale(id, mn, mx, refresh)) }}
             onZoomToLayer={(id) => { report('zoomToLayer', zoomToLayer(id)) }}
             canZoomToLayer={canZoomToLayer}
-            getDataCoverage={mmgisGetLayerDataCoverage}
+            selectedTime={selectedTime}
             onCompareLayer={compareLayer}
             onAddLayer={showAddLayer}
         />

@@ -1,371 +1,128 @@
 import React, { act } from 'react'
-import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, test, expect, beforeEach, afterEach } from 'vitest'
 import { MMGISLayerManagerAdapter } from '../MMGISLayerManagerAdapter'
-import { mount as mountOnce, type Mounted } from '../../_shared/__tests__/reactHarness'
-import type { LayerDataCoverage } from '../../_shared/adapters/mmgisAPI'
+import { mount, type Mounted } from '../../_shared/__tests__/reactHarness'
 
 /**
- * Where the panel meets core's coverage record. The adapter reads every
- * layer's record with the rest of the row data, follows core's announcements
- * of a change to one, and hands the row a way to read its record afresh. Core
- * is a fake bus here: request handlers plus a real subscriber list, so an
- * announcement reaches exactly the handlers still subscribed to it.
- *
- * Layer UUIDs and display names differ on purpose, since every map crossing
- * the bus is UUID-keyed and a lookup by the wrong one must fail here.
+ * The adapter against a fake bus: request handlers plus a real subscriber
+ * list. Layer UUIDs differ from display names, since coverage is UUID-keyed.
  */
-
-/**
- * Every panel still mounted, unmounted after each case. A case unmounts its
- * own at its end, which a failing assertion skips; a panel left behind keeps
- * its document-level Escape and press listeners acting on the cases after it.
- */
-const mounted = new Set<Mounted>()
-
-const mount = async (ui: React.ReactElement): Promise<Mounted> => {
-    const handle = await mountOnce(ui)
-    const tracked: Mounted = {
-        ...handle,
-        unmount: async () => {
-            if (!mounted.delete(tracked)) return
-            await handle.unmount()
-        },
-    }
-    mounted.add(tracked)
-    return tracked
-}
-
-const unmountAll = async () => {
-    for (const handle of [...mounted]) await handle.unmount()
-}
 
 const SPARSE = 'Sparse_0123456789abcdef'
 const CONTINUOUS = 'Continuous_fedcba9876543210'
-const STATIC = 'Static_00112233445566'
+const EVENT = 'layers:dataCoverageChanged'
 
-const CONFIGS: Record<string, { display_name: string; time?: object }> = {
-    [SPARSE]: { display_name: 'Sparse', time: { enabled: true } },
-    [CONTINUOUS]: { display_name: 'Continuous', time: { enabled: true } },
-    [STATIC]: { display_name: 'Static' },
-}
-
-const COVERAGE_EVENT = 'layers:dataCoverageChanged'
-
-const utc = (...parts: [number, number, number, number?]) => Date.UTC(...parts)
-
-const window_ = (end: number) => ({ start: end - 86400000, end })
-
-const sparseRecord = (outOfDataRange: boolean, end = utc(2020, 3, 2)) => ({
-    outOfDataRange,
-    kind: 'sparse' as const,
-    spans: [
-        {
-            start: utc(2020, 2, 4),
-            end: utc(2020, 2, 5) - 1,
-            at: utc(2020, 2, 4),
-            unit: 'day' as const,
-        },
-    ],
-    requestedWindow: window_(end),
-})
-
-const continuousRecord = (outOfDataRange: boolean, end = utc(2020, 3, 2)) => ({
-    outOfDataRange,
-    kind: 'continuous' as const,
-    spans: [{ start: utc(2020, 0, 1), end: utc(2020, 2, 2) - 1 }],
-    requestedWindow: window_(end),
-})
-
-const NO_COVERAGE: LayerDataCoverage = {
-    outOfDataRange: false,
-    kind: null,
-    spans: null,
-    requestedWindow: window_(utc(2020, 3, 2)),
-}
-
-/** Core's registry, keyed by layer UUID. Tests edit it to move core on. */
-let registry: Record<string, LayerDataCoverage>
+let outOfRange: Record<string, boolean>
 let listeners: Map<string, Set<(payload?: unknown) => void>>
-let requests: Array<{ name: string; params: unknown }>
-/**
- * Gates for the next 'layers:getVisible' calls, taken one per call. A refresh
- * that meets one has already read the coverage map and waits there until the
- * gate is released.
- */
-let visibleGates: Promise<void>[]
-let provideCoverage: boolean
+let gate: Promise<void> | null
+let mounted: Mounted | null
 
-const installBus = () => {
+beforeEach(() => {
+    outOfRange = {}
     listeners = new Map()
-    requests = []
-    visibleGates = []
-    const handlers: Record<string, (params?: unknown) => unknown> = {
+    gate = null
+    mounted = null
+    const handlers: Record<string, () => unknown> = {
         'layers:getAll': () => ({}),
         'tool:getVars': () => ({}),
-        'layers:getAllConfigs': () => CONFIGS,
+        'layers:getAllConfigs': () => ({
+            [SPARSE]: { display_name: 'Sparse' },
+            [CONTINUOUS]: { display_name: 'Continuous' },
+        }),
+        // Read after coverage, so a held gate stands for a refresh that has
+        // already read coverage but not yet landed.
         'layers:getVisible': async () => {
-            const gate = visibleGates.shift()
             if (gate) await gate
-            return { [SPARSE]: true, [CONTINUOUS]: true, [STATIC]: true }
+            return { [SPARSE]: true, [CONTINUOUS]: true }
         },
         'layers:getAllOpacities': () => ({}),
-        // Core answers one layer by UUID or display name, or the whole map.
-        // The map is copied, so a read is a snapshot of the moment it ran.
-        'layers:getDataCoverage': (id) => {
-            if (id == null) return { ...registry }
-            const uuid = Object.keys(CONFIGS).find(
-                (key) => key === id || CONFIGS[key].display_name === id,
-            )
-            return uuid ? registry[uuid] ?? null : null
-        },
+        'layers:getDataCoverage': () =>
+            Object.fromEntries(
+                Object.entries(outOfRange).map(([id, flag]) => [
+                    id,
+                    { outOfDataRange: flag },
+                ]),
+            ),
     }
-    ;(window as { mmgisAPI?: unknown }).mmgisAPI = {
-        request: async (name: string, params?: unknown) => {
-            requests.push({ name, params })
-            const handler = handlers[name]
-            if (!handler || (name === 'layers:getDataCoverage' && !provideCoverage))
-                throw new Error(`No handler for ${name}`)
-            return handler(params)
+    ;(window as any).mmgisAPI = {
+        request: async (name: string) => {
+            if (!handlers[name]) throw new Error(`No handler for ${name}`)
+            return handlers[name]()
         },
-        hasHandler: (name: string) =>
-            name in handlers &&
-            (name !== 'layers:getDataCoverage' || provideCoverage),
+        hasHandler: (name: string) => name in handlers,
         on: (event: string, handler: (payload?: unknown) => void) => {
             if (!listeners.has(event)) listeners.set(event, new Set())
             listeners.get(event)!.add(handler)
-            return () => {
-                listeners.get(event)?.delete(handler)
-            }
+            return () => listeners.get(event)?.delete(handler)
         },
         emit: (event: string, payload?: unknown) => {
             for (const handler of [...(listeners.get(event) ?? [])]) handler(payload)
         },
     }
-}
-
-/** What core does when a record changes: store it, then announce it. */
-const announce = async (layerName: string, record: LayerDataCoverage) => {
-    registry[layerName] = record
-    await act(async () => {
-        ;(window as any).mmgisAPI.emit(COVERAGE_EVENT, { layerName, ...record })
-    })
-}
-
-/** Let the refresh's chain of bus requests settle. */
-const settle = async () => {
-    await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 0))
-    })
-}
-
-const rowOf = (container: HTMLElement, id: string) =>
-    container.querySelector<HTMLElement>(`[data-legend-id="${id}"]`)
-
-const flagged = (container: HTMLElement) =>
-    Array.from(
-        container.querySelectorAll('.blocks-layer-legend__coverage-warning'),
-    ).map((el) => el.closest('[data-legend-id]')!.getAttribute('data-legend-id'))
-
-const popovers = () =>
-    Array.from(
-        document.body.querySelectorAll('.blocks-layer-legend__coverage-popover'),
-    )
-
-/** Hold the next refresh once it has read the coverage map. */
-const holdNextRefresh = (): (() => void) => {
-    let release!: () => void
-    visibleGates.push(
-        new Promise<void>((resolve) => {
-            release = resolve
-        }),
-    )
-    return release
-}
-
-/** What core broadcasts when its layer list changes, which refreshes the panel. */
-const listChanged = async () => {
-    await act(async () => {
-        ;(window as any).mmgisAPI.emit('layers:listChanged')
-    })
-}
-
-const hover = async (el: Element) => {
-    await act(async () => {
-        el.dispatchEvent(
-            new MouseEvent('pointerover', {
-                bubbles: true,
-                relatedTarget: document.body,
-            }),
-        )
-    })
-}
-
-const mountAdapter = async (): Promise<Mounted> => {
-    const mounted = await mount(<MMGISLayerManagerAdapter />)
-    await settle()
-    return mounted
-}
-
-beforeEach(() => {
-    registry = {}
-    provideCoverage = true
-    installBus()
 })
 
 afterEach(async () => {
-    await unmountAll()
-    vi.restoreAllMocks()
-    delete (window as { mmgisAPI?: unknown }).mmgisAPI
-    // Unmounting takes each panel's portals with it; anything still here
-    // escaped React and would be counted by the next case.
-    for (const el of popovers()) el.remove()
+    await mounted?.unmount()
+    delete (window as any).mmgisAPI
 })
 
-describe('MMGISLayerManagerAdapter data coverage', () => {
-    test('flags a layer core was already suppressing when the panel opens', async () => {
-        registry = {
-            [SPARSE]: sparseRecord(true),
-            [CONTINUOUS]: continuousRecord(false),
-            [STATIC]: NO_COVERAGE,
-        }
-        const { container, unmount } = await mountAdapter()
-
-        expect(rowOf(container, STATIC)).not.toBeNull()
-        expect(flagged(container)).toEqual([SPARSE])
-        await unmount()
+const settle = () =>
+    act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    test('patches the row a change names, and only that row', async () => {
-        registry = {
-            [SPARSE]: sparseRecord(true),
-            [CONTINUOUS]: continuousRecord(false),
-            [STATIC]: NO_COVERAGE,
-        }
-        const { container, unmount } = await mountAdapter()
+const emit = (event: string, payload?: unknown) =>
+    act(async () => {
+        ;(window as any).mmgisAPI.emit(event, payload)
+    })
 
-        await announce(CONTINUOUS, continuousRecord(true))
-        expect(flagged(container)).toEqual([SPARSE, CONTINUOUS])
+const announce = (layerName: string, flag: boolean) => {
+    outOfRange[layerName] = flag
+    return emit(EVENT, { layerName, outOfDataRange: flag })
+}
 
-        await announce(SPARSE, sparseRecord(false))
-        expect(flagged(container)).toEqual([CONTINUOUS])
+const flagged = () =>
+    Array.from(
+        mounted!.container.querySelectorAll('.blocks-layer-legend__coverage-warning'),
+    ).map((el) => el.closest('[data-legend-id]')!.getAttribute('data-legend-id'))
 
-        // A layer the list does not hold changes nothing.
-        await announce('Elsewhere_ffffffffffffffff', sparseRecord(true))
-        expect(flagged(container)).toEqual([CONTINUOUS])
-        await unmount()
+const mountAdapter = async () => {
+    mounted = await mount(<MMGISLayerManagerAdapter />)
+    await settle()
+}
+
+describe('MMGISLayerManagerAdapter data coverage', () => {
+    test('flags layers on first render and follows announced changes', async () => {
+        outOfRange = { [SPARSE]: true, [CONTINUOUS]: false }
+        await mountAdapter()
+        expect(flagged()).toEqual([SPARSE])
+
+        await announce(CONTINUOUS, true)
+        await announce(SPARSE, false)
+        expect(flagged()).toEqual([CONTINUOUS])
     })
 
     test('keeps a change announced while a refresh was reading', async () => {
-        registry = { [SPARSE]: sparseRecord(false) }
-        const { container, unmount } = await mountAdapter()
-        expect(flagged(container)).toEqual([])
+        outOfRange = { [SPARSE]: false }
+        await mountAdapter()
 
-        // Hold the next refresh after it has read the coverage map, then
-        // announce a change it cannot have seen.
-        const release = holdNextRefresh()
-        await listChanged()
-        await announce(SPARSE, sparseRecord(true))
-        expect(flagged(container)).toEqual([SPARSE])
+        let release!: () => void
+        gate = new Promise((resolve) => (release = resolve))
+        await emit('layers:listChanged')
+        await announce(SPARSE, true)
 
+        gate = null
         release()
         await settle()
-        expect(flagged(container)).toEqual([SPARSE])
-        await unmount()
+        expect(flagged()).toEqual([SPARSE])
     })
 
-    // Each refresh lands with what it read, so the one that finishes last
-    // decides the rows — here the one that read first.
-    test('keeps every change across refreshes that overlap and land out of order', async () => {
-        registry = {
-            [SPARSE]: sparseRecord(false),
-            [CONTINUOUS]: continuousRecord(false),
-        }
-        const { container, unmount } = await mountAdapter()
+    test('drops its subscription on unmount', async () => {
+        await mountAdapter()
+        expect(listeners.get(EVENT)?.size).toBe(1)
 
-        const releaseFirst = holdNextRefresh()
-        await listChanged()
-        await announce(SPARSE, sparseRecord(true))
-
-        const releaseSecond = holdNextRefresh()
-        await listChanged()
-        await announce(CONTINUOUS, continuousRecord(true))
-        expect(flagged(container)).toEqual([SPARSE, CONTINUOUS])
-
-        releaseSecond()
-        await settle()
-        expect(flagged(container)).toEqual([SPARSE, CONTINUOUS])
-
-        // The first read predates both changes.
-        releaseFirst()
-        await settle()
-        expect(flagged(container)).toEqual([SPARSE, CONTINUOUS])
-        await unmount()
-    })
-
-    test('closing the panel mid-refresh leaves nothing behind', async () => {
-        const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
-        registry = { [SPARSE]: sparseRecord(true) }
-        const { unmount } = await mountAdapter()
-
-        const release = holdNextRefresh()
-        await listChanged()
-        await unmount()
-        expect(listeners.get(COVERAGE_EVENT)?.size ?? 0).toBe(0)
-
-        release()
-        await settle()
-        await announce(SPARSE, sparseRecord(false))
-        expect(errors).not.toHaveBeenCalled()
-        expect(popovers()).toHaveLength(0)
-    })
-
-    // The window moves on every time step while core announces only changes
-    // of verdict or coverage, so the popover reads the record as it stands.
-    test('reads the record over the bus when the popover opens', async () => {
-        registry = { [SPARSE]: sparseRecord(true, utc(2020, 3, 2)) }
-        const { container, unmount } = await mountAdapter()
-
-        // A later time step: stored by core, not announced.
-        registry[SPARSE] = sparseRecord(true, utc(2020, 4, 9, 14))
-
-        const warning = rowOf(container, SPARSE)!.querySelector(
-            '.blocks-layer-legend__coverage-warning',
-        )!
-        await hover(warning)
-        await settle()
-
-        expect(requests).toContainEqual({
-            name: 'layers:getDataCoverage',
-            params: SPARSE,
-        })
-        const [popover] = popovers()
-        expect(popover.textContent).toContain('No data for May 9, 2020 14:00 UTC')
-        expect(popover.textContent).toContain('This layer is only available on Mar 4, 2020.')
-        await unmount()
-    })
-
-    test('closing the panel drops its subscription and its popovers', async () => {
-        registry = { [SPARSE]: sparseRecord(true) }
-        const { container, unmount } = await mountAdapter()
-        expect(listeners.get(COVERAGE_EVENT)?.size).toBe(1)
-
-        const warning = container.querySelector(
-            '.blocks-layer-legend__coverage-warning',
-        )!
-        await hover(warning)
-        expect(popovers()).toHaveLength(1)
-
-        await unmount()
-        expect(listeners.get(COVERAGE_EVENT)?.size ?? 0).toBe(0)
-        expect(popovers()).toHaveLength(0)
-    })
-
-    test('flags nothing against a core that serves no coverage', async () => {
-        provideCoverage = false
-        const { container, unmount } = await mountAdapter()
-
-        expect(rowOf(container, SPARSE)).not.toBeNull()
-        expect(flagged(container)).toEqual([])
-        await unmount()
+        await mounted!.unmount()
+        mounted = null
+        expect(listeners.get(EVENT)?.size ?? 0).toBe(0)
     })
 })

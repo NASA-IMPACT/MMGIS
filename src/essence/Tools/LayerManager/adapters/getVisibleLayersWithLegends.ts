@@ -47,7 +47,7 @@ export const getVisibleLayersWithLegends = async ({
                 cogCapabilities?.[layerName] as CogCapabilities | undefined,
                 titilerUrls?.[layerName] ?? null,
             ),
-            dataCoverage: coverage?.[layerName] ?? null,
+            outOfDataRange: coverage?.[layerName]?.outOfDataRange === true,
         })
     }
     return result

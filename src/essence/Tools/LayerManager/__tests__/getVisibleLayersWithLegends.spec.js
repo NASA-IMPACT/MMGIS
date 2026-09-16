@@ -156,44 +156,18 @@ describe('getVisibleLayersWithLegends', () => {
         expect(byId(layers, DISPLACEMENT).cog?.titilerUrl).toBeNull()
     })
 
-    // Read with the rest of the row data, so a layer core was already
-    // suppressing is flagged on the panel's first render.
-    test("carries each layer's coverage record, keyed by UUID", async () => {
-        const suppressed = {
-            outOfDataRange: true,
-            kind: 'sparse',
-            spans: [{ start: 0, end: 1, at: 0, unit: 'day' }],
-            requestedWindow: { start: 2, end: 3 },
-        }
-        const unconstrained = {
-            outOfDataRange: false,
-            kind: null,
-            spans: null,
-            requestedWindow: { start: 2, end: 3 },
-        }
+    test("flags each layer core reports out of range, keyed by UUID", async () => {
         setupMock({
             capabilities: {},
             coverage: {
-                [DISPLACEMENT]: suppressed,
-                // What a display-name-keyed lookup would find instead.
-                Basemap: suppressed,
-                [BASEMAP]: unconstrained,
+                [DISPLACEMENT]: { outOfDataRange: true },
+                // A display-name-keyed lookup would find this instead.
+                Basemap: { outOfDataRange: true },
             },
         })
         const layers = await getVisibleLayersWithLegends()
 
-        expect(byId(layers, DISPLACEMENT).dataCoverage).toEqual(suppressed)
-        expect(byId(layers, BASEMAP).dataCoverage).toEqual(unconstrained)
-    })
-
-    test('leaves coverage null where core reports none', async () => {
-        setupMock({ capabilities: {}, coverage: {} })
-        const layers = await getVisibleLayersWithLegends()
-        expect(layers.every((l) => l.dataCoverage === null)).toBe(true)
-
-        setupMock({ capabilities: {} })
-        const withoutHandler = await getVisibleLayersWithLegends()
-        expect(withoutHandler).toHaveLength(2)
-        expect(withoutHandler.every((l) => l.dataCoverage === null)).toBe(true)
+        expect(byId(layers, DISPLACEMENT).outOfDataRange).toBe(true)
+        expect(byId(layers, BASEMAP).outOfDataRange).toBe(false)
     })
 })

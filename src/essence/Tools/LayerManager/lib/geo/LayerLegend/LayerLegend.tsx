@@ -14,10 +14,7 @@ import { CategoricalGraphic } from '../CategoricalGraphic/CategoricalGraphic'
 import { ColorRampPicker } from '../ColorRampPicker/ColorRampPicker'
 import { FloatingPopover } from '../../FloatingPopover'
 import { PopoverMenu, type PopoverMenuItem } from '../PopoverMenu'
-import {
-    DataCoverageWarning,
-    type GetDataCoverage,
-} from '../DataCoverageWarning/DataCoverageWarning'
+import { DataCoverageWarning } from '../DataCoverageWarning/DataCoverageWarning'
 import type { Layer } from '../../types'
 
 /**
@@ -50,7 +47,8 @@ export type LayerLegendProps = {
     onZoomToLayer?: (layerId: string) => void
     canZoomToLayer?: (layerId: string) => Promise<boolean>
     onCompareLayer?: (layerId: string) => void
-    getDataCoverage?: GetDataCoverage
+    /** The timeline's current time as ISO 8601, named by the no-data warning. */
+    selectedTime?: string | null
 }
 
 export function LayerLegend({
@@ -64,7 +62,7 @@ export function LayerLegend({
     onZoomToLayer,
     canZoomToLayer,
     onCompareLayer,
-    getDataCoverage,
+    selectedTime,
 }: LayerLegendProps) {
     const {
         id,
@@ -79,7 +77,7 @@ export function LayerLegend({
         visible,
         cog,
         categoricalStops,
-        dataCoverage,
+        outOfDataRange,
     } = layer
 
     const [isVisible, setIsVisible] = useState(visible)
@@ -115,8 +113,7 @@ export function LayerLegend({
 
     // A layer that is switched off draws nothing either way, so missing data
     // is only flagged while the layer is on.
-    const showsCoverageWarning =
-        isVisible && dataCoverage?.outOfDataRange === true
+    const showsCoverageWarning = isVisible && outOfDataRange === true
 
     // The warning goes when the layer comes back into range or is switched
     // off, and focus on it would fall to the page. It moves to the row's
@@ -300,12 +297,10 @@ export function LayerLegend({
                         its checkbox and controls as they are, since nothing is
                         wrong with the layer and it shows again once the time
                         moves back into its data. */}
-                    {showsCoverageWarning && dataCoverage && (
+                    {showsCoverageWarning && (
                         <DataCoverageWarning
-                            layerId={id}
                             layerTitle={title}
-                            coverage={dataCoverage}
-                            getDataCoverage={getDataCoverage}
+                            selectedTime={selectedTime}
                         />
                     )}
                 </div>

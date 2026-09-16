@@ -17,8 +17,8 @@ export type LayerManagerPanelProps = {
     onRescaleChange?: (layerId: string, min: number, max: number) => void
     onZoomToLayer?: LayerLegendListProps['onZoomToLayer']
     canZoomToLayer?: LayerLegendListProps['canZoomToLayer']
+    selectedTime?: LayerLegendListProps['selectedTime']
     onCompareLayer?: LayerLegendListProps['onCompareLayer']
-    getDataCoverage?: LayerLegendListProps['getDataCoverage']
     /** Opens the host's "add layer" surface. No handler, no button. */
     onAddLayer?: () => void
 }
@@ -34,8 +34,8 @@ export function LayerManagerPanel({
     onRescaleChange,
     onZoomToLayer,
     canZoomToLayer,
+    selectedTime,
     onCompareLayer,
-    getDataCoverage,
     onAddLayer,
 }: LayerManagerPanelProps) {
     return (
@@ -71,8 +71,8 @@ export function LayerManagerPanel({
                         onRescaleChange={onRescaleChange}
                         onZoomToLayer={onZoomToLayer}
                         canZoomToLayer={canZoomToLayer}
+                        selectedTime={selectedTime}
                         onCompareLayer={onCompareLayer}
-                        getDataCoverage={getDataCoverage}
                     />
                 )}
             </div>
