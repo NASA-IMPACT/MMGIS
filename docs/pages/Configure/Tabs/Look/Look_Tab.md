@@ -64,6 +64,14 @@ Sets the background of the Map to a [CSS color](https://developer.mozilla.org/en
 
 Sets the highlight of active vector features to a [CSS color](https://developer.mozilla.org/en-US/docs/Web/CSS/color_value).
 
+#### Hover Label Color
+
+Sets the background of the label that follows the cursor when hovering a feature to a [CSS color](https://developer.mozilla.org/en-US/docs/Web/CSS/color_value). Leave it unset to keep the theme's color. Error messages stay red whatever this is set to, and a tool asking for a specific color still gets it.
+
+#### Hover Label Text Color
+
+Sets the text of that same hover label to a [CSS color](https://developer.mozilla.org/en-US/docs/Web/CSS/color_value). Set it alongside Hover Label Color so the text stays readable. Note that the property names within the label keep the theme's key color, so a light background needs a theme change rather than this setting alone.
+
 ### Secondary Tools
 
 #### Swap (DISABLED)

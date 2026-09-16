@@ -4,6 +4,7 @@
 import $ from 'jquery'
 import L_ from '../Basics/Layers_/Layers_'
 import F_ from '../Basics/Formulae_/Formulae_'
+import CursorInfo from './CursorInfo'
 
 export function stylize() {
     if (L_.configData.look) {
@@ -35,6 +36,13 @@ export function stylize() {
             L_.configData.look.accentcolor != ''
         )
             r.style.setProperty('--color-mmgis', L_.configData.look.accentcolor)
+
+        // The hover readout repaints itself on every message, so its colours
+        // are handed to it as defaults rather than set on the element here.
+        CursorInfo.setDefaults({
+            background: L_.configData.look.hovercolor,
+            color: L_.configData.look.hovertextcolor,
+        })
 
         if (L_.configData.look.bodycolor && L_.configData.look.bodycolor != '')
             $('body').css({ background: L_.configData.look.bodycolor })

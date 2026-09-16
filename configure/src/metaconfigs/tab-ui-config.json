@@ -727,6 +727,24 @@
     {
       "components": [
         {
+          "field": "look.hovercolor",
+          "name": "Hover Label Color",
+          "description": "Colors the background of the label that follows the cursor when hovering a feature. Leave unset to keep the theme's color. Error messages stay red whatever this is set to.",
+          "type": "colorpicker",
+          "width": 3
+        },
+        {
+          "field": "look.hovertextcolor",
+          "name": "Hover Label Text Color",
+          "description": "Colors the text of the label that follows the cursor when hovering a feature. Leave unset to keep the theme's color. Set this alongside Hover Label Color so the text stays readable.",
+          "type": "colorpicker",
+          "width": 3
+        }
+      ]
+    },
+    {
+      "components": [
+        {
           "field": "look.hightlightcolor",
           "name": "Highlight Color",
           "description": "The color with which to highlight selected features in the map.",
