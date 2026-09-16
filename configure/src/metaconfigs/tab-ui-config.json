@@ -729,14 +729,14 @@
         {
           "field": "look.hovercolor",
           "name": "Hover Label Color",
-          "description": "Colors the background of the label that follows the cursor when hovering a feature. Leave unset to keep the theme's color. Error messages stay red whatever this is set to.",
+          "description": "Colors the background of the label that follows the cursor, both the feature hover label and tool messages such as measurements. Leave unset to keep the theme's color. Error messages stay red whatever this is set to.",
           "type": "colorpicker",
           "width": 3
         },
         {
           "field": "look.hovertextcolor",
           "name": "Hover Label Text Color",
-          "description": "Colors the text of the label that follows the cursor when hovering a feature. Leave unset to keep the theme's color. Set this alongside Hover Label Color so the text stays readable.",
+          "description": "Colors the text of the label that follows the cursor, both the feature hover label and tool messages. Leave unset to keep the theme's color. Set this alongside Hover Label Color so the text stays readable.",
           "type": "colorpicker",
           "width": 3
         }
