@@ -17,6 +17,8 @@ Whether the dashboard prompts your visitors for a password depends on the enviro
    - **if the dashboard is password-gated**, the `Authorization` header in the cache key,
    - and nothing else: no other headers, no cookies — CloudFront forwards whatever the key contains, and a forwarded `Host` is a 403.
 
+   An open dashboard's visitors send no `Authorization` header, so keying on it there splits nothing and costs nothing — if the gate might ever be switched on, include it either way and you will never have to come back to this page.
+
 3. **Add two cache behaviors** pointing at that origin, both using that cache policy:
    - path pattern `/tools/dashboard` — exact, no wildcard,
    - path pattern `/tools/dashboard/*`.
@@ -57,7 +59,7 @@ If the dashboard is password-gated, every row above that reaches us also sits be
 
 **HTTPS only to the origin:** a gated dashboard's password rides on the `Authorization` header of every request you forward, and over plain HTTP it would cross the internet unencrypted. Gated or not, the dashboard is served over HTTPS and there is no reason to ask for less.
 
-**No viewer `Host` header:** our distribution answers only to its own `*.cloudfront.net` name; a request carrying your hostname is rejected by AWS with a 403 before anything of ours runs. CloudFront omits the viewer's `Host` by default — the hazard is specifically the managed `AllViewer` origin request policy, which forwards it. `AllViewerExceptHostHeader` forwards everything else while excluding it. The cache policy is the other way in: CloudFront forwards every header and cookie its cache key contains, so a policy that keys on `Host` sends it just as surely as an origin request policy would. Keep the key to query strings, plus `Authorization` when the dashboard is gated.
+**No viewer `Host` header:** our distribution answers only to its own `*.cloudfront.net` name; a request carrying your hostname is rejected by AWS with a 403 before anything of ours runs. CloudFront omits the viewer's `Host` by default — the hazard is specifically the managed `AllViewer` origin request policy, which forwards it. `AllViewerExceptHostHeader` forwards everything else while excluding it. The cache policy is the other way in: CloudFront forwards every header and cookie its cache key contains, so a policy that keys on `Host` sends it just as surely as an origin request policy would. Keep the key to query strings and `Authorization`, and nothing else.
 
 ### If the dashboard is password-gated
 
