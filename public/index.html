@@ -54,264 +54,47 @@
       }
       /* Loading screen */
       .LoadingPage {
-        height: 100%;
-        width: 100%;
-        overflow: hidden;
-        font-family: venus, sans-serif;
         position: absolute;
         top: 0;
         left: 0;
-        line-height: 13px;
-        background-color: #1d1f20;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
         z-index: 100;
+        background: #f5f6f7;
+        color: #1b1b1b;
+        font-family: "Public Sans", -apple-system, BlinkMacSystemFont,
+          "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       }
-
-      .LoadingPage #title {
+      .LoadingPage .loading {
         position: absolute;
-        top: 45px;
-        left: 35px;
-        padding: 0px 10px;
+        top: 50%;
+        left: 16px;
+        right: 16px;
+        transform: translateY(-50%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
       }
-
-      .LoadingPage #title p {
-        color: white;
-        margin: 0;
-      }
-
-      .LoadingPage img {
-        position: relative;
-        left: -1px;
-      }
-
-      @keyframes rotate {
-        0% {
-          transform: rotate(270deg);
-        }
-        100% {
-          transform: rotate(630deg);
-        }
-      }
-      @keyframes rotateOffset {
-        0% {
-          transform: rotate(255deg);
-        }
-        100% {
-          transform: rotate(615deg);
-        }
-      }
-      .planet {
-        display: block;
-        position: absolute;
-        font-size: 0;
-        transform: translateZ(0);
-        right: -150px;
-        bottom: calc(50% - 150px);
-        width: 300px;
-        height: 300px;
-        border-radius: 300px;
-        opacity: 0.5;
-      }
-      .planet:before {
-        content: "\25cf";
-        display: block;
-        position: absolute;
-        top: -200px;
-        left: -200px;
-        width: 700px;
-        height: 700px;
-        border: 1px solid rgba(255, 255, 255, 0.5);
-        border-radius: 700px;
-        color: #efefef;
-        font-size: 30px;
-        text-indent: 257px;
-        transform: translateZ(0);
-        animation: rotate 30s infinite linear;
-      }
-      .planet:after {
-        content: "\25cf";
-        display: block;
-        position: absolute;
-        top: -350px;
-        left: -350px;
-        width: 1000px;
-        height: 1000px;
-        border: 1px solid rgba(255, 255, 255, 0.45);
-        border-radius: 1000px;
-        color: #e7e7e7;
-        font-size: 80px;
-        text-indent: 380px;
-        transform: translateZ(0);
-        animation: rotate 65s infinite linear;
-      }
-
-      .planet2 {
-        display: block;
-        position: absolute;
-        font-size: 0;
-        transform: translateZ(0);
-        right: -300px;
-        bottom: calc(50% - 300px);
-        width: 600px;
-        height: 600px;
-        border-radius: 600px;
-        opacity: 0.5;
-      }
-      .planet2:before {
-        content: "\25cf";
-        display: block;
-        position: absolute;
-        top: -400px;
-        left: -400px;
-        width: 1400px;
-        height: 1400px;
-        border: 1px solid rgba(255, 255, 255, 0.4);
-        border-radius: 1400px;
-        color: #e3e3e3;
-        font-size: 70px;
-        text-indent: 549px;
-        transform: translateZ(0);
-        animation: rotate 90s infinite linear;
-      }
-      .planet2:after {
-        content: "\25cf";
-        display: block;
-        position: absolute;
-        top: -700px;
-        left: -700px;
-        width: 2000px;
-        height: 2000px;
-        border: 1px solid rgba(255, 255, 255, 0.35);
-        border-radius: 2000px;
-        color: #dfdfdf;
-        font-size: 60px;
-        text-indent: 832px;
-        transform: translateZ(0);
-        animation: rotate 160s infinite linear;
-      }
-
-      .planet3 {
-        display: block;
-        position: absolute;
-        font-size: 0;
-        transform: translateZ(0);
-        right: -600px;
-        bottom: calc(50% - 600px);
-        width: 1200px;
-        height: 1200px;
-        border-radius: 1200px;
-        opacity: 0.5;
-      }
-      .planet3:before {
-        content: "\25cf";
-        display: block;
-        position: absolute;
-        top: -800px;
-        left: -800px;
-        width: 2800px;
-        height: 2800px;
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        border-radius: 2800px;
-        color: #dbdbdb;
-        font-size: 30px;
-        text-indent: 1231px;
-        transform: translateZ(0);
-        animation: rotate 600s infinite linear;
-      }
-      .planet3:after {
-        content: "\25cf";
-        display: block;
-        position: absolute;
-        top: -1400px;
-        left: -1400px;
-        width: 4000px;
-        height: 4000px;
-        border: 1px solid rgba(255, 255, 255, 0.25);
-        border-radius: 4000px;
-        color: #d7d7d7;
-        font-size: 50px;
-        text-indent: 2194px;
-        transform: translateZ(0);
-        animation: rotateOffset 1000s infinite linear;
-      }
-
-      /*
-      * Loading Dots
-      */
-      #loading2 {
-        position: absolute;
-        top: 85px;
-        left: 51px;
-      }
-      #loading2 span {
-        display: inline-block;
-        vertical-align: middle;
-        width: 6px;
-        height: 6px;
-        margin: 0px 18.5px 0px 0px;
+      .LoadingPage .loading-spinner {
+        flex-shrink: 0;
+        width: 20px;
+        height: 20px;
+        border: 2px solid rgba(113, 118, 122, 0.2);
+        border-top-color: #71767a;
         border-radius: 50%;
-        animation: loading2 1.6s infinite alternate;
+        animation: loading-spin 0.9s linear infinite;
       }
-
-      #loading2 span:nth-of-type(1) {
-        background: #fff156;
-        animation-delay: 0s;
-      }
-      #loading2 span:nth-of-type(2) {
-        background: #c0822f;
-        animation-delay: 0.2s;
-      }
-      #loading2 span:nth-of-type(3) {
-        background: #ffeaaf;
-        animation-delay: 0.4s;
-      }
-      #loading2 span:nth-of-type(4) {
-        background: #8ab645;
-        animation-delay: 0.6s;
-      }
-      #loading2 span:nth-of-type(5) {
-        background: #ea3a00;
-        animation-delay: 0.8s;
-      }
-      #loading2 span:nth-of-type(6) {
-        background: #edd49e;
-        animation-delay: 1s;
-      }
-      #loading2 span:nth-of-type(7) {
-        background: #e7bdcb;
-        animation-delay: 1.2s;
-      }
-      #loading2 span:nth-of-type(8) {
-        background: #72d1cb;
-        animation-delay: 1.4s;
-      }
-      #loading2 span:nth-of-type(9) {
-        background: #08aeea;
-        animation-delay: 1.6s;
-      }
-      @keyframes loading2 {
-        0% {
-          opacity: 0;
-        }
-        100% {
-          opacity: 1;
+      @keyframes loading-spin {
+        to {
+          transform: rotate(360deg);
         }
       }
-
-      /* Mobile-specific centering for LoadingPage title and loading dots */
-      @media screen and (max-width: 600px) {
-        .LoadingPage #title {
-          left: 50%;
-          transform: translateX(-50%);
-          text-align: center;
-        }
-        .LoadingPage #loading2 {
-          left: 50%;
-          transform: translateX(-50%);
-          width: 204px;
-        }
-        .LoadingPage #loading2 span {
-          margin: 0px 8px 0px 8px;
-        }
+      .LoadingPage .loading-text {
+        font-size: 1rem;
+        letter-spacing: 0.1em;
+        opacity: 0.75;
       }
     </style>
   </head>
@@ -319,17 +102,9 @@
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
     <div class="LoadingPage">
-      <div class="planet"></div>
-      <div class="planet2"></div>
-      <div class="planet3"></div>
-      <div id="title">
-        <p>
-          <img src="public/images/logos/mmgis.png" alt="Full logo" />
-        </p>
-      </div>
-      <div id="loading2">
-        <span></span><span></span><span></span><span></span><span></span
-        ><span></span><span></span><span></span><span></span>
+      <div class="loading">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Loading...</div>
       </div>
     </div>
     <script>
