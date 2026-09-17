@@ -357,6 +357,32 @@ test.describe('AOITool popup lifecycle', () => {
         expect(api.namesOf('map:showPopup')).toHaveLength(0)
     })
 
+    // The results panel takes this panel's slot once an analysis lands, and
+    // closing it is the user done with that analysis — the area it was for goes
+    // with it, rather than staying outlined on a map with nothing left to do.
+    test('closing the results panel clears the selection it was for', async () => {
+        const listing = (state) => ({ plugins: [{ id: 'ChartTool', state }] })
+        await selectAndOpen(SQUARE, 'Alabama')
+
+        // `plugins:changed` reports the whole listing on every lifecycle move
+        // in the app, with the results panel unloaded through all of them, so
+        // the state alone is no reason to drop a selection.
+        api.emit('plugins:changed', listing('unloaded'))
+        await flush()
+        expect(api.getSelection()).toMatchObject({ feature: SQUARE })
+
+        api.emit('plugins:changed', listing('visible'))
+        api.reset()
+        api.emit('plugins:changed', listing('unloaded'))
+        await flush()
+
+        expect(api.getSelection()).toBeNull()
+        expect(
+            api.namesOf('map:removeLayer').map((r) => r.payload.id)
+        ).toContain('aoi:selection')
+        expect(api.namesOf('map:hidePopup')).toHaveLength(1)
+    })
+
     // Every caller of `_clearSelection` — switching tools, a dismissal, Cancel,
     // the first vertex of a session — reaches it while a show may still be
     // waiting on the camera, and a card that opened after it would offer to

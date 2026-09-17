@@ -20,6 +20,7 @@
  *       drawcomplete / drawcancel         (engine bus)
  *     - map:featureClick                  (inspect-mode boundary clicks, filtered by layerId)
  *     - map:moveend                       (one-shot, while a selection waits for the camera)
+ *     - plugins:changed                   (core; the results panel closing clears the selection)
  *     - plugin:fetch-stats:analysisProgress  { done, total }
  *     - plugin:fetch-stats:analysisReady     { analysisData }
  *     - plugin:fetch-stats:analysisSkipped   { reason }
@@ -58,6 +59,8 @@ const DEFAULT_DRAW_SHAPES = ['polygon', 'rectangle', 'circle']
 const VALID_DRAW_SHAPES = new Set(['point', 'linestring', 'polygon', 'rectangle', 'circle'])
 const SELECTION_LAYER_ID = 'aoi:selection'
 const INSPECT_BOUNDARIES_LAYER_ID = 'aoi:inspect-boundaries'
+// The Chart plugin, which takes this panel's slot to show the analysis results.
+const RESULTS_PLUGIN_ID = 'ChartTool'
 
 // ── Draw-session keys ──────────────────────────────────────────────────────────
 // Components with these roles handle Escape themselves — a dialog, menu,
@@ -144,6 +147,9 @@ const AOITool = {
     // The selection a drawing session took the card away from, held until the
     // session either replaces it or is backed out of.
     _suspendedAOI: null,
+    // Whether the results panel is up, so its closing can be told apart from
+    // every other lifecycle move `plugins:changed` reports.
+    _resultsOpen: false,
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -192,6 +198,7 @@ const AOITool = {
             subscribe('map:drawcomplete',  (e) => this._onDrawComplete(e))
             subscribe('map:drawcancel',    () => this._onDrawCancelEvent())
             subscribe('map:featureClick',  (info) => this._onMapFeatureClick(info))
+            subscribe('plugins:changed',   ({ plugins } = {}) => this._onPluginsChanged(plugins))
             subscribe('plugin:fetch-stats:analysisProgress', ({ done, total }) => {
                 if (done === 0) {
                     this._setState({
@@ -237,6 +244,7 @@ const AOITool = {
         // Nothing of the selection outlives the tool, so a cancel arriving
         // after this has no card to put back.
         this._suspendedAOI = null
+        this._resultsOpen = false
 
         // Fire-and-forget: cancel any active drawing session via the bus.
         this._removeDrawKeys()
@@ -805,6 +813,26 @@ const AOITool = {
     _onCancel() {
         this._api?.emit('drawingCancelled', {})
         this._clearSelection()
+    },
+
+    /**
+     * Closing the results panel is the user done with that analysis, so the
+     * area it was for goes with it — outline and card both.
+     *
+     * Only the transition counts. `plugins:changed` reports the whole listing
+     * on every lifecycle move in the app, and the results panel reads as
+     * unloaded through all of them; acting on the state alone would clear a
+     * selection every time some other plugin opened or closed.
+     */
+    _onPluginsChanged(plugins) {
+        const state = Array.isArray(plugins)
+            ? plugins.find((p) => p?.id === RESULTS_PLUGIN_ID)?.state
+            : undefined
+        const wasOpen = this._resultsOpen
+        // 'hidden' still counts as up: the panel holds its results and the
+        // user can bring it back without a new analysis.
+        this._resultsOpen = state === 'visible' || state === 'hidden'
+        if (wasOpen && !this._resultsOpen) this._clearSelection()
     },
 
 }
