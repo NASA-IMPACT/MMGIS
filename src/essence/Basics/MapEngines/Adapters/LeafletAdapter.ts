@@ -116,6 +116,12 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     private _popup: any = null
 
     /**
+     * Cancels an open still waiting out the draw-end click guard's hold. Null
+     * whenever nothing is waiting — see {@link showPopup}.
+     */
+    private _cancelPopupOpen: (() => void) | null = null
+
+    /**
      * Registry of event handlers for cleanup, keyed by event name and the
      * subscriber's source so {@link off} can find the wrapper it made. The
      * event name is kept alongside the wrapper because the key is not one.
@@ -341,7 +347,8 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         this.disableDrawing()
 
         // Taken down here rather than left to the map, whose own teardown
-        // removes the popup and so would report the library closing it.
+        // removes the popup and so would report the library closing it. Ahead
+        // of the guard, whose dispose settles a deferred open.
         this.hidePopup()
 
         this._removeBasemapLayer()
@@ -1494,6 +1501,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      * popup machinery, which is what makes a click on the map close it — and,
      * by the same defaults, what closes it when anything else on the map opens
      * a popup of its own.
+     *
+     * A card asked for in response to a finished drawing would be closed by
+     * the very click that finished it: Leaflet closes popups from `preclick`,
+     * ahead of any adapter listener. So the open waits out the draw-end click
+     * guard's hold on that click, and the call stays synchronous either way.
      */
     showPopup(latlng: LatLngLike, element: HTMLElement, onClose?: () => void): void {
         if (!this._map) {
@@ -1520,10 +1532,15 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         })
 
         this._popup = popup
-        popup.openOn(this._map)
+        this._cancelPopupOpen = this._drawEndClick.whenSettled(() => {
+            this._cancelPopupOpen = null
+            popup.openOn(this._map)
+        })
     }
 
     hidePopup(): void {
+        this._cancelPopupOpen?.()
+        this._cancelPopupOpen = null
         const popup = this._popup
         if (!popup) return
         this._popup = null
