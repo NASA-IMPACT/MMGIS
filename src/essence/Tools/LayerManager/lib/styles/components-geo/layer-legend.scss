@@ -237,6 +237,8 @@ $legend-content-indent: 28px;
         &--no-data {
             -webkit-mask-image: url('../../geo/icons/warning.svg');
             mask-image: url('../../geo/icons/warning.svg');
+        }
+
         &--drag-handle {
             -webkit-mask-image: url('../../geo/icons/drag-handle.svg');
             mask-image: url('../../geo/icons/drag-handle.svg');
