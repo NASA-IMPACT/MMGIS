@@ -22,6 +22,9 @@ export type MapScreenshotResult = {
 export type LayerConfig = {
     name?: string
     display_name?: string
+    description?: string
+    /** The layer's kind: 'tile', 'vector', 'header', and so on. */
+    type?: string
     time?: {
         enabled?: boolean
         /**

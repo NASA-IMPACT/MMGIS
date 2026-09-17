@@ -329,12 +329,14 @@ const toRow = (
  * paints nothing.
  */
 export const getExportLegendModel = async (): Promise<ExportLegendModel> => {
-    const [viewState, layers, headerLines, layerConfigs, globalCursor, extents] =
+    // The configs are asked for once and handed to the row assembly, which
+    // would otherwise request them again for itself.
+    const layerConfigs = await mmgisGetLayerConfigs()
+    const [viewState, layers, headerLines, globalCursor, extents] =
         await Promise.all([
             mmgisGetViewState(),
-            getLayersWithLegends({ showOnlyVisible: true }),
+            getLayersWithLegends({ showOnlyVisible: true, layerConfigs }),
             buildHeaderLines(),
-            mmgisGetLayerConfigs(),
             globalTimeCursor(),
             temporalExtents(),
         ])

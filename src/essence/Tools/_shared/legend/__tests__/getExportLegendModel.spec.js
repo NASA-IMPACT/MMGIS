@@ -116,9 +116,11 @@ describe('getExportLegendModel', () => {
         ])
         const model = await getExportLegendModel()
         expect(model.rows.map((r) => r.title)).toEqual(['Faded', 'Far away'])
-        // Only the layers the user has toggled on are asked for.
+        // Only the layers the user has toggled on are asked for, and the
+        // configs this side already holds are handed on rather than fetched
+        // a second time.
         expect(vi.mocked(getLayersWithLegends).mock.calls).toEqual([
-            [{ showOnlyVisible: true }],
+            [{ showOnlyVisible: true, layerConfigs: null }],
         ])
     })
 
