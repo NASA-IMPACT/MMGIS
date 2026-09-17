@@ -291,16 +291,20 @@ describe('MapPopup_', () => {
     // engine has the card is what makes the focus stick.
     it('focuses the first action button once the engine has placed the card', () => {
         show(engine, {
+            // A body may hold a button of its own, in a div wearing the
+            // actions row's class. Focus still goes to the real primary.
+            html: '<div class="mmgis-popup-actions"><button>Decoy</button></div>',
             primaryAction: { label: 'Analyze' },
             secondaryAction: { label: 'Cancel' },
         })
 
         expect(document.activeElement).toBe(buttons()[0])
+        expect(document.activeElement!.textContent).toBe('Analyze')
     })
 
     it('keeps the markup an author needs and strips the rest', () => {
         show(engine, {
-            html: '<style>.mmgis-popup-card { display: none }</style><p style="color: red" onclick="alert(1)">A</p><table><tr><td>Cell</td></tr></table><ul><li>One</li></ul><img src="a.png" alt="Crater A"><script>alert(2)</script><a href="javascript:alert(3)">go</a>',
+            html: '<style>.mmgis-popup-card { display: none }</style><p style="color: red" onclick="alert(1)">A</p><table><tr><td>Cell</td></tr></table><ul><li>One</li></ul><img src="a.png" alt="Crater A"><script>alert(2)</script><a href="javascript:alert(3)">go</a><div popover popovertarget="x">Top layer</div>',
         })
 
         const markup = body()
@@ -309,9 +313,12 @@ describe('MapPopup_', () => {
         expect(markup).toContain('<li>One</li>')
         expect(markup).toContain('alt="Crater A"')
         // A card is plain DOM in the app's document, so an author's stylesheet
-        // would be a stylesheet for the whole page.
+        // would be a stylesheet for the whole page, and a popover of theirs
+        // would paint into the top layer over the whole app.
         expect(markup).not.toContain('<style')
         expect(markup).not.toContain('display: none')
+        expect(markup).not.toContain('popover')
+        expect(markup).not.toContain('popovertarget')
         expect(markup).not.toContain('onclick')
         expect(markup).not.toContain('alert')
         expect(markup).not.toContain('javascript:')
