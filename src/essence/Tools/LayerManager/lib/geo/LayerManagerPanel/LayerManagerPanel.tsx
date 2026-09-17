@@ -17,6 +17,7 @@ export type LayerManagerPanelProps = {
     onRescaleChange?: (layerId: string, min: number, max: number) => void
     onZoomToLayer?: LayerLegendListProps['onZoomToLayer']
     canZoomToLayer?: LayerLegendListProps['canZoomToLayer']
+    selectedTime?: LayerLegendListProps['selectedTime']
     onCompareLayer?: LayerLegendListProps['onCompareLayer']
     onReorder?: LayerLegendListProps['onReorder']
     /** Opens the host's "add layer" surface. No handler, no button. */
@@ -34,6 +35,7 @@ export function LayerManagerPanel({
     onRescaleChange,
     onZoomToLayer,
     canZoomToLayer,
+    selectedTime,
     onCompareLayer,
     onReorder,
     onAddLayer,
@@ -71,6 +73,7 @@ export function LayerManagerPanel({
                         onRescaleChange={onRescaleChange}
                         onZoomToLayer={onZoomToLayer}
                         canZoomToLayer={canZoomToLayer}
+                        selectedTime={selectedTime}
                         onCompareLayer={onCompareLayer}
                         onReorder={onReorder}
                     />

@@ -1,6 +1,7 @@
 import {
     mmgisRequest,
     mmgisGetCogCapabilities,
+    mmgisGetDataCoverage,
     mmgisGetListedLayers,
     mmgisGetLayerOrder,
     mmgisGetTiTilerUrls,
@@ -18,14 +19,19 @@ export const getVisibleLayersWithLegends = async ({
     const layerConfigs = await mmgisRequest<Record<string, Record<string, unknown>>>('layers:getAllConfigs')
     if (!layerConfigs) return []
 
-    const [visibleLayers, opacities, listed, cogCapabilities, titilerUrls, order] = await Promise.all([
-        mmgisRequest<Record<string, boolean>>('layers:getVisible'),
-        mmgisRequest<Record<string, number>>('layers:getAllOpacities'),
-        mmgisGetListedLayers(),
-        mmgisGetCogCapabilities(),
-        mmgisGetTiTilerUrls(),
-        mmgisGetLayerOrder(),
-    ])
+    // Coverage is read with the rest, so a layer core is already holding back
+    // for lack of data is flagged on the first render rather than at the next
+    // change core announces.
+    const [visibleLayers, opacities, listed, cogCapabilities, titilerUrls, coverage, order] =
+        await Promise.all([
+            mmgisRequest<Record<string, boolean>>('layers:getVisible'),
+            mmgisRequest<Record<string, number>>('layers:getAllOpacities'),
+            mmgisGetListedLayers(),
+            mmgisGetCogCapabilities(),
+            mmgisGetTiTilerUrls(),
+            mmgisGetDataCoverage(),
+            mmgisGetLayerOrder(),
+        ])
 
     const result: Layer[] = []
     for (const layerName of Object.keys(layerConfigs)) {
@@ -35,8 +41,8 @@ export const getVisibleLayersWithLegends = async ({
         if (listed?.[layerName] === false) continue
         const isVisible = visibleLayers?.[layerName] === true
         if (showOnlyVisible && !isVisible) continue
-        result.push(
-            buildLayerLegendData(
+        result.push({
+            ...buildLayerLegendData(
                 layerName,
                 cfg as Parameters<typeof buildLayerLegendData>[1],
                 opacities ?? null,
@@ -44,7 +50,8 @@ export const getVisibleLayersWithLegends = async ({
                 cogCapabilities?.[layerName] as CogCapabilities | undefined,
                 titilerUrls?.[layerName] ?? null,
             ),
-        )
+            outOfDataRange: coverage?.[layerName]?.outOfDataRange === true,
+        })
     }
     // Top first as the map draws; config order against a core with no order.
     return sortByOrder(result, order)

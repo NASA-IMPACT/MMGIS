@@ -3,6 +3,7 @@ import {
     useState,
     useRef,
     useEffect,
+    useLayoutEffect,
     useCallback,
     useId,
     type ReactNode,
@@ -13,6 +14,7 @@ import { CategoricalGraphic } from '../CategoricalGraphic/CategoricalGraphic'
 import { ColorRampPicker } from '../ColorRampPicker/ColorRampPicker'
 import { FloatingPopover } from '../../FloatingPopover'
 import { PopoverMenu, type PopoverMenuItem } from '../PopoverMenu'
+import { DataCoverageWarning } from '../DataCoverageWarning/DataCoverageWarning'
 import type { Layer } from '../../types'
 
 /**
@@ -45,6 +47,8 @@ export type LayerLegendProps = {
     onZoomToLayer?: (layerId: string) => void
     canZoomToLayer?: (layerId: string) => Promise<boolean>
     onCompareLayer?: (layerId: string) => void
+    /** The timeline's current time as ISO 8601, named by the no-data warning. */
+    selectedTime?: string | null
     /** Wires the grip button to a sortable list; no handle without it. */
     dragHandle?: DragHandleProps
 }
@@ -66,6 +70,7 @@ export function LayerLegend({
     onZoomToLayer,
     canZoomToLayer,
     onCompareLayer,
+    selectedTime,
     dragHandle,
 }: LayerLegendProps) {
     const {
@@ -81,6 +86,7 @@ export function LayerLegend({
         visible,
         cog,
         categoricalStops,
+        outOfDataRange,
     } = layer
 
     const [isVisible, setIsVisible] = useState(visible)
@@ -96,6 +102,11 @@ export function LayerLegend({
     const rampBtnRef = useRef<HTMLButtonElement | null>(null)
     const infoBtnRef = useRef<HTMLButtonElement | null>(null)
     const menuBtnRef = useRef<HTMLButtonElement | null>(null)
+    const checkboxRef = useRef<HTMLInputElement | null>(null)
+    // Whether focus sits in the title group, whose only focusable element is
+    // the no-data warning. Kept as focus moves, since once the warning is gone
+    // the document no longer says where focus was.
+    const warningFocusedRef = useRef(false)
     const opacityPopoverId = useId()
     const opacityHeadingId = useId()
     const rampPopoverId = useId()
@@ -108,6 +119,19 @@ export function LayerLegend({
     const hasColorRamp = cog?.editable === true
 
     const hasDescription = hasText(description)
+
+    // A layer that is switched off draws nothing either way, so missing data
+    // is only flagged while the layer is on.
+    const showsCoverageWarning = isVisible && outOfDataRange === true
+
+    // The warning goes when the layer comes back into range or is switched
+    // off, and focus on it would fall to the page. It moves to the row's
+    // checkbox instead, keeping a keyboard user's place in the list.
+    useLayoutEffect(() => {
+        if (showsCoverageWarning || !warningFocusedRef.current) return
+        warningFocusedRef.current = false
+        checkboxRef.current?.focus()
+    }, [showsCoverageWarning])
 
     useEffect(() => {
         setIsVisible(visible)
@@ -279,16 +303,35 @@ export function LayerLegend({
                 )}
                 <div className="blocks-layer-legend__checkbox-wrapper">
                     <input
+                        ref={checkboxRef}
                         type="checkbox"
                         className="blocks-layer-legend__checkbox"
                         checked={isVisible}
                         onChange={handleVisibilityToggle}
                     />
                 </div>
-                <div className="blocks-layer-legend__title-group">
+                <div
+                    className="blocks-layer-legend__title-group"
+                    onFocus={() => {
+                        warningFocusedRef.current = true
+                    }}
+                    onBlur={() => {
+                        warningFocusedRef.current = false
+                    }}
+                >
                     <span className="blocks-layer-legend__title" title={title}>
                         {title}
                     </span>
+                    {/* The only mark a held-back layer carries: the row keeps
+                        its checkbox and controls as they are, since nothing is
+                        wrong with the layer and it shows again once the time
+                        moves back into its data. */}
+                    {showsCoverageWarning && (
+                        <DataCoverageWarning
+                            layerTitle={title}
+                            selectedTime={selectedTime}
+                        />
+                    )}
                 </div>
                 <div className="blocks-layer-legend__actions">
                     <button

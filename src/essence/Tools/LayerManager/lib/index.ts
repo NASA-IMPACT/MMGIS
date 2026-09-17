@@ -10,6 +10,10 @@ export { CategoricalGraphic, type CategoricalGraphicProps } from './geo/Categori
 export { ColorRampPicker, type ColorRampPickerProps } from './geo/ColorRampPicker/ColorRampPicker'
 export { PopoverMenu, type PopoverMenuProps, type PopoverMenuItem } from './geo/PopoverMenu'
 export { FloatingPopover, type FloatingPopoverProps } from './FloatingPopover'
+export {
+    DataCoverageWarning,
+    type DataCoverageWarningProps,
+} from './geo/DataCoverageWarning/DataCoverageWarning'
 
 export type { Layer, LegendType, CategoricalStop, CogData } from './types'
 

@@ -25,7 +25,13 @@ const CONFIGS = {
     [BASEMAP]: { display_name: 'Basemap', cogColormap: 'viridis' },
 }
 
-const setupMock = ({ capabilities, provideCapability = true, titilerUrls, order }) => {
+const setupMock = ({
+    capabilities,
+    provideCapability = true,
+    titilerUrls,
+    coverage,
+    order,
+}) => {
     const responses = {
         'layers:getAllConfigs': CONFIGS,
         'layers:getVisible': { [DISPLACEMENT]: true, [BASEMAP]: true },
@@ -33,6 +39,7 @@ const setupMock = ({ capabilities, provideCapability = true, titilerUrls, order 
     }
     if (provideCapability) responses['layers:getCogCapabilities'] = capabilities
     if (titilerUrls) responses['layers:getTiTilerUrl'] = titilerUrls
+    if (coverage) responses['layers:getDataCoverage'] = coverage
     if (order) responses['layers:getOrder'] = order
 
     global.window = global.window || {}
@@ -149,6 +156,21 @@ describe('getVisibleLayersWithLegends', () => {
         const layers = await getVisibleLayersWithLegends()
 
         expect(byId(layers, DISPLACEMENT).cog?.titilerUrl).toBeNull()
+    })
+
+    test("flags each layer core reports out of range, keyed by UUID", async () => {
+        setupMock({
+            capabilities: {},
+            coverage: {
+                [DISPLACEMENT]: { outOfDataRange: true },
+                // A display-name-keyed lookup would find this instead.
+                Basemap: { outOfDataRange: true },
+            },
+        })
+        const layers = await getVisibleLayersWithLegends()
+
+        expect(byId(layers, DISPLACEMENT).outOfDataRange).toBe(true)
+        expect(byId(layers, BASEMAP).outOfDataRange).toBe(false)
     })
 
     // The list reads top down as the map stacks. The config lists
