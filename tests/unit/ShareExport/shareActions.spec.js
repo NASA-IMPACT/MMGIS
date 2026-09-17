@@ -311,7 +311,7 @@ test.describe('legend compositing in the downloads', () => {
     const composed = { ...screenshot, blob: composedBlob, height: 700 }
     const emptyModel = { missionName: null, headerLines: [], rows: [] }
 
-    test('a PNG carries the composed image, and the flag turns that off', async () => {
+    test('a PNG carries the composed image', async () => {
         const composeCalls = []
         const downloads = []
         const result = await downloadSharePng({
@@ -328,21 +328,26 @@ test.describe('legend compositing in the downloads', () => {
             { blob: composedBlob, filename: PNG_FILENAME },
         ])
         expect(result).toBe(composed)
+    })
 
-        const plain = []
+    // A mission that turned the band off pays nothing for it: no model is
+    // built and no canvas work happens.
+    test('the flag off downloads the capture with no legend work at all', async () => {
+        const downloads = []
         const throwIfCalled = () => {
             throw new Error('should not be called')
         }
         expect(
             await downloadSharePng({
                 getScreenshot: async () => screenshot,
-                download: (blob, filename) => plain.push({ blob, filename }),
+                download: (blob, filename) =>
+                    downloads.push({ blob, filename }),
                 includeLegend: false,
                 getLegendModel: throwIfCalled,
                 compose: throwIfCalled,
             }),
         ).toBe(screenshot)
-        expect(plain).toEqual([
+        expect(downloads).toEqual([
             { blob: screenshot.blob, filename: PNG_FILENAME },
         ])
     })

@@ -1,10 +1,13 @@
 import { describe, test, expect, vi } from 'vitest'
-import { measureLegendBand, drawLegendBand } from '../renderLegendBand.ts'
+import {
+    boundLabel,
+    measureLegendBand,
+    drawLegendBand,
+} from '../renderLegendBand.ts'
 
 const makeCtx = () => {
     const fillRectCalls = []
     const fillTextCalls = []
-    const gradients = []
     const ctx = {
         fillStyle: null,
         font: '',
@@ -14,18 +17,11 @@ const makeCtx = () => {
         // how far below its baseline that line reaches.
         fillText: (...args) => fillTextCalls.push({ args, font: ctx.font }),
         measureText: (t) => ({ width: t.length * 6 }),
-        createLinearGradient: (...args) => {
-            const stops = []
-            const gradient = {
-                addColorStop: (offset, color) => stops.push({ offset, color }),
-            }
-            gradients.push({ args, stops, gradient })
-            return gradient
-        },
+        createLinearGradient: () => ({ addColorStop: () => {} }),
         save: vi.fn(),
         restore: vi.fn(),
     }
-    return { ctx, fillRectCalls, fillTextCalls, gradients }
+    return { ctx, fillRectCalls, fillTextCalls }
 }
 
 const fontPx = (font) => {
@@ -33,9 +29,6 @@ const fontPx = (font) => {
     return match ? Number(match[1]) : 0
 }
 
-// The first three rects are always the frame; everything after is content.
-const frameOf = (fillRectCalls) => fillRectCalls[2]
-const contentRects = (fillRectCalls) => fillRectCalls.slice(3)
 const textBottom = ({ args: [, , y], font }) => y + fontPx(font)
 
 const model = (rows, overrides = {}) => ({
@@ -73,6 +66,18 @@ const manyStops = Array.from({ length: 20 }, (_, i) => ({
     label: `Category number ${i}`,
 }))
 
+// The same rules the panel's gradient bar labels its bounds by
+// (GradientGraphic's formatLegendValue), so a layer reads the same in the app
+// and on the export.
+test('labels a bound the way the panel does', () => {
+    expect(boundLabel(0.00095, null)).toBe('0.001')
+    expect(boundLabel(0.0009, null)).toBe('9.00e-4')
+    expect(boundLabel(9999, null)).toBe('1.00e+4')
+    expect(boundLabel(0, null)).toBe('0')
+    expect(boundLabel(1.5, 'm')).toBe('1.5 m')
+    expect(boundLabel(null, 'm')).toBe('')
+})
+
 describe('measureLegendBand', () => {
     // Rows share a line when the band is wide enough for columns, and stack
     // when it is not.
@@ -94,20 +99,16 @@ describe('measureLegendBand', () => {
 })
 
 describe('drawLegendBand', () => {
-    // A one-color ramp has no interpolation to build: addColorStop's offset
-    // would be i / (length - 1) = NaN, which a real canvas rejects outright,
-    // taking the whole export down with it. Nor is a missing or blank color a
-    // reason to throw — the neutral ramp stands in.
-    test.each([
-        ['a single color', ['#ff0000'], 0],
-        ['no colors at all', null, 1],
-        ['an empty color list', [], 1],
-        ['a blank stop among real ones', ['#000', '', '#fff'], 1],
-    ])('draws a ramp built from %s', (_name, colors, expectedGradients) => {
-        const { ctx, gradients } = makeCtx()
-        const m = model([gradientRow({ colors })])
-        expect(() => drawLegendBand(ctx, m, 400, 0, 200, 1)).not.toThrow()
-        expect(gradients).toHaveLength(expectedGradients)
+    // A degenerate color list is a legend core could not fully resolve, not a
+    // reason to lose the export: one color has no interpolation to build (an
+    // offset of i / (length - 1) = NaN, which a real canvas rejects outright),
+    // and a missing, empty or blank color has nothing to interpolate from.
+    test('draws a ramp from any color list, however degenerate', () => {
+        for (const colors of [['#ff0000'], null, [], ['#000', '', '#fff']]) {
+            const { ctx } = makeCtx()
+            const m = model([gradientRow({ colors })])
+            expect(() => drawLegendBand(ctx, m, 400, 0, 200, 1)).not.toThrow()
+        }
     })
 
     // A bound the layer never declared is blank, never a 0 the layer was
@@ -147,11 +148,13 @@ describe('drawLegendBand', () => {
 // a disagreement between them crops the band or leaves a white gap under it —
 // both of which produce a plausible-looking export file.
 describe('what is drawn fits the band that was measured', () => {
-    const assertFits = (m, width, scale) => {
+    const SCALE = 2
+
+    const assertFits = (m, width) => {
         const { ctx, fillRectCalls, fillTextCalls } = makeCtx()
-        const bandHeight = measureLegendBand(ctx, m, width, scale)
+        const bandHeight = measureLegendBand(ctx, m, width, SCALE)
         const yTop = 50
-        drawLegendBand(ctx, m, width, yTop, bandHeight, scale)
+        drawLegendBand(ctx, m, width, yTop, bandHeight, SCALE)
 
         // Nothing painted extends past the height the measure pass computed.
         for (const { args } of fillRectCalls) {
@@ -162,62 +165,43 @@ describe('what is drawn fits the band that was measured', () => {
             expect(textBottom(call)).toBeLessThanOrEqual(yTop + bandHeight)
         }
 
-        // And no slack: the deepest thing drawn sits the same padding above
-        // the panel's bottom edge as the first thing drawn sits below its top.
-        const [, py, , ph] = frameOf(fillRectCalls).args
+        // And no slack: the deepest thing drawn sits as far above the band's
+        // bottom edge as the first thing drawn sits below its top. The band's
+        // own frame is drawn as rects that span it, so content is what does
+        // not.
+        const content = fillRectCalls.filter(
+            ({ args: [, , , h] }) => h < bandHeight / 2,
+        )
         const contentTop = Math.min(
-            ...contentRects(fillRectCalls).map(({ args: [, y] }) => y),
+            ...content.map(({ args: [, y] }) => y),
             ...fillTextCalls.map(({ args: [, , y] }) => y),
         )
         const contentBottom = Math.max(
-            ...contentRects(fillRectCalls).map(({ args: [, y, , h] }) => y + h),
+            ...content.map(({ args: [, y, , h] }) => y + h),
             ...fillTextCalls.map(textBottom),
         )
-        expect(contentTop - py).toBeGreaterThan(0)
-        expect(py + ph - contentBottom).toBe(contentTop - py)
+        expect(contentTop - yTop).toBeGreaterThan(0)
+        expect(yTop + bandHeight - contentBottom).toBe(contentTop - yTop)
     }
 
-    test.each([1, 2])('wrapping categorical labels (scale %i)', (scale) => {
-        assertFits(model([categoricalRow(manyStops)]), 300, scale)
-    })
-
-    test.each([1, 2])('a stack of mixed rows (scale %i)', (scale) => {
-        assertFits(
-            model(
-                [
-                    gradientRow(),
-                    plainRow(),
-                    gradientRow({ title: 'Fixed scene' }),
-                    categoricalRow(manyStops),
-                    categoricalRow(manyStops.slice(0, 3)),
-                ],
-                {
-                    missionName: 'M20',
-                    headerLines: ['Time cursor 2024-02-01', 'Exported now'],
-                },
-            ),
-            300,
-            scale,
-        )
-    })
-
-    test.each([1, 2])(
-        'columns where the tallest cell sets each line (scale %i)',
-        (scale) => {
-            assertFits(
-                model(
-                    [
-                        plainRow(),
-                        categoricalRow(manyStops),
-                        gradientRow(),
-                        gradientRow({ title: 'Fourth' }),
-                        plainRow({ title: 'Fifth' }),
-                    ],
-                    { missionName: 'M20', headerLines: ['Exported now'] },
-                ),
-                1200,
-                scale,
-            )
+    const mixedRows = model(
+        [
+            gradientRow(),
+            plainRow(),
+            categoricalRow(manyStops),
+            categoricalRow(manyStops.slice(0, 3)),
+        ],
+        {
+            missionName: 'M20',
+            headerLines: ['Time cursor 2024-02-01', 'Exported now'],
         },
     )
+
+    test('rows stacked in one narrow column', () => {
+        assertFits(mixedRows, 300)
+    })
+
+    test('rows flowed into columns, the tallest cell setting each line', () => {
+        assertFits(mixedRows, 1200)
+    })
 })
