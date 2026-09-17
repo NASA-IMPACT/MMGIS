@@ -163,8 +163,37 @@ describe('getExportLegendModel', () => {
             expect(rows[0].dateLine).toBe('Requested up to 2026-08-25')
         })
 
+        // The cursor's period is inside the layer's coverage, so the data on
+        // screen was collected in it — and where the coverage stops partway
+        // through that period, the printed range stops there too rather than
+        // naming days the layer has nothing for.
+        test('a period holding the cursor is narrowed, then clipped to the coverage', async () => {
+            vi.mocked(mmgisGetTimeCurrent).mockResolvedValue(
+                '2025-01-10T00:00:00Z',
+            )
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                monthly: {
+                    start: '2015-01-01T00:00:00Z',
+                    end: '2026-01-01T00:00:00Z',
+                },
+                weekly: {
+                    start: '2025-01-01T00:00:00Z',
+                    end: '2025-01-09T23:59:59Z',
+                },
+            })
+            const rows = await rowsFor({
+                monthly: timeEnabled('P1M'),
+                weekly: timeEnabled('P7D'),
+            })
+            expect(rows.map((row) => row.dateLine)).toEqual([
+                'Collected 2025-01',
+                'Collected 2025-01-08 → 2025-01-09',
+            ])
+        })
+
         // A cursor parked past everything the layer holds is no collection
-        // date; what the request could have returned is the coverage.
+        // date; what the request could have returned is the coverage, whether
+        // or not the layer serves periods.
         test('a cursor past the coverage falls back to the covered part of the request', async () => {
             vi.mocked(mmgisGetTimeStart).mockResolvedValue(
                 '2010-01-01T00:00:00Z',
@@ -172,14 +201,22 @@ describe('getExportLegendModel', () => {
             vi.mocked(mmgisGetTimeCurrent).mockResolvedValue(
                 '2024-05-01T00:00:00Z',
             )
+            const coverage = {
+                start: '2015-01-01T00:00:00Z',
+                end: '2016-12-31T00:00:00Z',
+            }
             vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
-                plain: {
-                    start: '2015-01-01T00:00:00Z',
-                    end: '2016-12-31T00:00:00Z',
-                },
+                yearly: coverage,
+                plain: coverage,
             })
-            const rows = await rowsFor({ plain: timeEnabled() })
-            expect(rows[0].dateLine).toBe('Collected 2015-01-01 → 2016-12-31')
+            const rows = await rowsFor({
+                yearly: timeEnabled('P1Y'),
+                plain: timeEnabled(),
+            })
+            expect(rows.map((row) => row.dateLine)).toEqual([
+                'Collected 2015 → 2016',
+                'Collected 2015-01-01 → 2016-12-31',
+            ])
         })
 
         // A layer that ignores the time cursor prints the extent it holds, and

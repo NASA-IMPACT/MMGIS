@@ -68,3 +68,17 @@ export const formatAtPrecision = (
         duration,
         typeof instant === 'string' ? Date.parse(instant) : NaN,
     )
+
+/**
+ * A period's end, printed inclusively. The end a period carries is the
+ * instant the next one starts on, so printing it raw would make a P7D period
+ * read as eight days; what prints is the last unit the period covers.
+ */
+export const formatPeriodEnd = (
+    duration: Duration | null | undefined,
+    exclusiveEnd: string | null | undefined,
+): string | null =>
+    formatEpochMs(
+        duration,
+        typeof exclusiveEnd === 'string' ? Date.parse(exclusiveEnd) - 1 : NaN,
+    )

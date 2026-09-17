@@ -56,3 +56,58 @@ export const coverageOverlap = (
     if (start !== null && start.ms > end.ms) return null
     return { start: start?.text ?? null, end: end.text }
 }
+
+/**
+ * Whether any of `coverage` falls inside `period` — the test for whether the
+ * period holding the cursor is a range the data can be from. A period runs up
+ * to but not including its end, so one ending on the coverage's first instant
+ * holds none of it.
+ */
+export const hasDataIn = (
+    coverage: Coverage,
+    period: { start: string; end: string },
+): boolean => {
+    const start = bound(period.start)
+    const end = bound(period.end)
+    if (start === null || end === null) return false
+    const coverageStart = bound(coverage.start)
+    const coverageEnd = bound(coverage.end)
+    if (coverageEnd !== null && start.ms > coverageEnd.ms) return false
+    if (coverageStart !== null && end.ms <= coverageStart.ms) return false
+    return true
+}
+
+/**
+ * `period` narrowed to the part of it the coverage fills. A period is a shape
+ * the cadence imposes, not a promise of data: the layer's coverage can begin
+ * partway into it or stop partway through, and printing the raw period would
+ * then name days the layer has nothing for. Either end that the coverage does
+ * not reach is replaced by the coverage's own bound. The requested window is
+ * deliberately not clipped to: a monthly composite is the whole month even
+ * when the window opened mid-month.
+ *
+ * `endIsPeriodEnd` says which the end came from, because the two print
+ * differently — a period's end is the next period's start and prints
+ * inclusively, while a coverage end is an instant the data reaches and prints
+ * as it is.
+ */
+export const clipPeriodToCoverage = (
+    period: { start: string; end: string },
+    coverage: Coverage,
+): { start: string; end: string; endIsPeriodEnd: boolean } => {
+    const periodStart = bound(period.start)
+    const coverageStart = bound(coverage.start)
+    const start =
+        periodStart !== null &&
+        coverageStart !== null &&
+        coverageStart.ms > periodStart.ms
+            ? coverageStart.text
+            : period.start
+    const periodEnd = bound(period.end)
+    const coverageEnd = bound(coverage.end)
+    return periodEnd !== null &&
+        coverageEnd !== null &&
+        coverageEnd.ms < periodEnd.ms
+        ? { start, end: coverageEnd.text, endIsPeriodEnd: false }
+        : { start, end: period.end, endIsPeriodEnd: true }
+}

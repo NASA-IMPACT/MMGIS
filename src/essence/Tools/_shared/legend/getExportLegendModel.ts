@@ -2,12 +2,15 @@ import {
     getLayersWithLegends,
     type LayerWithLegend,
 } from './getLayersWithLegends'
+import { layerPeriodFor } from './layerPeriod'
 import {
     coverageOverlap,
+    hasDataIn,
+    clipPeriodToCoverage,
     type Coverage,
     type RequestSpan,
 } from './coverageOverlap'
-import { formatAtPrecision } from './datePrecision'
+import { formatAtPrecision, formatPeriodEnd } from './datePrecision'
 import {
     parseISODuration,
     type Duration,
@@ -125,17 +128,32 @@ const requestedDateLine = (
 
 /**
  * The part of a layer's coverage the request could have returned — the only
- * range the pixels on screen can be from. Null when the request and the
- * coverage never meet: the server had nothing inside the span to draw, so the
- * caller falls back to naming the request alone.
+ * range the pixels on screen can be from — narrowed to a single period, itself
+ * clipped to the coverage, when the layer serves whole periods and the
+ * cursor's period holds data. Null when the request and the coverage never
+ * meet: the server had nothing inside the span to draw, so the caller falls
+ * back to naming the request alone.
  */
 const collectedDateLine = (
+    interval: string | null,
     request: RequestSpan,
     coverage: Coverage,
     precision: Duration | null,
 ): string | null => {
     const overlap = coverageOverlap(request, coverage)
     if (!overlap) return null
+    const period = layerPeriodFor(interval, request.end, coverage.start)
+    if (period && hasDataIn(coverage, period)) {
+        const clipped = clipPeriodToCoverage(period, coverage)
+        const start = formatAtPrecision(precision, clipped.start)
+        // A period ends where the next one starts, so what prints is the last
+        // unit it covers; a coverage end inside the period is an instant the
+        // data reaches, and prints as it is.
+        const end = clipped.endIsPeriodEnd
+            ? formatPeriodEnd(precision, clipped.end)
+            : formatAtPrecision(precision, clipped.end)
+        if (start && end) return spanLine('Collected', start, end)
+    }
     // An overlap's ends are instants the layer's data reaches, so they print
     // as they are.
     const end = formatAtPrecision(precision, overlap.end)
@@ -153,6 +171,7 @@ const collectedDateLine = (
  * the request it can name only the request.
  */
 const cursorDateLine = (
+    interval: string | null,
     { cursor, windowStart }: TimeCursor,
     extent: TemporalExtent | undefined,
     precision: Duration | null,
@@ -169,7 +188,12 @@ const cursorDateLine = (
         end: extent?.end ?? null,
     }
     if (coverage.start !== null || coverage.end !== null) {
-        const collected = collectedDateLine(request, coverage, precision)
+        const collected = collectedDateLine(
+            interval,
+            request,
+            coverage,
+            precision,
+        )
         if (collected) return collected
     }
     return requestedDateLine(request, precision)
@@ -221,7 +245,7 @@ const dateLineFor = (
             time.type === 'local'
                 ? { cursor: time.end ?? null, windowStart: time.start ?? null }
                 : globalCursor
-        return cursorDateLine(cursor, extent, precision)
+        return cursorDateLine(interval, cursor, extent, precision)
     } catch (err) {
         console.warn('[export legend] could not build a layer date line', err)
         return null
