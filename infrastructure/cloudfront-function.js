@@ -62,8 +62,10 @@ function handler(event) {
         // the function sees them) — gets a bare 403, so no browser login
         // dialog appears on the page that issued it. The framework then
         // falls back to a full navigation, which is challenged normally.
-        // The refusal carries no-store, so a fronting edge never caches
-        // it and replays it to a later real visit.
+        // CloudFront caches an origin's 403 only when it carries max-age
+        // or s-maxage. This one carries neither, so a fronting CloudFront
+        // never caches it and replays it to a later real visit; the
+        // no-store covers any other cache in the path.
         if (
             headers['next-router-prefetch'] ||
             headers['rsc'] ||

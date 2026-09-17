@@ -14,10 +14,10 @@ Whether the dashboard prompts your visitors for a password depends on the enviro
    - all query strings in the cache key,
    - Minimum TTL 0,
    - Maximum TTL 31536000 (one year) or more,
-   - **if the dashboard is password-gated**, the `Authorization` header in the cache key,
+   - the `Authorization` header in the cache key,
    - and nothing else: no other headers, no cookies — CloudFront forwards whatever the key contains, and a forwarded `Host` is a 403.
 
-   An open dashboard's visitors send no `Authorization` header, so keying on it there splits nothing and costs nothing — if the gate might ever be switched on, include it either way and you will never have to come back to this page.
+   Include `Authorization` whether or not the dashboard is gated today — the origin request policy in step 4 forwards it to us either way, so if the gate is ever switched on, a key without it would cache one visitor's authenticated page and serve it to everyone after. An open dashboard's visitors send no `Authorization` header, so keying on it there splits nothing and costs nothing.
 
 3. **Add two cache behaviors** pointing at that origin, both using that cache policy:
    - path pattern `/tools/dashboard` — exact, no wildcard,
@@ -43,7 +43,7 @@ With the two patterns above and header `X-Forwarded-Prefix: /tools/dashboard`:
 | anything under the path | **missing**, or wrong — e.g. `/tools/dashbord` *(typo)* | header invalid or matches nothing — no rewrite, no redirect | 403 on every request — loud failure, never the wrong files |
 | `d1abc23def.cloudfront.net/` *(the dashboard's own address, no header)* | *(none — no fronting CloudFront to add it)* | nothing — passes through | the dashboard, as always |
 
-If the dashboard is password-gated, every row above that reaches us also sits behind the password: a wrong or missing one is a 401 before any of this runs — except a prefetch, which gets a plain 403 (see below).
+If the dashboard is password-gated, every row above that reaches us also sits behind the password: a wrong or missing one is a 401 before any of this runs — except a prefetch, which gets a plain 403 (see below). The two 403s are easy to tell apart: the prefix failure is our storage layer's, and its body is S3's XML `AccessDenied`, while the prefetch refusal is ours and has no body at all, just a `cache-control: no-store` header.
 
 ## Why these settings
 
@@ -63,7 +63,7 @@ If the dashboard is password-gated, every row above that reaches us also sits be
 
 ### If the dashboard is password-gated
 
-**`Authorization` in the cache key:** your CloudFront caches whatever we return. If the header is forwarded but not part of the cache key, one visitor's authenticated page gets cached and served to the next visitor who never entered a password. In the cache key, the header is both forwarded and kept separate per credential.
+**`Authorization` in the cache key:** your CloudFront caches whatever we return. If the header is forwarded but not part of the cache key, one visitor's authenticated page gets cached and served to the next visitor who never entered a password. In the cache key, the header is both forwarded and kept separate per credential. The `AllViewerExceptHostHeader` policy from step 4 forwards the header whether or not the key contains it, which is why the cache-key entry is required even for a dashboard that is open today.
 
 **Prefetched links don't prompt:** if your site preloads the links in its navigation — a request carrying a `Next-Router-Prefetch`, `RSC`, `Sec-Purpose` or `Purpose` header — a gated dashboard answers those with a plain `403` instead of the password challenge, so the login box never appears over an unrelated page of your site. The prompt shows up only when a visitor actually opens the dashboard. This is why the `AllViewerExceptHostHeader` origin request policy is required rather than optional: a cache policy alone forwards only the headers its key contains, so without it those prefetch headers never reach us and the prompt comes back.
 
