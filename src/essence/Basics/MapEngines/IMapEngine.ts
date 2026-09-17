@@ -467,12 +467,14 @@ export interface IMapEngine<
      * was ours rather than the library's.
      *
      * `onClose` fires when, and only when, the library took the popup down
-     * itself — its close control, or a click on the map. It never fires for
-     * {@link hidePopup} or for a replacement.
+     * itself: its close control, a click on the map, and on Leaflet also
+     * anything else on the map opening a popup of its own, which Leaflet's
+     * defaults close this one for. It never fires for {@link hidePopup}, for a
+     * replacement, or for {@link destroy}.
      *
      * @throws {Error} On an engine with no map to place a popup in.
      */
-    showPopup(latlng: LatLng, element: HTMLElement, onClose?: () => void): void
+    showPopup(latlng: LatLngLike, element: HTMLElement, onClose?: () => void): void
 
     /**
      * Take the open popup off the map, leaving its element untouched. No-op
