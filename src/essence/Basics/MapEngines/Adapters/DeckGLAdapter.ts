@@ -330,12 +330,11 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _overlay: MapboxOverlay | null = null
 
     /**
-     * The open popup, and whether the adapter is the one taking it down. The
-     * basemap fires the same `close` however a popup leaves the map, so the
-     * flag is what separates the library's own close from ours.
+     * The open popup. The basemap fires the same `close` however a popup
+     * leaves the map, so checking a close against this is what separates the
+     * library's own close from ours.
      */
     private _popup: BasemapPopup | null = null
-    private _closingPopup = false
 
     /** True when the adapter was initialised with a {@link BasemapOptions} configuration. */
     private _isOverlayMode = false
@@ -830,9 +829,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const { lat, lng } = resolveLatLng(latlng)
         const popup = new PopupClass({ className: 'mmgis-map-popup' })
         popup.on('close', () => {
-            // A close arriving after this popup has been let go belongs to the
-            // popup that is gone, not to whichever one is open now.
-            if (this._closingPopup || this._popup !== popup) return
+            // `_popup` is let go before the basemap is asked to close, so a
+            // close whose popup is no longer the open one is either ours or a
+            // straggler from a card already replaced.
+            if (this._popup !== popup) return
             this._popup = null
             onClose?.()
         })
@@ -848,12 +848,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const popup = this._popup
         if (!popup) return
         this._popup = null
-        this._closingPopup = true
-        try {
-            popup.remove()
-        } finally {
-            this._closingPopup = false
-        }
+        popup.remove()
     }
 
     setView(center: LatLngLike, zoom?: number, options?: ViewOptions): void {
