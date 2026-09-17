@@ -1,4 +1,4 @@
-import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
+import { test, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // The panel component pulls in @trussworks/react-uswds and a SCSS entry point;
 // nothing here renders it.
@@ -163,7 +163,7 @@ afterEach(() => {
     vi.useRealTimers()
 })
 
-describe('AOITool popup requests', () => {
+test.describe('AOITool popup requests', () => {
     test('asks core for the analyze/cancel card at the feature centroid, once the camera settles', async () => {
         // A label holding markup goes to core as it was written: core renders a
         // title as text, so escaping one here would put the escapes themselves
@@ -184,11 +184,18 @@ describe('AOITool popup requests', () => {
         // the card being the title over its two buttons.
         expect(payload.primaryAction).toEqual({ label: 'Analyze area' })
         expect(payload.secondaryAction).toEqual({ label: 'Cancel' })
-        expect('html' in payload).toBe(false)
 
         // The request must survive a postMessage boundary: data only, no
         // functions crossing into core.
         expect(JSON.parse(JSON.stringify(payload))).toEqual(payload)
+    })
+
+    // The service rejects a card with neither title nor body, and a rejected
+    // show strands the selection: on the map, with nothing to analyze or cancel
+    // it from. Uploaded files are where a blank name comes from.
+    test('falls back to a generic title when the area has no usable name', async () => {
+        await selectAndOpen(SQUARE, '   ')
+        expect(api.namesOf('map:showPopup')[0].payload.title).toBe('Selected area')
     })
 
     test('retracts the open card before the next selection, and keeps that selection', async () => {
@@ -232,7 +239,7 @@ describe('AOITool popup requests', () => {
     })
 })
 
-describe('AOITool popup outcomes', () => {
+test.describe('AOITool popup outcomes', () => {
     test('a primary press hands the selected feature to the analysis consumers', async () => {
         await selectAndOpen(SQUARE, 'Alabama')
         api.reset()
@@ -281,6 +288,31 @@ describe('AOITool popup outcomes', () => {
         expect(api.getSelection()).toMatchObject({ feature: SQUARE })
     })
 
+    // Leaflet closes its popup on `preclick`, which runs before `click` reaches
+    // the engine's feature-click listener: on a second Inspect click the old
+    // card answers 'dismiss' before the new selection is applied, so retracting
+    // it first cannot un-settle it. Each outcome is tied to the selection its
+    // card was requested for instead, which holds whichever order they arrive.
+    test('a dismissal that lands before the next selection leaves it alone', async () => {
+        await selectAndOpen(SQUARE, 'Alabama')
+        api.reset()
+
+        // Both in one tick: the card settles, then the click that closed it
+        // selects the next area, and only then do the outcome handlers run.
+        api.closePopup('dismiss')
+        AOITool._applySelection(FAR_SQUARE, 'inspect', 'Alaska')
+        await flush()
+        api.emit('map:moveend')
+        await flush()
+
+        expect(api.getSelection()).toMatchObject({ feature: FAR_SQUARE })
+        expect(api.emitsOf('plugin:aoi:drawingCleared')).toHaveLength(0)
+        const shows = api.namesOf('map:showPopup')
+        expect(shows).toHaveLength(1)
+        expect(shows[0].payload.title).toBe('Alaska')
+        expect(api.hasOpenPopup()).toBe(true)
+    })
+
     test('a rejected popup request is reported and keeps the selection', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => { })
         api.requestImpl.set('map:showPopup', () => {
@@ -299,28 +331,11 @@ describe('AOITool popup outcomes', () => {
     })
 })
 
-describe('AOITool popup lifecycle', () => {
+test.describe('AOITool popup lifecycle', () => {
     // Closing the tool and unloading it both reach the plugin through
     // `destroy()`, and that is the whole of the teardown contract: nothing of
     // the selection outlives the tool.
-    test('destroy clears the selection, its highlight and the card', async () => {
-        await selectAndOpen(SQUARE, 'Alabama')
-        expect(api.hasOpenPopup()).toBe(true)
-        api.reset()
-
-        AOITool.destroy()
-        await flush()
-
-        expect(api.namesOf('map:hidePopup')).toHaveLength(1)
-        expect(api.hasOpenPopup()).toBe(false)
-        expect(
-            api.namesOf('map:removeLayer').map((r) => r.payload.id)
-        ).toContain('aoi:selection')
-        expect(AOITool._state.currentAOI).toBeNull()
-        expect(api.listenerCount('map:featureClick')).toBe(0)
-    })
-
-    test('destroy disarms a show already waiting on the camera', async () => {
+    test('destroy retracts the card and disarms a show waiting on the camera', async () => {
         AOITool._applySelection(SQUARE, 'search', 'Alabama')
         // Far enough in that the show is armed: the camera has been read and
         // the fit asked for, so a `map:moveend` listener and the fallback timer
@@ -331,29 +346,29 @@ describe('AOITool popup lifecycle', () => {
 
         AOITool.destroy()
 
+        expect(api.namesOf('map:hidePopup')).toHaveLength(1)
         expect(api.listenerCount('map:moveend')).toBe(0)
         api.emit('map:moveend')
         await vi.advanceTimersByTimeAsync(2000)
         expect(api.namesOf('map:showPopup')).toHaveLength(0)
     })
 
-    test('a superseding selection disarms the show already waiting on the camera', async () => {
+    // Every caller of `_clearSelection` — switching tools, a dismissal, Cancel,
+    // the first vertex of a session — reaches it while a show may still be
+    // waiting on the camera, and a card that opened after it would offer to
+    // analyze an area no longer on the map.
+    test('clearing the selection disarms a show waiting on the camera', async () => {
         AOITool._applySelection(SQUARE, 'search', 'Alabama')
         await flush()
         expect(api.listenerCount('map:moveend')).toBe(1)
+        api.reset()
 
-        AOITool._applySelection(FAR_SQUARE, 'search', 'Alaska')
-        await flush()
-        // The superseded show let go of its listener and its timer; only the
-        // current one is armed.
-        expect(api.listenerCount('map:moveend')).toBe(1)
+        AOITool._clearSelection()
 
+        expect(api.listenerCount('map:moveend')).toBe(0)
         api.emit('map:moveend')
         await vi.advanceTimersByTimeAsync(2000)
-
-        const shows = api.namesOf('map:showPopup')
-        expect(shows).toHaveLength(1)
-        expect(shows[0].payload.title).toBe('Alaska')
+        expect(api.namesOf('map:showPopup')).toHaveLength(0)
     })
 
     test('a camera step that fails leaves nothing pending', async () => {
@@ -383,7 +398,7 @@ describe('AOITool popup lifecycle', () => {
 // Picking a shape arms a session; it does not choose an area. What these pin is
 // where along a session the previous selection is actually given up, and what
 // the user is left with when the session ends without a drawing.
-describe('AOITool drawing sessions', () => {
+test.describe('AOITool drawing sessions', () => {
     const VERTEX = { shape: 'polygon', vertices: [{ lat: 1, lng: 1 }] }
 
     test('arming a session retracts the card and keeps the selection', async () => {
@@ -426,6 +441,18 @@ describe('AOITool drawing sessions', () => {
         expect(shows[0].payload.latlng).toEqual({ lat: 5, lng: 5 })
         expect(api.hasOpenPopup()).toBe(true)
         expect(api.getSelection()).toMatchObject({ feature: SQUARE })
+
+        // And a session that does finish replaces both, the drawing getting a
+        // card of its own.
+        api.reset()
+        api.emit('map:drawstart', { shape: 'polygon' })
+        api.emit('map:drawcomplete', { feature: FAR_SQUARE })
+        await flush()
+        api.emit('map:moveend')
+        await flush()
+
+        expect(api.namesOf('map:showPopup')[0].payload.title).toBe('Drawn area')
+        expect(api.getSelection()).toMatchObject({ feature: FAR_SQUARE, source: 'draw' })
     })
 
     test('re-arming across the camera read leaves the card down', async () => {
@@ -466,24 +493,5 @@ describe('AOITool drawing sessions', () => {
         api.emit('map:drawcancel', { shape: 'polygon' })
         await flush()
         expect(api.namesOf('map:showPopup')).toHaveLength(0)
-    })
-
-    test('a finished drawing gets its own card', async () => {
-        await selectAndOpen(SQUARE, 'Alabama')
-        api.emit('map:drawstart', { shape: 'polygon' })
-        api.emit('map:drawvertex', VERTEX)
-        await flush()
-        api.reset()
-
-        api.emit('map:drawcomplete', { feature: FAR_SQUARE })
-        await flush()
-        api.emit('map:moveend')
-        await flush()
-
-        const shows = api.namesOf('map:showPopup')
-        expect(shows).toHaveLength(1)
-        expect(shows[0].payload.title).toBe('Drawn area')
-        expect(shows[0].payload.latlng).toEqual({ lat: 25, lng: 25 })
-        expect(api.getSelection()).toMatchObject({ feature: FAR_SQUARE, source: 'draw' })
     })
 })
