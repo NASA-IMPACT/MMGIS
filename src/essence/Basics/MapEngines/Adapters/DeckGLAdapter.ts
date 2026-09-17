@@ -456,7 +456,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     /**
      * The basemap's `Popup` class, kept for the same reason as
      * {@link _basemapCtor}: it has to come from the module the basemap's `Map`
-     * came from. Null in standalone mode, which has no popup.
+     * came from. Null in standalone mode, and on a basemap module that exports
+     * no `Popup` — the map still works, only {@link showPopup} refuses.
      */
     private _popupCtor:
         | (new (options: Record<string, unknown>) => BasemapPopup)
@@ -818,8 +819,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const PopupClass = this._popupCtor
         if (!basemap || !PopupClass) {
             throw new Error(
-                '[DeckGLAdapter] showPopup requires a basemap ' +
-                '(maplibre or mapbox). Initialise the engine with ' +
+                '[DeckGLAdapter] showPopup requires a basemap with a Popup ' +
+                'class (maplibre or mapbox). Initialise the engine with ' +
                 'MapInitOptions.basemap to place a popup.'
             )
         }
@@ -2223,7 +2224,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     private async _initOverlayModeMapbox(basemap: BasemapOptions): Promise<void> {
         let MapboxGLMap: new (options: Record<string, unknown>) => BasemapInstance
-        let MapboxGLPopup: new (options: Record<string, unknown>) => BasemapPopup
+        // Optional: a module that exports no Popup still gives a working map,
+        // and only showPopup goes without.
+        let MapboxGLPopup: (new (options: Record<string, unknown>) => BasemapPopup) | undefined
 
         try {
             const lib = (await import('mapbox-gl')) as unknown as MapboxGLModule & {
@@ -2232,10 +2235,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             const mapboxGL = lib.default ?? lib
             const MapClass = mapboxGL.Map
             if (!MapClass) throw new Error('Map not found in mapbox-gl module')
-            const PopupClass = mapboxGL.Popup
-            if (!PopupClass) throw new Error('Popup not found in mapbox-gl module')
             MapboxGLMap = MapClass
-            MapboxGLPopup = PopupClass
+            MapboxGLPopup = mapboxGL.Popup
         } catch {
             throw new Error(
                 'DeckGLAdapter: mapbox-gl is not installed. ' +
@@ -2253,7 +2254,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     private _setupOverlay(
         MapClass: new (options: Record<string, unknown>) => BasemapInstance,
-        PopupClass: new (options: Record<string, unknown>) => BasemapPopup,
+        PopupClass: (new (options: Record<string, unknown>) => BasemapPopup) | undefined,
         basemap: BasemapOptions
     ): void {
         const mapOptions: Record<string, unknown> = {
@@ -2277,7 +2278,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
         this._basemap = new MapClass(mapOptions)
         this._basemapCtor = MapClass
-        this._popupCtor = PopupClass
+        this._popupCtor = PopupClass ?? null
         this._basemapOptions = basemap
         this._basemapStyle = basemap.style
         this._isOverlayMode = true
