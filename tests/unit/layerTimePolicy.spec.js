@@ -20,9 +20,14 @@ describe('layer time policy', () => {
             expect(parseISODuration(value)).toMatchObject(expected)
         })
 
-        test.each([['garbage'], ['P'], ['1D'], ['']])('rejects %s', (value) => {
-            expect(parseISODuration(value)).toBeNull()
-        })
+        // 'P0D' is well-formed and length zero: nothing to offset by, and no
+        // period it could ever contain.
+        test.each([['garbage'], ['P'], ['1D'], [''], ['P0D'], ['P0DT0H']])(
+            'rejects %s',
+            (value) => {
+                expect(parseISODuration(value)).toBeNull()
+            },
+        )
     })
 
     describe('resolveTimePolicy', () => {

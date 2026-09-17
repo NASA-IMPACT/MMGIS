@@ -25,7 +25,7 @@ const DURATION_RE =
 
 const POLICY_RE = /^now(?:\s*([+-])\s*(\S+))?$/
 
-interface Duration {
+export interface Duration {
     years: number
     months: number
     weeks: number
@@ -39,9 +39,7 @@ export function parseISODuration(value: string): Duration | null {
     const m = DURATION_RE.exec(value)
     if (!m || value === 'P' || value.endsWith('T')) return null
     const [, years, months, weeks, days, hours, minutes, seconds] = m
-    if (![years, months, weeks, days, hours, minutes, seconds].some((v) => v))
-        return null
-    return {
+    const duration = {
         years: Number(years || 0),
         months: Number(months || 0),
         weeks: Number(weeks || 0),
@@ -50,13 +48,17 @@ export function parseISODuration(value: string): Duration | null {
         minutes: Number(minutes || 0),
         seconds: Number(seconds || 0),
     }
+    // A zero-length duration ("P0D") is no duration at all: nothing to offset
+    // by, and no period it could ever contain.
+    const total = Object.values(duration).reduce((sum, part) => sum + part, 0)
+    return total > 0 ? duration : null
 }
 
 // Months and years are not fixed millisecond amounts — apply them with UTC
 // date-component math, never ms arithmetic. Applying `factor × d` in one
 // pass keeps a month cadence anchored to the start's day-of-month instead
 // of drifting through short months.
-function addDuration(date: Date, d: Duration, factor: number): Date {
+export function addDuration(date: Date, d: Duration, factor: number): Date {
     const out = new Date(date)
     out.setUTCFullYear(out.getUTCFullYear() + factor * d.years)
     out.setUTCMonth(out.getUTCMonth() + factor * d.months)
