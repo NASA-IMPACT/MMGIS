@@ -449,7 +449,7 @@ const applied = await window.mmgisAPI.request('layers:setOrder', {
 | `time:getCurrent` | none | `string` | Get current time |
 | `time:getStart` | none | `string` | Get start time |
 | `time:getEnd` | none | `string` | Get end time |
-| `time:getCurrentFormatted` | none | `string` | Current time rendered through the mission's `time.format` (d3 specifiers when it contains a `%`, otherwise moment tokens); `null` until time is enabled and seeded |
+| `time:getCurrentFormatted` | none | `string` | Current time rendered through the mission's `time.format` (d3 when it contains a specifier such as `%Y`, otherwise moment tokens); `null` until time is enabled and seeded |
 | `time:formatTime` | `string \| number` | `string` | A caller-supplied time rendered through that same mission format; `null` for a missing or unparseable time |
 | `time:set` | `{ startTime, endTime, currentTime, ... }` | `boolean` | Set time range |
 

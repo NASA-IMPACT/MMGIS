@@ -567,12 +567,12 @@ export const mmgisGetTimeCurrent = (): Promise<string | null> => {
 
 /**
  * The current time already rendered through the mission's configured time
- * format (`L_.configData.time.format`), so a header displaying it matches
- * what TimeControl's own UI shows rather than a raw ISO string. Null when
- * time is disabled, not yet seeded, or against a core that predates the
- * handler — callers fall back to their own raw time string in that case.
+ * format (`L_.configData.time.format`), so a header displaying it prints the
+ * mission's way rather than a raw ISO string. Null when time is disabled, not
+ * yet seeded, or against a core that predates the handler — callers fall back
+ * to their own raw time string in that case.
  */
-export const mmgisGetCurrentTimeFormatted = (): Promise<string | null> => {
+export const mmgisGetTimeCurrentFormatted = (): Promise<string | null> => {
     return mmgisRequestIfProvided<string>('time:getCurrentFormatted')
 }
 
