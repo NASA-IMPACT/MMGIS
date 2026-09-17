@@ -219,6 +219,54 @@ describe('getExportLegendModel', () => {
             ])
         })
 
+        // The overlap reads an unreadable bound as unbounded, which would make
+        // the request itself look like a collection range.
+        test('coverage that will not parse is no coverage at all', async () => {
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                garbled: { start: 'not-a-date', end: 'nope' },
+            })
+            const rows = await rowsFor({ garbled: timeEnabled() })
+            expect(rows[0].dateLine).toBe('Requested 2015-03-13 → 2026-08-25')
+        })
+
+        // The server had nothing inside the span to draw, so the app cannot
+        // say what, if anything, of the layer is on screen.
+        test('a request that never meets the coverage prints what was asked for', async () => {
+            vi.mocked(mmgisGetTimeStart).mockResolvedValue(
+                '2010-01-01T00:00:00Z',
+            )
+            vi.mocked(mmgisGetTimeCurrent).mockResolvedValue(
+                '2014-01-01T00:00:00Z',
+            )
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                later: {
+                    start: '2015-01-01T00:00:00Z',
+                    end: '2016-01-01T00:00:00Z',
+                },
+            })
+            const rows = await rowsFor({ later: timeEnabled() })
+            expect(rows[0].dateLine).toBe('Requested 2010-01-01 → 2014-01-01')
+        })
+
+        // A 'local' layer carries its own window, but only once the dashboard
+        // has stamped one on it; until then the global one is what its
+        // features are filtered against.
+        test('a local layer with no window of its own follows the global cursor', async () => {
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                vectors: {
+                    start: '2015-01-01T00:00:00Z',
+                    end: '2016-12-31T00:00:00Z',
+                },
+            })
+            const rows = await rowsFor({
+                vectors: {
+                    url: 'vectors.geojson',
+                    time: { enabled: true, type: 'local', interval: 'P1Y' },
+                },
+            })
+            expect(rows[0].dateLine).toBe('Collected 2015 → 2016')
+        })
+
         // A layer that ignores the time cursor prints the extent it holds, and
         // an extent open at one end reads as open rather than as a range.
         test('an untimed layer shows its authored extent, open ends and all', async () => {

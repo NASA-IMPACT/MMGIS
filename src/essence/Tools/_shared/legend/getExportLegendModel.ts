@@ -11,6 +11,7 @@ import {
     type RequestSpan,
 } from './coverageOverlap'
 import { formatAtPrecision, formatPeriodEnd } from './datePrecision'
+import { parseInstant } from './isoInstant'
 import {
     parseISODuration,
     type Duration,
@@ -183,9 +184,13 @@ const cursorDateLine = (
         start: isOpenEndedStart(windowStart) ? null : windowStart,
         end: cursor,
     }
+    // A bound that will not parse is no coverage at all. The overlap reads an
+    // unreadable bound as unbounded, which is right for narrowing a range and
+    // wrong for deciding there is one: without this, an extent of two bad
+    // strings would print the request itself as `Collected`.
     const coverage: Coverage = {
-        start: extent?.start ?? null,
-        end: extent?.end ?? null,
+        start: parseInstant(extent?.start)?.text ?? null,
+        end: parseInstant(extent?.end)?.text ?? null,
     }
     if (coverage.start !== null || coverage.end !== null) {
         const collected = collectedDateLine(
@@ -240,11 +245,16 @@ const dateLineFor = (
             return extentDateLine(extent, precision)
         }
         // A 'local' layer keeps its own window and is not restamped when the
-        // time cursor moves; everything else follows the global cursor.
+        // time cursor moves; everything else follows the global cursor. A
+        // local layer the dashboard has not stamped yet has no window of its
+        // own to read, and the global one is what its features are filtered
+        // against until it does.
+        const local: TimeCursor = {
+            cursor: time.end ?? null,
+            windowStart: time.start ?? null,
+        }
         const cursor: TimeCursor =
-            time.type === 'local'
-                ? { cursor: time.end ?? null, windowStart: time.start ?? null }
-                : globalCursor
+            time.type === 'local' && local.cursor ? local : globalCursor
         return cursorDateLine(interval, cursor, extent, precision)
     } catch (err) {
         console.warn('[export legend] could not build a layer date line', err)
