@@ -66,6 +66,7 @@ vi.mock('maplibre-gl', async (importOriginal) => {
             this.lngLat = null
             this.content = null
             this.map = null
+            this.adds = 0
             this.removes = 0
             this._closeHandlers = []
             constructed.popup.push(this)
@@ -79,6 +80,7 @@ vi.mock('maplibre-gl', async (importOriginal) => {
             return this
         }
         addTo(map) {
+            this.adds++
             this.map = map
             map._popup = this
             return this
@@ -1489,14 +1491,64 @@ test.describe('DeckGLAdapter', () => {
 
         const makeCard = () => document.createElement('div')
 
-        test('opens a popup on the basemap holding the element, className its only option', () => {
+        /**
+         * Put the draw-end click guard into the hold it takes after a
+         * drawing's last gesture, when the click that ended the drawing is
+         * still to come.
+         */
+        function holdDrawEndClick(adapter) {
+            const element = document.createElement('div')
+            document.body.appendChild(element)
+            adapter._drawEndClick.arm(stamped('pointerup', 1000), element)
+        }
+
+        test('an open asked for while the draw-end click is still coming waits for it', () => {
+            vi.useFakeTimers()
+            try {
+                const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
+                holdDrawEndClick(adapter)
+
+                adapter.showPopup({ lat: 40, lng: -120 }, makeCard())
+                expect(constructed.popup[0].adds).toBe(0)
+
+                vi.runAllTimers()
+
+                expect(constructed.popup[0].adds).toBe(1)
+                expect(constructed.popup[0].map).toBe(adapter.getBasemap())
+            } finally {
+                vi.useRealTimers()
+            }
+        })
+
+        test('hiding while an open is waiting cancels it', () => {
+            vi.useFakeTimers()
+            try {
+                const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
+                const onClose = vi.fn()
+                holdDrawEndClick(adapter)
+
+                adapter.showPopup({ lat: 40, lng: -120 }, makeCard(), onClose)
+                adapter.hidePopup()
+                vi.runAllTimers()
+
+                expect(constructed.popup[0].adds).toBe(0)
+                expect(onClose).not.toHaveBeenCalled()
+            } finally {
+                vi.useRealTimers()
+            }
+        })
+
+        test('opens a popup on the basemap holding the element, className and maxWidth its only options', () => {
             const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
             const card = makeCard()
 
             adapter.showPopup({ lat: 40, lng: -120 }, card)
 
             const popup = constructed.popup[0]
-            expect(popup.options).toEqual({ className: 'mmgis-map-popup' })
+            expect(popup.options).toEqual({
+                className: 'mmgis-map-popup',
+                maxWidth: 'none',
+            })
             expect(popup.lngLat).toEqual([-120, 40])
             expect(popup.content).toBe(card)
             expect(popup.map).toBe(adapter.getBasemap())

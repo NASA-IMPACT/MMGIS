@@ -1567,6 +1567,7 @@ test.describe('LeafletAdapter - popups', () => {
                 latlng: null,
                 content: null,
                 openedOn: null,
+                opens: 0,
                 setLatLng(latlng) { popup.latlng = latlng; return popup },
                 setContent(element) { popup.content = element; return popup },
                 on(name, handler) {
@@ -1574,7 +1575,12 @@ test.describe('LeafletAdapter - popups', () => {
                     return popup
                 },
                 fireRemove() { removeHandlers.forEach((handler) => handler()) },
-                openOn(map) { popup.openedOn = map; map.openPopup(popup); return popup },
+                openOn(map) {
+                    popup.opens++
+                    popup.openedOn = map
+                    map.openPopup(popup)
+                    return popup
+                },
             }
             built.push(popup)
             return popup
@@ -1599,6 +1605,54 @@ test.describe('LeafletAdapter - popups', () => {
     }
 
     const makeCard = () => domDocument.createElement('div')
+
+    /**
+     * Put the draw-end click guard into the hold it takes after a drawing's
+     * last gesture, when the click that ended the drawing is still to come.
+     */
+    function holdDrawEndClick(adapter) {
+        const element = domDocument.createElement('div')
+        domDocument.body.appendChild(element)
+        const pointer = new Event('pointerup')
+        Object.defineProperty(pointer, 'timeStamp', { value: 1000 })
+        adapter._drawEndClick.arm(pointer, element)
+    }
+
+    test('an open asked for while the draw-end click is still coming waits for it', () => {
+        vi.useFakeTimers()
+        try {
+            const { adapter, mockMap, built } = setupPopups()
+            holdDrawEndClick(adapter)
+
+            adapter.showPopup({ lat: 40, lng: -120 }, makeCard())
+            expect(built[0].openedOn).toBeNull()
+
+            vi.runAllTimers()
+
+            expect(built[0].openedOn).toBe(mockMap)
+            expect(built[0].opens).toBe(1)
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    test('hiding while an open is waiting cancels it', () => {
+        vi.useFakeTimers()
+        try {
+            const { adapter, built } = setupPopups()
+            const onClose = vi.fn()
+            holdDrawEndClick(adapter)
+
+            adapter.showPopup({ lat: 40, lng: -120 }, makeCard(), onClose)
+            adapter.hidePopup()
+            vi.runAllTimers()
+
+            expect(built[0].opens).toBe(0)
+            expect(onClose).not.toHaveBeenCalled()
+        } finally {
+            vi.useRealTimers()
+        }
+    })
 
     test('opens a popup on the map holding the element, className its only option', () => {
         const { adapter, mockMap, built } = setupPopups()
