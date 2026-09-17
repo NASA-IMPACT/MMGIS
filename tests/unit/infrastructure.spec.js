@@ -639,6 +639,29 @@ test.describe('infrastructure/ recipes (JSON and Terraform)', () => {
     })
 })
 
+// A viewer-request event as the runtime delivers one, shared by the gated
+// and ungated Function suites.
+function makeRequestEvent(uri, opts) {
+    opts = opts || {}
+    const headers = {}
+    // opts.auth == null means "omit the header entirely"; any other value
+    // (including '') is sent verbatim so empty-string headers can be
+    // exercised directly.
+    if (opts.auth != null) headers.authorization = { value: opts.auth }
+    if (opts.prefix != null) headers['x-forwarded-prefix'] = { value: opts.prefix }
+    // opts.headers is a lowercase name -> value map, as the runtime delivers them.
+    for (const name of Object.keys(opts.headers || {}))
+        headers[name] = { value: opts.headers[name] }
+    return {
+        request: {
+            method: 'GET',
+            uri,
+            querystring: opts.querystring || {},
+            headers,
+        },
+    }
+}
+
 test.describe('dashboard CloudFront Function behavior', () => {
     const {
         renderAuthFunctionCode,
@@ -650,31 +673,21 @@ test.describe('dashboard CloudFront Function behavior', () => {
         'Basic ' +
         Buffer.from(`${BASIC_AUTH_USER}:pw-for-tests`).toString('base64')
 
+    // Every request in this suite is authenticated unless it says otherwise:
+    // opts.auth undefined means "use the valid default", null means "omit the
+    // header entirely", and anything else (including '') is sent verbatim.
     function makeEvent(uri, opts) {
         opts = opts || {}
-        const headers = {}
-        // opts.auth === null means "omit the header entirely"; undefined
-        // means "use the valid default"; any other value (including '') is
-        // sent verbatim so empty-string headers can be exercised directly.
-        if (opts.auth !== null)
-            headers.authorization = {
-                value: opts.auth != null ? opts.auth : AUTH,
-            }
-        if (opts.prefix != null) headers['x-forwarded-prefix'] = { value: opts.prefix }
-        return {
-            request: {
-                method: 'GET',
-                uri,
-                querystring: opts.querystring || {},
-                headers,
-            },
-        }
+        return makeRequestEvent(uri, {
+            ...opts,
+            auth: opts.auth === undefined ? AUTH : opts.auth,
+        })
     }
 
     test('the rendered function stays under the cloudfront-js-1.0 10KB limit', () => {
         // cloudfront-js-1.0 caps a viewer-request function's code at 10 KB;
         // exceeding it fails the CreateFunction call at deploy time, not here.
-        expect(code.length).toBeLessThan(10240)
+        expect(Buffer.byteLength(code, 'utf8')).toBeLessThan(10240)
     })
 
     test('with no declared prefix, requests pass through unchanged', () => {
@@ -930,6 +943,71 @@ test.describe('dashboard CloudFront Function behavior', () => {
         expect(handler(makeEvent('/x', { auth: '' })).statusCode).toBe(401)
     })
 
+    // A framework prefetch is a request the visitor never made, fired from
+    // some other page of the fronting site. Challenging it pops the
+    // browser's password dialog over that page, so it is turned away with
+    // no challenge at all; the full navigation that follows is challenged.
+    test('an unauthenticated prefetch is refused without a challenge', () => {
+        for (const name of [
+            'next-router-prefetch',
+            'rsc',
+            'sec-purpose',
+            'purpose',
+        ]) {
+            const result = handler(
+                makeEvent('/d/v/', {
+                    prefix: '/d/v',
+                    auth: null,
+                    headers: { [name]: '1' },
+                })
+            )
+            expect(result.statusCode, `${name} is answered 403`).toBe(403)
+            expect(result.statusDescription).toBe('Forbidden')
+            expect(
+                result.headers['www-authenticate'],
+                `${name} carries no challenge`
+            ).toBeUndefined()
+            expect(result.headers['cache-control'].value).toBe('no-store')
+        }
+    })
+
+    // The branch is reached for a wrong credential as well as a missing one,
+    // and it has to be: a returning visitor holding a stale password must not
+    // get the dialog on a prefetch either.
+    test('a prefetch carrying a wrong password is refused the same way', () => {
+        const result = handler(
+            makeEvent('/d/v/', {
+                prefix: '/d/v',
+                auth: 'Basic nope',
+                headers: { 'next-router-prefetch': '1' },
+            })
+        )
+        expect(result.statusCode).toBe(403)
+        expect(result.statusDescription).toBe('Forbidden')
+        expect(result.headers['www-authenticate']).toBeUndefined()
+    })
+
+    test('an unauthenticated ordinary request still gets the challenge', () => {
+        const result = handler(
+            makeEvent('/d/v/', { prefix: '/d/v', auth: null })
+        )
+        expect(result.statusCode).toBe(401)
+        expect(result.headers['www-authenticate'].value).toBe(
+            'Basic realm="MMGIS Dashboard"'
+        )
+    })
+
+    test('an authenticated prefetch is served like any other request', () => {
+        const result = handler(
+            makeEvent('/d/v/build/x.js', {
+                prefix: '/d/v',
+                headers: { 'next-router-prefetch': '1', rsc: '1' },
+            })
+        )
+        expect(result.statusCode).toBeUndefined()
+        expect(result.uri).toBe('/build/x.js')
+    })
+
     test('generated function body is ES5 only', () => {
         // A real parse rather than a keyword-blocklist regex: it also
         // catches ES6+ shapes a regex would miss (classes, for-of/for-const,
@@ -962,16 +1040,6 @@ test.describe('dashboard CloudFront Function with the gate baked off', () => {
     const code = renderAuthFunctionCode(null, false)
     const handler = new Function(`${code}; return handler;`)()
 
-    const makeEvent = (uri, prefix) => ({
-        request: {
-            method: 'GET',
-            uri,
-            querystring: {},
-            headers:
-                prefix != null ? { 'x-forwarded-prefix': { value: prefix } } : {},
-        },
-    })
-
     // The 401 branch still ships — baked off, it is dead code — so the thing
     // worth asserting is that no credential ships with it.
     test('carries the gate baked off and no credential', () => {
@@ -981,17 +1049,29 @@ test.describe('dashboard CloudFront Function with the gate baked off', () => {
     })
 
     test('an unauthenticated request is served, not challenged', () => {
-        const result = handler(makeEvent('/build/x.js'))
+        const result = handler(makeRequestEvent('/build/x.js', {}))
+        expect(result.statusCode).toBeUndefined()
+        expect(result.uri).toBe('/build/x.js')
+    })
+
+    // The prefetch refusal lives inside the gate, so baking the gate off
+    // takes it with everything else: a prefetch is just a request here.
+    test('a prefetch is served, not refused', () => {
+        const result = handler(makeRequestEvent('/build/x.js', {
+            headers: { 'next-router-prefetch': '1', rsc: '1' },
+        }))
         expect(result.statusCode).toBeUndefined()
         expect(result.uri).toBe('/build/x.js')
     })
 
     test('prefix handling is unaffected', () => {
-        expect(handler(makeEvent('/d/v/build/x.js', '/d/v')).uri).toBe(
-            '/build/x.js'
-        )
-        expect(handler(makeEvent('/d/v/', '/d/v')).uri).toBe('/index.html')
-        const redirect = handler(makeEvent('/d/v', '/d/v'))
+        expect(
+            handler(makeRequestEvent('/d/v/build/x.js', { prefix: '/d/v' })).uri
+        ).toBe('/build/x.js')
+        expect(
+            handler(makeRequestEvent('/d/v/', { prefix: '/d/v' })).uri
+        ).toBe('/index.html')
+        const redirect = handler(makeRequestEvent('/d/v', { prefix: '/d/v' }))
         expect(redirect.statusCode).toBe(302)
         expect(redirect.headers.location.value).toBe('/d/v/')
     })
