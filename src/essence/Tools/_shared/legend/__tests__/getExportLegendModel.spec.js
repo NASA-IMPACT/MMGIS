@@ -164,12 +164,13 @@ describe('getExportLegendModel', () => {
         })
 
         // The cursor's period is inside the layer's coverage, so the data on
-        // screen was collected in it — and where the coverage stops partway
-        // through that period, the printed range stops there too rather than
-        // naming days the layer has nothing for.
-        test('a period holding the cursor is narrowed, then clipped to the coverage', async () => {
+        // screen was collected in it, and the whole period is what prints.
+        // Core floors a periodic extent's end to the last step's start, so
+        // the weekly layer's end — a Wednesday — is where its last week
+        // begins, not where its data stops.
+        test('a period holding the cursor is the range that prints', async () => {
             vi.mocked(mmgisGetTimeCurrent).mockResolvedValue(
-                '2025-01-10T00:00:00Z',
+                '2025-05-30T00:00:00Z',
             )
             vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
                 monthly: {
@@ -178,7 +179,7 @@ describe('getExportLegendModel', () => {
                 },
                 weekly: {
                     start: '2025-01-01T00:00:00Z',
-                    end: '2025-01-09T23:59:59Z',
+                    end: '2025-05-28T00:00:00Z',
                 },
             })
             const rows = await rowsFor({
@@ -186,8 +187,8 @@ describe('getExportLegendModel', () => {
                 weekly: timeEnabled('P7D'),
             })
             expect(rows.map((row) => row.dateLine)).toEqual([
-                'Collected 2025-01',
-                'Collected 2025-01-08 → 2025-01-09',
+                'Collected 2025-05',
+                'Collected 2025-05-28 → 2025-06-03',
             ])
         })
 

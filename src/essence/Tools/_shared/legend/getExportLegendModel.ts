@@ -6,7 +6,6 @@ import { layerPeriodFor } from './layerPeriod'
 import {
     coverageOverlap,
     hasDataIn,
-    clipPeriodToCoverage,
     type Coverage,
     type RequestSpan,
 } from './coverageOverlap'
@@ -145,14 +144,13 @@ const collectedDateLine = (
     if (!overlap) return null
     const period = layerPeriodFor(interval, request.end, coverage.start)
     if (period && hasDataIn(coverage, period)) {
-        const clipped = clipPeriodToCoverage(period, coverage)
-        const start = formatAtPrecision(precision, clipped.start)
+        const start = formatAtPrecision(precision, period.start)
         // A period ends where the next one starts, so what prints is the last
-        // unit it covers; a coverage end inside the period is an instant the
-        // data reaches, and prints as it is.
-        const end = clipped.endIsPeriodEnd
-            ? formatPeriodEnd(precision, clipped.end)
-            : formatAtPrecision(precision, clipped.end)
+        // unit it covers. The period is printed whole: core floors a periodic
+        // layer's extent end to the last step's start, so a coverage end
+        // inside this period says the period is the last one the layer holds,
+        // not that its data stops partway through.
+        const end = formatPeriodEnd(precision, period.end)
         if (start && end) return spanLine('Collected', start, end)
     }
     // An overlap's ends are instants the layer's data reaches, so they print

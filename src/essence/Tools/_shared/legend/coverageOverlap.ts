@@ -75,38 +75,3 @@ export const hasDataIn = (
     if (coverageStart !== null && end.ms <= coverageStart.ms) return false
     return true
 }
-
-/**
- * `period` narrowed to the part of it the coverage fills. A period is a shape
- * the cadence imposes, not a promise of data: the layer's coverage can begin
- * partway into it or stop partway through, and printing the raw period would
- * then name days the layer has nothing for. Either end that the coverage does
- * not reach is replaced by the coverage's own bound. The requested window is
- * deliberately not clipped to: a monthly composite is the whole month even
- * when the window opened mid-month.
- *
- * `endIsPeriodEnd` says which the end came from, because the two print
- * differently — a period's end is the next period's start and prints
- * inclusively, while a coverage end is an instant the data reaches and prints
- * as it is.
- */
-export const clipPeriodToCoverage = (
-    period: { start: string; end: string },
-    coverage: Coverage,
-): { start: string; end: string; endIsPeriodEnd: boolean } => {
-    const periodStart = parseInstant(period.start)
-    const coverageStart = parseInstant(coverage.start)
-    const start =
-        periodStart !== null &&
-        coverageStart !== null &&
-        coverageStart.ms > periodStart.ms
-            ? coverageStart.text
-            : period.start
-    const periodEnd = parseInstant(period.end)
-    const coverageEnd = parseInstant(coverage.end)
-    return periodEnd !== null &&
-        coverageEnd !== null &&
-        coverageEnd.ms < periodEnd.ms
-        ? { start, end: coverageEnd.text, endIsPeriodEnd: false }
-        : { start, end: period.end, endIsPeriodEnd: true }
-}

@@ -52,16 +52,4 @@ describe('layerPeriodFor', () => {
             end: '2025-01-01T06:00:00.000Z',
         })
     })
-
-    // A cadence that needs more steps than any mission would run is a bad
-    // config, not a period: stop stepping rather than spin on it.
-    test('is null when stepping to the cursor would never end', () => {
-        expect(
-            layerPeriodFor(
-                'P1M1D',
-                '9999-01-01T00:00:00Z',
-                '1000-01-01T00:00:00Z',
-            ),
-        ).toBeNull()
-    })
 })

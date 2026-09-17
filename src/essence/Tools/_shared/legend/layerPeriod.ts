@@ -13,6 +13,7 @@ import {
     addDuration,
     type Duration,
 } from '../../../Basics/TimeControl_/layerTimePolicy'
+import { parseInstant } from './isoInstant'
 
 /**
  * A period, as ISO instants. `end` is the next period's start — the period
@@ -26,12 +27,6 @@ export type LayerPeriod = { start: string; end: string }
 const MAX_STEPS = 10000
 
 const DAY_MS = 86_400_000
-
-const toMs = (time: string | null | undefined): number | null => {
-    if (typeof time !== 'string' || time.trim() === '') return null
-    const ms = Date.parse(time)
-    return Number.isNaN(ms) ? null : ms
-}
 
 const span = (start: number, end: number): LayerPeriod => ({
     start: new Date(start).toISOString(),
@@ -107,13 +102,13 @@ export const layerPeriodFor = (
     // claim a coverage the layer never had.
     const length = fixedLengthMs(duration)
     if (length !== null && length < 3_600_000) return null
-    const cursorMs = toMs(cursor)
+    const cursorMs = parseInstant(cursor)?.ms ?? null
     if (cursorMs === null) return null
 
     const calendar = calendarPeriod(duration, cursorMs)
     if (calendar) return calendar
 
-    const anchorMs = toMs(anchor)
+    const anchorMs = parseInstant(anchor)?.ms ?? null
     if (anchorMs === null || cursorMs < anchorMs) return null
 
     if (length !== null) {
