@@ -6,8 +6,8 @@ Terraform for running MMGIS in the **lean** deployment shape
 (`MMGIS_DEPLOYMENT_MODE=lean`) on AWS: the admin app as a long-running ECS
 Express Mode service, a short-lived ECS task that publishes a mission as a
 standalone static dashboard, the least-privilege IAM for both, the CloudFront
-distribution in front of the admin, the password-gate CloudFront Function
-reference, and the shared S3 asset bucket.
+distribution in front of the admin, the dashboard viewer-request CloudFront
+Function reference, and the shared S3 asset bucket.
 
 Standing up or changing an environment is `terraform plan` → review → `apply` —
 never a runbook of CLI commands. One reusable module describes a complete
@@ -36,7 +36,7 @@ infrastructure/
 ├── ecs/*.json                         # recipe source (provenance; see below)
 ├── iam/*.json                         # recipe source (provenance)
 ├── cloudfront-admin.json              # recipe source (provenance)
-├── cloudfront-function.js             # source of the password-gate Function
+├── cloudfront-function.js             # source of the dashboard viewer-request Function
 └── s3-asset-bucket.json               # recipe source (provenance)
 ```
 
@@ -198,6 +198,12 @@ word passphrase and stores it:
 | `mmgis/<env>/superadmin-username` | 3 words |
 | `mmgis/<env>/superadmin-password` | 6 words (~78 bits) |
 | `mmgis/<env>/dashboards-password` | 6 words (~78 bits) |
+
+Every environment gets a `dashboards-password` shell, but only an environment
+with `dashboards_require_auth = true` injects it on the publish task and gates
+its dashboards behind it. Production runs `false`, so its shell is generated
+and then unused — which is what makes re-enabling the gate a one-line
+Terraform change rather than a secret bootstrap.
 
 A shell that already carries a value is **never overwritten**, whoever set it,
 so a steady-state run generates nothing and leaves no new secret versions

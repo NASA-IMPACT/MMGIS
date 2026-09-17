@@ -22,7 +22,8 @@
         { "name": "DB_SSL", "value": "true" },
         { "name": "DB_SSL_CERT_BASE64", "value": "<RDS_REGIONAL_CA_BUNDLE_BASE64>" },
         { "name": "AWS_REGION", "value": "<REGION>" },
-        { "name": "MMGIS_SHARED_ASSET_BUCKET", "value": "<ASSET_BUCKET_NAME>" }
+        { "name": "MMGIS_SHARED_ASSET_BUCKET", "value": "<ASSET_BUCKET_NAME>" },
+        { "name": "MMGIS_DASHBOARDS_REQUIRE_AUTH", "value": "true" }
       ],
       "secrets": [
         { "name": "DB_HOST", "valueFrom": "<DB_SECRET_ARN>:DB_HOST::" },

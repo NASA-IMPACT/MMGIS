@@ -30,6 +30,7 @@ const setupMock = ({
     provideCapability = true,
     titilerUrls,
     coverage,
+    order,
 }) => {
     const responses = {
         'layers:getAllConfigs': CONFIGS,
@@ -39,6 +40,7 @@ const setupMock = ({
     if (provideCapability) responses['layers:getCogCapabilities'] = capabilities
     if (titilerUrls) responses['layers:getTiTilerUrl'] = titilerUrls
     if (coverage) responses['layers:getDataCoverage'] = coverage
+    if (order) responses['layers:getOrder'] = order
 
     global.window = global.window || {}
     global.window.mmgisAPI = {
@@ -169,5 +171,24 @@ describe('getVisibleLayersWithLegends', () => {
 
         expect(byId(layers, DISPLACEMENT).outOfDataRange).toBe(true)
         expect(byId(layers, BASEMAP).outOfDataRange).toBe(false)
+    })
+
+    // The list reads top down as the map stacks. The config lists
+    // Displacement first; the draw order below puts the basemap on top.
+    test('lists layers in the draw order core gives', async () => {
+        setupMock({
+            capabilities: {},
+            order: [BASEMAP, DISPLACEMENT],
+        })
+        const layers = await getVisibleLayersWithLegends()
+
+        expect(layers.map((l) => l.id)).toEqual([BASEMAP, DISPLACEMENT])
+    })
+
+    test('keeps config order against a core without an order to give', async () => {
+        setupMock({ capabilities: {} })
+        const layers = await getVisibleLayersWithLegends()
+
+        expect(layers.map((l) => l.id)).toEqual([DISPLACEMENT, BASEMAP])
     })
 })

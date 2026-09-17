@@ -3,10 +3,12 @@ import {
     mmgisGetCogCapabilities,
     mmgisGetDataCoverage,
     mmgisGetListedLayers,
+    mmgisGetLayerOrder,
     mmgisGetTiTilerUrls,
     type CogCapabilities,
 } from '../../_shared/adapters/mmgisAPI'
 import { buildLayerLegendData } from './buildLayerLegendData'
+import { sortByOrder } from '../lib/utils/layerOrder'
 import type { Layer } from '../lib/types'
 
 export type FetchOptions = { showOnlyVisible?: boolean }
@@ -20,7 +22,7 @@ export const getVisibleLayersWithLegends = async ({
     // Coverage is read with the rest, so a layer core is already holding back
     // for lack of data is flagged on the first render rather than at the next
     // change core announces.
-    const [visibleLayers, opacities, listed, cogCapabilities, titilerUrls, coverage] =
+    const [visibleLayers, opacities, listed, cogCapabilities, titilerUrls, coverage, order] =
         await Promise.all([
             mmgisRequest<Record<string, boolean>>('layers:getVisible'),
             mmgisRequest<Record<string, number>>('layers:getAllOpacities'),
@@ -28,6 +30,7 @@ export const getVisibleLayersWithLegends = async ({
             mmgisGetCogCapabilities(),
             mmgisGetTiTilerUrls(),
             mmgisGetDataCoverage(),
+            mmgisGetLayerOrder(),
         ])
 
     const result: Layer[] = []
@@ -50,5 +53,6 @@ export const getVisibleLayersWithLegends = async ({
             outOfDataRange: coverage?.[layerName]?.outOfDataRange === true,
         })
     }
-    return result
+    // Top first as the map draws; config order against a core with no order.
+    return sortByOrder(result, order)
 }

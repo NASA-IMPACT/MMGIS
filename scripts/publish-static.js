@@ -12,12 +12,17 @@
  *                       it, or an earlier "update" may still be converging
  *                       it); "update" converges an existing stack's
  *                       infrastructure to the current template via
- *                       UpdateStack — including re-baking the current
- *                       dashboards password into the auth Function — then
- *                       re-bakes + re-uploads the bundle (same URL).
+ *                       UpdateStack — including re-rendering the auth
+ *                       Function under the environment's current gate
+ *                       setting — then re-bakes + re-uploads the bundle
+ *                       (same URL).
+ *   MMGIS_DASHBOARDS_REQUIRE_AUTH - the exact string "false" publishes
+ *                       dashboards with no password gate; any other value,
+ *                       including unset, gates them. Set per environment by
+ *                       Terraform's dashboards_require_auth.
  *
- * Flow: render the stack template and read the stack, so a bad password or
- * an unusable stack is answered before the long steps → read the mission
+ * Flow: render the stack template and read the stack, so a missing password
+ * or an unusable stack is answered before the long steps → read the mission
  * config from Postgres → apply bake guards → bake via bakeStaticConfig →
  * build themes + static webpack bundle (SERVER=static) →
  * CreateStack/UpdateStack + poll to the terminal status → same-key copy the
@@ -44,7 +49,11 @@ const Sequelize = require("sequelize");
 const rootDir = path.join(__dirname, "..");
 
 const provision = require("./lib/aws-provision");
-const { renderCfnTemplate, stackNameForDeployment } = require("./lib/cfn-template");
+const {
+  dashboardsAuthRequiredFromEnv,
+  renderCfnTemplate,
+  stackNameForDeployment,
+} = require("./lib/cfn-template");
 const { applyTimeBakeGuard } = require("./lib/bake-guards");
 
 const DEPLOYMENT_ID = process.env.MMGIS_DEPLOYMENT_ID || process.argv[2];
@@ -182,9 +191,19 @@ async function main() {
     //    and build: a missing password, a missing stack or a wedged one is a
     //    verdict this run can reach in seconds, and reaching it late costs the
     //    whole build for an answer that never depended on it.
-    const templateBody = renderCfnTemplate({
-      password: requireEnv("MMGIS_DASHBOARDS_PASSWORD"),
-    });
+    //    Whether the dashboard carries the shared-password gate is the
+    //    environment's call; dashboardsAuthRequiredFromEnv() decides which
+    //    way an unset or garbled variable falls.
+    const requireAuth = dashboardsAuthRequiredFromEnv(
+      process.env.MMGIS_DASHBOARDS_REQUIRE_AUTH
+    );
+    if (!requireAuth)
+      log("MMGIS_DASHBOARDS_REQUIRE_AUTH=false — publishing with no password.");
+    const templateBody = renderCfnTemplate(
+      requireAuth
+        ? { password: requireEnv("MMGIS_DASHBOARDS_PASSWORD") }
+        : { requireAuth: false }
+    );
     // Idempotent re-run: a previous attempt may have created the stack (or a
     // prior update converged it) — reuse it instead of dying on
     // CloudFormation's AlreadyExistsException.
@@ -246,7 +265,8 @@ async function main() {
     } else {
       log(
         `Converging stack '${stackName}' to the current template — this ` +
-          "re-bakes the current dashboards password into the auth Function."
+          "re-renders the auth Function under the environment's current gate " +
+          "setting."
       );
       // Converge OUR OWN template through provision's single retry loop: it
       // runs UpdateStack, waits out any concurrent operation (a double
@@ -269,8 +289,8 @@ async function main() {
     // 5. Same-key copy the mission's assets from the shared admin bucket
     //    so document-relative assets/<mission>/… references resolve
     //    against the dashboard's document base (the customer prefix,
-    //    when one is configured, included). Copied assets inherit the
-    //    dashboard's password gate as ordinary bundle content.
+    //    when one is configured, included). Copied assets are served by the
+    //    same viewer-request Function as the bundle, gate or no gate.
     const sharedBucket = process.env.MMGIS_SHARED_ASSET_BUCKET;
     if (sharedBucket != null && sharedBucket !== "") {
       // Uploads are keyed by the mission's FOLDER name (msv.missionFolderName,

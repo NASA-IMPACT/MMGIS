@@ -21,10 +21,13 @@ locals {
     aws_secretsmanager_secret.mapbox_token.arn,
   ]
 
-  publish_exec_secret_arns = [
-    aws_db_instance.this.master_user_secret[0].secret_arn,
-    aws_secretsmanager_secret.dashboards_password.arn,
-  ]
+  # Mirrors local.publish_secrets (ecs.tf): the execution role is granted the
+  # dashboards password only where the publish task injects it, so an ungated
+  # environment's role never holds a grant it cannot use.
+  publish_exec_secret_arns = concat(
+    [aws_db_instance.this.master_user_secret[0].secret_arn],
+    var.dashboards_require_auth ? [aws_secretsmanager_secret.dashboards_password.arn] : []
+  )
 
   ecs_tasks_assume_role = jsonencode({
     Version = "2012-10-17"

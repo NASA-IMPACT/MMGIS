@@ -176,6 +176,29 @@ $legend-content-indent: 28px;
         }
     }
 
+    /* Always shown, unlike the hover-only actions: it is how a row is picked
+       up, and a handle that appears on hover cannot be found. */
+    &__drag-handle {
+        /* Header height, so a row is no taller with a handle than without. */
+        width: 22px;
+        height: 22px;
+        padding: 3px;
+        color: var(--theme-color-base-light, #a9aeb1);
+        cursor: grab;
+        touch-action: none;
+
+        &:active {
+            cursor: grabbing;
+        }
+    }
+
+    /* The handle sits before the checkbox, so the content under the title
+       indents by its width and the header gap to stay aligned. */
+    &--draggable &__unit-label,
+    &--draggable &__content {
+        padding-left: calc(#{$legend-content-indent} + 22px + var(--theme-spacing-105, 0.75rem));
+    }
+
     /* Icons are the exported SVGs used as masks, tinted by the button's color.
        Masking (rather than <img>) is what lets them follow hover/active state. */
     &__icon {
@@ -214,6 +237,9 @@ $legend-content-indent: 28px;
         &--no-data {
             -webkit-mask-image: url('../../geo/icons/warning.svg');
             mask-image: url('../../geo/icons/warning.svg');
+        &--drag-handle {
+            -webkit-mask-image: url('../../geo/icons/drag-handle.svg');
+            mask-image: url('../../geo/icons/drag-handle.svg');
         }
     }
 

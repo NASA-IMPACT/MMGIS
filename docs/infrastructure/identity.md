@@ -39,7 +39,7 @@ sequenceDiagram
 | `mmgis-development-github-deploy` | Update the running app image only, dev | `repo:NASA-IMPACT/MMGIS:environment:development` |
 | `mmgis-production-github-deploy` | Update the running app image only, prod | `repo:NASA-IMPACT/MMGIS:environment:production` |
 
-The bootstrap root also creates the three state buckets, the two permissions boundaries (`mmgis-ci-role-boundary-<env>`, attached to every CI-created role), and the KMS key that encrypts the database admin password's secret.
+The bootstrap root also creates the three state buckets, the two permissions boundaries (`mmgis-ci-role-boundary-<env>`, attached to every CI-created role), the KMS key that encrypts the database admin password's secret, and the service-linked role CloudFront runs both environments' VPC origins under.
 
 ### OIDC subjects: environment vs pull_request
 
@@ -73,7 +73,7 @@ Least privilege is only honest if you say where it stops. Three patterns are in 
 | Pattern | Where and why |
 | --- | --- |
 | Name prefix `mmgis-<env>*` | ECR repositories, ECS clusters/services, log groups, IAM role names, RDS instances and subnet groups, asset buckets — everything AWS lets you name |
-| `Resource: "*"` + exact action allowlist | CloudFront distributions / VPC origins / origin access controls (AWS-generated ids), security groups (AWS-generated ids; the VPC id is an uncommitted input), `iam:CreateServiceLinkedRole` (scoped by the service name it may create a role for instead) and `logs:DescribeLogGroups` (a list call, authorized against no single log group), `ecs:RegisterTaskDefinition` / `ecs:DescribeTaskDefinition` / `ecs:DeregisterTaskDefinition` (no resource-level authorization), `ecr:GetAuthorizationToken`, and the `Describe*` read surface. The boundary backstops CI-created roles |
+| `Resource: "*"` + exact action allowlist | CloudFront distributions / VPC origins / origin access controls (AWS-generated ids), the `elasticloadbalancing:DescribeLoadBalancers` that creating a VPC origin authorizes against the caller (ELB describes take no resource scope), security groups (AWS-generated ids; the VPC id is an uncommitted input), `iam:CreateServiceLinkedRole` (scoped by the service name it may create a role for instead) and `logs:DescribeLogGroups` (a list call, authorized against no single log group), `ecs:RegisterTaskDefinition` / `ecs:DescribeTaskDefinition` / `ecs:DeregisterTaskDefinition` (no resource-level authorization), `ecr:GetAuthorizationToken`, and the `Describe*` read surface. The boundary backstops CI-created roles |
 | Path style `mmgis/<env>*` | Secrets Manager names and the state-object keys inside each environment's state bucket — a **different** convention from the `mmgis-<env>-*` resource prefix, which every policy must carry explicitly or the operations fail |
 
 Deliberate exceptions:

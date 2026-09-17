@@ -6,6 +6,7 @@ import { test, expect, beforeEach, afterEach, vi } from 'vitest'
 const {
     DEFAULT_STACK_NAME_PREFIX,
     BASIC_AUTH_USER,
+    dashboardsAuthRequiredFromEnv,
     stackNamePrefix,
     stackNameForDeployment,
     renderAuthFunctionCode,
@@ -13,6 +14,26 @@ const {
 } = require('../../scripts/lib/cfn-template')
 
 const PASSWORD = 'a-Distinctive-Passw0rd!'
+
+test.describe('dashboardsAuthRequiredFromEnv', () => {
+    test('only the exact string "false" ungates', () => {
+        expect(dashboardsAuthRequiredFromEnv('false')).toBe(false)
+        // Boolean false and null are in the list on purpose: the argument is
+        // a raw environment value, so anything that is not the string
+        // "false" — including the boolean — still gates.
+        for (const value of [
+            undefined,
+            null,
+            false,
+            '',
+            'False',
+            '0',
+            ' false',
+            'true',
+        ])
+            expect(dashboardsAuthRequiredFromEnv(value)).toBe(true)
+    })
+})
 
 test.describe('stackNameForDeployment', () => {
     // The default shape only holds when MMGIS_ENVIRONMENT is unset; stub it
@@ -89,6 +110,34 @@ test.describe('renderCfnTemplate', () => {
     test('throws without a password', () => {
         expect(() => renderCfnTemplate({})).toThrow(/password/)
         expect(() => renderCfnTemplate({ password: '' })).toThrow(/password/)
+        // Gating is the default, so an explicit true behaves like omitting it.
+        expect(() => renderCfnTemplate({ requireAuth: true })).toThrow(
+            /password/
+        )
+        // The Function renderer refuses on its own too, for a caller that
+        // reaches it directly.
+        expect(() => renderAuthFunctionCode()).toThrow(/password/)
+        expect(() => renderAuthFunctionCode('')).toThrow(/password/)
+    })
+
+    test('only requireAuth === false ungates; falsy look-alikes still gate', () => {
+        // A flag that arrives as null/0/"" is a caller bug, and the render
+        // must fail toward the gate rather than quietly shipping a dashboard
+        // with no password at all.
+        for (const requireAuth of [undefined, null, 0, '', NaN])
+            expect(() => renderCfnTemplate({ requireAuth })).toThrow(/password/)
+
+        // And with the password supplied, such a flag renders the GATED
+        // function — the throw above is the missing password talking, not a
+        // falsy flag quietly ungating.
+        const template = JSON.parse(
+            renderCfnTemplate({ password: PASSWORD, requireAuth: 0 })
+        )
+        expect(
+            template.Resources.DashboardAuthFunction.Properties.FunctionCode
+        ).toContain(
+            Buffer.from(`${BASIC_AUTH_USER}:${PASSWORD}`).toString('base64')
+        )
     })
 
     test('renders valid JSON with the expected resources', () => {
@@ -114,7 +163,7 @@ test.describe('renderCfnTemplate', () => {
         expect(template.Parameters).toBeUndefined()
     })
 
-    test('bakes the password into the Function code as a base64 constant', () => {
+    test('bakes the gate on and the password in as a base64 constant', () => {
         const body = renderCfnTemplate({ password: PASSWORD })
         const template = JSON.parse(body)
         const code =
@@ -122,16 +171,15 @@ test.describe('renderCfnTemplate', () => {
         const expected = Buffer.from(
             `${BASIC_AUTH_USER}:${PASSWORD}`
         ).toString('base64')
-        expect(code).toContain(`Basic ${expected}`)
+        expect(code).toContain('var REQUIRE_AUTH = true;')
+        expect(code).toContain(`var EXPECTED = 'Basic ${expected}';`)
         // The plaintext password never appears anywhere in the template
         expect(body).not.toContain(PASSWORD)
     })
 
-    // A CloudFront Function serves the LIVE stage, so a republish that only
-    // changes the baked password converges the stack while every request
-    // keeps meeting the old credentials. AutoPublish promotes the new code to
-    // LIVE as part of the update.
-    test('publishes the auth function to the live stage on every update', () => {
+    // A CloudFront Function serves its LIVE stage. Without AutoPublish the
+    // rendered code would sit in DEVELOPMENT and never reach a request.
+    test('sets AutoPublish on the Function', () => {
         const template = JSON.parse(renderCfnTemplate({ password: PASSWORD }))
         expect(
             template.Resources.DashboardAuthFunction.Properties.AutoPublish
@@ -192,5 +240,48 @@ test.describe('renderCfnTemplate', () => {
         expect(
             template.Resources.DashboardBucket.Properties
         ).not.toHaveProperty('BucketName')
+    })
+})
+
+// The shape an environment with dashboards_require_auth = false publishes.
+test.describe('renderCfnTemplate with requireAuth: false', () => {
+    // What the flag does to the shipped body: the gate condition is flipped
+    // to false and the credential is left empty, so the 401 branch is both
+    // unreachable and has nothing to match against. The source's own
+    // `= true` line must be gone, not merely joined by a second one.
+    test('the ungated function flips the gate off and carries no credential', () => {
+        const code = renderAuthFunctionCode(null, false)
+        expect(code).toContain('var REQUIRE_AUTH = false;')
+        expect(code).not.toContain('var REQUIRE_AUTH = true;')
+        expect(code).toContain("var EXPECTED = 'Basic ';")
+        expect(code).not.toContain('<BASE64_BASIC_CREDENTIALS>')
+    })
+
+    // The association is the thing an ungated dashboard could plausibly lose
+    // by accident, and losing it would break every prefix-served dashboard.
+    test('the Function is still associated on viewer-request', () => {
+        const template = JSON.parse(renderCfnTemplate({ requireAuth: false }))
+        const associations =
+            template.Resources.DashboardDistribution.Properties
+                .DistributionConfig.DefaultCacheBehavior.FunctionAssociations
+        expect(associations).toHaveLength(1)
+        expect(associations[0].EventType).toBe('viewer-request')
+        expect(associations[0].FunctionARN['Fn::GetAtt']).toEqual([
+            'DashboardAuthFunction',
+            'FunctionARN',
+        ])
+    })
+
+    // A password handed in alongside requireAuth: false must not leak into
+    // the template — the flag, not the caller's argument list, decides.
+    test('a password passed anyway is never baked in', () => {
+        const body = renderCfnTemplate({
+            password: PASSWORD,
+            requireAuth: false,
+        })
+        expect(body).not.toContain(PASSWORD)
+        expect(body).not.toContain(
+            Buffer.from(`${BASIC_AUTH_USER}:${PASSWORD}`).toString('base64')
+        )
     })
 })
