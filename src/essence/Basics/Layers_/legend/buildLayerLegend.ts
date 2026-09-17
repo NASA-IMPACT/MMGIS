@@ -8,6 +8,10 @@
 // settles the legends LayersTool derives and writes back into `_legend`: for a
 // raster they are a stale snapshot of the state read here, and for a velocity
 // layer — which paints no COG colormap — they are the only legend there is.
+//
+// What live state replaces is the ramp, never a set of classes. A classified
+// raster paints through a colormap and still declares what its classes mean;
+// no colormap can stand in for those, so its swatches survive.
 
 import { hasCogColormap } from '../tileUrlUtils'
 import { resolveColormapColors } from '../../Colormaps/resolveColormapColors'
@@ -94,6 +98,9 @@ const readScaleValues = (
  * instead of a ramp whose bounds would be read off non-numeric text.
  */
 const readGradient = (entries: LegendEntry[]) => {
+    // `every` and `Math.min` both answer for an empty run, and between them
+    // they would report a gradient spanning Infinity.
+    if (entries.length === 0) return null
     if (!entries.every((entry) => SCALE_SHAPES.includes(entry.shape ?? '')))
         return null
     const values = readScaleValues(entries)
@@ -110,11 +117,33 @@ const hasSwatch = (entry: LegendEntry): boolean =>
     Boolean(entry.color) &&
     (entry.value !== undefined || entry.label !== undefined)
 
-const toSwatches = (entries: LegendEntry[]): LegendSwatch[] =>
-    entries.map((entry) => ({
+/**
+ * The labelled swatches behind a legend that is not one numeric scale, or null
+ * when its entries carry nothing to draw as a swatch.
+ */
+const readSwatches = (entries: LegendEntry[]): LegendSwatch[] | null => {
+    if (!entries.some(hasSwatch)) return null
+    return entries.map((entry) => ({
         color: entry.color || '',
         label: String(entry.value ?? entry.label ?? ''),
     }))
+}
+
+/**
+ * The entries worth drawing: whatever the layer declared, minus the ones the
+ * author hid and minus any hole a hand-written config left behind. A hidden
+ * nodata class is not a swatch and its value is not a bound, so both are
+ * dropped before anything is read off them.
+ */
+const readEntries = (declared: unknown): LegendEntry[] =>
+    Array.isArray(declared)
+        ? declared.filter(
+              (entry): entry is LegendEntry =>
+                  entry != null &&
+                  typeof entry === 'object' &&
+                  (entry as LegendEntry).hideFromLegend !== true
+          )
+        : []
 
 /**
  * What the given layer's legend is, right now.
@@ -129,43 +158,51 @@ export const buildLayerLegend = async (
 ): Promise<LayerLegend> => {
     if (layerConfig == null) return NO_LEGEND
 
+    const entries = readEntries(layerConfig._legend)
+    const declaredGradient = readGradient(entries)
+
     if (hasCogColormap(layerConfig)) {
         const colormap =
             layerConfig.currentCogColormap ||
             layerConfig.cogColormap ||
             DEFAULT_COLORMAP
-        return {
-            type: 'gradient',
-            stops: await resolveColormapColors(colormap, titilerUrl),
+        const bounds = {
             min: toBound(layerConfig.currentCogMin ?? layerConfig.cogMin),
             max: toBound(layerConfig.currentCogMax ?? layerConfig.cogMax),
             unit: layerConfig.cogUnits ? { label: layerConfig.cogUnits } : null,
+        }
+        // Classes the colormap cannot stand in for. The ramp and its bounds
+        // still come along, so the controls over them survive.
+        const swatches = declaredGradient ? null : readSwatches(entries)
+        if (swatches)
+            return {
+                type: 'categorical',
+                stops: null,
+                ...bounds,
+                swatches,
+                colormap,
+            }
+        return {
+            type: 'gradient',
+            stops: await resolveColormapColors(colormap, titilerUrl),
+            ...bounds,
             swatches: null,
             colormap,
         }
     }
 
-    const declared = layerConfig._legend
-    const entries = Array.isArray(declared)
-        ? declared.filter((entry) => entry.hideFromLegend !== true)
-        : []
     if (entries.length === 0) return NO_LEGEND
 
-    const gradient = readGradient(entries)
-    if (gradient)
+    if (declaredGradient)
         return {
             type: 'gradient',
-            ...gradient,
+            ...declaredGradient,
             swatches: null,
             colormap: null,
         }
 
-    if (entries.some(hasSwatch))
-        return {
-            ...NO_LEGEND,
-            type: 'categorical',
-            swatches: toSwatches(entries),
-        }
+    const swatches = readSwatches(entries)
+    if (swatches) return { ...NO_LEGEND, type: 'categorical', swatches }
 
     return { ...NO_LEGEND, type: 'text' }
 }
