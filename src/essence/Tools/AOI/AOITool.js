@@ -627,9 +627,9 @@ const AOITool = {
     // ── Selection lifecycle ────────────────────────────────────────────────────
 
     _applySelection(feature, source, label) {
-        // Retract the current card before anything else: its request answers
-        // 'closed', so a Cancel, a close control or a map click that lands
-        // while the camera flies to this selection can no longer clear it.
+        // Take the old card off the screen before the camera flies to this
+        // selection. An answer that beats us here is handled where it lands:
+        // see the capture-compare in `_showSelectionPopup`.
         this._hidePopup()
         this._cancelPendingPopup()
         this._removeSelectionLayer()

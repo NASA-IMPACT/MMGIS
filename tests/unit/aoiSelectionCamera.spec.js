@@ -308,6 +308,8 @@ test.describe('AOITool._applySelection camera behavior', () => {
         await flush()
 
         const { handler: secondMoveend, off: secondOff } = subs[1]
+        // Superseding the first selection disarmed its show on the way.
+        expect(subs[0].off).toHaveBeenCalled()
 
         rejectFit[0](new Error('nope'))
         await flush()
