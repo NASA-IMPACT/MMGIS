@@ -12,6 +12,9 @@
 .mmgis-popup-card {
     width: max-content;
     max-width: min(320px, 100%);
+    /* Its own surface: the card's ink is its to pick, and a frame the app has
+       themed dark would otherwise decide the contrast. */
+    background: var(--theme-color-white, #ffffff);
     color: var(--theme-color-ink, #1b1b1b);
     font-family: var(--theme-font-ui, system-ui, sans-serif);
     font-size: var(--theme-font-size-sm, 0.875rem);
