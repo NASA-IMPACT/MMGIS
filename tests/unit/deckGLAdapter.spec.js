@@ -10,7 +10,7 @@ import { drawModeKeyEvents } from '../../src/essence/Basics/MapEngines/Adapters/
 // props they wire the adapter's handlers into can only be read back off that
 // constructor. jsdom has no WebGL, so the constructors are replaced — and only
 // they are: everything else the adapter imports alongside them stays real.
-const constructed = vi.hoisted(() => ({ deck: [], overlay: [] }))
+const constructed = vi.hoisted(() => ({ deck: [], overlay: [], popup: [] }))
 
 vi.mock('@deck.gl/core', async (importOriginal) => {
     const actual = await importOriginal()
@@ -40,8 +40,9 @@ vi.mock('@deck.gl/mapbox', async (importOriginal) => {
 vi.mock('maplibre-gl', async (importOriginal) => {
     const actual = await importOriginal()
     class MockMap {
-        constructor() {
+        constructor(options) {
             this._canvas = document.createElement('canvas')
+            this._container = options?.container ?? null
         }
         addControl() {}
         removeControl() {}
@@ -53,8 +54,44 @@ vi.mock('maplibre-gl', async (importOriginal) => {
         getCanvas() {
             return this._canvas
         }
+        getContainer() {
+            return this._container
+        }
     }
-    return { ...actual, Map: MockMap }
+    // Mounts its content in the map's container, where a real popup puts it,
+    // and fires the `close` a real one fires whenever it leaves the map,
+    // however it left.
+    class MockPopup {
+        constructor(options) {
+            this.options = options
+            this.lngLat = null
+            this.content = null
+            this._closeHandlers = []
+            constructed.popup.push(this)
+        }
+        setLngLat(lngLat) {
+            this.lngLat = lngLat
+            return this
+        }
+        setDOMContent(content) {
+            this.content = content
+            return this
+        }
+        addTo(map) {
+            map.getContainer().appendChild(this.content)
+            return this
+        }
+        remove() {
+            this.content?.remove()
+            this._closeHandlers.forEach((handler) => handler())
+            return this
+        }
+        on(type, handler) {
+            if (type === 'close') this._closeHandlers.push(handler)
+            return this
+        }
+    }
+    return { ...actual, Map: MockMap, Popup: MockPopup }
 })
 
 function makeAdapter({ longitude = -120, latitude = 40, zoom = 5 } = {}) {
@@ -1405,6 +1442,91 @@ test.describe('DeckGLAdapter', () => {
                 expect(picks).toEqual([])
             })
         }
+    })
+
+    test.describe('popups', () => {
+        const CONTAINER_ID = 'deckgl-popup'
+        const MAPLIBRE_BASEMAP = {
+            provider: 'maplibre',
+            style: 'https://example.com/style.json',
+        }
+
+        // The real init() path, so the popup class under test is the one the
+        // adapter resolved from the basemap's own module.
+        function initAdapter(basemap) {
+            constructed.popup.length = 0
+            let container = document.getElementById(CONTAINER_ID)
+            if (!container) {
+                container = document.createElement('div')
+                container.id = CONTAINER_ID
+                document.body.appendChild(container)
+            }
+            const adapter = new DeckGLAdapter()
+            adapter.init({
+                containerId: CONTAINER_ID,
+                center: { lat: 40, lng: -120 },
+                zoom: 5,
+                ...(basemap ? { basemap } : {}),
+            })
+            return adapter
+        }
+
+        const makeCard = () => document.createElement('div')
+
+        test('places the element in the basemap, className its only option', () => {
+            const adapter = initAdapter(MAPLIBRE_BASEMAP)
+            const card = makeCard()
+
+            adapter.showPopup({ lat: 40, lng: -120 }, card)
+
+            expect(card.parentNode).toBe(adapter.getBasemap().getContainer())
+            expect(constructed.popup[0].options).toEqual({ className: 'mmgis-map-popup' })
+            expect(constructed.popup[0].lngLat).toEqual([-120, 40])
+        })
+
+        test('hiding takes the element off the map and is not reported as a close', () => {
+            const adapter = initAdapter(MAPLIBRE_BASEMAP)
+            const card = makeCard()
+            const onClose = vi.fn()
+
+            adapter.showPopup({ lat: 40, lng: -120 }, card, onClose)
+            adapter.hidePopup()
+
+            expect(card.parentNode).toBeNull()
+            expect(onClose).not.toHaveBeenCalled()
+        })
+
+        test('a second card replaces the first, whose close is not reported', () => {
+            const adapter = initAdapter(MAPLIBRE_BASEMAP)
+            const first = makeCard()
+            const second = makeCard()
+            const onFirstClose = vi.fn()
+
+            adapter.showPopup({ lat: 40, lng: -120 }, first, onFirstClose)
+            adapter.showPopup({ lat: 41, lng: -121 }, second, vi.fn())
+
+            expect(first.parentNode).toBeNull()
+            expect(second.parentNode).toBe(adapter.getBasemap().getContainer())
+            expect(onFirstClose).not.toHaveBeenCalled()
+        })
+
+        test('a close the basemap made is reported once, and hiding after it adds nothing', () => {
+            const adapter = initAdapter(MAPLIBRE_BASEMAP)
+            const onClose = vi.fn()
+
+            adapter.showPopup({ lat: 40, lng: -120 }, makeCard(), onClose)
+            constructed.popup[0].remove()
+            adapter.hidePopup()
+
+            expect(onClose).toHaveBeenCalledTimes(1)
+        })
+
+        test('a map with no basemap refuses, saying a popup needs one', () => {
+            const adapter = initAdapter(null)
+
+            expect(() => adapter.showPopup({ lat: 40, lng: -120 }, makeCard()))
+                .toThrow(/requires a basemap/)
+        })
     })
 
     test.describe('destroy', () => {

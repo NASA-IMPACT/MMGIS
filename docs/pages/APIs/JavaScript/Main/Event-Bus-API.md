@@ -393,6 +393,8 @@ has already delivered — the request can resolve after a later event lands.
 | `map:setView` | `{ center, zoom }` | `true` | Set map view |
 | `map:fitBounds` | `bounds` | `true` | Fit map to bounds |
 | `map:panTo` | `{ lat, lng }` | `true` | Pan map to coordinates |
+| `map:showPopup` | `MapPopupRequest` | `MapPopupResult` | Show a map-anchored popup, replacing any current one. Answers only once the popup closes |
+| `map:hidePopup` | none | none | Take the current popup down, resolving its request with `{ action: 'closed' }` |
 
 ```javascript
 // Get current map state
@@ -413,6 +415,44 @@ await window.mmgisAPI.request('map:fitBounds', [
 
 await window.mmgisAPI.request('map:panTo', { lat: 45, lng: -120 })
 ```
+
+#### `map:showPopup`
+
+A small card anchored to a spot on the map. The plugin sends the content, the core sanitizes it, builds the card and answers when it closes, and the map library places it and owns the frame, the close control and closing on a click on the map. There is one popup slot and no popup id: a request from any caller replaces the current popup, whose own request then resolves `'closed'`. Nothing about a popup is broadcast on the bus — the outcome comes back on the request's promise, which stays pending for as long as the popup is open.
+
+```javascript
+// Pending until the popup closes — hold onto it rather than blocking on it.
+const outcome = window.mmgisAPI.request('map:showPopup', {
+    latlng: { lat: 45, lng: -120 }, // anchor, required
+    title: 'Crater A',              // heading, rendered as text
+    html: '<p>Diameter: 12 km</p>', // body, sanitized by the core
+    primaryAction: { label: 'Analyze' },
+    secondaryAction: { label: 'Cancel' }
+})
+
+outcome.then(({ action }) => {
+    if (action === 'primary') analyze()
+    else if (action === 'secondary' || action === 'dismiss') clearSelection()
+    // 'closed': replaced or retracted — nothing for this plugin to undo.
+}, showError)
+```
+
+`latlng` is required, and so is one of `title` and `html` — buttons are not content, so a request holding neither is rejected, and a rejected request leaves any open popup alone. `title` is rendered as text, never as markup. `primaryAction` and `secondaryAction` each carry a `label` and nothing else; a lone action takes the primary styling whichever field it arrived in, and still answers with its own slot. Focus lands on the first action button once the card is on the map.
+
+The result is `{ action }`:
+
+| `action` | Meaning |
+|----------|---------|
+| `'primary'` | The primary button was pressed |
+| `'secondary'` | The secondary button was pressed |
+| `'dismiss'` | The map library took the popup down: its own close control, or a click on the map |
+| `'closed'` | Code took it down: another `map:showPopup` replaced it, `map:hidePopup` retracted it, or the map was re-initialized |
+
+`html` is sanitized with DOMPurify's defaults before it reaches the DOM. Inline `style` attributes, tables, images and lists survive; a `<style>` block does not, and neither does anything that would run script.
+
+#### `map:hidePopup`
+
+Takes the current popup down, whoever opened it, and resolves its `map:showPopup` request with `{ action: 'closed' }`. A no-op when no popup is open.
 
 ### Layer Providers
 
