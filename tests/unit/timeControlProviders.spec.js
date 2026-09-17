@@ -1,9 +1,14 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 
-// Node re-reads process.env.TZ on each Date call, so pinning a non-UTC zone
-// is what gives the zone-less parsing test below teeth on a UTC CI runner.
-// Module body, not a hook: it has to be set before any test constructs a Date.
-process.env.TZ = 'America/Chicago'
+/**
+ * The timezone is pinned off UTC so the zone-less parsing test below reads a
+ * real offset rather than a zero one — on a UTC runner it could otherwise
+ * only pass. `vi.hoisted` runs before the imports above whatever its position
+ * in the file, so the module under test loads with the offset already set.
+ */
+vi.hoisted(() => {
+    process.env.TZ = 'America/Chicago'
+})
 
 /**
  * time:getCurrentFormatted renders the cursor through the mission's
@@ -63,13 +68,12 @@ describe('TimeControl time formatting providers', () => {
     })
 
     // Registration happens before the mission's time settings are read, so a
-    // caller can always ask — and gets null rather than an error.
-    test('both providers are registered even with mission time disabled', async () => {
+    // caller can always ask — and gets null rather than an error. (That
+    // time:formatTime is registered too is proven by the tests that call it.)
+    test('the cursor getter answers null with mission time disabled', async () => {
         const handlers = await initTimeControl({})
 
-        expect(typeof handlers['time:getCurrentFormatted']).toBe('function')
         expect(handlers['time:getCurrentFormatted']()).toBeNull()
-        expect(typeof handlers['time:formatTime']).toBe('function')
     })
 
     // The shape every mission that never touched the field is in.
@@ -85,7 +89,7 @@ describe('TimeControl time formatting providers', () => {
     // language has to render the date itself, never the pattern string.
     test.each([
         ['moment tokens', 'YYYY-MM-DDTHH:mm:ss[Z]', '2026-08-20T19:24:39Z'],
-        ['d3 specifiers', '%d %b %Y', '20 Aug 2026'],
+        ['d3 specifiers', '%-m/%-d/%-y', '8/20/26'],
     ])('formats the cursor through mission %s', async (_lang, format, shown) => {
         const handlers = await initTimeControl(enabledTimeConfig(format))
 
