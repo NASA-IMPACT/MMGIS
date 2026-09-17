@@ -362,6 +362,8 @@ export class DrawEndClickGuard {
     private _holdTimer: ReturnType<typeof setTimeout> | null = null
     private _zoom: DoubleClickZoomHandler | null = null
     private _zoomWasEnabled = false
+    /** Waiting on the hold to pass — see {@link whenSettled}. */
+    private _settleWaiters: Array<() => void> = []
 
     private readonly _onPointerDown = (event: Event): void => {
         if (this._ownedUntil === 0) return
@@ -401,6 +403,9 @@ export class DrawEndClickGuard {
         if (this._holdTimer) {
             clearTimeout(this._holdTimer)
             this._holdTimer = null
+            // The cover this hold was standing for is dropped just below, so
+            // anything waiting it out has nothing left to wait for.
+            this._settle()
         }
         // The last session's horizon is moot — no click is reported while a
         // drawing is live — and leaving it standing would let the user's next
@@ -476,6 +481,30 @@ export class DrawEndClickGuard {
         )
     }
 
+    /**
+     * Run `cb` once the guard is no longer covering the clicks a finished
+     * gesture leaves behind, or straight away when it is not holding.
+     *
+     * {@link owns} keeps those clicks from the adapter's own listeners, but
+     * the map libraries close their popups from paths no adapter listener sits
+     * in front of — Leaflet from `preclick`, mapbox and maplibre from the
+     * map's `click`. Anything that must survive the click a drawing ends on
+     * therefore waits out the hold rather than being filtered.
+     *
+     * @returns A function that cancels the wait; a no-op once `cb` has run.
+     */
+    whenSettled(cb: () => void): () => void {
+        if (!this._holdTimer) {
+            cb()
+            return () => { /* nothing was queued */ }
+        }
+        this._settleWaiters.push(cb)
+        return () => {
+            const at = this._settleWaiters.indexOf(cb)
+            if (at !== -1) this._settleWaiters.splice(at, 1)
+        }
+    }
+
     /** Stop watching for the next gesture and give double-click zoom back. */
     dispose(): void {
         this._release()
@@ -496,12 +525,27 @@ export class DrawEndClickGuard {
         this._holdTimer = setTimeout(() => this._release(), ms)
     }
 
+    /** Let go of everything {@link whenSettled} queued against the hold. */
+    private _settle(): void {
+        if (this._settleWaiters.length === 0) return
+        const waiting = this._settleWaiters
+        this._settleWaiters = []
+        waiting.forEach((cb) => {
+            try {
+                cb()
+            } catch (err) {
+                console.warn('[DrawEndClickGuard] settle callback threw:', err)
+            }
+        })
+    }
+
     /** Give double-click zoom back. The horizon stands: it is event time. */
     private _release(): void {
         if (this._holdTimer) {
             clearTimeout(this._holdTimer)
             this._holdTimer = null
         }
+        this._settle()
         const zoom = this._zoom
         this._zoom = null
         // The map is torn down under the guard on a mission swap.
