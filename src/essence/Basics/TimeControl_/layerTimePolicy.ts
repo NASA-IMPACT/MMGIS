@@ -39,7 +39,9 @@ export function parseISODuration(value: string): Duration | null {
     const m = DURATION_RE.exec(value)
     if (!m || value === 'P' || value.endsWith('T')) return null
     const [, years, months, weeks, days, hours, minutes, seconds] = m
-    const duration = {
+    if (![years, months, weeks, days, hours, minutes, seconds].some((v) => v))
+        return null
+    return {
         years: Number(years || 0),
         months: Number(months || 0),
         weeks: Number(weeks || 0),
@@ -48,10 +50,6 @@ export function parseISODuration(value: string): Duration | null {
         minutes: Number(minutes || 0),
         seconds: Number(seconds || 0),
     }
-    // A zero-length duration ("P0D") is no duration at all: nothing to offset
-    // by, and no period it could ever contain.
-    const total = Object.values(duration).reduce((sum, part) => sum + part, 0)
-    return total > 0 ? duration : null
 }
 
 // Months and years are not fixed millisecond amounts — apply them with UTC
