@@ -1550,109 +1550,136 @@ test.describe('LeafletAdapter - setLayerOrder', () => {
 test.describe('LeafletAdapter - popups', () => {
 
     /**
-     * An adapter on a map whose container is a real node in the page, with a
-     * stand-in for L.popup that mounts its content where Leaflet's popup pane
-     * would — inside that container — and fires the `remove` Leaflet fires
-     * whenever a popup leaves the map, however it left.
+     * An initialised adapter, plus a stand-in for L.popup that records what it
+     * was built with and fires the `remove` Leaflet fires whenever a popup
+     * leaves the map, however it left. `closed` is every popup the map was
+     * asked to close, in order.
      */
     function setupPopups() {
-        const container = domDocument.createElement('div')
-        domDocument.body.appendChild(container)
-        const mockMap = makeMockLeafletMap()
+        const { mockMap } = setup()
         const built = []
+        const closed = []
 
-        global.document = { getElementById: (id) => (id === 'map' ? container : null) }
-        global.L = {
-            map: () => mockMap,
-            Proj: { CRS: function () { return { projString: '' } } },
-            bounds: () => ({}),
-            popup: (options) => {
-                const removeHandlers = []
-                const popup = {
-                    options,
-                    latlng: null,
-                    content: null,
-                    setLatLng(latlng) { popup.latlng = latlng; return popup },
-                    setContent(element) { popup.content = element; return popup },
-                    on(name, handler) {
-                        if (name === 'remove') removeHandlers.push(handler)
-                        return popup
-                    },
-                    fireRemove() { removeHandlers.forEach((handler) => handler()) },
-                    openOn(map) { map.openPopup(popup); return popup },
-                }
-                built.push(popup)
-                return popup
-            },
+        global.L.popup = (options) => {
+            const removeHandlers = []
+            const popup = {
+                options,
+                latlng: null,
+                content: null,
+                openedOn: null,
+                setLatLng(latlng) { popup.latlng = latlng; return popup },
+                setContent(element) { popup.content = element; return popup },
+                on(name, handler) {
+                    if (name === 'remove') removeHandlers.push(handler)
+                    return popup
+                },
+                fireRemove() { removeHandlers.forEach((handler) => handler()) },
+                openOn(map) { popup.openedOn = map; map.openPopup(popup); return popup },
+            }
+            built.push(popup)
+            return popup
         }
 
-        mockMap.openPopup = function (popup) {
-            this.closePopup()
-            this._popup = popup
-            container.appendChild(popup.content)
-        }
-        // Every close Leaflet makes comes through here: its × and its
-        // click-on-the-map both call map.closePopup(popup).
+        mockMap.openPopup = function (popup) { this._popup = popup }
+        // Every close Leaflet makes comes through here: its ×, its
+        // click-on-the-map and another popup opening all call closePopup.
         mockMap.closePopup = function (popup) {
             const open = this._popup
             if (!open || (popup && popup !== open)) return
             this._popup = null
-            open.content.remove()
+            closed.push(open)
             open.fireRemove()
         }
+        // Tearing the map down takes its popup with it, as Leaflet's does.
+        mockMap.remove = function () { this.closePopup() }
 
         const adapter = new LeafletAdapter()
         adapter.init({ containerId: 'map' })
-        return { adapter, mockMap, container, built }
+        return { adapter, mockMap, built, closed }
     }
 
     const makeCard = () => domDocument.createElement('div')
 
-    test('places the element in the map container, className its only option', () => {
-        const { adapter, container, built } = setupPopups()
+    test('opens a popup on the map holding the element, className its only option', () => {
+        const { adapter, mockMap, built } = setupPopups()
         const card = makeCard()
 
         adapter.showPopup({ lat: 40, lng: -120 }, card)
 
-        expect(card.parentNode).toBe(container)
         expect(built[0].options).toEqual({ className: 'mmgis-map-popup' })
+        expect(built[0].latlng).toEqual([40, -120])
+        expect(built[0].content).toBe(card)
+        expect(built[0].openedOn).toBe(mockMap)
+    })
+
+    test('anchors a [lat, lng] tuple at [lat, lng]', () => {
+        const { adapter, built } = setupPopups()
+
+        adapter.showPopup([40, -120], makeCard())
+
         expect(built[0].latlng).toEqual([40, -120])
     })
 
-    test('hiding takes the element off the map and is not reported as a close', () => {
-        const { adapter } = setupPopups()
-        const card = makeCard()
+    test('showing before init refuses, saying a map is needed', () => {
+        setup()
+        const adapter = new LeafletAdapter()
+
+        expect(() => adapter.showPopup({ lat: 40, lng: -120 }, domDocument.createElement('div')))
+            .toThrow(/requires a map/)
+    })
+
+    test('hiding closes the popup and is not reported as a close', () => {
+        const { adapter, built, closed } = setupPopups()
         const onClose = vi.fn()
 
-        adapter.showPopup({ lat: 40, lng: -120 }, card, onClose)
+        adapter.showPopup({ lat: 40, lng: -120 }, makeCard(), onClose)
         adapter.hidePopup()
 
-        expect(card.parentNode).toBeNull()
+        expect(closed).toEqual([built[0]])
         expect(onClose).not.toHaveBeenCalled()
     })
 
     test('a second card replaces the first, whose close is not reported', () => {
-        const { adapter, container } = setupPopups()
-        const first = makeCard()
-        const second = makeCard()
+        const { adapter, mockMap, built, closed } = setupPopups()
         const onFirstClose = vi.fn()
 
-        adapter.showPopup({ lat: 40, lng: -120 }, first, onFirstClose)
-        adapter.showPopup({ lat: 41, lng: -121 }, second, vi.fn())
+        adapter.showPopup({ lat: 40, lng: -120 }, makeCard(), onFirstClose)
+        adapter.showPopup({ lat: 41, lng: -121 }, makeCard(), vi.fn())
 
-        expect(first.parentNode).toBeNull()
-        expect(second.parentNode).toBe(container)
+        expect(closed).toEqual([built[0]])
+        expect(built[1].openedOn).toBe(mockMap)
         expect(onFirstClose).not.toHaveBeenCalled()
     })
 
-    test('a close Leaflet made is reported once, and hiding after it adds nothing', () => {
+    test('a close Leaflet made is reported once', () => {
         const { adapter, mockMap } = setupPopups()
         const onClose = vi.fn()
 
         adapter.showPopup({ lat: 40, lng: -120 }, makeCard(), onClose)
         mockMap.closePopup()
-        adapter.hidePopup()
 
         expect(onClose).toHaveBeenCalledTimes(1)
+    })
+
+    test('a close arriving from a popup already let go is not reported', () => {
+        const { adapter, built } = setupPopups()
+        const onFirstClose = vi.fn()
+
+        adapter.showPopup({ lat: 40, lng: -120 }, makeCard(), onFirstClose)
+        adapter.showPopup({ lat: 41, lng: -121 }, makeCard(), vi.fn())
+        built[0].fireRemove()
+
+        expect(onFirstClose).not.toHaveBeenCalled()
+    })
+
+    test('destroying the engine is not reported as a close', () => {
+        const { adapter, built, closed } = setupPopups()
+        const onClose = vi.fn()
+
+        adapter.showPopup({ lat: 40, lng: -120 }, makeCard(), onClose)
+        adapter.destroy()
+
+        expect(closed).toEqual([built[0]])
+        expect(onClose).not.toHaveBeenCalled()
     })
 })

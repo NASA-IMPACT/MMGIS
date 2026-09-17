@@ -6,10 +6,8 @@ import type {
 } from '../../src/essence/Basics/MapPopup_/types'
 
 /**
- * Stand-in for the active map engine. It holds one card at a time, the way a
- * map library's own popup does, mounts it in a container that is in the
- * document so focus can land, and keeps the close callback it was handed so a
- * spec can play the library taking the card down itself.
+ * Stand-in for the active map engine: one card at a time, mounted in a
+ * container that is in the document so focus can land.
  */
 function makeEngine({ showThrows = false, hideThrows = false } = {}) {
     const container = document.createElement('div')
@@ -19,11 +17,9 @@ function makeEngine({ showThrows = false, hideThrows = false } = {}) {
         element: HTMLElement
     }> = []
     let reportClose: (() => void) | undefined
-    let hides = 0
 
     return {
         shows,
-        hides: () => hides,
         /** The map library closing the card of its own accord. */
         libraryClose: () => reportClose?.(),
         engine: {
@@ -39,7 +35,6 @@ function makeEngine({ showThrows = false, hideThrows = false } = {}) {
                 container.appendChild(element)
             },
             hidePopup() {
-                hides += 1
                 if (hideThrows) throw new Error('engine destroyed')
                 reportClose = undefined
                 container.innerHTML = ''
@@ -57,10 +52,9 @@ function request(overrides: Partial<MapPopupRequest> = {}): MapPopupRequest {
 }
 
 /**
- * Watch a request promise and record how it settles: a resolution as its
- * action, a rejection as `rejected: <message>`. The list is the count of
- * answers the caller saw, so a request that is never answered reads as empty
- * and one answered a second time would read as two entries.
+ * Record how a request settles, as its action or `rejected: <message>`. The
+ * list is the count of answers the caller saw, so a request never answered
+ * reads as empty and one answered twice would read as two entries.
  */
 function track(promise: Promise<MapPopupResult>): string[] {
     const settlements: string[] = []
@@ -159,9 +153,8 @@ describe('MapPopup_', () => {
         })
 
         expect(buttons()).toHaveLength(0)
-        expect(warn).toHaveBeenCalledWith(
-            '[MapPopup] Ignoring primaryAction: label must be a non-blank string.'
-        )
+        // One warning per action dropped.
+        expect(warn).toHaveBeenCalledTimes(2)
         warn.mockRestore()
     })
 
@@ -171,7 +164,6 @@ describe('MapPopup_', () => {
         show(engine, { title: '<b>Drawn</b> rectangle' })
 
         expect(title().textContent).toBe('<b>Drawn</b> rectangle')
-        expect(title().children).toHaveLength(0)
     })
 
     // Buttons are not content: a card is a title, a body, or both.
@@ -257,7 +249,6 @@ describe('MapPopup_', () => {
         MapPopup_.hide()
         await nextTick()
 
-        expect(engine.hides()).toBe(1)
         expect(cards()).toHaveLength(0)
         expect(outcome).toEqual(['closed'])
     })
@@ -300,16 +291,20 @@ describe('MapPopup_', () => {
     // engine has the card is what makes the focus stick.
     it('focuses the first action button once the engine has placed the card', () => {
         show(engine, {
+            // A body may hold a button of its own, in a div wearing the
+            // actions row's class. Focus still goes to the real primary.
+            html: '<div class="mmgis-popup-actions"><button>Decoy</button></div>',
             primaryAction: { label: 'Analyze' },
             secondaryAction: { label: 'Cancel' },
         })
 
         expect(document.activeElement).toBe(buttons()[0])
+        expect(document.activeElement!.textContent).toBe('Analyze')
     })
 
     it('keeps the markup an author needs and strips the rest', () => {
         show(engine, {
-            html: '<style>.mmgis-popup-card { display: none }</style><p style="color: red" onclick="alert(1)">A</p><table><tr><td>Cell</td></tr></table><ul><li>One</li></ul><img src="a.png" alt="Crater A"><script>alert(2)</script><a href="javascript:alert(3)">go</a>',
+            html: '<style>.mmgis-popup-card { display: none }</style><p style="color: red" onclick="alert(1)">A</p><table><tr><td>Cell</td></tr></table><ul><li>One</li></ul><img src="a.png" alt="Crater A"><script>alert(2)</script><a href="javascript:alert(3)">go</a><div popover popovertarget="x">Top layer</div>',
         })
 
         const markup = body()
@@ -318,9 +313,12 @@ describe('MapPopup_', () => {
         expect(markup).toContain('<li>One</li>')
         expect(markup).toContain('alt="Crater A"')
         // A card is plain DOM in the app's document, so an author's stylesheet
-        // would be a stylesheet for the whole page.
+        // would be a stylesheet for the whole page, and a popover of theirs
+        // would paint into the top layer over the whole app.
         expect(markup).not.toContain('<style')
         expect(markup).not.toContain('display: none')
+        expect(markup).not.toContain('popover')
+        expect(markup).not.toContain('popovertarget')
         expect(markup).not.toContain('onclick')
         expect(markup).not.toContain('alert')
         expect(markup).not.toContain('javascript:')

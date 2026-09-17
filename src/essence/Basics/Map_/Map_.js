@@ -329,13 +329,14 @@ let Map_ = {
                     engine.removeOverlay(id)
                     return true
                 }),
-                // Map-anchored popup card — one at a time, core-built and
-                // placed by the engine's own map library popup. The request
-                // answers only once the card closes.
+                // Map-anchored popup card — one at a time, placed by the engine
                 window.mmgisAPI.provide('map:showPopup', (request) =>
                     MapPopup_.show(request, engine)
                 ),
-                window.mmgisAPI.provide('map:hidePopup', () => MapPopup_.hide()),
+                window.mmgisAPI.provide('map:hidePopup', () => {
+                    MapPopup_.hide()
+                    return true
+                }),
                 window.mmgisAPI.provide('map:setBasemap', (styleName) => {
                     const index = _basemapStyles.findIndex((s) => s.name === styleName)
                     if (index === -1) {
@@ -393,8 +394,7 @@ let Map_ = {
                 }),
             ]
 
-            // A card outlives nothing: re-initializing the map takes it down
-            // and answers its request with `closed`.
+            // Re-initializing the map takes the open card down with it
             _providerCleanups.push(() => MapPopup_.hide())
 
             // Engine event re-emits — translate adapter events onto the bus

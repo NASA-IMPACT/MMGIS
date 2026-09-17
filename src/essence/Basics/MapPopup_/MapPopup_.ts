@@ -5,14 +5,6 @@ import type { IMapEngine } from '../MapEngines/IMapEngine'
 
 import './MapPopup.css'
 
-/**
- * DOMPurify's defaults, plus `<style>`: the card is plain DOM in the app's
- * document, so an author's stylesheet would be a stylesheet for the page.
- */
-const POPUP_SANITIZE_CONFIG = {
-    FORBID_TAGS: ['style'],
-}
-
 interface OpenPopup {
     engine: IMapEngine
     settle: (result: MapPopupResult) => void
@@ -22,26 +14,26 @@ type ActionSlot = 'primary' | 'secondary'
 
 interface PopupCardOptions {
     title?: string
-    /** Card body as the caller wrote it, sanitized on the way in. */
     html?: string
     primaryAction?: MapPopupAction
     secondaryAction?: MapPopupAction
     onAction: (action: ActionSlot) => void
 }
 
+interface PopupCard {
+    element: HTMLElement
+    /** Where focus goes once the card is placed; null when it has no actions. */
+    firstAction: HTMLButtonElement | null
+}
+
 function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value)
 }
 
-/**
- * Whitespace counts as blank: a label of spaces reads as a filled button with
- * nothing on it, the very thing `normalizeAction` refuses.
- */
 function isNonBlankString(value: unknown): value is string {
     return typeof value === 'string' && value.trim() !== ''
 }
 
-/** Drop an action whose label is unusable: no card renders a blank button. */
 function normalizeAction(
     action: MapPopupAction | undefined,
     field: string
@@ -69,21 +61,17 @@ function buildActionButton(
     return button
 }
 
-/**
- * Build the card: a pure view that reports button presses through `onAction`.
- * It is only the content of the popup — the frame around it, the tip and the
- * close control belong to the map library.
- */
-function buildPopupCard(options: PopupCardOptions): HTMLElement {
-    const card = document.createElement('div')
-    card.className = 'mmgis-popup-card'
+/** Build the card's content; the map library owns the frame around it. */
+function buildPopupCard(options: PopupCardOptions): PopupCard {
+    const element = document.createElement('div')
+    element.className = 'mmgis-popup-card'
 
     if (options.title) {
         // Not a heading: a level would guess at an outline the card knows not.
         const title = document.createElement('div')
         title.className = 'mmgis-popup-title'
         title.textContent = options.title
-        card.appendChild(title)
+        element.appendChild(title)
     }
 
     if (options.html) {
@@ -93,42 +81,37 @@ function buildPopupCard(options: PopupCardOptions): HTMLElement {
         // only form of the call that survives a Trusted Types policy.
         body.appendChild(
             DOMPurify.sanitize(options.html, {
-                ...POPUP_SANITIZE_CONFIG,
                 RETURN_DOM_FRAGMENT: true,
+                // An author's stylesheet would be the page's, and a popover
+                // paints into the top layer, over the whole app.
+                FORBID_TAGS: ['style'],
+                FORBID_ATTR: ['popover', 'popovertarget'],
             })
         )
-        card.appendChild(body)
+        element.appendChild(body)
     }
 
     const { primaryAction, secondaryAction, onAction } = options
-    if (primaryAction || secondaryAction) {
+    const buttons = [
+        primaryAction &&
+            buildActionButton(primaryAction.label, 'primary', 'primary', onAction),
+        // A lone action takes the primary styling, in either slot.
+        secondaryAction &&
+            buildActionButton(
+                secondaryAction.label,
+                'secondary',
+                primaryAction ? 'secondary' : 'primary',
+                onAction
+            ),
+    ].filter(Boolean) as HTMLButtonElement[]
+    if (buttons.length > 0) {
         const actions = document.createElement('div')
         actions.className = 'mmgis-popup-actions'
-        if (primaryAction) {
-            actions.appendChild(
-                buildActionButton(
-                    primaryAction.label,
-                    'primary',
-                    'primary',
-                    onAction
-                )
-            )
-        }
-        if (secondaryAction) {
-            // A lone action takes primary styling, but reports its own slot.
-            actions.appendChild(
-                buildActionButton(
-                    secondaryAction.label,
-                    'secondary',
-                    primaryAction ? 'secondary' : 'primary',
-                    onAction
-                )
-            )
-        }
-        card.appendChild(actions)
+        buttons.forEach((button) => actions.appendChild(button))
+        element.appendChild(actions)
     }
 
-    return card
+    return { element, firstAction: buttons[0] ?? null }
 }
 
 /** Core-owned, map-anchored popup. One at a time: a request replaces it. */
@@ -136,15 +119,10 @@ const MapPopup_ = {
     _open: null as OpenPopup | null,
 
     /**
-     * Show a popup anchored to `request.latlng`, replacing any current popup.
-     *
-     * @param request Serializable popup description from the event bus.
-     * @param engine The active map engine, which places the card in its map
-     * library's own popup and reports a close the library made.
-     * @returns A promise that stays pending for as long as the popup is open
-     * and resolves with how it closed. It rejects when the request is invalid
-     * or the card could not be placed, in which case nothing is shown and any
-     * popup already open is left alone.
+     * Show a popup anchored to `request.latlng`, replacing any current one.
+     * The promise stays pending for as long as the popup is open and resolves
+     * with how it closed. An invalid request rejects and leaves an open popup
+     * alone; a card the engine cannot place rejects with nothing open.
      */
     show(
         request: MapPopupRequest,
@@ -164,12 +142,10 @@ const MapPopup_ = {
                 )
             )
         }
-        // Blank reads as absent, as it does for a button label.
         const title = isNonBlankString(request.title)
             ? request.title
             : undefined
         const html = isNonBlankString(request.html) ? request.html : undefined
-        // A card is a title, a body, or both: buttons are not content.
         if (!title && !html) {
             return Promise.reject(
                 new Error(
@@ -198,8 +174,6 @@ const MapPopup_ = {
                 request.secondaryAction,
                 'secondaryAction'
             ),
-            // Closed before its request is answered, so a caller may reply by
-            // opening one of its own.
             onAction: (action) => this.hide({ action }),
         })
 
@@ -209,18 +183,12 @@ const MapPopup_ = {
         try {
             engine.showPopup(
                 { lat: request.latlng.lat, lng: request.latlng.lng },
-                card,
-                // The library took the card down itself; it never reports one
-                // this service asked for.
+                card.element,
                 () => this.hide({ action: 'dismiss' })
             )
             // After the hand-off, not before: Leaflet's popup empties its
-            // content node and re-appends the card on open, and detaching a
-            // focused element blurs it. Scoped to the actions row so a button
-            // in an author's html cannot take the focus instead.
-            card.querySelector<HTMLButtonElement>(
-                '.mmgis-popup-actions button'
-            )?.focus({ preventScroll: true })
+            // content node and re-appends the card on open, which blurs it.
+            card.firstAction?.focus({ preventScroll: true })
         } catch (err) {
             // Reject before unwinding: the failure is the answer, not the
             // `closed` of the popup's own teardown.
@@ -233,35 +201,24 @@ const MapPopup_ = {
     },
 
     /**
-     * Close the current popup, if any, and answer the request that opened it.
-     *
-     * @param action How the popup closed: `'dismiss'` for a close the map
-     * library made, `'primary'`/`'secondary'` for a button press. The default
-     * `'closed'` covers replacement, `map:hidePopup` and map re-initialization,
-     * where the popup goes away without the user acting on it.
+     * Close the current popup, if any, and answer its request with `action`.
+     * The default covers every close code made: replacement, `map:hidePopup`
+     * and map re-initialization.
      */
     hide({
         action = 'closed',
     }: { action?: MapPopupResult['action'] } = {}): void {
         const open = this._open
         if (!open) return
+        this._open = null
 
         try {
-            try {
-                open.engine.hidePopup()
-            } catch {
-                // Taking a card off a destroyed engine throws. The engine is
-                // gone and so is the card it held; the request still answers.
-            } finally {
-                // Dropped whatever the engine did: taking a card off a
-                // destroyed engine throws, and a record left behind would
-                // stand between the next request and a popup of its own.
-                this._open = null
-            }
-        } finally {
-            // Answer whatever teardown did; the first settlement sticks.
-            open.settle({ action })
+            open.engine.hidePopup()
+        } catch {
+            // A destroyed engine throws; the card is gone either way.
         }
+
+        open.settle({ action })
     },
 }
 

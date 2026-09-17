@@ -1,38 +1,26 @@
 /*
- * Map-anchored popup card.
- *
- * Only the card is styled here. The frame around it, the pointer tip and the
- * close control belong to the map library and are left as they ship. Colors
- * and type come from the theme tokens emitted by src/styles/_theme-export.scss;
- * the fallbacks apply in the classic UI, which loads no theme stylesheet.
+ * Map-anchored popup card. Only the card is styled here: the frame around it,
+ * the pointer tip and the close control belong to the map library. Colors and
+ * type come from the tokens in src/styles/_theme-export.scss, with fallbacks
+ * for the classic UI, which loads no theme stylesheet.
  */
 
 .mmgis-popup-card {
-    box-sizing: border-box;
     color: var(--theme-color-ink, #1b1b1b);
-    font-family: var(
-        --theme-font-ui,
-        'Public Sans',
-        system-ui,
-        -apple-system,
-        sans-serif
-    );
+    font-family: var(--theme-font-ui, system-ui, sans-serif);
     font-size: var(--theme-font-size-sm, 0.875rem);
 }
 
-.mmgis-popup-title {
-    /* An unbreakable token in a heading paints outside the card just as one
-       in the body does. */
+/* An unbreakable token — a URL, a long feature id — breaks rather than
+   painting outside the card. */
+.mmgis-popup-title,
+.mmgis-popup-body {
     overflow-wrap: anywhere;
-    font-size: var(--theme-font-size-md, 1rem);
-    font-weight: var(--theme-font-weight-bold, 700);
-    line-height: 1.3;
 }
 
-.mmgis-popup-body {
-    /* A single unbreakable token (a URL, a long feature id) would otherwise
-       paint outside the card. */
-    overflow-wrap: anywhere;
+.mmgis-popup-title {
+    font-size: var(--theme-font-size-md, 1rem);
+    font-weight: var(--theme-font-weight-bold, 700);
 }
 
 .mmgis-popup-title + .mmgis-popup-body {
@@ -40,9 +28,7 @@
 }
 
 /* Equal columns, so two buttons come out the same width rather than sized by
-   their own labels. Grid rather than a flex row: an `fr` track measures as the
-   widest label in the row, where `flex: 1 1 0` items measure as the sum of
-   their own labels and leave the equal split too narrow for the longer one. */
+   their own labels. */
 .mmgis-popup-actions {
     display: grid;
     grid-auto-flow: column;
@@ -51,35 +37,29 @@
     margin-top: var(--theme-spacing-105, 0.75rem);
 }
 
+/* A label reads as one line, and ends in an ellipsis once its column is too
+   narrow for it. */
 .mmgis-popup-button {
-    /* A label reads as one line. Once the card is at the width the library
-       allows it there is no room left to grow into, so an outsized label ends
-       in an ellipsis rather than wrapping or painting outside the button. The
-       zero minimum lets the column, not the label, decide the room. */
     min-width: 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    height: 32px;
-    padding: 0 var(--theme-spacing-105, 0.75rem);
+    padding: var(--theme-spacing-05, 0.25rem) var(--theme-spacing-105, 0.75rem);
     border-radius: var(--theme-radius-0, 0);
     font-family: inherit;
     font-size: var(--theme-font-size-sm, 0.875rem);
     font-weight: var(--theme-font-weight-normal, 400);
     cursor: pointer;
-    transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* A lone button sits at the end of the row rather than filling it, and stays
-   inside the card when its label is too long to fit. */
+/* A lone button sits at the end of the row rather than filling it. */
 .mmgis-popup-button:only-child {
     justify-self: end;
     max-width: 100%;
 }
 
-/* MMGIS resets the user agent's focus ring globally (src/css/mmgis.css), so a
-   control without a ring of its own leaves a keyboard user with no idea where
-   they are — and focus lands on the first button as soon as a card opens. */
+/* MMGIS resets the user agent's focus ring globally (src/css/mmgis.css), and
+   focus lands on the first button as soon as a card opens. */
 .mmgis-popup-button:focus-visible {
     outline: 3px solid var(--theme-color-primary-light, #73b3e7);
 }
