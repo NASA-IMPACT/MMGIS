@@ -1492,17 +1492,29 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      * See {@link IMapEngine.showPopup}. `className` is the only option set:
      * the close button, the close-on-map-click, the auto-pan and the width all
      * stay at Leaflet's defaults. `openOn` hands the popup to the map's own
-     * popup machinery, which is what makes the map click close it.
+     * popup machinery, which is what makes a click on the map close it — and,
+     * by the same defaults, what closes it when anything else on the map opens
+     * a popup of its own.
      */
-    showPopup(latlng: LatLng, element: HTMLElement, onClose?: () => void): void {
+    showPopup(latlng: LatLngLike, element: HTMLElement, onClose?: () => void): void {
+        if (!this._map) {
+            throw new Error(
+                '[LeafletAdapter] showPopup requires a map. ' +
+                'Call init() before placing a popup.'
+            )
+        }
+
         this.hidePopup()
 
+        const ll = this._normalizeLatLng(latlng)
         const popup = L.popup({ className: 'mmgis-map-popup' })
-            .setLatLng([latlng.lat, latlng.lng])
+            .setLatLng([ll.lat, ll.lng])
             .setContent(element)
 
         popup.on('remove', () => {
-            if (this._closingPopup) return
+            // A close arriving after this popup has been let go belongs to the
+            // popup that is gone, not to whichever one is open now.
+            if (this._closingPopup || this._popup !== popup) return
             this._popup = null
             onClose?.()
         })
