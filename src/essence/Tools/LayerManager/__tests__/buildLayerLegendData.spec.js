@@ -170,3 +170,31 @@ test.describe('buildLayerLegendData', () => {
         expect(buildLayerLegendData('layer11', cfg, null, true, undefined).cog).toBeNull()
     })
 })
+
+/**
+ * A layer's ramps come from whatever paints it, so the table travels only to
+ * layers rendered in the browser.
+ */
+test.describe('buildLayerLegendData local colormaps', () => {
+    const DECK_COG = { hasColormap: true, canChangeColormap: true, deckRaster: true }
+    const TABLE = { viridis: ['rgba(68, 1, 84, 1)'] }
+
+    test('carries the table for a client-side rendered layer', () => {
+        const result = buildLayerLegendData(
+            'layerL1', { cogColormap: 'viridis' }, null, true, DECK_COG, null, TABLE,
+        )
+        expect(result.cog?.localColormaps).toEqual(TABLE)
+    })
+
+    test('withholds the table from a tile-server rendered layer', () => {
+        const result = buildLayerLegendData(
+            'layerL2', { cogColormap: 'viridis' }, null, true, EDITABLE_COG, null, TABLE,
+        )
+        expect(result.cog?.localColormaps).toBeNull()
+    })
+
+    test('leaves the table null when none is supplied', () => {
+        const result = buildLayerLegendData('layerL3', { cogColormap: 'viridis' }, null, true, DECK_COG)
+        expect(result.cog?.localColormaps).toBeNull()
+    })
+})
