@@ -15,11 +15,7 @@ import {
     data as jsColormapData,
 } from '../../../external/js-colormaps/js-colormaps.js'
 import { fetchColormapColors } from './titilerColormaps'
-import {
-    findColormapKey,
-    getBaseColormapName,
-    isReversedColormap,
-} from './colormapNaming'
+import { findColormapKey, isReversedColormap } from './colormapNaming'
 
 // Matches TiTiler's own granularity, so a bundled ramp and a fetched one
 // produce gradients of the same fidelity.
@@ -58,10 +54,9 @@ export const resolveColormapColors = async (
 
     let fetched: string[] | null = null
     try {
-        fetched = await fetchColormapColors(
-            getBaseColormapName(name).toLowerCase(),
-            titilerUrl
-        )
+        // Passed as written: fetchColormapColors is where a ramp name is
+        // normalised, because it is what builds the URL from it.
+        fetched = await fetchColormapColors(name, titilerUrl)
     } catch (err) {
         // fetchColormapColors swallows its own failures; this guards the
         // contract against a dependency (real or mocked) that rejects instead.
