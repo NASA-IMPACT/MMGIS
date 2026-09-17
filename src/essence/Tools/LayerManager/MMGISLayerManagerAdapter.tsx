@@ -15,6 +15,7 @@ import {
     zoomToLayer,
     compareLayer,
     showAddLayer,
+    dropLayer,
 } from './adapters/handlers'
 import { mmgisGetLayerBounds } from '../_shared/adapters/mmgisAPI'
 
@@ -69,6 +70,14 @@ export function MMGISLayerManagerAdapter() {
     useMMGISEvent('layers:listChanged', refresh)
     useMMGISEvent('layers:orderChanged', refresh)
 
+    // A drop lands relative to this list, not to the full order.
+    const onReorder = useCallback(
+        (id: string, toIndex: number) => {
+            report('dropLayer', dropLayer(id, toIndex, layers.map((l) => l.id), refresh))
+        },
+        [layers, refresh],
+    )
+
     // 'layers:getAll' is registered by Layers_.fina() during mission load.
     // Wait for it before doing the initial refresh, otherwise the adapter
     // mounts to an empty list and never recovers (no event fires when the
@@ -87,6 +96,7 @@ export function MMGISLayerManagerAdapter() {
             onZoomToLayer={(id) => { report('zoomToLayer', zoomToLayer(id)) }}
             canZoomToLayer={canZoomToLayer}
             onCompareLayer={compareLayer}
+            onReorder={onReorder}
             onAddLayer={showAddLayer}
         />
     )

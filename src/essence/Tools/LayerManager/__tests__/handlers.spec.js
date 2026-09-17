@@ -7,6 +7,7 @@ import {
     zoomToLayer,
     compareLayer,
     showAddLayer,
+    dropLayer,
 } from '../adapters/handlers.ts'
 import {
     ZOOM_TO_LAYER_PADDING,
@@ -300,5 +301,71 @@ test.describe('handlers', () => {
 
         expect(warn).toHaveBeenCalledWith(expect.stringContaining('not-found'))
         warn.mockRestore()
+    })
+})
+
+// dropLayer reads the order from core, places the layer with the pure helper
+// covered in tests/unit/layerManagerOrder.spec.js, and hands the whole list
+// back. Core's broadcast is what re-sorts the list; nothing is emitted here.
+test.describe('dropLayer', () => {
+    const withOrder = (order, accepted = true) => {
+        const writes = []
+        const { emitCalls } = setupMock({
+            'layers:getOrder': order,
+            'layers:setOrder': (params) => {
+                writes.push(params.order)
+                return accepted
+            },
+        })
+        return { writes, emitCalls }
+    }
+
+    test('writes the placed order back and emits nothing', async () => {
+        const { writes, emitCalls } = withOrder(['a', 'b', 'c'])
+
+        await dropLayer('c', 0, ['a', 'b', 'c'])
+
+        expect(writes).toEqual([['c', 'a', 'b']])
+        expect(emitCalls).toEqual([])
+    })
+
+    test('a drop onto its own slot writes nothing', async () => {
+        const { requests } = setupMock({ 'layers:getOrder': ['a', 'b', 'c'] })
+
+        await dropLayer('b', 1, ['a', 'b', 'c'])
+
+        expect(requests.map((r) => r.name)).toEqual(['layers:getOrder'])
+    })
+
+    test('writes nothing against a core without an order', async () => {
+        const { requests } = setupMock({})
+
+        await dropLayer('a', 1, ['a', 'b'])
+
+        expect(requests.map((r) => r.name)).not.toContain('layers:setOrder')
+    })
+
+    // Core refuses when this side's picture of the stack is stale, so the
+    // refusal is the moment to re-read it.
+    test('on a refusal, warns and refreshes rather than throwing', async () => {
+        withOrder(['a', 'b'], false)
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const refresh = vi.fn()
+
+        await expect(dropLayer('b', 0, ['a', 'b'], refresh)).resolves.toBeUndefined()
+
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('b'))
+        expect(refresh).toHaveBeenCalledTimes(1)
+        warn.mockRestore()
+    })
+
+    test('drops a second drop that arrives before the first has been written', async () => {
+        const { writes } = withOrder(['a', 'b', 'c'])
+
+        const first = dropLayer('c', 0, ['a', 'b', 'c'])
+        const second = dropLayer('c', 0, ['a', 'b', 'c'])
+        await Promise.all([first, second])
+
+        expect(writes).toEqual([['c', 'a', 'b']])
     })
 })
