@@ -109,12 +109,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     private _overlays: Map<string, () => void> = new Map()
 
     /**
-     * The open popup, and whether the adapter is the one taking it down.
-     * Leaflet fires the same `remove` however a popup leaves the map, so the
-     * flag is what separates the library's own close from ours.
+     * The open popup. Leaflet fires the same `remove` however a popup leaves
+     * the map, so checking a close against this is what separates the
+     * library's own close from ours.
      */
     private _popup: any = null
-    private _closingPopup = false
 
     /**
      * Registry of event handlers for cleanup, keyed by event name and the
@@ -1512,9 +1511,10 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             .setContent(element)
 
         popup.on('remove', () => {
-            // A close arriving after this popup has been let go belongs to the
-            // popup that is gone, not to whichever one is open now.
-            if (this._closingPopup || this._popup !== popup) return
+            // `_popup` is let go before Leaflet is asked to close, so a close
+            // whose popup is no longer the open one is either ours or a
+            // straggler from a card already replaced.
+            if (this._popup !== popup) return
             this._popup = null
             onClose?.()
         })
@@ -1527,12 +1527,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         const popup = this._popup
         if (!popup) return
         this._popup = null
-        this._closingPopup = true
-        try {
-            this._map?.closePopup(popup)
-        } finally {
-            this._closingPopup = false
-        }
+        this._map?.closePopup(popup)
     }
 
     updateMarker(marker: any | string, updates: Partial<MarkerOptions>): any {

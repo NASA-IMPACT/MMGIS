@@ -1612,7 +1612,7 @@ test.describe('LeafletAdapter - popups', () => {
         expect(built[0].openedOn).toBe(mockMap)
     })
 
-    test('anchors a [lat, lng] tuple at the same point as the object form', () => {
+    test('anchors a [lat, lng] tuple at [lat, lng]', () => {
         const { adapter, built } = setupPopups()
 
         adapter.showPopup([40, -120], makeCard())

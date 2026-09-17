@@ -1492,7 +1492,7 @@ test.describe('DeckGLAdapter', () => {
             expect(popup.map).toBe(adapter.getBasemap())
         })
 
-        test('anchors a [lat, lng] tuple at the same point as the object form', () => {
+        test('anchors a [lat, lng] tuple at [lat, lng]', () => {
             const adapter = initAdapter(MAPLIBRE_BASEMAP)
 
             adapter.showPopup([40, -120], makeCard())
