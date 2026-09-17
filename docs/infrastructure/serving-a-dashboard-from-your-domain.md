@@ -25,7 +25,7 @@ Whether the dashboard prompts your visitors for a password depends on the enviro
 
    Nothing else matches, so your other routes are untouched — even ones that start with the same text, like `/tools/dashboard-archive`. Place both behaviors above any broader pattern of yours that also matches the path (e.g. `/tools/*`) — CloudFront uses the first match in the list.
 
-4. **Don't forward the viewer's `Host` header.** Attaching no origin request policy is fine. If you want one, use the managed `AllViewerExceptHostHeader`.
+4. **Attach the managed `AllViewerExceptHostHeader` origin request policy.** It forwards everything the viewer sent except the viewer's `Host` header, which our distribution rejects.
 
 That's the whole setup. The path stays yours to change: rename it or move it whenever you like — update the two patterns and the header together, and nothing on our side needs to hear about it.
 
@@ -43,7 +43,7 @@ With the two patterns above and header `X-Forwarded-Prefix: /tools/dashboard`:
 | anything under the path | **missing**, or wrong — e.g. `/tools/dashbord` *(typo)* | header invalid or matches nothing — no rewrite, no redirect | 403 on every request — loud failure, never the wrong files |
 | `d1abc23def.cloudfront.net/` *(the dashboard's own address, no header)* | *(none — no fronting CloudFront to add it)* | nothing — passes through | the dashboard, as always |
 
-If the dashboard is password-gated, every row above that reaches us also sits behind the password: a wrong or missing one is a 401 before any of this runs.
+If the dashboard is password-gated, every row above that reaches us also sits behind the password: a wrong or missing one is a 401 before any of this runs — except a prefetch, which gets a plain 403 (see below).
 
 ## Why these settings
 
@@ -59,10 +59,12 @@ If the dashboard is password-gated, every row above that reaches us also sits be
 
 **HTTPS only to the origin:** a gated dashboard's password rides on the `Authorization` header of every request you forward, and over plain HTTP it would cross the internet unencrypted. Gated or not, the dashboard is served over HTTPS and there is no reason to ask for less.
 
-**No viewer `Host` header:** our distribution answers only to its own `*.cloudfront.net` name; a request carrying your hostname is rejected by AWS with a 403 before anything of ours runs. CloudFront omits the viewer's `Host` by default — the hazard is specifically the managed `AllViewer` origin request policy, which forwards it. `AllViewerExceptHostHeader` forwards everything else while excluding it. The cache policy is the other way in: CloudFront forwards every header and cookie its cache key contains, so a policy that keys on `Host` sends it just as surely as an origin request policy would. Keep the key to query strings and `Authorization`, and nothing else.
+**No viewer `Host` header:** our distribution answers only to its own `*.cloudfront.net` name; a request carrying your hostname is rejected by AWS with a 403 before anything of ours runs. The hazard is specifically the managed `AllViewer` origin request policy, which forwards it — `AllViewerExceptHostHeader` is the same policy with that one header left out, which is why it is the one to attach. The cache policy is the other way in: CloudFront forwards every header and cookie its cache key contains, so a policy that keys on `Host` sends it just as surely as an origin request policy would. Keep the key to query strings and `Authorization`, and nothing else.
 
 ### If the dashboard is password-gated
 
 **`Authorization` in the cache key:** your CloudFront caches whatever we return. If the header is forwarded but not part of the cache key, one visitor's authenticated page gets cached and served to the next visitor who never entered a password. In the cache key, the header is both forwarded and kept separate per credential.
+
+**Prefetched links don't prompt:** if your site preloads the links in its navigation — a request carrying a `Next-Router-Prefetch`, `RSC`, `Sec-Purpose` or `Purpose` header — a gated dashboard answers those with a plain `403` instead of the password challenge, so the login box never appears over an unrelated page of your site. The prompt shows up only when a visitor actually opens the dashboard. This is why the `AllViewerExceptHostHeader` origin request policy is required rather than optional: a cache policy alone forwards only the headers its key contains, so without it those prefetch headers never reach us and the prompt comes back.
 
 **After the password is rotated:** invalidate your distribution. Your cache is keyed on the `Authorization` header, so the responses fetched under the old password sit in it and keep being served to anyone still presenting that password — never reaching us to be turned away — until they expire on their own, which for the immutable tier is a year. An invalidation clears them at once.

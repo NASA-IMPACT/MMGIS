@@ -661,6 +661,9 @@ test.describe('dashboard CloudFront Function behavior', () => {
                 value: opts.auth != null ? opts.auth : AUTH,
             }
         if (opts.prefix != null) headers['x-forwarded-prefix'] = { value: opts.prefix }
+        // opts.headers is a lowercase name -> value map, as the runtime delivers them.
+        for (const name of Object.keys(opts.headers || {}))
+            headers[name] = { value: opts.headers[name] }
         return {
             request: {
                 method: 'GET',
@@ -674,7 +677,7 @@ test.describe('dashboard CloudFront Function behavior', () => {
     test('the rendered function stays under the cloudfront-js-1.0 10KB limit', () => {
         // cloudfront-js-1.0 caps a viewer-request function's code at 10 KB;
         // exceeding it fails the CreateFunction call at deploy time, not here.
-        expect(code.length).toBeLessThan(10240)
+        expect(Buffer.byteLength(code, 'utf8')).toBeLessThan(10240)
     })
 
     test('with no declared prefix, requests pass through unchanged', () => {
@@ -930,6 +933,55 @@ test.describe('dashboard CloudFront Function behavior', () => {
         expect(handler(makeEvent('/x', { auth: '' })).statusCode).toBe(401)
     })
 
+    // A framework prefetch is a request the visitor never made, fired from
+    // some other page of the fronting site. Challenging it pops the
+    // browser's password dialog over that page, so it is turned away with
+    // no challenge at all; the full navigation that follows is challenged.
+    test('an unauthenticated prefetch is refused without a challenge', () => {
+        for (const name of [
+            'next-router-prefetch',
+            'rsc',
+            'sec-purpose',
+            'purpose',
+        ]) {
+            const result = handler(
+                makeEvent('/d/v/', {
+                    prefix: '/d/v',
+                    auth: null,
+                    headers: { [name]: '1' },
+                })
+            )
+            expect(result.statusCode, `${name} is answered 403`).toBe(403)
+            expect(result.statusDescription).toBe('Forbidden')
+            expect(
+                result.headers['www-authenticate'],
+                `${name} carries no challenge`
+            ).toBeUndefined()
+            expect(result.headers['cache-control'].value).toBe('no-store')
+        }
+    })
+
+    test('an unauthenticated ordinary request still gets the challenge', () => {
+        const result = handler(
+            makeEvent('/d/v/', { prefix: '/d/v', auth: null })
+        )
+        expect(result.statusCode).toBe(401)
+        expect(result.headers['www-authenticate'].value).toBe(
+            'Basic realm="MMGIS Dashboard"'
+        )
+    })
+
+    test('an authenticated prefetch is served like any other request', () => {
+        const result = handler(
+            makeEvent('/d/v/build/x.js', {
+                prefix: '/d/v',
+                headers: { 'next-router-prefetch': '1', rsc: '1' },
+            })
+        )
+        expect(result.statusCode).toBeUndefined()
+        expect(result.uri).toBe('/build/x.js')
+    })
+
     test('generated function body is ES5 only', () => {
         // A real parse rather than a keyword-blocklist regex: it also
         // catches ES6+ shapes a regex would miss (classes, for-of/for-const,
@@ -962,15 +1014,13 @@ test.describe('dashboard CloudFront Function with the gate baked off', () => {
     const code = renderAuthFunctionCode(null, false)
     const handler = new Function(`${code}; return handler;`)()
 
-    const makeEvent = (uri, prefix) => ({
-        request: {
-            method: 'GET',
-            uri,
-            querystring: {},
-            headers:
-                prefix != null ? { 'x-forwarded-prefix': { value: prefix } } : {},
-        },
-    })
+    const makeEvent = (uri, prefix, extraHeaders) => {
+        const headers = {}
+        if (prefix != null) headers['x-forwarded-prefix'] = { value: prefix }
+        for (const name of Object.keys(extraHeaders || {}))
+            headers[name] = { value: extraHeaders[name] }
+        return { request: { method: 'GET', uri, querystring: {}, headers } }
+    }
 
     // The 401 branch still ships — baked off, it is dead code — so the thing
     // worth asserting is that no credential ships with it.
@@ -982,6 +1032,17 @@ test.describe('dashboard CloudFront Function with the gate baked off', () => {
 
     test('an unauthenticated request is served, not challenged', () => {
         const result = handler(makeEvent('/build/x.js'))
+        expect(result.statusCode).toBeUndefined()
+        expect(result.uri).toBe('/build/x.js')
+    })
+
+    // The prefetch refusal lives inside the gate, so baking the gate off
+    // takes it with everything else: a prefetch is just a request here.
+    test('a prefetch is served, not refused', () => {
+        const result = handler(makeEvent('/build/x.js', null, {
+            'next-router-prefetch': '1',
+            rsc: '1',
+        }))
         expect(result.statusCode).toBeUndefined()
         expect(result.uri).toBe('/build/x.js')
     })

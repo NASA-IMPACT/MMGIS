@@ -21,8 +21,9 @@
  * for it to match against.
  *
  * What the handler does, in order:
- *   1. password gate — wrong or missing Authorization → 401, nothing else
- *      runs; skipped entirely when REQUIRE_AUTH is false
+ *   1. password gate — wrong or missing Authorization → 401, or a bare 403
+ *      for a framework prefetch; nothing else runs. Skipped entirely when
+ *      REQUIRE_AUTH is false
  *   2. read and validate X-Forwarded-Prefix (see trust model below);
  *      a missing or malformed header means: change nothing
  *   3. bare-prefix entry URL → 302 to the trailing-slash form, query
@@ -56,6 +57,27 @@ function handler(event) {
     var auth =
         headers.authorization && headers.authorization.value;
     if (REQUIRE_AUTH && auth !== EXPECTED) {
+        // A prefetch — a request carrying Next-Router-Prefetch, RSC,
+        // Sec-Purpose or Purpose (CloudFront lowercases header names before
+        // the function sees them) — gets a bare 403, so no browser login
+        // dialog appears on the page that issued it. The framework then
+        // falls back to a full navigation, which is challenged normally.
+        // The refusal carries no-store, so a fronting edge never caches
+        // it and replays it to a later real visit.
+        if (
+            headers['next-router-prefetch'] ||
+            headers['rsc'] ||
+            headers['sec-purpose'] ||
+            headers['purpose']
+        ) {
+            return {
+                statusCode: 403,
+                statusDescription: 'Forbidden',
+                headers: {
+                    'cache-control': { value: 'no-store' }
+                }
+            };
+        }
         return {
             statusCode: 401,
             statusDescription: 'Unauthorized',
