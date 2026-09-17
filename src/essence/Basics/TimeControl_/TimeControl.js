@@ -69,28 +69,34 @@ const relativeTimeFormat = new RegExp(
 )
 
 // A mission's time.format is written in one of two languages: d3 time-format
-// (e.g. '%Y-%m-%dT%H:%M:%SZ'), marked by a '%', or moment tokens (e.g.
-// 'YYYY-MM-DDTHH:mm:ss[Z]') as used elsewhere in the app (TimeUI.js,
-// DrawTool_Templater.js's default). Falls back to this when a mission has
-// time enabled but never configured a format.
+// specifiers (e.g. '%Y-%m-%dT%H:%M:%SZ') or moment tokens (e.g.
+// 'YYYY-MM-DDTHH:mm:ss[Z]'), moment being what the rest of the app formats
+// in. Falls back to this when a mission never configured a format.
 const DEFAULT_TIME_FORMAT = 'YYYY-MM-DDTHH:mm:ss[Z]'
 
 // Formats a time through the mission's configured time.format, choosing the
-// formatter that matches the language the format string is written in. Any
-// failure falls back to the default so a malformed format string can't break
-// a caller (e.g. an export stamping the time onto a legend).
+// formatter that matches the language the format string is written in. A d3
+// specifier is a '%' followed by a letter — a bare '%' doesn't select d3,
+// since it can sit in a moment pattern as a literal ('[100% of] YYYY-MM-DD').
+// The time is parsed once as UTC and handed to both, so the two languages
+// render the same instant; d3 alone would read a zone-less string as local.
+// Neither formatter throws on a string, so the catch is bare insurance
+// against a time.format that isn't one — it can't come from Configure, but a
+// caller (e.g. an export stamping the time onto a legend) shouldn't fail if
+// it ever does.
 const formatMissionTime = (time) => {
     const format = L_.configData.time?.format || DEFAULT_TIME_FORMAT
+    const parsed = moment.utc(time)
     try {
-        return format.includes('%')
-            ? utcFormat(format)(new Date(time))
-            : moment.utc(time).format(format)
+        return /%[a-zA-Z]/.test(format)
+            ? utcFormat(format)(parsed.toDate())
+            : parsed.format(format)
     } catch (err) {
         console.warn(
             `Invalid 'Time Format' provided. Defaulting to ${DEFAULT_TIME_FORMAT}.`,
             err
         )
-        return moment.utc(time).format(DEFAULT_TIME_FORMAT)
+        return parsed.format(DEFAULT_TIME_FORMAT)
     }
 }
 
@@ -140,10 +146,11 @@ var TimeControl = {
                 ),
                 // Formats a caller-supplied time through that same mission
                 // format, so a plugin displaying a time it holds itself
-                // (e.g. a per-layer window on an exported legend) matches
-                // what TimeControl's UI shows. Deliberately not gated on
-                // TimeControl.enabled: the time comes from the caller, not
-                // from the cursor. Null for a missing or unparseable time.
+                // (e.g. a per-layer window on an exported legend) prints it
+                // the mission's way rather than its own. Deliberately not
+                // gated on TimeControl.enabled: the time comes from the
+                // caller, not from the cursor. Null for a missing or
+                // unparseable time.
                 window.mmgisAPI.provide('time:formatTime', (time) =>
                     time != null && !isNaN(new Date(time).getTime())
                         ? formatMissionTime(time)

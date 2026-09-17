@@ -4,7 +4,8 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
  * time:getCurrentFormatted renders the cursor through the mission's
  * time.format, and time:formatTime applies that same format to a time the
  * caller supplies — a per-layer window on an exported legend, say. The format
- * comes in two languages: d3 specifiers, marked by a '%', and moment tokens.
+ * comes in two languages: d3, marked by a specifier such as '%Y', and moment
+ * tokens.
  */
 
 vi.mock('../../src/essence/Basics/Map_/Map_', () => ({ default: {} }))
@@ -54,7 +55,6 @@ describe('TimeControl time formatting providers', () => {
 
     afterEach(() => {
         window.mmgisAPI = originalMmgisAPI
-        vi.restoreAllMocks()
     })
 
     // Registration happens before the mission's time settings are read, so a
@@ -65,6 +65,15 @@ describe('TimeControl time formatting providers', () => {
         expect(typeof handlers['time:getCurrentFormatted']).toBe('function')
         expect(handlers['time:getCurrentFormatted']()).toBeNull()
         expect(typeof handlers['time:formatTime']).toBe('function')
+    })
+
+    // The shape every mission that never touched the field is in.
+    test('falls back to the default format when none is configured', async () => {
+        const handlers = await initTimeControl(enabledTimeConfig(undefined))
+
+        expect(handlers['time:getCurrentFormatted']()).toBe(
+            '2026-08-20T19:24:39Z'
+        )
     })
 
     // Moment would leave the '%'s literal and read 'm' as minutes; either
@@ -88,15 +97,36 @@ describe('TimeControl time formatting providers', () => {
         )
     })
 
-    // A format the mission got wrong is a configuration mistake, not a reason
-    // to fail the caller that asked for a time — it falls back to the default.
-    test('falls back to the default format when the mission format is unusable', async () => {
-        vi.spyOn(console, 'warn').mockImplementation(() => {})
-        const handlers = await initTimeControl(enabledTimeConfig({ nope: true }))
-
-        expect(handlers['time:getCurrentFormatted']()).toBe(
-            '2026-08-20T19:24:39Z'
+    // d3 reads a zone-less string as local and moment as UTC, so parsing has
+    // to happen once, up front, or the two languages disagree by the offset
+    // of whatever machine the build ran on. That offset is also what gives
+    // this test its teeth: on a UTC runner both readings coincide and it can
+    // only pass, so run it somewhere else before trusting it.
+    test('reads a zone-less time as UTC in either language', async () => {
+        const momentHandlers = await initTimeControl(
+            enabledTimeConfig('YYYY-MM-DDTHH:mm:ss[Z]')
         )
-        expect(console.warn).toHaveBeenCalled()
+        const viaMoment = momentHandlers['time:formatTime'](
+            '2026-08-20T19:24:39'
+        )
+
+        vi.resetModules()
+        const d3Handlers = await initTimeControl(
+            enabledTimeConfig('%Y-%m-%dT%H:%M:%SZ')
+        )
+        const viaD3 = d3Handlers['time:formatTime']('2026-08-20T19:24:39')
+
+        expect(viaMoment).toBe('2026-08-20T19:24:39Z')
+        expect(viaD3).toBe(viaMoment)
     })
+
+    // Nothing to format is not something to format badly.
+    test.each([[null], ['nope']])(
+        'answers null for the unusable time %p',
+        async (time) => {
+            const handlers = await initTimeControl(enabledTimeConfig())
+
+            expect(handlers['time:formatTime'](time)).toBeNull()
+        }
+    )
 })
