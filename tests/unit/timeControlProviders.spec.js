@@ -1,5 +1,10 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 
+// Node re-reads process.env.TZ on each Date call, so pinning a non-UTC zone
+// is what gives the zone-less parsing test below teeth on a UTC CI runner.
+// Module body, not a hook: it has to be set before any test constructs a Date.
+process.env.TZ = 'America/Chicago'
+
 /**
  * time:getCurrentFormatted renders the cursor through the mission's
  * time.format, and time:formatTime applies that same format to a time the
@@ -99,9 +104,8 @@ describe('TimeControl time formatting providers', () => {
 
     // d3 reads a zone-less string as local and moment as UTC, so parsing has
     // to happen once, up front, or the two languages disagree by the offset
-    // of whatever machine the build ran on. That offset is also what gives
-    // this test its teeth: on a UTC runner both readings coincide and it can
-    // only pass, so run it somewhere else before trusting it.
+    // of the machine the build ran on. The TZ pinned at the top of this file
+    // is what supplies that offset regardless of the runner.
     test('reads a zone-less time as UTC in either language', async () => {
         const momentHandlers = await initTimeControl(
             enabledTimeConfig('YYYY-MM-DDTHH:mm:ss[Z]')
