@@ -1,0 +1,171 @@
+// Builds one layer's legend from the layer as it stands right now.
+//
+// Two sources can describe a layer's legend, and they are not equal. A raster
+// that paints through a COG colormap is described by that colormap and its
+// rescale bounds, which the user changes while the dashboard runs; everything
+// else is described by the `_legend` its mission config or legend CSV declared.
+// Live colormap state therefore wins wherever the layer has one, which also
+// settles the legends LayersTool derives and writes back into `_legend`: for a
+// raster they are a stale snapshot of the state read here, and for a velocity
+// layer — which paints no COG colormap — they are the only legend there is.
+
+import { hasCogColormap } from '../tileUrlUtils'
+import { resolveColormapColors } from '../../Colormaps/resolveColormapColors'
+import { NO_LEGEND, type LayerLegend, type LegendSwatch } from './types'
+
+type LegendEntry = {
+    shape?: string
+    color?: string
+    value?: string | number
+    label?: string
+    hideFromLegend?: boolean
+}
+
+type LayerConfig = {
+    type?: string
+    cogTransform?: boolean
+    _legend?: LegendEntry[]
+    cogColormap?: string
+    currentCogColormap?: string
+    cogMin?: number | string
+    currentCogMin?: number | string
+    cogMax?: number | string
+    currentCogMax?: number | string
+    cogUnits?: string | null
+    [key: string]: unknown
+}
+
+/** The shapes that make an entry part of a continuous scale rather than a swatch. */
+const SCALE_SHAPES = ['continuous', 'discreet']
+
+const DEFAULT_COLORMAP = 'viridis'
+
+const NUMERIC_PREFIX = /^[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/
+
+/** A bound as a number, or null for anything that does not read as one. */
+const toBound = (value: unknown): number | null => {
+    if (value == null || value === '') return null
+    const num = Number(value)
+    return Number.isFinite(num) ? num : null
+}
+
+type NumericValue = { number: number; unit: string }
+
+/**
+ * Reads a legend value as a number plus an optional trailing unit
+ * (`'0.5 ppm'` -> 0.5 + 'ppm'). Null for anything that is not a plain number:
+ * a word (`'example'`), or a binned label (`'0.5-1.0 m'`) whose remainder
+ * reads as another number rather than as a unit.
+ */
+const parseNumericValue = (
+    value: string | number | undefined
+): NumericValue | null => {
+    const str = String(value ?? '').trim()
+    const match = str.match(NUMERIC_PREFIX)
+    if (!match) return null
+    const unit = str.slice(match[0].length).trim()
+    if (/^[+\-.\d]/.test(unit)) return null
+    return { number: parseFloat(match[0]), unit }
+}
+
+/**
+ * The numbers and shared unit behind a run of scale entries, or null when the
+ * run is not one honest numeric scale: some value is not a number, or the
+ * entries disagree on their unit (which is what a set of binned labels looks
+ * like once each bin's remainder is read as a unit).
+ */
+const readScaleValues = (
+    entries: LegendEntry[]
+): { numbers: number[]; unit: string | null } | null => {
+    const parsed = entries.map((entry) => parseNumericValue(entry.value))
+    if (parsed.some((value) => value === null)) return null
+    const values = parsed as NumericValue[]
+    const units = new Set(values.map((value) => value.unit))
+    if (units.size > 1) return null
+    const [unit] = [...units]
+    return { numbers: values.map((value) => value.number), unit: unit || null }
+}
+
+/**
+ * A gradient bar can only stand in for a legend that is one uninterrupted
+ * numeric scale. A legend that mixes scale runs with individually shaped
+ * entries — the form the Legend tool renders as a mix of bars and swatches —
+ * or one whose scale values are words or bins, draws as labelled swatches
+ * instead of a ramp whose bounds would be read off non-numeric text.
+ */
+const readGradient = (entries: LegendEntry[]) => {
+    if (!entries.every((entry) => SCALE_SHAPES.includes(entry.shape ?? '')))
+        return null
+    const values = readScaleValues(entries)
+    if (!values) return null
+    return {
+        stops: entries.map((entry) => entry.color || ''),
+        min: Math.min(...values.numbers),
+        max: Math.max(...values.numbers),
+        unit: values.unit ? { label: values.unit } : null,
+    }
+}
+
+const hasSwatch = (entry: LegendEntry): boolean =>
+    Boolean(entry.color) &&
+    (entry.value !== undefined || entry.label !== undefined)
+
+const toSwatches = (entries: LegendEntry[]): LegendSwatch[] =>
+    entries.map((entry) => ({
+        color: entry.color || '',
+        label: String(entry.value ?? entry.label ?? ''),
+    }))
+
+/**
+ * What the given layer's legend is, right now.
+ *
+ * `titilerUrl` is where a colormap the bundled ramps do not hold is looked up;
+ * null leaves such a ramp falling back rather than resolved. Resolving colors
+ * is why this is async — see `layers:getLegend`, which awaits it.
+ */
+export const buildLayerLegend = async (
+    layerConfig: LayerConfig | null | undefined,
+    titilerUrl: string | null = null
+): Promise<LayerLegend> => {
+    if (layerConfig == null) return NO_LEGEND
+
+    if (hasCogColormap(layerConfig)) {
+        const colormap =
+            layerConfig.currentCogColormap ||
+            layerConfig.cogColormap ||
+            DEFAULT_COLORMAP
+        return {
+            type: 'gradient',
+            stops: await resolveColormapColors(colormap, titilerUrl),
+            min: toBound(layerConfig.currentCogMin ?? layerConfig.cogMin),
+            max: toBound(layerConfig.currentCogMax ?? layerConfig.cogMax),
+            unit: layerConfig.cogUnits ? { label: layerConfig.cogUnits } : null,
+            swatches: null,
+            colormap,
+        }
+    }
+
+    const declared = layerConfig._legend
+    const entries = Array.isArray(declared)
+        ? declared.filter((entry) => entry.hideFromLegend !== true)
+        : []
+    if (entries.length === 0) return NO_LEGEND
+
+    const gradient = readGradient(entries)
+    if (gradient)
+        return {
+            type: 'gradient',
+            ...gradient,
+            swatches: null,
+            colormap: null,
+        }
+
+    if (entries.some(hasSwatch))
+        return {
+            ...NO_LEGEND,
+            type: 'categorical',
+            swatches: toSwatches(entries),
+        }
+
+    return { ...NO_LEGEND, type: 'text' }
+}

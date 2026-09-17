@@ -33,6 +33,7 @@ import {
     isCoverageGated,
     isSameCoverage,
 } from '../TimeControl_/layerDataCoverage'
+import { buildLayerLegend } from './legend/buildLayerLegend'
 import { bbox } from '@turf/turf'
 import $ from 'jquery'
 
@@ -99,6 +100,22 @@ function titilerUrlFor(layerConfig) {
     if (url == null) return null
     if (ServiceUrls.hasExternalServiceUrl('titiler', layerConfig)) return url
     return window.mmgisglobal?.WITH_TITILER === 'true' ? url : null
+}
+
+/**
+ * What a layer's legend is, resolved against the layer as it stands right now
+ * — including the colormap and rescale a user has changed since load.
+ *
+ * Async because a colormap the bundled ramps do not hold has to be looked up
+ * from the layer's tiling service.
+ *
+ * @param {string} uuid - A key of `L_.layers.data`.
+ * @returns {Promise<import('./legend/types').LayerLegend|null>}
+ */
+function legendFor(uuid) {
+    const layerObj = L_.layers.data[uuid]
+    if (layerObj == null) return Promise.resolve(null)
+    return buildLayerLegend(layerObj, titilerUrlFor(layerObj))
 }
 
 /**
@@ -479,6 +496,24 @@ const L_ = {
                         capabilities[uuid] = cogCapabilitiesFor(uuid)
                     })
                     return capabilities
+                }),
+                // What each layer's legend is: a gradient's resolved colors
+                // and bounds, a categorical legend's swatches, or nothing to
+                // draw. Answered from the layer's live state, so a colormap or
+                // rescale changed in the running dashboard is reflected here
+                // before anything redraws. Same call shapes as above.
+                window.mmgisAPI.provide('layers:getLegend', async (layerUUID) => {
+                    if (layerUUID != null) {
+                        const uuid = L_.asLayerUUID(layerUUID)
+                        return uuid == null ? null : legendFor(uuid)
+                    }
+                    const uuids = Object.keys(L_.layers.data)
+                    const resolved = await Promise.all(uuids.map(legendFor))
+                    const legends = {}
+                    uuids.forEach((uuid, i) => {
+                        legends[uuid] = resolved[i]
+                    })
+                    return legends
                 }),
                 // When each layer has data, as ISO datetimes or null. The
                 // config's dataStartTime/dataEndTime may be a policy ("now",
