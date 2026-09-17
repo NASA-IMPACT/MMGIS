@@ -27,7 +27,7 @@ import {
 } from '@deck.gl/core'
 
 import { MapboxOverlay } from '@deck.gl/mapbox'
-import { Map as MaplibreGLMap } from 'maplibre-gl'
+import { Map as MaplibreGLMap, Popup as MaplibreGLPopup } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
 import type { 
@@ -172,6 +172,24 @@ interface BasemapInstance {
 }
 
 /**
+ * Minimal API surface that is identical between mapbox-gl and maplibre-gl
+ * `Popup` instances, defined locally for the same reason as
+ * {@link BasemapInstance}.
+ */
+interface BasemapPopup {
+    /** Anchor the popup at `[longitude, latitude]`. */
+    setLngLat(lngLat: [number, number]): BasemapPopup
+    /** Fill the popup with a DOM node, as opposed to text or an HTML string. */
+    setDOMContent(content: Node): BasemapPopup
+    /** Open the popup on a map. */
+    addTo(map: BasemapInstance): BasemapPopup
+    /** Take the popup off its map. Fires `close`. */
+    remove(): BasemapPopup
+    /** Register a popup event listener (e.g. `'close'`). */
+    on(type: string, handler: () => void): BasemapPopup
+}
+
+/**
  * One half of a side-by-side comparison: a clipped div holding a map of its
  * own, so the two halves meet at the divider instead of overlapping.
  *
@@ -301,6 +319,23 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /** Active in overlay mode only. Null in standalone mode. */
     private _overlay: MapboxOverlay | null = null
+
+    /**
+     * The basemap's `Popup` class, kept because it has to come from the same
+     * module as the basemap's `Map` — mapbox resolves that module through a
+     * dynamic import. Null in standalone mode, which has no popup.
+     */
+    private _popupCtor:
+        | (new (options: Record<string, unknown>) => BasemapPopup)
+        | null = null
+
+    /**
+     * The open popup, and whether the adapter is the one taking it down. The
+     * basemap fires the same `close` however a popup leaves the map, so the
+     * flag is what separates the library's own close from ours.
+     */
+    private _popup: BasemapPopup | null = null
+    private _closingPopup = false
 
     /** True when the adapter was initialised with a {@link BasemapOptions} configuration. */
     private _isOverlayMode = false
@@ -510,6 +545,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         if (options.basemap?.provider === 'maplibre') {
             this._setupOverlay(
                 MaplibreGLMap as unknown as new (o: Record<string, unknown>) => BasemapInstance,
+                MaplibreGLPopup as unknown as new (o: Record<string, unknown>) => BasemapPopup,
                 options.basemap
             )
             return
@@ -536,6 +572,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             try { this._terraDraw.stop() } catch { /* ignore */ }
             this._terraDraw = null
         }
+
+        // Taken down here rather than left to the basemap, whose own teardown
+        // removes the popup and so would report the library closing it.
+        this.hidePopup()
 
         this._comparisonEnabled = false
         this._destroyComparisonSurfaces()
@@ -752,6 +792,51 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         if (!teardown) return
         teardown()
         this._overlays.delete(id)
+    }
+
+    /**
+     * See {@link IMapEngine.showPopup}. deck.gl draws to a canvas and has no
+     * popup of its own that works here, so the basemap's is used. `className`
+     * is the only option set: the close button, the close-on-map-click, the
+     * width and the focus-on-open all stay at the library's defaults.
+     *
+     * The popup goes on the primary basemap. A comparison pane's basemap never
+     * carries one.
+     */
+    showPopup(latlng: LatLng, element: HTMLElement, onClose?: () => void): void {
+        const basemap = this._basemap
+        const PopupClass = this._popupCtor
+        if (!basemap || !PopupClass) {
+            throw new Error(
+                '[DeckGLAdapter] showPopup requires a basemap ' +
+                '(maplibre or mapbox). Initialise the engine with ' +
+                'MapInitOptions.basemap to place a popup.'
+            )
+        }
+
+        this.hidePopup()
+
+        const popup = new PopupClass({ className: 'mmgis-map-popup' })
+        popup.on('close', () => {
+            if (this._closingPopup) return
+            this._popup = null
+            onClose?.()
+        })
+
+        this._popup = popup
+        popup.setLngLat([latlng.lng, latlng.lat]).setDOMContent(element).addTo(basemap)
+    }
+
+    hidePopup(): void {
+        const popup = this._popup
+        if (!popup) return
+        this._popup = null
+        this._closingPopup = true
+        try {
+            popup.remove()
+        } finally {
+            this._closingPopup = false
+        }
     }
 
     setView(center: LatLngLike, zoom?: number, options?: ViewOptions): void {
@@ -2126,15 +2211,23 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     private async _initOverlayModeMapbox(basemap: BasemapOptions): Promise<void> {
         let MapboxGLMap: new (options: Record<string, unknown>) => BasemapInstance
+        let MapboxGLPopup: new (options: Record<string, unknown>) => BasemapPopup
+
+        type MapboxGLModule = {
+            Map?: new (options: Record<string, unknown>) => BasemapInstance
+            Popup?: new (options: Record<string, unknown>) => BasemapPopup
+        }
 
         try {
-            const lib = (await import('mapbox-gl')) as unknown as {
-                default?: { Map: new (options: Record<string, unknown>) => BasemapInstance }
-                Map?: new (options: Record<string, unknown>) => BasemapInstance
+            const lib = (await import('mapbox-gl')) as unknown as MapboxGLModule & {
+                default?: MapboxGLModule
             }
             const MapClass = (lib.default ?? lib).Map
             if (!MapClass) throw new Error('Map not found in mapbox-gl module')
+            const PopupClass = (lib.default ?? lib).Popup
+            if (!PopupClass) throw new Error('Popup not found in mapbox-gl module')
             MapboxGLMap = MapClass
+            MapboxGLPopup = PopupClass
         } catch {
             throw new Error(
                 'DeckGLAdapter: mapbox-gl is not installed. ' +
@@ -2142,7 +2235,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             )
         }
 
-        this._setupOverlay(MapboxGLMap, basemap)
+        this._setupOverlay(MapboxGLMap, MapboxGLPopup, basemap)
     }
 
     /**
@@ -2152,6 +2245,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     private _setupOverlay(
         MapClass: new (options: Record<string, unknown>) => BasemapInstance,
+        PopupClass: new (options: Record<string, unknown>) => BasemapPopup,
         basemap: BasemapOptions
     ): void {
         const mapOptions: Record<string, unknown> = {
@@ -2175,6 +2269,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
         this._basemap = new MapClass(mapOptions)
         this._basemapCtor = MapClass
+        this._popupCtor = PopupClass
         this._basemapOptions = basemap
         this._basemapStyle = basemap.style
         this._isOverlayMode = true
