@@ -25,7 +25,7 @@ const CONFIGS = {
     [BASEMAP]: { display_name: 'Basemap', cogColormap: 'viridis' },
 }
 
-const setupMock = ({ capabilities, provideCapability = true, titilerUrls }) => {
+const setupMock = ({ capabilities, provideCapability = true, titilerUrls, order }) => {
     const responses = {
         'layers:getAllConfigs': CONFIGS,
         'layers:getVisible': { [DISPLACEMENT]: true, [BASEMAP]: true },
@@ -33,6 +33,7 @@ const setupMock = ({ capabilities, provideCapability = true, titilerUrls }) => {
     }
     if (provideCapability) responses['layers:getCogCapabilities'] = capabilities
     if (titilerUrls) responses['layers:getTiTilerUrl'] = titilerUrls
+    if (order) responses['layers:getOrder'] = order
 
     global.window = global.window || {}
     global.window.mmgisAPI = {
@@ -148,5 +149,24 @@ describe('getVisibleLayersWithLegends', () => {
         const layers = await getVisibleLayersWithLegends()
 
         expect(byId(layers, DISPLACEMENT).cog?.titilerUrl).toBeNull()
+    })
+
+    // The list reads top down as the map stacks. The config lists
+    // Displacement first; the draw order below puts the basemap on top.
+    test('lists layers in the draw order core gives', async () => {
+        setupMock({
+            capabilities: {},
+            order: [BASEMAP, DISPLACEMENT],
+        })
+        const layers = await getVisibleLayersWithLegends()
+
+        expect(layers.map((l) => l.id)).toEqual([BASEMAP, DISPLACEMENT])
+    })
+
+    test('keeps config order against a core without an order to give', async () => {
+        setupMock({ capabilities: {} })
+        const layers = await getVisibleLayersWithLegends()
+
+        expect(layers.map((l) => l.id)).toEqual([DISPLACEMENT, BASEMAP])
     })
 })
