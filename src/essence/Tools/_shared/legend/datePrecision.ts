@@ -46,7 +46,7 @@ const formatEpochMs = (
         case 'month':
             return month
         case 'hour':
-            return `${day} ${pad(date.getUTCHours())}:00Z`
+            return `${day}T${pad(date.getUTCHours())}:00Z`
         case 'second':
             return `${day}T${pad(date.getUTCHours())}:${pad(
                 date.getUTCMinutes(),

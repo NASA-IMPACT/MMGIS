@@ -123,7 +123,7 @@ const requestedDateLine = (
     if (!cursorText) return null
     const startText = start ? formatAtPrecision(precision, start) : null
     return startText
-        ? `Requested ${startText} → ${cursorText}`
+        ? spanLine('Requested', startText, cursorText)
         : `Requested up to ${cursorText}`
 }
 

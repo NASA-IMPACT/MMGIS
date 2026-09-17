@@ -16,8 +16,8 @@ describe('formatAtPrecision', () => {
         expect(at('P1Y', '2026-07-03T06:12:22Z')).toBe('2026')
         expect(at('P6M', '2026-07-03T06:12:22Z')).toBe('2026-07')
         expect(at('P1W', '2026-07-03T06:12:22Z')).toBe('2026-07-03')
-        expect(at('PT6H', '2026-07-03T06:12:22Z')).toBe('2026-07-03 06:00Z')
-        expect(at('P1DT6H', '2026-07-03T06:12:22Z')).toBe('2026-07-03 06:00Z')
+        expect(at('PT6H', '2026-07-03T06:12:22Z')).toBe('2026-07-03T06:00Z')
+        expect(at('P1DT6H', '2026-07-03T06:12:22Z')).toBe('2026-07-03T06:00Z')
         expect(at('PT30M', '2026-07-03T06:12:22Z')).toBe('2026-07-03T06:12:22Z')
     })
 
@@ -49,6 +49,6 @@ describe('formatPeriodEnd', () => {
                 parseISODuration('PT6H'),
                 '2025-01-01T18:00:00.000Z',
             ),
-        ).toBe('2025-01-01 17:00Z')
+        ).toBe('2025-01-01T17:00Z')
     })
 })

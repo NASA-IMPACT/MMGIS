@@ -121,7 +121,7 @@ For a **time-enabled layer**, `time.enabled` is the whole test. The URL is not i
 - **Request and coverage that do not overlap at all**, a cursor sitting before the layer's first scene, print `Requested`, since the server had nothing inside the span to draw and the app cannot say what, if anything, is on screen.
 - Without a cursor, the row shows no date line.
 
-On any `Collected` line, a range whose two ends print as the same label — a single day at day precision, say — shows that label once rather than `X → X`. A period that is not calendar-aligned prints at its unit's precision and so can read wider than it is: a two-year period starting mid-2025 prints as `2025 → 2027`.
+A range whose two ends print as the same label — a single day at day precision, say — shows that label once rather than `X → X`, on a `Collected` line and a `Requested` one alike. A period that is not calendar-aligned prints at its unit's precision and so can read wider than it is: a two-year period starting mid-2025 prints as `2025 → 2027`.
 
 **How precisely a row's dates print** is decided by the layer's `time.interval`, not by the mission's time format. A daily collection has no business printing seconds. The smallest unit in the interval sets the precision:
 
@@ -130,7 +130,7 @@ On any `Collected` line, a range whose two ends print as the same label — a si
 | years | `2026` |
 | months | `2026-07` |
 | days or weeks | `2026-07-03` |
-| hours | `2026-07-03 06:00Z` |
+| hours | `2026-07-03T06:00Z` |
 | minutes or seconds | `2026-07-03T06:12:22Z` |
 | no interval, or unparseable | `2026-07-03` |
 

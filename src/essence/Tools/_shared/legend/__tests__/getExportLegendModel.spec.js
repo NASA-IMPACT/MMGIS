@@ -294,6 +294,29 @@ describe('getExportLegendModel', () => {
             ])
         })
 
+        // Both ends of a span print at the same precision, so a span narrower
+        // than that precision reads the same at both ends; `X → X` would only
+        // look like a mistake.
+        test('a span whose ends print alike says the date once', async () => {
+            vi.mocked(mmgisGetTimeStart).mockResolvedValue(
+                '2026-08-25T01:00:00Z',
+            )
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                oneDay: {
+                    start: '2016-05-01T00:00:00Z',
+                    end: '2016-05-01T23:59:59Z',
+                },
+            })
+            const rows = await rowsFor({
+                oneDay: { url: 'https://host/{z}/{x}/{y}.png' },
+                oneRequest: timeEnabled(),
+            })
+            expect(rows.map((row) => row.dateLine)).toEqual([
+                'Collected 2016-05-01',
+                'Requested 2026-08-25',
+            ])
+        })
+
         // A time bus that cannot answer costs the rows their dates, never the
         // band its rows.
         test('a throwing time bus leaves the rows intact', async () => {
