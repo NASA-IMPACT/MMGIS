@@ -7,7 +7,18 @@
 
 import { getBaseColormapName } from './colormapNaming'
 
-const cache = new Map<string, Promise<string[] | null>>()
+/** A ramp that resolved is kept for the session; one that did not is not. */
+type CachedRamp = { colors: Promise<string[] | null>; expiresAt: number }
+
+const cache = new Map<string, CachedRamp>()
+
+/**
+ * How long a failed lookup is remembered. Long enough that an unreachable
+ * service is not re-dialled — and every legend re-blocked on it — each time a
+ * layer's opacity moves; short enough that a service coming back is picked up
+ * without a reload.
+ */
+const FAILURE_TTL_MS = 60000
 
 /** Trailing-slash-normalized base, or null when no service was supplied. */
 const resolveBase = (titilerUrl?: string | null): string | null =>
@@ -56,7 +67,7 @@ export const fetchColormapColors = (
     // the same ramp name do not collide.
     const key = `${baseUrl}|${rampName}`
     const cached = cache.get(key)
-    if (cached) return cached
+    if (cached && cached.expiresAt > Date.now()) return cached.colors
 
     const pending = (async (): Promise<string[] | null> => {
         try {
@@ -74,11 +85,12 @@ export const fetchColormapColors = (
         }
     })()
 
-    cache.set(key, pending)
-    // Only a resolved ramp is worth remembering. The identity check keeps a
-    // retry already in flight from being evicted by the failure it replaced.
+    const entry: CachedRamp = { colors: pending, expiresAt: Infinity }
+    cache.set(key, entry)
+    // Dated once the answer is in, on the entry itself rather than through a
+    // timer: an expired entry is simply replaced by the next lookup.
     void pending.then((colors) => {
-        if (colors == null && cache.get(key) === pending) cache.delete(key)
+        if (colors == null) entry.expiresAt = Date.now() + FAILURE_TTL_MS
     })
     return pending
 }
