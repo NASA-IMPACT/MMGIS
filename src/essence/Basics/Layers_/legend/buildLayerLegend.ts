@@ -105,8 +105,16 @@ const readGradient = (entries: LegendEntry[]) => {
         return null
     const values = readScaleValues(entries)
     if (!values) return null
+    const stops = entries.map((entry) => entry.color || '')
+    // A scale may be written either way round — LayersTool builds its derived
+    // legend ascending and then reverses it, and authors write both — while
+    // every consumer paints the stops left to right against a minimum printed
+    // on the left. A descending run is turned round here so the ramp and its
+    // labels can never run opposite ways.
+    if (values.numbers[0] > values.numbers[values.numbers.length - 1])
+        stops.reverse()
     return {
-        stops: entries.map((entry) => entry.color || ''),
+        stops,
         min: Math.min(...values.numbers),
         max: Math.max(...values.numbers),
         unit: values.unit ? { label: values.unit } : null,

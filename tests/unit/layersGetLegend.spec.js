@@ -207,6 +207,29 @@ describe('layers:getLegend', () => {
         expect(legend.unit).toEqual({ label: 'm/s' })
     })
 
+    // A scale can be authored either way round, and LayersTool writes its
+    // derived one high to low. Everything downstream paints the stops left to
+    // right against the minimum printed on the left, so a descending run has
+    // to be turned round or the ramp runs opposite to its own labels.
+    test('turns a descending declared gradient the right way round', async () => {
+        withLayers({
+            Depth: {
+                type: 'vector',
+                _legend: [
+                    { shape: 'continuous', color: '#ffffff', value: '100 m' },
+                    { shape: 'continuous', color: '#888888', value: '50 m' },
+                    { shape: 'continuous', color: '#000000', value: '0 m' },
+                ],
+            },
+        })
+
+        const legend = await providers['layers:getLegend']('Depth')
+
+        expect(legend.stops).toEqual(['#000000', '#888888', '#ffffff'])
+        expect(legend.min).toBe(0)
+        expect(legend.max).toBe(100)
+    })
+
     // The mixed form documented in docs/pages/Tools/Legend/Legend.md: runs of
     // discreet/continuous entries interleaved with individually shaped ones,
     // all labelled with words. Reading the first entry's shape alone would
