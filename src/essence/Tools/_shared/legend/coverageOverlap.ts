@@ -9,6 +9,8 @@
  * is no bound at all, so it can never narrow a range it says nothing about.
  */
 
+import { parseInstant, type Instant } from './isoInstant'
+
 /** A layer's coverage. Either end may be absent: the data reaches past it. */
 export type Coverage = { start: string | null; end: string | null }
 
@@ -20,15 +22,9 @@ export type RequestSpan = { start: string | null; end: string }
  *  request nor the coverage bounds the past. */
 export type Overlap = { start: string | null; end: string }
 
-/** An instant that parsed, carried with the text it was written as, so a
- *  range prints the dates it was given rather than a rewritten form. */
-type Bound = { text: string; ms: number } | null
-
-const bound = (instant: string | null | undefined): Bound => {
-    if (typeof instant !== 'string') return null
-    const ms = Date.parse(instant)
-    return Number.isNaN(ms) ? null : { text: instant, ms }
-}
+/** A bound that parsed, or null: a bound nobody set, and one that will not
+ *  parse, both narrow nothing. */
+type Bound = Instant | null
 
 // Null is unbounded on both helpers: the other bound is then the only one
 // there is.
@@ -48,10 +44,13 @@ export const coverageOverlap = (
     request: RequestSpan,
     coverage: Coverage,
 ): Overlap | null => {
-    const cursor = bound(request.end)
+    const cursor = parseInstant(request.end)
     if (cursor === null) return null
-    const start = later(bound(request.start), bound(coverage.start))
-    const end = earlier(cursor, bound(coverage.end))
+    const start = later(
+        parseInstant(request.start),
+        parseInstant(coverage.start),
+    )
+    const end = earlier(cursor, parseInstant(coverage.end))
     if (end === null) return null
     if (start !== null && start.ms > end.ms) return null
     return { start: start?.text ?? null, end: end.text }
@@ -67,11 +66,11 @@ export const hasDataIn = (
     coverage: Coverage,
     period: { start: string; end: string },
 ): boolean => {
-    const start = bound(period.start)
-    const end = bound(period.end)
+    const start = parseInstant(period.start)
+    const end = parseInstant(period.end)
     if (start === null || end === null) return false
-    const coverageStart = bound(coverage.start)
-    const coverageEnd = bound(coverage.end)
+    const coverageStart = parseInstant(coverage.start)
+    const coverageEnd = parseInstant(coverage.end)
     if (coverageEnd !== null && start.ms > coverageEnd.ms) return false
     if (coverageStart !== null && end.ms <= coverageStart.ms) return false
     return true
@@ -95,16 +94,16 @@ export const clipPeriodToCoverage = (
     period: { start: string; end: string },
     coverage: Coverage,
 ): { start: string; end: string; endIsPeriodEnd: boolean } => {
-    const periodStart = bound(period.start)
-    const coverageStart = bound(coverage.start)
+    const periodStart = parseInstant(period.start)
+    const coverageStart = parseInstant(coverage.start)
     const start =
         periodStart !== null &&
         coverageStart !== null &&
         coverageStart.ms > periodStart.ms
             ? coverageStart.text
             : period.start
-    const periodEnd = bound(period.end)
-    const coverageEnd = bound(coverage.end)
+    const periodEnd = parseInstant(period.end)
+    const coverageEnd = parseInstant(coverage.end)
     return periodEnd !== null &&
         coverageEnd !== null &&
         coverageEnd.ms < periodEnd.ms

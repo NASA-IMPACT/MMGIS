@@ -9,6 +9,7 @@
  */
 
 import { type Duration } from '../../../Basics/TimeControl_/layerTimePolicy'
+import { parseInstant } from './isoInstant'
 
 type Precision = 'year' | 'month' | 'day' | 'hour' | 'second'
 
@@ -63,11 +64,10 @@ const formatEpochMs = (
 export const formatAtPrecision = (
     duration: Duration | null | undefined,
     instant: string | null | undefined,
-): string | null =>
-    formatEpochMs(
-        duration,
-        typeof instant === 'string' ? Date.parse(instant) : NaN,
-    )
+): string | null => {
+    const parsed = parseInstant(instant)
+    return parsed && formatEpochMs(duration, parsed.ms)
+}
 
 /**
  * A period's end, printed inclusively. The end a period carries is the
@@ -77,8 +77,7 @@ export const formatAtPrecision = (
 export const formatPeriodEnd = (
     duration: Duration | null | undefined,
     exclusiveEnd: string | null | undefined,
-): string | null =>
-    formatEpochMs(
-        duration,
-        typeof exclusiveEnd === 'string' ? Date.parse(exclusiveEnd) - 1 : NaN,
-    )
+): string | null => {
+    const parsed = parseInstant(exclusiveEnd)
+    return parsed && formatEpochMs(duration, parsed.ms - 1)
+}
