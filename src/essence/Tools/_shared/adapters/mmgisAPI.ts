@@ -22,8 +22,18 @@ export type MapScreenshotResult = {
 export type LayerConfig = {
     name?: string
     display_name?: string
+    description?: string
+    /** The layer's kind: 'tile', 'vector', 'header', and so on. */
+    type?: string
     time?: {
         enabled?: boolean
+        /**
+         * 'global' and 'requery' track the global time cursor; 'local'
+         * carries its own window in `start`/`end`.
+         */
+        type?: string
+        start?: string | null
+        end?: string | null
         /** As authored: a concrete ISO datetime or a policy string ("now",
          *  "now - P1D"). A periodic layer may also carry an `interval`
          *  cadence, already folded into the resolved extent. Ask

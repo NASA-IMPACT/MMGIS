@@ -10,7 +10,7 @@ import type { ExportLegendModel, ExportLegendRow } from './getExportLegendModel'
 const FRAME_INSET = 12
 const PAD = 16
 // Type sizes, largest to smallest: the mission title, row titles, then the
-// metadata and bound labels.
+// metadata, date and bound labels.
 const TITLE_TEXT = 16
 const ROW_TITLE_TEXT = 13
 const META_TEXT = 11
@@ -163,6 +163,14 @@ type Layout = {
     bandHeight: number
 }
 
+// The line a row's date occupies under its title, for the rows that carry
+// one; the draw pass advances by exactly this much before the row's body.
+const dateLineHeight = (row: ExportLegendRow, scale: number): number =>
+    row.dateLine ? (LINE_GAP + LABEL_TEXT) * scale : 0
+
+const rowHeadHeight = (row: ExportLegendRow, scale: number): number =>
+    ROW_TITLE_TEXT * scale + dateLineHeight(row, scale)
+
 const wrapCategorical = (
     ctx: Ctx2D,
     stops: { color: string; label: string }[],
@@ -202,13 +210,14 @@ const cellOf = (
     width: number,
     scale: number,
 ): Cell => {
-    const head = ROW_TITLE_TEXT * scale
+    const head = rowHeadHeight(row, scale)
     if (row.kind === 'gradient') {
         const body = (BODY_GAP + BAR_HEIGHT + LINE_GAP + LABEL_TEXT) * scale
         return { row, x, width, height: head + body, items: [] }
     }
     if (row.kind === 'plain') {
-        // A name alone: there is no graphic under it to leave room for.
+        // A name and its date line: there is no graphic under them to leave
+        // room for.
         return { row, x, width, height: head, items: [] }
     }
     const items = wrapCategorical(ctx, row.stops, width, scale)
@@ -357,8 +366,17 @@ const drawCell = (
     ctx.fillStyle = INK
     ctx.font = FONT(ROW_TITLE_TEXT, scale, 'bold')
     ctx.fillText(clipText(ctx, row.title, cell.width), x, y)
+    if (row.dateLine) {
+        ctx.fillStyle = MUTED
+        ctx.font = FONT(LABEL_TEXT, scale)
+        ctx.fillText(
+            clipText(ctx, row.dateLine, cell.width),
+            x,
+            y + (ROW_TITLE_TEXT + LINE_GAP) * scale,
+        )
+    }
     if (row.kind === 'plain') return
-    const bodyY = y + ROW_TITLE_TEXT * scale + BODY_GAP * scale
+    const bodyY = y + rowHeadHeight(row, scale) + BODY_GAP * scale
 
     if (row.kind === 'gradient') {
         const barW = Math.min(BAR_WIDTH * scale, cell.width)
