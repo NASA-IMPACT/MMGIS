@@ -23,8 +23,9 @@ export type ColorRampPickerProps = {
     layerId: string
     /** Current ramp, including any `_r` suffix. */
     colormap: string
-    min: number
-    max: number
+    /** The layer's rescale bounds, null where it declares none. */
+    min: number | null
+    max: number | null
     units?: string | null
     titilerUrl?: string | null
     onColormapChange?: (layerId: string, colormap: string) => void
@@ -52,8 +53,10 @@ export function ColorRampPicker({
     const headingId = useId()
     const listRef = useRef<HTMLDivElement | null>(null)
     const rangeRef = useRef<HTMLDivElement | null>(null)
-    const [minInput, setMinInput] = useState<string>(String(min))
-    const [maxInput, setMaxInput] = useState<string>(String(max))
+    // A bound nobody declared seeds an empty field rather than the string
+    // 'null'; typing one in is how the layer gets a range for the first time.
+    const [minInput, setMinInput] = useState<string>(String(min ?? ''))
+    const [maxInput, setMaxInput] = useState<string>(String(max ?? ''))
     const [reversed, setReversed] = useState<boolean>(() => isReversedColormap(colormap))
 
     // The bounds are read back on teardown, when React has already discarded
@@ -61,7 +64,7 @@ export function ColorRampPicker({
     // actually sent so a commit is never issued twice for the same edit.
     const boundsRef = useRef({ minInput, maxInput })
     boundsRef.current = { minInput, maxInput }
-    const committedRef = useRef<{ min: number; max: number }>({ min, max })
+    const committedRef = useRef<{ min: number | null; max: number | null }>({ min, max })
 
     // Ramp names are matched case-insensitively: a layer may be configured
     // with any casing, while the service reports and accepts lowercase.
@@ -86,8 +89,8 @@ export function ColorRampPicker({
     useEffect(() => {
         committedRef.current = { min, max }
         if (rangeRef.current?.contains(document.activeElement)) return
-        setMinInput(String(min))
-        setMaxInput(String(max))
+        setMinInput(String(min ?? ''))
+        setMaxInput(String(max ?? ''))
     }, [min, max])
 
     useEffect(() => {
@@ -126,8 +129,8 @@ export function ColorRampPicker({
             boundsRef.current.maxInput,
         )
         if (!result.valid) {
-            setMinInput(String(lastMin))
-            setMaxInput(String(lastMax))
+            setMinInput(String(lastMin ?? ''))
+            setMaxInput(String(lastMax ?? ''))
             return
         }
         if (result.min === lastMin && result.max === lastMax) return

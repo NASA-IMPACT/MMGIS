@@ -2,9 +2,11 @@ import { describe, test, expect, afterEach } from 'vitest'
 import { getVisibleLayersWithLegends } from '../adapters/getVisibleLayersWithLegends.ts'
 
 /**
- * Covers the seam between core and the legend: the COG capabilities core
- * returns have to reach buildLayerLegendData per layer, and their absence has
- * to leave the COG controls out rather than throw.
+ * Covers the seam between core and the panel. Core answers what each layer's
+ * legend is and what its colormap supports; this side only assembles those
+ * answers into rows, so what is tested here is that each one reaches the layer
+ * it belongs to and that a core too old to answer leaves the row plain rather
+ * than throwing.
  *
  * Every map crossing this seam is keyed by layer UUID, which a mission config
  * sets independently of `display_name`. The fixtures below keep the two
@@ -16,22 +18,42 @@ const DISPLACEMENT = 'Displacement_0123456789abcdef'
 const BASEMAP = 'Basemap_fedcba9876543210'
 
 const CONFIGS = {
-    [DISPLACEMENT]: {
-        display_name: 'Displacement',
-        cogColormap: 'viridis',
-        cogMin: 0,
-        cogMax: 1,
-    },
-    [BASEMAP]: { display_name: 'Basemap', cogColormap: 'viridis' },
+    [DISPLACEMENT]: { display_name: 'Displacement' },
+    [BASEMAP]: { display_name: 'Basemap' },
 }
 
-const setupMock = ({ capabilities, provideCapability = true, titilerUrls, order }) => {
+const GRADIENT = {
+    type: 'gradient',
+    stops: ['#000000', '#ffffff'],
+    min: 0,
+    max: 1,
+    unit: { label: 'm' },
+    swatches: null,
+    colormap: 'plasma',
+}
+
+const NO_LEGEND = {
+    type: 'none',
+    stops: null,
+    min: null,
+    max: null,
+    unit: null,
+    swatches: null,
+    colormap: null,
+}
+
+const EDITABLE = { hasColormap: true, canChangeColormap: true }
+const READ_ONLY = { hasColormap: true, canChangeColormap: false }
+const NONE = { hasColormap: false, canChangeColormap: false }
+
+const setupMock = ({ legends, capabilities, titilerUrls, order } = {}) => {
     const responses = {
         'layers:getAllConfigs': CONFIGS,
         'layers:getVisible': { [DISPLACEMENT]: true, [BASEMAP]: true },
         'layers:getAllOpacities': { [DISPLACEMENT]: 1, [BASEMAP]: 1 },
     }
-    if (provideCapability) responses['layers:getCogCapabilities'] = capabilities
+    if (legends) responses['layers:getLegend'] = legends
+    if (capabilities) responses['layers:getCogCapabilities'] = capabilities
     if (titilerUrls) responses['layers:getTiTilerUrl'] = titilerUrls
     if (order) responses['layers:getOrder'] = order
 
@@ -50,10 +72,6 @@ const setupMock = ({ capabilities, provideCapability = true, titilerUrls, order 
     }
 }
 
-const EDITABLE = { hasColormap: true, canChangeColormap: true }
-const READ_ONLY = { hasColormap: true, canChangeColormap: false }
-const NONE = { hasColormap: false, canChangeColormap: false }
-
 const byId = (layers, id) => layers.find((l) => l.id === id)
 
 describe('getVisibleLayersWithLegends', () => {
@@ -61,24 +79,31 @@ describe('getVisibleLayersWithLegends', () => {
         delete global.window.mmgisAPI
     })
 
-    test("passes each layer's capabilities through to its legend data", async () => {
-        setupMock({ capabilities: { [DISPLACEMENT]: EDITABLE, [BASEMAP]: NONE } })
+    // Core's legend is copied onto the row as it stands. Nothing here rebuilds
+    // it, derives bounds, or resolves a ramp — that all happened in core.
+    test("carries core's legend onto the row it belongs to", async () => {
+        setupMock({ legends: { [DISPLACEMENT]: GRADIENT, [BASEMAP]: NO_LEGEND } })
         const layers = await getVisibleLayersWithLegends()
 
-        expect(byId(layers, DISPLACEMENT).cog).not.toBeNull()
-        expect(byId(layers, DISPLACEMENT).cog?.colormap).toBe('viridis')
-        expect(byId(layers, BASEMAP).cog).toBeNull()
+        expect(byId(layers, DISPLACEMENT)).toMatchObject({
+            title: 'Displacement',
+            type: 'gradient',
+            stops: ['#000000', '#ffffff'],
+            min: 0,
+            max: 1,
+            unit: { label: 'm' },
+        })
+        expect(byId(layers, BASEMAP).type).toBe('none')
     })
 
-    // The capability map is UUID-keyed, and a layer's UUID is not its title.
-    // Keying the lookup by either the display name or the title would leave
-    // every layer without controls.
-    test('keys capabilities by layer UUID, not display name', async () => {
+    // Every map crossing the seam is UUID-keyed, and a layer's UUID is not its
+    // title. Keying by display name would give both rows the wrong answers.
+    test('keys every answer by layer UUID, not display name', async () => {
         setupMock({
+            legends: { [DISPLACEMENT]: GRADIENT, Displacement: NO_LEGEND },
             capabilities: {
                 [DISPLACEMENT]: EDITABLE,
-                // What a display-name-keyed lookup would find instead. It must
-                // not be what decides the verdict.
+                // What a display-name-keyed lookup would find instead.
                 Displacement: NONE,
                 Basemap: EDITABLE,
             },
@@ -86,87 +111,57 @@ describe('getVisibleLayersWithLegends', () => {
         const layers = await getVisibleLayersWithLegends()
 
         const displacement = byId(layers, DISPLACEMENT)
-        expect(displacement.title).toBe('Displacement')
         expect(displacement.id).not.toBe(displacement.title)
+        expect(displacement.type).toBe('gradient')
         expect(displacement.cog).not.toBeNull()
         expect(byId(layers, BASEMAP).cog).toBeNull()
     })
 
-    test('carries the editable flag through per layer', async () => {
+    // The controls follow the capability, and each layer gets the service core
+    // resolved for it — a mission can point one layer at its own.
+    test('offers colormap controls only where core reports the capability', async () => {
         setupMock({
+            legends: { [DISPLACEMENT]: GRADIENT, [BASEMAP]: GRADIENT },
             capabilities: { [DISPLACEMENT]: READ_ONLY, [BASEMAP]: EDITABLE },
-        })
-        const layers = await getVisibleLayersWithLegends()
-
-        expect(byId(layers, DISPLACEMENT).cog?.editable).toBe(false)
-        expect(byId(layers, BASEMAP).cog?.editable).toBe(true)
-    })
-
-    test('leaves COG data off a layer the capability map omits', async () => {
-        setupMock({ capabilities: { [DISPLACEMENT]: EDITABLE } })
-        const layers = await getVisibleLayersWithLegends()
-
-        expect(byId(layers, BASEMAP).cog).toBeNull()
-    })
-
-    test('degrades to no COG data against a core without the handler', async () => {
-        setupMock({ provideCapability: false })
-        const layers = await getVisibleLayersWithLegends()
-
-        expect(layers).toHaveLength(2)
-        expect(layers.every((l) => l.cog === null)).toBe(true)
-    })
-
-    // Per layer rather than global, since a mission can point one layer at a
-    // different service than the rest.
-    test('carries the tiling service core resolved through per layer', async () => {
-        setupMock({
-            capabilities: { [DISPLACEMENT]: EDITABLE, [BASEMAP]: EDITABLE },
-            titilerUrls: {
-                [DISPLACEMENT]: 'https://titiler.test',
-                [BASEMAP]: 'https://other-titiler.test',
-            },
-        })
-        const layers = await getVisibleLayersWithLegends()
-
-        expect(byId(layers, DISPLACEMENT).cog?.titilerUrl).toBe('https://titiler.test')
-        expect(byId(layers, BASEMAP).cog?.titilerUrl).toBe('https://other-titiler.test')
-    })
-
-    test('leaves the service null when core resolves none for a layer', async () => {
-        setupMock({
-            capabilities: { [DISPLACEMENT]: EDITABLE, [BASEMAP]: EDITABLE },
             titilerUrls: { [DISPLACEMENT]: null, [BASEMAP]: 'https://titiler.test' },
         })
         const layers = await getVisibleLayersWithLegends()
 
-        expect(byId(layers, DISPLACEMENT).cog?.titilerUrl).toBeNull()
-        expect(byId(layers, BASEMAP).cog?.titilerUrl).toBe('https://titiler.test')
+        expect(byId(layers, DISPLACEMENT).cog).toEqual({
+            editable: false,
+            colormap: 'plasma',
+            titilerUrl: null,
+        })
+        expect(byId(layers, BASEMAP).cog).toEqual({
+            editable: true,
+            colormap: 'plasma',
+            titilerUrl: 'https://titiler.test',
+        })
     })
 
-    test('leaves the service null against a core without the handler', async () => {
-        setupMock({ capabilities: { [DISPLACEMENT]: EDITABLE } })
+    // A core that registers none of these handlers answers null rather than a
+    // verdict. The rows still list, plain.
+    test('degrades to plain rows against a core without the handlers', async () => {
+        setupMock()
         const layers = await getVisibleLayersWithLegends()
 
-        expect(byId(layers, DISPLACEMENT).cog?.titilerUrl).toBeNull()
+        expect(layers).toHaveLength(2)
+        expect(layers.every((l) => l.type === 'none' && l.cog === null)).toBe(true)
     })
 
     // The list reads top down as the map stacks. The config lists
     // Displacement first; the draw order below puts the basemap on top.
     test('lists layers in the draw order core gives', async () => {
-        setupMock({
-            capabilities: {},
-            order: [BASEMAP, DISPLACEMENT],
-        })
-        const layers = await getVisibleLayersWithLegends()
+        setupMock({ order: [BASEMAP, DISPLACEMENT] })
+        expect((await getVisibleLayersWithLegends()).map((l) => l.id)).toEqual([
+            BASEMAP,
+            DISPLACEMENT,
+        ])
 
-        expect(layers.map((l) => l.id)).toEqual([BASEMAP, DISPLACEMENT])
-    })
-
-    test('keeps config order against a core without an order to give', async () => {
-        setupMock({ capabilities: {} })
-        const layers = await getVisibleLayersWithLegends()
-
-        expect(layers.map((l) => l.id)).toEqual([DISPLACEMENT, BASEMAP])
+        setupMock()
+        expect((await getVisibleLayersWithLegends()).map((l) => l.id)).toEqual([
+            DISPLACEMENT,
+            BASEMAP,
+        ])
     })
 })

@@ -200,6 +200,48 @@ export const mmgisGetLayerCogCapabilities = (
     )
 }
 
+/** What a layer's legend draws as. `none` means there is nothing to draw. */
+export type LegendType = 'gradient' | 'categorical' | 'text' | 'none'
+
+export type LegendSwatch = { color: string; label: string }
+
+/**
+ * A layer's legend as core resolves it. Core owns this answer because it is
+ * layer truth, not presentation: which ramp the layer paints through, what
+ * bounds it is scaled to, what its classes are. Plugins draw it.
+ *
+ * `stops` are CSS colors, already resolved from the layer's colormap. `min`
+ * and `max` are null where the layer declares no bounds — a legend renders
+ * those blank rather than announcing a range the layer was never scaled to.
+ */
+export type LayerLegend = {
+    type: LegendType
+    stops: string[] | null
+    min: number | null
+    max: number | null
+    unit: { label: string } | null
+    swatches: LegendSwatch[] | null
+    /** The COG colormap the gradient came from; null for a declared legend. */
+    colormap: string | null
+}
+
+/**
+ * Every layer's legend, keyed by layer UUID.
+ *
+ * Resolved at the moment of asking, against the colormap and rescale the layer
+ * currently paints through — so re-requesting after a change is what refreshes
+ * a legend. Registered as late as mmgisGetLayerConfigs; the same readiness
+ * caveat applies. Null against a core without the handler.
+ */
+export const mmgisGetLayerLegends = (): Promise<Record<
+    string,
+    LayerLegend
+> | null> => {
+    return mmgisRequestIfProvided<Record<string, LayerLegend>>(
+        'layers:getLegend',
+    )
+}
+
 /** The unit a listed Data Dates entry names; nothing finer than the hour. */
 export type CoverageUnit = 'year' | 'month' | 'day' | 'hour'
 
