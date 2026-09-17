@@ -404,7 +404,11 @@ export class DrawEndClickGuard {
             clearTimeout(this._holdTimer)
             this._holdTimer = null
             // The cover this hold was standing for is dropped just below, so
-            // anything waiting it out has nothing left to wait for.
+            // anything waiting it out has nothing left to wait for. A popup
+            // open queued against the hold therefore fires here: a drawing
+            // started inside the settle window shows the card that was
+            // pending, which that drawing's first click then closes through
+            // the library, the same as any other click on the map.
             this._settle()
         }
         // The last session's horizon is moot — no click is reported while a
@@ -491,12 +495,13 @@ export class DrawEndClickGuard {
      * map's `click`. Anything that must survive the click a drawing ends on
      * therefore waits out the hold rather than being filtered.
      *
-     * @returns A function that cancels the wait; a no-op once `cb` has run.
+     * @returns A function that cancels the wait, or null when there was no
+     * hold and `cb` has already run.
      */
-    whenSettled(cb: () => void): () => void {
+    whenSettled(cb: () => void): (() => void) | null {
         if (!this._holdTimer) {
             cb()
-            return () => { /* nothing was queued */ }
+            return null
         }
         this._settleWaiters.push(cb)
         return () => {
@@ -507,6 +512,9 @@ export class DrawEndClickGuard {
 
     /** Stop watching for the next gesture and give double-click zoom back. */
     dispose(): void {
+        // Dropped rather than settled: the engine is going away, and whatever
+        // was waiting on the hold has nothing left to open onto.
+        this._settleWaiters = []
         this._release()
         this._ownedUntil = 0
         this._gestureOwned = false
