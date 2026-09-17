@@ -464,10 +464,6 @@ const AOITool = {
     },
 
     _onDrawVertex(e) {
-        // The first vertex is where the replacement begins, so this is where
-        // the previous selection goes: every shape reports its first committed
-        // vertex — a polygon's first click, a rectangle's first corner, a
-        // circle's centre, the point itself — before it can complete.
         this._dropSuspendedSelection()
         const count = Array.isArray(e?.vertices) ? e.vertices.length : 0
         this._setState({ drawVerticesCount: count })
@@ -483,7 +479,6 @@ const AOITool = {
             this._restoreSuspendedSelection()
             return
         }
-        this._suspendedAOI = null
         const label = feature.properties?.shape
             ? `Drawn ${feature.properties.shape}`
             : 'Drawn area'
@@ -496,7 +491,12 @@ const AOITool = {
         this._restoreSuspendedSelection()
     },
 
-    /** Let go of the selection a session suspended: it is being replaced. */
+    /**
+     * Let go of the selection a session suspended: it is being replaced. The
+     * first committed vertex is where that happens — every shape reports one
+     * (a polygon's first click, a rectangle's first corner, a circle's centre,
+     * the point itself) before it can complete.
+     */
     _dropSuspendedSelection() {
         if (!this._suspendedAOI) return
         this._suspendedAOI = null
@@ -519,6 +519,7 @@ const AOITool = {
                 if (this._state.currentAOI !== aoi || this._state.isDrawing) return
                 this._showSelectionPopup(aoi.feature, aoi.label, view)
             })
+            .catch((err) => console.warn('[AOI] restore popup failed', err))
     },
 
     // ── Inspect mode ───────────────────────────────────────────────────────────
@@ -662,7 +663,7 @@ const AOITool = {
             // Pass a view to `showPopup` only when the camera never moved. Once
             // fitBounds has framed the selection, its centroid is on-screen and
             // needs no fallback anchor.
-            const settled = (unmovedView) => {
+            const settle = (unmovedView) => {
                 // Only the still-current show may fire: moveend, the fallback
                 // timer and a rejected fitBounds arbitrate to one card.
                 if (this._pendingPopup !== cancel) return
@@ -678,9 +679,7 @@ const AOITool = {
                     if (this._pendingPopup !== cancel) return
                     const fit = selectionFitBounds(bbox, view)
                     if (!fit) {
-                        // The camera stays put, so no moveend is coming: open
-                        // the card now.
-                        settled(view)
+                        settle(view)
                         return
                     }
                     // Subscribe before the fit: `request` runs its provider
@@ -689,10 +688,9 @@ const AOITool = {
                     //
                     // `map:moveend` hands its listener a view state
                     // ({ longitude, latitude, zoom }), not a ViewBounds, so
-                    // this wrapper drops the payload and `settled` is called
-                    // with no view at all — the camera has framed the
-                    // selection and its centroid needs no fallback.
-                    const oneShot = () => settled()
+                    // this wrapper drops the payload and `settle` is called
+                    // with no view at all.
+                    const oneShot = () => settle()
                     // Safety net: if no moveend fires (e.g. an engine that
                     // skips the event on a programmatic fit), open the card
                     // after a short timeout anyway.
@@ -707,14 +705,13 @@ const AOITool = {
                         console.warn('[AOI] fitBounds failed', err)
                         // The fit never happened, so the view read above is
                         // still the one on screen: anchor against it.
-                        settled(view)
+                        settle(view)
                     })
                 })
                 .catch((err) => {
                     console.warn('[AOI] selection camera step failed', err)
-                    // Nothing can open this card any more, so release the
-                    // pending slot — but only while it is still this chain's;
-                    // a superseding selection owns its own show.
+                    // Release the slot, but only while it is still this
+                    // chain's: a superseding selection owns its own show.
                     if (this._pendingPopup === cancel) this._cancelPendingPopup()
                 })
         } else {
@@ -730,6 +727,9 @@ const AOITool = {
     },
 
     _clearSelection() {
+        // Before the guard: a show still waiting on the camera would otherwise
+        // open a card for the selection being cleared, up to 1.5s later.
+        this._cancelPendingPopup()
         if (!this._state.currentAOI) return
         this._removeSelectionLayer()
         this._hidePopup()
@@ -749,20 +749,27 @@ const AOITool = {
     /**
      * Show the card at the feature centroid — or, when `view` is given and the
      * centroid is off it, at the view's centre (see {@link selectionPopupAnchor}).
+     * Core owns the card; the request is data only and answers with how it closed.
      */
     _showSelectionPopup(feature, label, view) {
         const c = featureCentroid(feature)
         if (!c) return
-        this._showPopup(label, selectionPopupAnchor({ lat: c[1], lng: c[0] }, view))
-    },
-
-    /** Core owns the card; the request is data only and answers with how it closed. */
-    _showPopup(label, latlng) {
         const api = window.mmgisAPI
         if (!api?.request) return
+        // The selection this card speaks for. Leaflet closes a popup on
+        // `preclick`, before the click reaches the engine's feature-click
+        // listener, so a card can answer 'dismiss' before the click that
+        // replaced its selection has even been applied. Comparing against the
+        // capture keeps a stale answer from reaching a newer selection,
+        // whichever order the two arrive in.
+        const aoi = this._state.currentAOI
         api.request('map:showPopup', {
-            latlng,
-            title: label,
+            latlng: selectionPopupAnchor({ lat: c[1], lng: c[0] }, view),
+            // A blank name would leave the service nothing to show, and it
+            // rejects a card with neither title nor body — stranding the
+            // selection with no way to analyze or cancel it. Blank by the
+            // service's own reading, which trims before it decides.
+            title: label?.trim() ? label : 'Selected area',
             primaryAction: { label: 'Analyze area' },
             secondaryAction: { label: 'Cancel' },
         })
@@ -771,6 +778,7 @@ const AOITool = {
             // failure to show the card.
             .then(
                 ({ action } = {}) => {
+                    if (this._state.currentAOI !== aoi) return
                     // Cancel and a dismissal both abandon the selection, and
                     // only Cancel is the user saying so in as many words.
                     // 'closed' means AOI or core took the card away.
@@ -788,10 +796,6 @@ const AOITool = {
 
     // ── Analysis hand-off ──────────────────────────────────────────────────────
 
-    /**
-     * The card's result carries no data, so the feature is attached here:
-     * `analysisAOIReady` is what reaches the FetchStats and Chart plugins.
-     */
     _onAnalyze() {
         const aoi = this._state.currentAOI
         if (!aoi) return
