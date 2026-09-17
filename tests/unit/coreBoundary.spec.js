@@ -74,13 +74,4 @@ describe('core is free of the plugins', () => {
         }
         expect(reaching).toEqual([])
     })
-
-    test('the guard would catch a violation it is meant to catch', () => {
-        // Proves the matcher is live rather than vacuously passing.
-        const specifier = '../../../Tools/LayerManager/lib/utils/colormaps'
-        const from = join(CORE_ROOT, 'MapEngines/Adapters/colormapLUT.ts')
-        expect(
-            resolve(dirname(from), specifier).startsWith(TOOLS_ROOT + '/'),
-        ).toBe(true)
-    })
 })

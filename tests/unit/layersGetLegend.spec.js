@@ -100,6 +100,81 @@ describe('layers:getLegend', () => {
         expect(legend.stops).not.toContain('#123456')
     })
 
+    // A classified raster paints through a colormap and still declares what
+    // its classes mean. No ramp can stand in for those, so live colormap state
+    // replaces the bar, never the classes — and the controls over the ramp
+    // come along so the layer does not lose them by being classified.
+    test("keeps a classified raster's classes rather than drawing a ramp", async () => {
+        withLayers({
+            [RASTER]: cogLayer({
+                cogMin: 0,
+                cogMax: 2,
+                _legend: [
+                    { color: '#a00000', value: 'Water' },
+                    { color: '#00a000', value: 'Forest' },
+                ],
+            }),
+        })
+
+        const legend = await providers['layers:getLegend'](RASTER)
+
+        expect(legend.type).toBe('categorical')
+        expect(legend.swatches).toEqual([
+            { color: '#a00000', label: 'Water' },
+            { color: '#00a000', label: 'Forest' },
+        ])
+        expect(legend.stops).toBeNull()
+        expect(legend.colormap).toBe('viridis')
+        expect(legend.min).toBe(0)
+        expect(legend.max).toBe(2)
+    })
+
+    // Hiding every entry leaves nothing to draw, which is not the same as a
+    // legend of no entries being some other shape.
+    test('answers nothing to draw when every entry is hidden', async () => {
+        withLayers({
+            Slope: {
+                type: 'vector',
+                _legend: [
+                    { color: '#ff0000', value: 'nodata', hideFromLegend: true },
+                ],
+            },
+        })
+
+        expect((await providers['layers:getLegend']('Slope')).type).toBe('none')
+    })
+
+    // Missions carry hand-written legends and hand-written service URLs, and
+    // one of them being malformed must cost that layer its legend and no
+    // more. The map answer would otherwise reject outright, leaving a panel
+    // with nothing at all to draw.
+    test('a layer nothing can be built from costs only itself', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        withLayers({
+            // `.replace` on a number: a bad service URL throws before the
+            // legend is even reached.
+            Broken: { type: 'vector', titilerUrl: 123 },
+            // A hole in the entry list, which is read past rather than thrown on.
+            Holey: {
+                type: 'vector',
+                _legend: [null, { color: '#a00000', value: 'Water' }],
+            },
+            [VELOCITY]: { type: 'velocity', _legend: derivedLegend(' m/s') },
+        })
+
+        const all = await providers['layers:getLegend']()
+
+        expect(all.Broken.type).toBe('none')
+        expect(all.Holey.swatches).toEqual([{ color: '#a00000', label: 'Water' }])
+        expect(all[VELOCITY].type).toBe('gradient')
+        // Proves the failure was caught and named rather than never happening.
+        expect(warn).toHaveBeenCalledWith(
+            expect.stringContaining('Broken'),
+            expect.any(Error)
+        )
+        warn.mockRestore()
+    })
+
     // A raster nobody rescaled has no range to report. 0 and 255 would print
     // as an authoritative range the layer was never scaled to, so the labels
     // go blank instead.
