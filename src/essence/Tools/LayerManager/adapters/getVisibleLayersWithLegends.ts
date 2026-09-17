@@ -1,14 +1,10 @@
 import {
     mmgisGetCogCapabilities,
-    mmgisGetLayerOrder,
+    mmgisGetListedLayers,
     mmgisGetTiTilerUrls,
     type CogCapabilities,
 } from '../../_shared/adapters/mmgisAPI'
-import {
-    getLayersWithLegends,
-    type LayerWithLegend,
-} from '../../_shared/legend/getLayersWithLegends'
-import { sortByOrder } from '../lib/utils/layerOrder'
+import { getLayersWithLegends } from '../../_shared/legend/getLayersWithLegends'
 import type { CogData, Layer } from '../lib/types'
 
 export type FetchOptions = { showOnlyVisible?: boolean }
@@ -23,39 +19,41 @@ export type FetchOptions = { showOnlyVisible?: boolean }
  */
 const buildCogData = (
     capabilities: CogCapabilities | undefined,
-    layer: LayerWithLegend,
+    colormap: string | null | undefined,
     titilerUrl: string | null,
 ): CogData | null => {
-    if (capabilities?.hasColormap !== true || layer.colormap == null) return null
+    if (capabilities?.hasColormap !== true || colormap == null) return null
     return {
         editable: capabilities.canChangeColormap === true,
-        colormap: layer.colormap,
+        colormap,
         titilerUrl,
     }
 }
 
 /**
- * The panel's rows: the shared layers-with-legends assembly, plus the colormap
- * controls only this panel offers, in the order the map draws them.
+ * The panel's rows: the shared layers-with-legends assembly, minus the layers
+ * something has filtered out of the lists (the LayerFilter plugin's doing —
+ * they still paint, so an export still legends them), plus the colormap
+ * controls only this panel offers.
  */
 export const getVisibleLayersWithLegends = async ({
     showOnlyVisible = false,
 }: FetchOptions = {}): Promise<Layer[]> => {
-    const [layers, cogCapabilities, titilerUrls, order] = await Promise.all([
+    const [layers, listed, cogCapabilities, titilerUrls] = await Promise.all([
         getLayersWithLegends({ showOnlyVisible }),
+        mmgisGetListedLayers(),
         mmgisGetCogCapabilities(),
         mmgisGetTiTilerUrls(),
-        mmgisGetLayerOrder(),
     ])
 
-    const result: Layer[] = layers.map((layer) => ({
-        ...layer,
-        cog: buildCogData(
-            cogCapabilities?.[layer.id],
-            layer,
-            titilerUrls?.[layer.id] ?? null,
-        ),
-    }))
-    // Top first as the map draws; config order against a core with no order.
-    return sortByOrder(result, order)
+    return layers
+        .filter((layer) => listed?.[layer.id] !== false)
+        .map(({ colormap, ...layer }) => ({
+            ...layer,
+            cog: buildCogData(
+                cogCapabilities?.[layer.id],
+                colormap,
+                titilerUrls?.[layer.id] ?? null,
+            ),
+        }))
 }

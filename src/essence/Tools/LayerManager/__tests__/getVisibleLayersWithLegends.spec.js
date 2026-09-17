@@ -46,12 +46,13 @@ const EDITABLE = { hasColormap: true, canChangeColormap: true }
 const READ_ONLY = { hasColormap: true, canChangeColormap: false }
 const NONE = { hasColormap: false, canChangeColormap: false }
 
-const setupMock = ({ legends, capabilities, titilerUrls, order } = {}) => {
+const setupMock = ({ legends, listed, capabilities, titilerUrls, order } = {}) => {
     const responses = {
         'layers:getAllConfigs': CONFIGS,
         'layers:getVisible': { [DISPLACEMENT]: true, [BASEMAP]: true },
         'layers:getAllOpacities': { [DISPLACEMENT]: 1, [BASEMAP]: 1 },
     }
+    if (listed) responses['layers:getListed'] = listed
     if (legends) responses['layers:getLegend'] = legends
     if (capabilities) responses['layers:getCogCapabilities'] = capabilities
     if (titilerUrls) responses['layers:getTiTilerUrl'] = titilerUrls
@@ -147,6 +148,16 @@ describe('getVisibleLayersWithLegends', () => {
 
         expect(layers).toHaveLength(2)
         expect(layers.every((l) => l.type === 'none' && l.cog === null)).toBe(true)
+    })
+
+    // A layer the LayerFilter plugin has filtered out of the lists is not in
+    // this list either — it is still on the map, and an export still legends
+    // it, but the panel is a list and this is what the list holds.
+    test('omits a layer filtered out of the layer lists', async () => {
+        setupMock({ listed: { [DISPLACEMENT]: false, [BASEMAP]: true } })
+        const layers = await getVisibleLayersWithLegends()
+
+        expect(layers.map((l) => l.id)).toEqual([BASEMAP])
     })
 
     // The list reads top down as the map stacks. The config lists

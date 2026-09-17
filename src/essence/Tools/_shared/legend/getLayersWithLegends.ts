@@ -1,15 +1,16 @@
 import {
     mmgisRequest,
-    mmgisGetListedLayers,
     mmgisGetLayerLegends,
+    mmgisGetLayerOrder,
     type LegendType,
     type LegendSwatch,
 } from '../adapters/mmgisAPI'
+import { sortByOrder } from './sortByOrder'
 
 /**
- * A layer the user can see listed, carrying the legend core resolved for it.
- * Every legend field is core's answer copied as it stands — nothing here
- * rebuilds a legend, derives bounds or resolves a ramp.
+ * A layer of the mission, carrying the legend core resolved for it. Every
+ * legend field is core's answer copied as it stands — nothing here rebuilds a
+ * legend, derives bounds or resolves a ramp.
  */
 export type LayerWithLegend = {
     id: string
@@ -46,11 +47,11 @@ export const getLayersWithLegends = async ({
     const layerConfigs = await mmgisRequest<Record<string, LayerConfig>>('layers:getAllConfigs')
     if (!layerConfigs) return []
 
-    const [visibleLayers, opacities, listed, legends] = await Promise.all([
+    const [visibleLayers, opacities, legends, order] = await Promise.all([
         mmgisRequest<Record<string, boolean>>('layers:getVisible'),
         mmgisRequest<Record<string, number>>('layers:getAllOpacities'),
-        mmgisGetListedLayers(),
         mmgisGetLayerLegends(),
+        mmgisGetLayerOrder(),
     ])
 
     const result: LayerWithLegend[] = []
@@ -58,7 +59,6 @@ export const getLayersWithLegends = async ({
         const cfg = layerConfigs[layerName]
         if (!cfg) continue
         if (cfg.type === 'header') continue
-        if (listed?.[layerName] === false) continue
         const isVisible = visibleLayers?.[layerName] === true
         if (showOnlyVisible && !isVisible) continue
 
@@ -80,5 +80,6 @@ export const getLayersWithLegends = async ({
             colormap: legend?.colormap ?? null,
         })
     }
-    return result
+    // Top first as the map draws; config order against a core with no order.
+    return sortByOrder(result, order)
 }
