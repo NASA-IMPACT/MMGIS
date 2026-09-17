@@ -298,3 +298,86 @@ test.describe('provenance filenames in downloads', () => {
         expect(downloads).toEqual(['mmgis-Earth_33.1000_-84.2000.png'])
     })
 })
+
+test.describe('legend compositing in the downloads', () => {
+    const screenshot = {
+        blob: new Blob(['png'], { type: 'image/png' }),
+        mimeType: 'image/png',
+        extension: 'png',
+        width: 640,
+        height: 480,
+    }
+    const composedBlob = new Blob(['composed'], { type: 'image/png' })
+    const composed = { ...screenshot, blob: composedBlob, height: 700 }
+    const emptyModel = { missionName: null, headerLines: [], rows: [] }
+
+    test('a PNG carries the composed image, and the flag turns that off', async () => {
+        const composeCalls = []
+        const downloads = []
+        const result = await downloadSharePng({
+            getScreenshot: async () => screenshot,
+            download: (blob, filename) => downloads.push({ blob, filename }),
+            getLegendModel: async () => emptyModel,
+            compose: async (shot, model) => {
+                composeCalls.push({ shot, model })
+                return composed
+            },
+        })
+        expect(composeCalls).toEqual([{ shot: screenshot, model: emptyModel }])
+        expect(downloads).toEqual([
+            { blob: composedBlob, filename: PNG_FILENAME },
+        ])
+        expect(result).toBe(composed)
+
+        const plain = []
+        const throwIfCalled = () => {
+            throw new Error('should not be called')
+        }
+        expect(
+            await downloadSharePng({
+                getScreenshot: async () => screenshot,
+                download: (blob, filename) => plain.push({ blob, filename }),
+                includeLegend: false,
+                getLegendModel: throwIfCalled,
+                compose: throwIfCalled,
+            }),
+        ).toBe(screenshot)
+        expect(plain).toEqual([
+            { blob: screenshot.blob, filename: PNG_FILENAME },
+        ])
+    })
+
+    // The band is a nicety; the map is the export. A legend that cannot be
+    // built must never cost the user their download.
+    test('a legend model failure downloads the plain map instead of throwing', async () => {
+        const downloads = []
+        const result = await downloadSharePng({
+            getScreenshot: async () => screenshot,
+            download: (blob, filename) => downloads.push({ blob, filename }),
+            getLegendModel: async () => {
+                throw new Error('legend model blew up')
+            },
+        })
+        expect(downloads).toEqual([
+            { blob: screenshot.blob, filename: PNG_FILENAME },
+        ])
+        expect(result).toBe(screenshot)
+    })
+
+    // The PDF page is sized from the image it embeds, so measuring the
+    // original would crop the band off the bottom of the page.
+    test('buildPdf receives the composed height, not the original', async () => {
+        const buildArgs = []
+        await downloadSharePdf({
+            getScreenshot: async () => screenshot,
+            blobToDataUrl: async () => 'data:image/png;base64,x',
+            buildPdf: (data, w, h) => {
+                buildArgs.push({ w, h })
+                return { save: () => {} }
+            },
+            getLegendModel: async () => emptyModel,
+            compose: async () => composed,
+        })
+        expect(buildArgs).toEqual([{ w: composed.width, h: composed.height }])
+    })
+})
