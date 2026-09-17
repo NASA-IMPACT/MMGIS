@@ -1,19 +1,13 @@
 import {
-    mmgisRequest,
     mmgisGetCogCapabilities,
     mmgisGetListedLayers,
-    mmgisGetLayerOrder,
-    mmgisGetLayerLegends,
     mmgisGetTiTilerUrls,
     type CogCapabilities,
-    type LayerLegend,
 } from '../../_shared/adapters/mmgisAPI'
-import { sortByOrder } from '../lib/utils/layerOrder'
+import { getLayersWithLegends } from '../../_shared/legend/getLayersWithLegends'
 import type { CogData, Layer } from '../lib/types'
 
 export type FetchOptions = { showOnlyVisible?: boolean }
-
-type LayerConfig = { display_name?: string; description?: string; type?: string }
 
 /**
  * The colormap controls for one layer, or null when it has no ramp to control.
@@ -25,65 +19,41 @@ type LayerConfig = { display_name?: string; description?: string; type?: string 
  */
 const buildCogData = (
     capabilities: CogCapabilities | undefined,
-    legend: LayerLegend | undefined,
+    colormap: string | null | undefined,
     titilerUrl: string | null,
 ): CogData | null => {
-    if (capabilities?.hasColormap !== true || legend?.colormap == null) return null
+    if (capabilities?.hasColormap !== true || colormap == null) return null
     return {
         editable: capabilities.canChangeColormap === true,
-        colormap: legend.colormap,
+        colormap,
         titilerUrl,
     }
 }
 
+/**
+ * The panel's rows: the shared layers-with-legends assembly, minus the layers
+ * something has filtered out of the lists (the LayerFilter plugin's doing —
+ * they still paint, so an export still legends them), plus the colormap
+ * controls only this panel offers.
+ */
 export const getVisibleLayersWithLegends = async ({
     showOnlyVisible = false,
 }: FetchOptions = {}): Promise<Layer[]> => {
-    const layerConfigs = await mmgisRequest<Record<string, LayerConfig>>('layers:getAllConfigs')
-    if (!layerConfigs) return []
+    const [layers, listed, cogCapabilities, titilerUrls] = await Promise.all([
+        getLayersWithLegends({ showOnlyVisible }),
+        mmgisGetListedLayers(),
+        mmgisGetCogCapabilities(),
+        mmgisGetTiTilerUrls(),
+    ])
 
-    const [visibleLayers, opacities, listed, cogCapabilities, legends, titilerUrls, order] =
-        await Promise.all([
-            mmgisRequest<Record<string, boolean>>('layers:getVisible'),
-            mmgisRequest<Record<string, number>>('layers:getAllOpacities'),
-            mmgisGetListedLayers(),
-            mmgisGetCogCapabilities(),
-            mmgisGetLayerLegends(),
-            mmgisGetTiTilerUrls(),
-            mmgisGetLayerOrder(),
-        ])
-
-    const result: Layer[] = []
-    for (const layerName of Object.keys(layerConfigs)) {
-        const cfg = layerConfigs[layerName]
-        if (!cfg) continue
-        if (cfg.type === 'header') continue
-        if (listed?.[layerName] === false) continue
-        const isVisible = visibleLayers?.[layerName] === true
-        if (showOnlyVisible && !isVisible) continue
-
-        // A core too old to answer leaves the row with no legend to draw
-        // rather than with one this side guessed at.
-        const legend = legends?.[layerName]
-        result.push({
-            id: layerName,
-            title: cfg.display_name || layerName,
-            description: cfg.description || null,
-            opacity: opacities?.[layerName] ?? 1,
-            visible: isVisible,
-            type: legend?.type ?? 'none',
-            stops: legend?.stops ?? null,
-            min: legend?.min ?? null,
-            max: legend?.max ?? null,
-            unit: legend?.unit ?? null,
-            categoricalStops: legend?.swatches ?? undefined,
+    return layers
+        .filter((layer) => listed?.[layer.id] !== false)
+        .map(({ colormap, ...layer }) => ({
+            ...layer,
             cog: buildCogData(
-                cogCapabilities?.[layerName],
-                legend,
-                titilerUrls?.[layerName] ?? null,
+                cogCapabilities?.[layer.id],
+                colormap,
+                titilerUrls?.[layer.id] ?? null,
             ),
-        })
-    }
-    // Top first as the map draws; config order against a core with no order.
-    return sortByOrder(result, order)
+        }))
 }
