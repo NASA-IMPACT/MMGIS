@@ -1,3 +1,5 @@
+import type { LayerLegend } from '../../../Basics/Layers_/legend/types'
+
 type EventCleanup = () => void
 
 type MMGISAPI = {
@@ -200,30 +202,19 @@ export const mmgisGetLayerCogCapabilities = (
     )
 }
 
-/** What a layer's legend draws as. `none` means there is nothing to draw. */
-export type LegendType = 'gradient' | 'categorical' | 'text' | 'none'
-
-export type LegendSwatch = { color: string; label: string }
-
 /**
  * A layer's legend as core resolves it. Core owns this answer because it is
  * layer truth, not presentation: which ramp the layer paints through, what
  * bounds it is scaled to, what its classes are. Plugins draw it.
  *
- * `stops` are CSS colors, already resolved from the layer's colormap. `min`
- * and `max` are null where the layer declares no bounds — a legend renders
- * those blank rather than announcing a range the layer was never scaled to.
+ * Re-exported from core rather than restated, so the wire contract is written
+ * once and a change to it cannot pass unnoticed on this side.
  */
-export type LayerLegend = {
-    type: LegendType
-    stops: string[] | null
-    min: number | null
-    max: number | null
-    unit: { label: string } | null
-    swatches: LegendSwatch[] | null
-    /** The COG colormap the gradient came from; null for a declared legend. */
-    colormap: string | null
-}
+export type {
+    LayerLegend,
+    LegendSwatch,
+    LegendType,
+} from '../../../Basics/Layers_/legend/types'
 
 /**
  * Every layer's legend, keyed by layer UUID.
