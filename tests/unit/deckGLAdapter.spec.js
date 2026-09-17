@@ -100,6 +100,15 @@ vi.mock('maplibre-gl', async (importOriginal) => {
     return { ...actual, Map: MockMap, Popup: MockPopup }
 })
 
+// A mapbox-gl exporting no Popup, which the adapter must still build a map on.
+vi.mock('mapbox-gl', () => {
+    class MapboxMapWithoutPopup {
+        addControl() {}
+        on() {}
+    }
+    return { default: { Map: MapboxMapWithoutPopup } }
+})
+
 function makeAdapter({ longitude = -120, latitude = 40, zoom = 5 } = {}) {
     const adapter = new DeckGLAdapter()
     adapter._viewState = { longitude, latitude, zoom, bearing: 0, pitch: 0 }
@@ -1461,26 +1470,27 @@ test.describe('DeckGLAdapter', () => {
         // adapter resolved from the basemap's own module.
         function initAdapter(basemap) {
             constructed.popup.length = 0
-            let container = document.getElementById(CONTAINER_ID)
-            if (!container) {
-                container = document.createElement('div')
+            if (!document.getElementById(CONTAINER_ID)) {
+                const container = document.createElement('div')
                 container.id = CONTAINER_ID
                 document.body.appendChild(container)
             }
             const adapter = new DeckGLAdapter()
-            adapter.init({
+            // Returned for the mapbox branch, whose dynamic import makes it a
+            // promise; the other branches return nothing.
+            const ready = adapter.init({
                 containerId: CONTAINER_ID,
                 center: { lat: 40, lng: -120 },
                 zoom: 5,
                 ...(basemap ? { basemap } : {}),
             })
-            return adapter
+            return { adapter, ready }
         }
 
         const makeCard = () => document.createElement('div')
 
         test('opens a popup on the basemap holding the element, className its only option', () => {
-            const adapter = initAdapter(MAPLIBRE_BASEMAP)
+            const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
             const card = makeCard()
 
             adapter.showPopup({ lat: 40, lng: -120 }, card)
@@ -1493,7 +1503,7 @@ test.describe('DeckGLAdapter', () => {
         })
 
         test('anchors a [lat, lng] tuple at [lat, lng]', () => {
-            const adapter = initAdapter(MAPLIBRE_BASEMAP)
+            const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
 
             adapter.showPopup([40, -120], makeCard())
 
@@ -1501,7 +1511,7 @@ test.describe('DeckGLAdapter', () => {
         })
 
         test('hiding removes the popup and is not reported as a close', () => {
-            const adapter = initAdapter(MAPLIBRE_BASEMAP)
+            const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
             const onClose = vi.fn()
 
             adapter.showPopup({ lat: 40, lng: -120 }, makeCard(), onClose)
@@ -1512,7 +1522,7 @@ test.describe('DeckGLAdapter', () => {
         })
 
         test('a second card replaces the first, whose close is not reported', () => {
-            const adapter = initAdapter(MAPLIBRE_BASEMAP)
+            const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
             const onFirstClose = vi.fn()
 
             adapter.showPopup({ lat: 40, lng: -120 }, makeCard(), onFirstClose)
@@ -1524,7 +1534,7 @@ test.describe('DeckGLAdapter', () => {
         })
 
         test('a close the basemap made is reported once', () => {
-            const adapter = initAdapter(MAPLIBRE_BASEMAP)
+            const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
             const onClose = vi.fn()
 
             adapter.showPopup({ lat: 40, lng: -120 }, makeCard(), onClose)
@@ -1534,7 +1544,7 @@ test.describe('DeckGLAdapter', () => {
         })
 
         test('a close arriving from a popup already let go is not reported', () => {
-            const adapter = initAdapter(MAPLIBRE_BASEMAP)
+            const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
             const onFirstClose = vi.fn()
 
             adapter.showPopup({ lat: 40, lng: -120 }, makeCard(), onFirstClose)
@@ -1545,7 +1555,7 @@ test.describe('DeckGLAdapter', () => {
         })
 
         test('destroying the engine is not reported as a close', () => {
-            const adapter = initAdapter(MAPLIBRE_BASEMAP)
+            const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
             const onClose = vi.fn()
 
             adapter.showPopup({ lat: 40, lng: -120 }, makeCard(), onClose)
@@ -1556,10 +1566,22 @@ test.describe('DeckGLAdapter', () => {
         })
 
         test('a map with no basemap refuses, saying a popup needs one', () => {
-            const adapter = initAdapter(null)
+            const { adapter } = initAdapter(null)
 
             expect(() => adapter.showPopup({ lat: 40, lng: -120 }, makeCard()))
                 .toThrow(/requires a basemap/)
+        })
+
+        test('a basemap module with no Popup still opens the map, and only showPopup refuses', async () => {
+            const { adapter, ready } = initAdapter({
+                provider: 'mapbox',
+                style: 'https://example.com/style.json',
+            })
+            await ready
+
+            expect(adapter.getBasemap()).not.toBeNull()
+            expect(() => adapter.showPopup({ lat: 40, lng: -120 }, makeCard()))
+                .toThrow(/requires a basemap with a Popup class/)
         })
     })
 
