@@ -177,7 +177,13 @@ export const buildLayerLegend = async (
         const bounds = {
             min: toBound(layerConfig.currentCogMin ?? layerConfig.cogMin),
             max: toBound(layerConfig.currentCogMax ?? layerConfig.cogMax),
-            unit: layerConfig.cogUnits ? { label: layerConfig.cogUnits } : null,
+            // `cogUnits` is where a raster names its unit, but plenty of
+            // missions only ever wrote it into the legend text ('0 m'), and
+            // dropping it there would leave the bar labelled with bare
+            // numbers.
+            unit: layerConfig.cogUnits
+                ? { label: layerConfig.cogUnits }
+                : declaredGradient?.unit ?? null,
         }
         // Classes the colormap cannot stand in for. The ramp and its bounds
         // still come along, so the controls over them survive.

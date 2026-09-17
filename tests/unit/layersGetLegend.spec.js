@@ -100,6 +100,24 @@ describe('layers:getLegend', () => {
         expect(legend.stops).not.toContain('#123456')
     })
 
+    // A raster names its unit in `cogUnits`, but plenty of missions only ever
+    // wrote it into the legend text. Live colormap state replaces the ramp,
+    // and taking the unit with it would leave the bar labelled bare.
+    test('falls back to the declared legend for a unit cogUnits omits', async () => {
+        withLayers({
+            [RASTER]: cogLayer({
+                cogMin: 0,
+                cogMax: 10,
+                _legend: derivedLegend(' m'),
+            }),
+        })
+
+        const legend = await providers['layers:getLegend'](RASTER)
+
+        expect(legend.type).toBe('gradient')
+        expect(legend.unit).toEqual({ label: 'm' })
+    })
+
     // A classified raster paints through a colormap and still declares what
     // its classes mean. No ramp can stand in for those, so live colormap state
     // replaces the bar, never the classes — and the controls over the ramp
