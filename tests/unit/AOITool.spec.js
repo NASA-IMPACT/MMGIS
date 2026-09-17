@@ -180,8 +180,7 @@ test.describe('AOITool popup requests', () => {
         expect(payload.latlng).toEqual({ lat: 5, lng: 5 })
         expect(payload.title).toBe('Smith & <b>Sons</b>')
         // Labels only: the outcome comes back on the request's promise, so the
-        // plugin names no events for core to broadcast — and no body at all,
-        // the card being the title over its two buttons.
+        // plugin names no events for core to broadcast.
         expect(payload.primaryAction).toEqual({ label: 'Analyze area' })
         expect(payload.secondaryAction).toEqual({ label: 'Cancel' })
 
@@ -347,6 +346,11 @@ test.describe('AOITool popup lifecycle', () => {
         AOITool.destroy()
 
         expect(api.namesOf('map:hidePopup')).toHaveLength(1)
+        expect(
+            api.namesOf('map:removeLayer').map((r) => r.payload.id)
+        ).toContain('aoi:selection')
+        expect(AOITool._state.currentAOI).toBeNull()
+        expect(api.listenerCount('map:featureClick')).toBe(0)
         expect(api.listenerCount('map:moveend')).toBe(0)
         api.emit('map:moveend')
         await vi.advanceTimersByTimeAsync(2000)
