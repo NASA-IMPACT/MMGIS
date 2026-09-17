@@ -34,6 +34,7 @@ import {
     isSameCoverage,
 } from '../TimeControl_/layerDataCoverage'
 import { buildLayerLegend } from './legend/buildLayerLegend'
+import { NO_LEGEND } from './legend/types'
 import { bbox } from '@turf/turf'
 import $ from 'jquery'
 
@@ -109,13 +110,23 @@ function titilerUrlFor(layerConfig) {
  * Async because a colormap the bundled ramps do not hold has to be looked up
  * from the layer's tiling service.
  *
+ * A layer nothing can be built from reports nothing to draw. Missions carry
+ * hand-written legends, and one malformed entry must cost that layer its
+ * legend and no more — the bulk answer would otherwise take the whole
+ * mission's legends down with it.
+ *
  * @param {string} uuid - A key of `L_.layers.data`.
  * @returns {Promise<import('./legend/types').LayerLegend|null>}
  */
-function legendFor(uuid) {
+async function legendFor(uuid) {
     const layerObj = L_.layers.data[uuid]
-    if (layerObj == null) return Promise.resolve(null)
-    return buildLayerLegend(layerObj, titilerUrlFor(layerObj))
+    if (layerObj == null) return null
+    try {
+        return await buildLayerLegend(layerObj, titilerUrlFor(layerObj))
+    } catch (err) {
+        console.warn(`Layers_: could not build a legend for '${uuid}'`, err)
+        return NO_LEGEND
+    }
 }
 
 /**
