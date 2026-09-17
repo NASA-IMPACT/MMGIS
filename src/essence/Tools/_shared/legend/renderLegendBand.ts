@@ -57,15 +57,25 @@ const FONT = (px: number, scale: number, weight = '') =>
 const ruleOf = (scale: number): number => Math.max(1, Math.round(scale))
 
 /**
- * A bound as its label: three significant figures, exponential for the
- * magnitudes that would otherwise run past the bar, and blank for a bound the
- * layer never declared — a legend prints nothing rather than inventing a 0.
+ * A bound as its label: rounded to three decimal places, with trailing zeros
+ * dropped, and exponential outside the magnitudes that rounding can say
+ * anything about. A bound the layer never declared prints blank rather than
+ * inventing a 0.
+ *
+ * These are the panel's own gradient-bar rules (GradientGraphic's
+ * formatLegendValue), restated rather than shared: that formatter lives in the
+ * panel's portable lib, which may not import this side. They must stay
+ * identical, or the same layer reads one way in the app and another on the
+ * export.
  */
-const boundLabel = (value: number | null, unit: string | null): string => {
+export const boundLabel = (
+    value: number | null,
+    unit: string | null,
+): string => {
     if (value == null || !Number.isFinite(value)) return ''
     const magnitude = Math.abs(value)
     const text =
-        value !== 0 && (magnitude >= 9999 || magnitude < 0.001)
+        value !== 0 && (magnitude >= 9999 || magnitude <= 0.0009)
             ? value.toExponential(2)
             : String(parseFloat(value.toFixed(3)))
     return unit ? `${text} ${unit}` : text
