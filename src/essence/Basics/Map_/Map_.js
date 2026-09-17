@@ -47,6 +47,7 @@ import {
 } from '../MapEngines/index'
 import { buildDeckLayer, buildDeckCOGLayer } from '../MapEngines/Adapters/DeckGLHelpers'
 import MapComparison from './MapComparison'
+import MapPopup_ from '../MapPopup_/MapPopup_'
 
 import GeoRasterLayer from '../../../external/georaster-layer-for-leaflet/georaster-layer-for-leaflet.ts'
 import georaster from 'georaster'
@@ -328,6 +329,13 @@ let Map_ = {
                     engine.removeOverlay(id)
                     return true
                 }),
+                // Map-anchored popup card — one at a time, core-built and
+                // placed by the engine's own map library popup. The request
+                // answers only once the card closes.
+                window.mmgisAPI.provide('map:showPopup', (request) =>
+                    MapPopup_.show(request, engine)
+                ),
+                window.mmgisAPI.provide('map:hidePopup', () => MapPopup_.hide()),
                 window.mmgisAPI.provide('map:setBasemap', (styleName) => {
                     const index = _basemapStyles.findIndex((s) => s.name === styleName)
                     if (index === -1) {
@@ -384,6 +392,10 @@ let Map_ = {
                     return p ? { x: p.x, y: p.y } : null
                 }),
             ]
+
+            // A card outlives nothing: re-initializing the map takes it down
+            // and answers its request with `closed`.
+            _providerCleanups.push(() => MapPopup_.hide())
 
             // Engine event re-emits — translate adapter events onto the bus
             const reEmit = (engineEvent, busEvent) => {
