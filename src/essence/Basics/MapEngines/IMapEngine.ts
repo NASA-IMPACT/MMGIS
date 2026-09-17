@@ -452,6 +452,34 @@ export interface IMapEngine<
      */
     removeOverlay(id: string): void
 
+    // ── Popup ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Place `element` at a map location, inside the map library's own popup.
+     *
+     * The library owns the frame around the element, the pointer tip, the close
+     * control, closing when the map is clicked, edge behaviour and sizing, all
+     * as they ship. The engine never reads or styles what it is handed; the
+     * caller owns the element.
+     *
+     * One popup at a time per engine: calling this while one is open replaces
+     * it, and the replaced popup's `onClose` does not fire, because that close
+     * was ours rather than the library's.
+     *
+     * `onClose` fires when, and only when, the library took the popup down
+     * itself — its close control, or a click on the map. It never fires for
+     * {@link hidePopup} or for a replacement.
+     *
+     * @throws {Error} On an engine with no map to place a popup in.
+     */
+    showPopup(latlng: LatLng, element: HTMLElement, onClose?: () => void): void
+
+    /**
+     * Take the open popup off the map, leaving its element untouched. No-op
+     * when no popup is open. Never reported through `onClose`.
+     */
+    hidePopup(): void
+
     // ── Comparison / swipe ────────────────────────────────────────────────────
 
     /**

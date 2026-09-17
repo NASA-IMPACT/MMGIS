@@ -109,6 +109,14 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     private _overlays: Map<string, () => void> = new Map()
 
     /**
+     * The open popup, and whether the adapter is the one taking it down.
+     * Leaflet fires the same `remove` however a popup leaves the map, so the
+     * flag is what separates the library's own close from ours.
+     */
+    private _popup: any = null
+    private _closingPopup = false
+
+    /**
      * Registry of event handlers for cleanup, keyed by event name and the
      * subscriber's source so {@link off} can find the wrapper it made. The
      * event name is kept alongside the wrapper because the key is not one.
@@ -332,6 +340,10 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         // attached, so its initiator hears `drawcancel` and stops driving a
         // session that is about to have no engine.
         this.disableDrawing()
+
+        // Taken down here rather than left to the map, whose own teardown
+        // removes the popup and so would report the library closing it.
+        this.hidePopup()
 
         this._removeBasemapLayer()
 
@@ -1474,6 +1486,41 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         if (!teardown) return
         teardown()
         this._overlays.delete(id)
+    }
+
+    /**
+     * See {@link IMapEngine.showPopup}. `className` is the only option set:
+     * the close button, the close-on-map-click, the auto-pan and the width all
+     * stay at Leaflet's defaults. `openOn` hands the popup to the map's own
+     * popup machinery, which is what makes the map click close it.
+     */
+    showPopup(latlng: LatLng, element: HTMLElement, onClose?: () => void): void {
+        this.hidePopup()
+
+        const popup = L.popup({ className: 'mmgis-map-popup' })
+            .setLatLng([latlng.lat, latlng.lng])
+            .setContent(element)
+
+        popup.on('remove', () => {
+            if (this._closingPopup) return
+            this._popup = null
+            onClose?.()
+        })
+
+        this._popup = popup
+        popup.openOn(this._map)
+    }
+
+    hidePopup(): void {
+        const popup = this._popup
+        if (!popup) return
+        this._popup = null
+        this._closingPopup = true
+        try {
+            this._map?.closePopup(popup)
+        } finally {
+            this._closingPopup = false
+        }
     }
 
     updateMarker(marker: any | string, updates: Partial<MarkerOptions>): any {
