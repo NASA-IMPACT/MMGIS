@@ -71,6 +71,13 @@ function makeMockLeafletMap() {
 // test runs — the specs that need a live DOM node build it from this.
 const domDocument = globalThis.document
 
+/** A DOM event stamped as the browser would stamp one made at `timeStamp`. */
+function stamped(type, timeStamp) {
+    const event = new Event(type)
+    Object.defineProperty(event, 'timeStamp', { value: timeStamp })
+    return event
+}
+
 function setup() {
     const fakeContainer = { querySelector: () => null }
     const mockMap = makeMockLeafletMap()
@@ -906,13 +913,6 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
         return element
     }
 
-    /** A DOM event stamped as the browser would stamp one made at `timeStamp`. */
-    function stamped(type, timeStamp) {
-        const event = new Event(type)
-        Object.defineProperty(event, 'timeStamp', { value: timeStamp })
-        return event
-    }
-
     /** The map's double-click zoom handler, reporting the state it is left in. */
     function makeDoubleClickZoom(initial = true) {
         let enabled = initial
@@ -1613,9 +1613,7 @@ test.describe('LeafletAdapter - popups', () => {
     function holdDrawEndClick(adapter) {
         const element = domDocument.createElement('div')
         domDocument.body.appendChild(element)
-        const pointer = new Event('pointerup')
-        Object.defineProperty(pointer, 'timeStamp', { value: 1000 })
-        adapter._drawEndClick.arm(pointer, element)
+        adapter._drawEndClick.arm(stamped('pointerup', 1000), element)
     }
 
     test('an open asked for while the draw-end click is still coming waits for it', () => {
