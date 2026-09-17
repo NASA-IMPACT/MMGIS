@@ -566,6 +566,30 @@ export const mmgisGetTimeCurrent = (): Promise<string | null> => {
 }
 
 /**
+ * The current time already rendered through the mission's configured time
+ * format (`L_.configData.time.format`), so a header displaying it matches
+ * what TimeControl's own UI shows rather than a raw ISO string. Null when
+ * time is disabled, not yet seeded, or against a core that predates the
+ * handler — callers fall back to their own raw time string in that case.
+ */
+export const mmgisGetCurrentTimeFormatted = (): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('time:getCurrentFormatted')
+}
+
+/**
+ * A caller-supplied time rendered through that same mission format, for
+ * displaying a time the caller holds itself rather than the cursor's. Null
+ * for a missing or unparseable time, and against a core that predates the
+ * handler — callers show no time at all rather than one formatted their own
+ * way, which would disagree with the mission's.
+ */
+export const mmgisFormatTime = (
+    time: string | number | null | undefined,
+): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('time:formatTime', time)
+}
+
+/**
  * Copies text to the clipboard via core's app:copyText handler; true on
  * success. Against cores that predate the handler — including ones whose
  * direct copyText method carried a legacy execCommand path this plugin no
