@@ -5,7 +5,13 @@
  * for the classic UI, which loads no theme stylesheet.
  */
 
+/* The map libraries measure this element to size their own popup frame, so
+   the card takes the width its content wants — a card that can shrink below
+   its buttons is measured, and framed, too narrow to read. The cap never
+   exceeds the frame the library settled on. */
 .mmgis-popup-card {
+    width: max-content;
+    max-width: min(320px, 100%);
     color: var(--theme-color-ink, #1b1b1b);
     font-family: var(--theme-font-ui, system-ui, sans-serif);
     font-size: var(--theme-font-size-sm, 0.875rem);
@@ -27,35 +33,23 @@
     margin-top: var(--theme-spacing-1, 0.5rem);
 }
 
-/* Equal columns, so two buttons come out the same width rather than sized by
-   their own labels. */
+/* Side by side at the end of the row, each sized to its own label. */
 .mmgis-popup-actions {
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(0, 1fr);
+    display: flex;
+    justify-content: flex-end;
     gap: var(--theme-spacing-1, 0.5rem);
     margin-top: var(--theme-spacing-105, 0.75rem);
 }
 
-/* A label reads as one line, and ends in an ellipsis once its column is too
-   narrow for it. */
+/* A label reads as one line. */
 .mmgis-popup-button {
-    min-width: 0;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
     padding: var(--theme-spacing-05, 0.25rem) var(--theme-spacing-105, 0.75rem);
     border-radius: var(--theme-radius-0, 0);
     font-family: inherit;
     font-size: var(--theme-font-size-sm, 0.875rem);
     font-weight: var(--theme-font-weight-normal, 400);
     cursor: pointer;
-}
-
-/* A lone button sits at the end of the row rather than filling it. */
-.mmgis-popup-button:only-child {
-    justify-self: end;
-    max-width: 100%;
 }
 
 /* MMGIS resets the user agent's focus ring globally (src/css/mmgis.css), and
