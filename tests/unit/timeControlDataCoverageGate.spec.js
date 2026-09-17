@@ -158,7 +158,7 @@ describe('TimeControl.reloadLayer data-coverage gate', () => {
         coverageHidden['Flood Days'] = true
         const layer = makeLayer({
             start: '2020-03-04T14:00:00Z',
-            end: '2020-03-04T15:00:00Z',
+            end: '2020-03-04T14:30:00Z',
         })
 
         await TimeControl.reloadLayer(layer)
@@ -177,7 +177,7 @@ describe('TimeControl.reloadLayer data-coverage gate', () => {
         coverageHidden['Flood Days'] = true
         const layer = makeLayer({
             start: '2020-03-04T14:00:00Z',
-            end: '2020-03-04T15:00:00Z',
+            end: '2020-03-04T14:30:00Z',
         })
         layer.type = 'vector'
 
@@ -194,7 +194,7 @@ describe('TimeControl.reloadLayer data-coverage gate', () => {
         L_.layers.on['Flood Days'] = false
         const layer = makeLayer({
             start: '2020-03-04T14:00:00Z',
-            end: '2020-03-04T15:00:00Z',
+            end: '2020-03-04T14:30:00Z',
         })
 
         await TimeControl.reloadLayer(layer, true)
@@ -210,7 +210,7 @@ describe('TimeControl.reloadLayer data-coverage gate', () => {
         coverageHidden['Flood Days'] = true
         const layer = makeLayer({
             start: '2020-03-04T14:00:00Z',
-            end: '2020-03-04T15:00:00Z',
+            end: '2020-03-04T14:30:00Z',
         })
 
         const returning = TimeControl.reloadLayer(layer)
@@ -232,7 +232,7 @@ describe('TimeControl.reloadLayer data-coverage gate', () => {
         }
         const layer = makeLayer({
             start: '2020-03-04T14:00:00Z',
-            end: '2020-03-04T15:00:00Z',
+            end: '2020-03-04T14:30:00Z',
         })
 
         await TimeControl.reloadLayer(layer)
@@ -261,7 +261,7 @@ describe('TimeControl.reloadLayer data-coverage gate', () => {
         coverageHidden['Flood Days'] = true
         const layer = makeLayer({
             start: '2020-03-04T14:00:00Z',
-            end: '2020-03-04T15:00:00Z',
+            end: '2020-03-04T14:30:00Z',
         })
         layer.controlled = true
 

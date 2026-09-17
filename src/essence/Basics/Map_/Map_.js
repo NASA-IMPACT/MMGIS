@@ -449,7 +449,11 @@ let Map_ = {
                 })
             }
 
-            Map_.map.addEventListener('click', clearOnMapClick)
+            // Through the engine rather than the native map, so this inherits
+            // the adapter's guard against reporting the click a drawing ended
+            // on. Subscribing on the L.Map directly would let a finished
+            // drawing deselect the user's active feature.
+            this.engine.on('click', clearOnMapClick)
         } else {
             this.engine.on('moveend', function () {
                 L_.enforceVisibilityCutoffs()
@@ -621,121 +625,10 @@ let Map_ = {
             layer = null
         }
     },
-    /**
-     * Re-order all visible layers so they match the configured layer stack order.
-     * For deck.gl, z-order is managed via the layer array in the adapter; this
-     * method is a no-op for that engine.
-     */
-    orderedBringToFront: function () {
-        if (this.engine && this.engine.engineType !== MAP_ENGINE.LEAFLET) return
-        let hasIndex = []
-        let hasIndexRaster = []
-
-        for (let i = L_._layersOrdered.length - 1; i >= 0; i--) {
-            if (Map_.hasLayer(L_._layersOrdered[i])) {
-                if (L_.layers.data[L_._layersOrdered[i]]) {
-                    if (
-                        L_.layers.data[L_._layersOrdered[i]].type === 'vector'
-                    ) {
-                        if (L_.layers.attachments[L_._layersOrdered[i]]) {
-                            for (let s in L_.layers.attachments[
-                                L_._layersOrdered[i]
-                            ]) {
-                                Map_.rmNotNull(
-                                    L_.layers.attachments[L_._layersOrdered[i]][
-                                        s
-                                    ].layer
-                                )
-                            }
-                        }
-                        Map_.map.removeLayer(
-                            L_.layers.layer[L_._layersOrdered[i]]
-                        )
-                        hasIndex.push(i)
-                    } else if (
-                        L_.layers.data[L_._layersOrdered[i]].type === 'tile' ||
-                        L_.layers.data[L_._layersOrdered[i]].type === 'data'
-                    ) {
-                        hasIndexRaster.push(i)
-                    } else if (
-                        L_.layers.data[L_._layersOrdered[i]].type === 'image'
-                    ) {
-                        Map_.map.removeLayer(
-                            L_.layers.layer[L_._layersOrdered[i]]
-                        )
-                        hasIndex.push(i)
-                    }
-                }
-            }
-        }
-
-        // First only vectors and images
-        for (let i = 0; i < hasIndex.length; i++) {
-            if (L_.layers.attachments[L_._layersOrdered[hasIndex[i]]]) {
-                for (let s in L_.layers.attachments[
-                    L_._layersOrdered[hasIndex[i]]
-                ]) {
-                    if (
-                        L_.layers.attachments[L_._layersOrdered[hasIndex[i]]][s]
-                            .on
-                    ) {
-                        if (
-                            L_.layers.attachments[
-                                L_._layersOrdered[hasIndex[i]]
-                            ][s].type !== 'model'
-                        ) {
-                            Map_.map.addLayer(
-                                L_.layers.attachments[
-                                    L_._layersOrdered[hasIndex[i]]
-                                ][s].layer
-                            )
-                        }
-                    }
-                }
-            }
-
-            Map_.map.addLayer(L_.layers.layer[L_._layersOrdered[hasIndex[i]]])
-
-            // If image layer, reorder the z index and redraw the layer
-            if (
-                L_.layers.data[L_._layersOrdered[hasIndex[i]]].type === 'image'
-            ) {
-                L_.layers.layer[L_._layersOrdered[hasIndex[i]]].setZIndex(
-                    L_.layerZIndex(L_._layersOrdered[hasIndex[i]])
-                )
-                L_.layers.layer[L_._layersOrdered[hasIndex[i]]].clearCache()
-                L_.layers.layer[L_._layersOrdered[hasIndex[i]]].redraw()
-            }
-        }
-
-        L_.enforceVisibilityCutoffs()
-
-        // Now only rasters
-        // They're separate because its better to only change the raster z-index
-        for (let i = 0; i < hasIndexRaster.length; i++) {
-            L_.layers.layer[L_._layersOrdered[hasIndexRaster[i]]].setZIndex(
-                L_.layerZIndex(L_._layersOrdered[hasIndexRaster[i]])
-            )
-        }
-
-        // Now bring any Drawn layers back to the front:
-        Object.keys(L_.layers.layer).forEach((key) => {
-            if (
-                key.startsWith('DrawTool_') &&
-                Array.isArray(L_.layers.layer[key])
-            ) {
-                L_.layers.layer[key].forEach((l) => {
-                    try {
-                        l.bringToFront()
-                    } catch (err) {}
-                })
-            }
-        })
-    },
     refreshLayer: async function (
         layerObj,
         cb,
-        skipOrderedBringToFront,
+        skipLayerOrderSync,
         stopLoops
     ) {
         // If it's a dynamic extent layer, just re-call its function
@@ -1141,6 +1034,15 @@ function onEachFeatureDefault(feature, layer) {
     ) {
         //Add a click event to send the data to the info tab
         layer.on('click', (e) => {
+            // Leaflet runs a feature's own listeners before the map's, so the
+            // engine's click reporting is not in the way here: without this,
+            // a vertex placed on a feature — or the click that finishes the
+            // shape on one — would open it in Info.
+            if (
+                Map_.engine?.isDrawing?.() ||
+                Map_.engine?.ownsDrawEndClick(e.originalEvent)
+            )
+                return
             featureDefaultClick(feature, layer, e)
         })
     }
@@ -2732,9 +2634,13 @@ function clearOnMapClick(event) {
                 } else if ('getBounds' in layer) {
                     // Use the pixel bounds because longitude/latitude conversions for bounds
                     // may be odd in the case of polar projections
+                    // L.Bounds only accepts an L.Point or an [x, y] pair; the
+                    // engine reports the click's layer point as plain
+                    // {x, y}, which it would take for a bounds and throw on.
                     if (
                         layer._pxBounds &&
-                        layer._pxBounds.contains(event.layerPoint)
+                        event.layerPoint &&
+                        layer._pxBounds.contains(L.point(event.layerPoint))
                     ) {
                         return true
                     }

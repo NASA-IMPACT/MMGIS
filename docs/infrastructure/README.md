@@ -26,7 +26,7 @@ flowchart LR
         APP["app-deploy.yml<br/>builds + deploys MMGIS"]
     end
     subgraph aws["AWS account"]
-        BOOT["bootstrap root — human-applied:<br/>CI roles, permissions boundaries,<br/>state buckets, database-secret key"]
+        BOOT["bootstrap root — human-applied:<br/>CI roles, permissions boundaries,<br/>state buckets, database-secret key,<br/>CloudFront VPC-origin role"]
         ENVD["development environment<br/>mmgis-development-*"]
         ENVP["production environment<br/>mmgis-production-*"]
     end
@@ -47,7 +47,7 @@ flowchart LR
 
 The Terraform is split into two roots, so that different access permissions can be given to each:
 
-- **The bootstrap root** — run by a human, rarely. It creates the IAM roles CI runs as, the permissions boundaries that cap any role CI creates, the S3 buckets that hold Terraform state, and the KMS key that encrypts each database's admin password. See [identity & containment](identity.md).
+- **The bootstrap root** — run by a human, rarely. It creates the IAM roles CI runs as, the permissions boundaries that cap any role CI creates, the S3 buckets that hold Terraform state, the KMS key that encrypts each database's admin password, and the service-linked role CloudFront runs VPC origins under. See [identity & containment](identity.md).
 - **Everything else** — run by CI, using those roles. CI has no permission to modify anything the bootstrap root created — it can't edit its own credentials or grant itself more. Each environment branch (`development`, `production`) has a small workflow of its own that calls the same two shared workflows in order: one updates the AWS infrastructure to match the code, the other builds and deploys MMGIS to that infrastructure. If we later add a new environment, we only add another small workflow file that calls those same two — the deploy logic is written once and never duplicated. See [pipelines](pipelines.md).
 
 ## The documents
@@ -76,7 +76,7 @@ Nothing account-identifying is committed as part of the code. Every value has ex
 | Files in git | all Terraform and workflow code; everything not account-identifying | the repo |
 | GitHub environments | the deploy pipeline's five settings: the apply and deploy role ARNs (secrets) — the roles that can change AWS — plus region, state bucket, and the uncommittable Terraform inputs as one JSON value | [infrastructure/README.md](../../infrastructure/README.md#configuration-contract) |
 | Repo-wide Actions settings | the plan preview's settings: the read-only plan role's ARN (secret) plus its own copies of region, state buckets, and Terraform inputs, name-suffixed per AWS environment. The write-capable role ARNs never exist at this scope — the plan job declares no GitHub environment, so this is all it can read, and all it needs | [infrastructure/README.md](../../infrastructure/README.md#plan-preview-configuration-repo-level) |
-| AWS Secrets Manager | the secret values the running app consumes (session key, seed admin login, dashboards password, Mapbox token, database password) — injected into the containers, unreadable by CI | [aws-environments.md](aws-environments.md#secrets-who-sets-each-value) |
+| AWS Secrets Manager | the secret values the running app consumes (session key, seed admin login, dashboards password where the environment gates its dashboards, Mapbox token, database password) — injected into the containers, unreadable by CI | [aws-environments.md](aws-environments.md#secrets-who-sets-each-value) |
 | Terraform state outputs | the non-secret names of what Terraform built (cluster, ECR repo, service, task families, admin URL) — read by the pipeline on every run instead of being stored anywhere in GitHub | the roots' `outputs.tf` |
 
 Two consequences of that split are worth stating plainly. `IAC_AWS_REGION` exists at both scopes on purpose, and a job that declares a GitHub environment reads the environment's value, not the repo-wide one — so the deploy engines always get their own environment's region and only the plan preview falls back to the repo-wide copy. And the repo-wide values, though visible only to collaborators as settings, produce plan text that is public on a public repository (run logs and PR comments). The team accepted that deliberately: what a plan reveals is network identifiers, not secrets.

@@ -18,7 +18,7 @@ flowchart TD
     PUB -->|"GetObject: copy mission assets"| AB
     PUB --> RDS
     PUB -->|CreateStack/UpdateStack| CFN["CloudFormation stack<br/>mmgis-env-dashboard-N"]
-    CFN --> DASH["Per-dashboard resources:<br/>S3 bucket + CloudFront distribution<br/>+ password-gate Function + OAC"]
+    CFN --> DASH["Per-dashboard resources:<br/>S3 bucket + CloudFront distribution<br/>+ viewer-request Function + OAC"]
 ```
 
 The module builds:
@@ -85,7 +85,7 @@ Terraform defines secret *existence*, never values — a value in the configurat
 |---|---|---|
 | `session-secret` | CI secret bootstrap (generated once) | `SECRET`, admin task |
 | `superadmin-username` / `superadmin-password` | CI secret bootstrap | Seed pair, admin task — seeds the account at first boot only |
-| `dashboards-password` | CI secret bootstrap | Publish task; baked into each dashboard's password-gate Function |
+| `dashboards-password` | CI secret bootstrap | Development publish task only, baked into each dashboard's password-gate Function; production sets `dashboards_require_auth = false` and does not inject it |
 | `mapbox-token` | A human, once per environment | `MAPBOX_TOKEN`, admin task — an external credential CI can never invent |
 | database admin password (`rds!db-...`) | RDS itself — it creates and rotates this secret; Terraform and CI never see it | `DB_PASS` via the `:password::` JSON-key selector; host/port/user/name ride as plain env values |
 
@@ -93,7 +93,7 @@ The database password exists in exactly one place, so there is no second copy to
 
 ## Dashboard stacks: app-created, environment-namespaced
 
-When someone publishes a dashboard, the app — not Terraform — creates its resources (bucket, CloudFront distribution, password gate) as one CloudFormation *stack*: a bundle of resources AWS creates and deletes as a unit. Terraform's only involvement is granting the tasks permission over stack and bucket names starting with `mmgis-<env>-dashboard-`.
+When someone publishes a dashboard, the app — not Terraform — creates its resources (bucket, CloudFront distribution, and a viewer-request Function whose password gate is on unless the environment sets `dashboards_require_auth = false`) as one CloudFormation *stack*: a bundle of resources AWS creates and deletes as a unit. Terraform's only involvement is granting the tasks permission over stack and bucket names starting with `mmgis-<env>-dashboard-`.
 
 That prefix is built independently in three places, and all three must stay character-identical:
 
@@ -104,6 +104,10 @@ That prefix is built independently in three places, and all three must stay char
 Changing the prefix strands every dashboard published under the old one: the permissions stop matching, so the app can no longer update or delete those stacks.
 
 One rule follows: **the environment name is capped at 11 characters.** CloudFormation names each dashboard's bucket `<stack-name>-dashboardbucket-<suffix>`, and S3 caps bucket names at 63 characters — a longer environment name would truncate exactly the part the IAM patterns match on. `development` (11) and `production` (10) fit. Both the module and the app validate the cap, so a bad name fails immediately with a clear message instead of as a confusing AccessDenied at publish time.
+
+## Gating dashboards behind a password
+
+`dashboards_require_auth` decides whether the dashboards an environment publishes sit behind the shared HTTP Basic password. Every dashboard gets the same viewer-request Function; what the flag changes is a boolean baked into that Function at publish. When it is on, the publish task carries `mmgis/<env>/dashboards-password` and bakes it in alongside the boolean, so the Function demands the password. When it is off, the Function ships with the check switched off and no password in it at all, and the dashboard is open to anyone holding the URL. What an open dashboard hands its visitors is the mission configuration baked into its bundle: every layer in the mission, the service URLs those layers read from, and — where the mission uses a Mapbox base map — the public Mapbox token stored with it. Development sets it `true`; production sets it `false`. The secret shell and its CI bootstrap slot exist in both environments either way — only the publish task's injection and the execution role's grant on it follow the flag — so turning the gate on in production is that one line plus a deploy.
 
 ## Keeping the demo mission in sync at boot
 

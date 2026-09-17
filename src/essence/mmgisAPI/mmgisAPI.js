@@ -136,6 +136,9 @@ var mmgisAPI_ = {
                 try {
                     await L_.resetConfig(configData)
                     await L_.modifyLayer(configData, layerObj.name, 'addLayer')
+                    // The new layer was built after the order was last pushed,
+                    // so on Leaflet it sits on top until the stack is re-sent.
+                    L_.syncLayerOrder()
                 } catch (err) {
                     reject(err)
                     return

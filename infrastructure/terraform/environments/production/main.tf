@@ -28,6 +28,12 @@ module "mmgis" {
   db_skip_final_snapshot = false
   rds_ca_bundle_base64   = var.rds_ca_bundle_base64
 
+  # Dashboards published here are open to anyone holding the URL: no shared
+  # password baked into their CloudFront Function, and the publish task does
+  # not carry the dashboards-password secret. Development gates its
+  # dashboards.
+  dashboards_require_auth = false
+
   # No recovery window, production included: deleted secret names free
   # immediately, so a destroy/re-apply never collides with a name still held
   # in recovery. One nuance this accepts: the superadmin seed password only

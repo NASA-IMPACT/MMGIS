@@ -5,11 +5,14 @@ import {
     mmgisGetLayerCogCapabilities,
     mmgisGetLayerBounds,
     mmgisFitBounds,
+    mmgisGetLayerOrder,
+    mmgisSetLayerOrder,
 } from '../../_shared/adapters/mmgisAPI'
 import {
     ZOOM_TO_LAYER_PADDING,
     ZOOM_TO_LAYER_POINT_MAX_ZOOM,
 } from '../lib/utils/constants'
+import { placeInOrder } from '../lib/utils/layerOrder'
 
 type Refresh = () => Promise<void> | void
 
@@ -65,6 +68,46 @@ export const zoomToLayer = async (layerId: string): Promise<void> => {
         ...(enclosesNoArea ? { maxZoom: ZOOM_TO_LAYER_POINT_MAX_ZOOM } : {}),
     })
 }
+
+// One order write at a time. A second move before core's broadcast has
+// re-sorted the list would move from a stale picture, so it is dropped.
+let orderWriteInFlight = false
+
+// Reads the order from core, lets `place` compute the new one (null when
+// there is nowhere to go), and hands it back. Core broadcasts the new order,
+// which is what re-sorts the list; nothing to emit here. Core refuses
+// exactly when this side's picture of the stack is stale, so a refusal is
+// the moment to re-read it.
+const writeOrder = async (
+    layerId: string,
+    place: (order: string[]) => string[] | null,
+    refresh?: Refresh,
+): Promise<void> => {
+    if (orderWriteInFlight) return
+    orderWriteInFlight = true
+    try {
+        const order = await mmgisGetLayerOrder()
+        if (order === null) return
+        const next = place(order)
+        if (next === null) return
+        const accepted = await mmgisSetLayerOrder(next)
+        if (accepted === false) {
+            console.warn(`LayerManager: core refused the new order for '${layerId}'`)
+            await refresh?.()
+        }
+    } finally {
+        orderWriteInFlight = false
+    }
+}
+
+/** Drops a dragged layer at `toIndex` of the list the user dragged it through. */
+export const dropLayer = (
+    layerId: string,
+    toIndex: number,
+    shownIds: string[],
+    refresh?: Refresh,
+): Promise<void> =>
+    writeOrder(layerId, (order) => placeInOrder(order, shownIds, layerId, toIndex), refresh)
 
 /**
  * Hands a layer to the Comparison plugin as the first of the two sides it

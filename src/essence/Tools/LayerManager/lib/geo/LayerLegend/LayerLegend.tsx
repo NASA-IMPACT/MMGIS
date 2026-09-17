@@ -45,6 +45,14 @@ export type LayerLegendProps = {
     onZoomToLayer?: (layerId: string) => void
     canZoomToLayer?: (layerId: string) => Promise<boolean>
     onCompareLayer?: (layerId: string) => void
+    /** Wires the grip button to a sortable list; no handle without it. */
+    dragHandle?: DragHandleProps
+}
+
+export type DragHandleProps = {
+    ref: (node: HTMLElement | null) => void
+    attributes: Record<string, unknown>
+    listeners?: Record<string, unknown>
 }
 
 export function LayerLegend({
@@ -58,6 +66,7 @@ export function LayerLegend({
     onZoomToLayer,
     canZoomToLayer,
     onCompareLayer,
+    dragHandle,
 }: LayerLegendProps) {
     const {
         id,
@@ -244,10 +253,30 @@ export function LayerLegend({
 
     return (
         <div
-            className={`blocks-layer-legend ${isOpacityExpanded || isRampPickerOpen || isInfoOpen || isMenuOpen ? 'blocks-layer-legend--menu-open' : ''}`}
+            className={[
+                'blocks-layer-legend',
+                dragHandle ? 'blocks-layer-legend--draggable' : '',
+                isOpacityExpanded || isRampPickerOpen || isInfoOpen || isMenuOpen
+                    ? 'blocks-layer-legend--menu-open'
+                    : '',
+            ]
+                .filter(Boolean)
+                .join(' ')}
             data-legend-id={id}
         >
             <div className="blocks-layer-legend__header">
+                {dragHandle && (
+                    <button
+                        ref={dragHandle.ref}
+                        type="button"
+                        className="blocks-layer-legend__action-btn blocks-layer-legend__drag-handle"
+                        title={`Drag to reorder ${title}`}
+                        {...dragHandle.attributes}
+                        {...dragHandle.listeners}
+                    >
+                        <span className="blocks-layer-legend__icon blocks-layer-legend__icon--drag-handle" />
+                    </button>
+                )}
                 <div className="blocks-layer-legend__checkbox-wrapper">
                     <input
                         type="checkbox"

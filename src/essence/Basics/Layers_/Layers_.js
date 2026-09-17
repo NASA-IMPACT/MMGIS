@@ -288,8 +288,8 @@ const L_ = {
         // engine's request hooks. Written only via L_.setLayerLoadStatus.
         loadStatus: {},
         // Name -> LayerDataCoverage: whether the layer's requests are being
-        // suppressed for lack of data in the window it would request, and
-        // the declared coverage that decided it. Written only via
+        // suppressed for lack of data at the current time, and the declared
+        // coverage that decided it. Written only via
         // L_.setLayerDataCoverage.
         dataCoverage: {},
         // Name -> true while the gate holds a layer off the map. Says what
@@ -545,7 +545,8 @@ const L_ = {
                 // wipe it. `source` is accepted but unused — reserved for
                 // arbitrating between multiple writers later.
                 window.mmgisAPI.provide('layers:getListed', () => L_.layers.listed),
-                window.mmgisAPI.provide('layers:setListed', ({ updates, source } = {}) => {
+                window.mmgisAPI.provide('layers:setListed', (payload) => {
+                    const updates = payload?.updates
                     if (updates == null || typeof updates !== 'object')
                         return false
                     Object.entries(updates).forEach(([name, isListed]) => {
@@ -558,6 +559,18 @@ const L_ = {
                         listed: L_.layers.listed,
                     })
                     return true
+                }),
+                // Draw order, top first, headers excluded. setOrder takes the
+                // whole list back and broadcasts 'layers:orderChanged'.
+                window.mmgisAPI.provide('layers:getOrder', () => [
+                    ...L_._layersOrdered,
+                ]),
+                window.mmgisAPI.provide('layers:setOrder', (payload) => {
+                    const order = payload?.order
+                    if (!Array.isArray(order)) return false
+                    return L_.reorderLayers(
+                        order.map((name) => L_.asLayerUUID(name))
+                    )
                 }),
                 // In-memory layer add/remove (not persisted; lost on reload).
                 // layerObj requires { name, type, ... }. See mmgisAPI.addLayer.
@@ -578,8 +591,8 @@ const L_ = {
                         : L_.layers.loadStatus
                 ),
                 // Whether each layer's requests are being suppressed for
-                // lack of data in the window it would request, with the
-                // coverage that decided it. Called with a layer identifier
+                // lack of data at the current time, with the coverage that
+                // decided it. Called with a layer identifier
                 // it answers for that one layer, resolving a name the way
                 // every other layer-keyed provider does; called with none it
                 // returns the whole map, keyed by UUID. Live updates
@@ -857,7 +870,7 @@ const L_ = {
     //Takes in a config layer object
     toggleLayer: async function (
         s,
-        skipOrderedBringToFront,
+        skipLayerOrderSync,
         ignoreToggleStateChange
     ) {
         if (s == null) return
@@ -878,7 +891,7 @@ const L_ = {
                 on,
                 ignoreToggleStateChange,
                 null,
-                skipOrderedBringToFront
+                skipLayerOrderSync
             )
         } catch (e) {
             toggled = false
@@ -932,7 +945,7 @@ const L_ = {
         on,
         ignoreToggleStateChange,
         globeOnly,
-        skipOrderedBringToFront
+        skipLayerOrderSync
     ) {
         if (s.type !== 'header') {
             if (on) {
@@ -1295,9 +1308,9 @@ const L_ = {
             if (
                 !on &&
                 s.type === 'vector' &&
-                skipOrderedBringToFront !== true
+                skipLayerOrderSync !== true
             ) {
-                L_.Map_.orderedBringToFront()
+                L_.syncLayerOrder()
             }
             L_._refreshAnnotationEvents()
 
@@ -1911,7 +1924,7 @@ const L_ = {
             for (let i = L_.toggledOffFeatures.length - 1; i >= 0; i--)
                 L_.toggleFeature(L_.toggledOffFeatures[i], true)
         }
-        L_.Map_.orderedBringToFront()
+        L_.syncLayerOrder()
         L_.setActiveFeature(L_.activeFeature?.layer)
         L_._refreshAnnotationEvents()
     },
@@ -2356,9 +2369,9 @@ const L_ = {
                 ...record,
             })
     },
-    // Evaluates a layer against the window it would request, records the
-    // result, and answers whether the layer may show. Asked only where the
-    // engine is then told the answer, so coverageHidden tracks the engine.
+    // Evaluates a layer at the current time, records the result, and answers
+    // whether the layer may show. Asked only where the engine is then told
+    // the answer, so coverageHidden tracks the engine.
     assessLayerDataCoverage: function (layer, evenIfControlled) {
         const record = evaluateLayerDataCoverage(layer)
         L_.setLayerDataCoverage(layer.name, record)
@@ -3066,14 +3079,71 @@ const L_ = {
             console.warn(
                 "reorderLayers: newLayersOrdered is not consistent, won't run."
             )
-            return
+            return false
         }
 
-        L_._layersOrdered = newLayersOrdered
+        L_.applyLayerOrder(newLayersOrdered)
+        return true
+    },
+    // Trusts `order` to be a permutation of `_layersOrdered`.
+    applyLayerOrder: function (order) {
+        if (
+            order.length === L_._layersOrdered.length &&
+            order.every((name, i) => name === L_._layersOrdered[i])
+        )
+            return
 
-        if (L_.Map_) L_.Map_.orderedBringToFront(true)
+        // `_layersLoaded` is indexed like `_layersOrdered`, so it moves too.
+        const loaded = {}
+        L_._layersOrdered.forEach((name, i) => {
+            loaded[name] = L_._layersLoaded[i]
+        })
+        L_._layersOrdered = [...order]
+        L_._layersLoaded = L_._layersOrdered.map((name) => loaded[name])
+
+        L_.syncLayerOrder()
 
         if (L_.Globe_) L_.Globe_.litho.orderLayers(L_._layersOrdered)
+
+        if (window.mmgisAPI)
+            window.mmgisAPI.emit('layers:orderChanged', {
+                order: [...L_._layersOrdered],
+            })
+    },
+    // Push `_layersOrdered` to the engine, then re-apply the two rules that
+    // sit above any engine's stack: zoom cutoffs, and drawings on top.
+    syncLayerOrder: function () {
+        const engine = L_.Map_?.engine
+        if (!engine) return
+
+        const layers = {}
+        L_._layersOrdered.forEach((name) => {
+            const attachments = Object.values(
+                L_.layers.attachments[name] || {}
+            ).map((a) => ({
+                layer: L_.Map_.nativeLayer(a.layer),
+                on: Boolean(a.on) && a.type !== 'model',
+            }))
+            layers[name] = { type: L_.layers.data[name]?.type, attachments }
+        })
+
+        CursorInfo.hide(true)
+        engine.setLayerOrder([...L_._layersOrdered], { layers })
+
+        L_.enforceVisibilityCutoffs()
+
+        Object.keys(L_.layers.layer).forEach((key) => {
+            if (
+                key.startsWith('DrawTool_') &&
+                Array.isArray(L_.layers.layer[key])
+            ) {
+                L_.layers.layer[key].forEach((l) => {
+                    try {
+                        engine.bringToFront(L_.Map_.nativeLayer(l))
+                    } catch (err) {}
+                })
+            }
+        })
     },
     clearVectorLayer: function (layerName) {
         layerName = L_.asLayerUUID(layerName)
@@ -3808,6 +3878,7 @@ const L_ = {
     resetConfig: async function (data) {
         // Save so we can make sure we reproduce the same layer settings after parsing the config
         const toggledArray = { ...L_.layers.on }
+        const previousOrder = L_._layersOrdered
 
         // Reset for now
         L_.layers.on = {}
@@ -3826,14 +3897,22 @@ const L_ = {
 
         // Set back
         L_.layers.on = { ...L_.layers.on, ...toggledArray }
+
+        // parseConfig rebuilt the order from the config. Layers that survived
+        // keep their relative order from before; new ones take their config slot.
+        const kept = previousOrder.filter((name) =>
+            L_._layersOrdered.includes(name)
+        )
+        let k = 0
+        const merged = L_._layersOrdered.map((name) =>
+            previousOrder.includes(name) ? kept[k++] : name
+        )
+        if (merged.some((name, i) => name !== L_._layersOrdered[i]))
+            L_.applyLayerOrder(merged)
     },
     // Dynamically add a new layer or update a layer (used by WebSocket)
     modifyLayer: async function (data, layerName, type) {
         layerName = L_.asLayerUUID(layerName)
-
-        const newLayersOrdered = [...L_._layersOrdered]
-        const index = L_._layersOrdered.findIndex((name) => name === layerName)
-        newLayersOrdered.splice(index, 1)
 
         if (type === 'updateLayer' && layerName in L_.layers.data) {
             // Update layer
@@ -3845,9 +3924,13 @@ const L_ = {
         }
 
         // Notify subscribers (e.g. the modern-layout Layers panel) that the
-        // layer list changed, so they rebuild.
+        // layer list changed, so they rebuild. The order is a different list
+        // after an add or remove too, so it is announced as well.
         if (window.mmgisAPI) {
             window.mmgisAPI.emit('layers:listChanged')
+            window.mmgisAPI.emit('layers:orderChanged', {
+                order: [...L_._layersOrdered],
+            })
         }
 
         // The classic-layout LayersTool doesn't subscribe to the bus, so
@@ -3928,6 +4011,12 @@ const L_ = {
                 delete L_.layers.listed[layerUUID]
                 delete L_.layers.attachments[layerUUID]
                 delete L_.layers.opacity[layerUUID]
+
+                const at = L_._layersOrdered.indexOf(layerUUID)
+                if (at > -1) {
+                    L_._layersOrdered.splice(at, 1)
+                    L_._layersLoaded.splice(at, 1)
+                }
                 delete L_.layers.loadStatus[layerUUID]
                 delete L_.layers.dataCoverage[layerUUID]
                 delete L_.layers.coverageHidden[layerUUID]
@@ -3982,7 +4071,7 @@ const L_ = {
                 await L_.modifyLayer(data, newLayerName, type)
             }
 
-            if (L_.Map_) L_.Map_.orderedBringToFront(true)
+            L_.syncLayerOrder()
 
             // If the user rearranged the layers with the LayersTool, reset the ordering history
             if (

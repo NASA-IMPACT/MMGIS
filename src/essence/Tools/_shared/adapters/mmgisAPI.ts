@@ -145,6 +145,18 @@ export const mmgisGetListedLayers = (): Promise<Record<
     return mmgisRequestIfProvided<Record<string, boolean>>('layers:getListed')
 }
 
+/** Draw order as layer UUIDs, top first; headers excluded. */
+export const mmgisGetLayerOrder = (): Promise<string[] | null> => {
+    return mmgisRequestIfProvided<string[]>('layers:getOrder')
+}
+
+/** Replaces the draw order. Must hold the same layers as
+ *  mmgisGetLayerOrder, in any order; core refuses anything else with false.
+ *  Core broadcasts 'layers:orderChanged' once applied. */
+export const mmgisSetLayerOrder = (order: string[]): Promise<boolean | null> => {
+    return mmgisRequestIfProvided<boolean>('layers:setOrder', { order })
+}
+
 /**
  * What a layer's COG colormap supports: `hasColormap` for whether there is a
  * ramp to draw a legend from, `canChangeColormap` for whether that ramp can be
@@ -206,9 +218,9 @@ export type CoverageSpan = {
 }
 
 /**
- * Whether core is suppressing a layer's requests for lack of data in the
- * window it would request, and the declared coverage that decided it.
- * Complete on purpose: a consumer renders this without a second lookup.
+ * Whether core is suppressing a layer's requests for lack of data at the
+ * current time, and the declared coverage that decided it. Complete on
+ * purpose: a consumer renders this without a second lookup.
  */
 export type LayerDataCoverage = {
     outOfDataRange: boolean
@@ -220,6 +232,10 @@ export type LayerDataCoverage = {
      * span across the extent.
      */
     spans: CoverageSpan[] | null
+    /**
+     * The window the layer would request. The verdict tests its end, the
+     * current time, against the spans; its start plays no part.
+     */
     requestedWindow: CoverageSpan | null
 }
 

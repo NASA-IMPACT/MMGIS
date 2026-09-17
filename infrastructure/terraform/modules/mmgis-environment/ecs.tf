@@ -50,10 +50,12 @@ locals {
     { name = "MAPBOX_TOKEN", value_from = aws_secretsmanager_secret.mapbox_token.arn },
   ]
 
-  publish_secrets = [
-    local.db_pass_secret,
+  # The dashboards password rides the publish task only where the gate is on:
+  # an ungated environment injects nothing because nothing reads it. iam.tf
+  # mirrors this, so the execution role holds no grant it cannot use.
+  publish_secrets = concat([local.db_pass_secret], var.dashboards_require_auth ? [
     { name = "MMGIS_DASHBOARDS_PASSWORD", value_from = aws_secretsmanager_secret.dashboards_password.arn },
-  ]
+  ] : [])
 
   admin_environment = concat(local.db_environment, [
     { name = "MMGIS_DEPLOYMENT_MODE", value = "lean" },
@@ -86,6 +88,11 @@ locals {
     { name = "MMGIS_SHARED_ASSET_BUCKET", value = local.asset_bucket_name },
     # Namespaces the dashboard stacks this task creates (local.dashboard_prefix).
     { name = "MMGIS_ENVIRONMENT", value = var.environment },
+    # Whether each dashboard's CloudFront Function runs its Basic-auth check,
+    # baked into the Function body as a boolean at publish.
+    # scripts/publish-static.js reads it and treats only the exact string
+    # "false" as off.
+    { name = "MMGIS_DASHBOARDS_REQUIRE_AUTH", value = tostring(var.dashboards_require_auth) },
   ])
 }
 
