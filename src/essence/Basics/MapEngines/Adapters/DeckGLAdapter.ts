@@ -336,6 +336,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     private _popup: BasemapPopup | null = null
 
+    /**
+     * Cancels an open still waiting out the draw-end click guard's hold. Null
+     * whenever nothing is waiting — see {@link showPopup}.
+     */
+    private _cancelPopupOpen: (() => void) | null = null
+
     /** True when the adapter was initialised with a {@link BasemapOptions} configuration. */
     private _isOverlayMode = false
 
@@ -572,6 +578,11 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         // session that is about to have no engine.
         this.disableDrawing()
 
+        // Taken down here rather than left to the basemap, whose own teardown
+        // removes the popup and so would report the library closing it. Ahead
+        // of the guard, whose dispose settles a deferred open.
+        this.hidePopup()
+
         this._drawEndClick.dispose()
         this._drawPointers.stop()
 
@@ -581,10 +592,6 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             try { this._terraDraw.stop() } catch { /* ignore */ }
             this._terraDraw = null
         }
-
-        // Taken down here rather than left to the basemap, whose own teardown
-        // removes the popup and so would report the library closing it.
-        this.hidePopup()
 
         this._comparisonEnabled = false
         this._destroyComparisonSurfaces()
@@ -805,9 +812,17 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /**
      * See {@link IMapEngine.showPopup}. deck.gl draws to a canvas and has no
-     * popup of its own that works here, so the basemap's is used. `className`
-     * is the only option set: the close button, the close-on-map-click, the
-     * width and the focus-on-open all stay at the library's defaults.
+     * popup of its own that works here, so the basemap's is used. Two options
+     * are set: `className`, and `maxWidth: 'none'` because the library's
+     * default 240px truncates a two-button action row ("Analyze ar…" beside
+     * Cancel). The close button, the close-on-map-click and the focus-on-open
+     * stay at the library's defaults.
+     *
+     * A card asked for in response to a finished drawing would be closed by
+     * the very click that finished it: the basemap closes popups from its own
+     * `click`, ahead of any adapter listener. So the open waits out the
+     * draw-end click guard's hold on that click, and the call stays
+     * synchronous either way.
      *
      * The popup goes on the primary basemap. A comparison pane's basemap never
      * carries one, and while the side-by-side layout is mounted the panes are
@@ -828,7 +843,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this.hidePopup()
 
         const { lat, lng } = resolveLatLng(latlng)
-        const popup = new PopupClass({ className: 'mmgis-map-popup' })
+        const popup = new PopupClass({ className: 'mmgis-map-popup', maxWidth: 'none' })
         popup.on('close', () => {
             // `_popup` is let go before the basemap is asked to close, so a
             // close whose popup is no longer the open one is either ours or a
@@ -839,13 +854,16 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         })
 
         this._popup = popup
-        popup
-            .setLngLat([lng, lat])
-            .setDOMContent(element)
-            .addTo(basemap)
+        popup.setLngLat([lng, lat]).setDOMContent(element)
+        this._cancelPopupOpen = this._drawEndClick.whenSettled(() => {
+            this._cancelPopupOpen = null
+            popup.addTo(basemap)
+        })
     }
 
     hidePopup(): void {
+        this._cancelPopupOpen?.()
+        this._cancelPopupOpen = null
         const popup = this._popup
         if (!popup) return
         this._popup = null
@@ -2229,6 +2247,11 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         let MapboxGLPopup: (new (options: Record<string, unknown>) => BasemapPopup) | undefined
 
         try {
+            // The stylesheet comes with the module, not with the bundle: it is
+            // what gives .mapboxgl-map its positioning and a popup its
+            // `position: absolute`. Without it a popup lands in document flow
+            // and pushes the map out of the container.
+            await import('mapbox-gl/dist/mapbox-gl.css')
             const lib = (await import('mapbox-gl')) as unknown as MapboxGLModule & {
                 default?: MapboxGLModule
             }
