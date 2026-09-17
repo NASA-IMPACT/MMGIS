@@ -55,12 +55,6 @@
     cursor: pointer;
 }
 
-/* MMGIS resets the user agent's focus ring globally (src/css/mmgis.css), and
-   focus lands on the first button as soon as a card opens. */
-.mmgis-popup-button:focus-visible {
-    outline: 3px solid var(--theme-color-primary-light, #73b3e7);
-}
-
 .mmgis-popup-button--primary {
     border: 1px solid transparent;
     background: var(--theme-color-primary, #005ea2);
