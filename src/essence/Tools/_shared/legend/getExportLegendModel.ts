@@ -3,16 +3,33 @@ import {
     type LayerWithLegend,
 } from './getLayersWithLegends'
 import {
+    coverageOverlap,
+    type Coverage,
+    type RequestSpan,
+} from './coverageOverlap'
+import { formatAtPrecision } from './datePrecision'
+import {
+    parseISODuration,
+    type Duration,
+} from '../../../Basics/TimeControl_/layerTimePolicy'
+import {
     mmgisGetViewState,
+    mmgisGetLayerConfigs,
+    mmgisGetTimeStart,
+    mmgisGetTimeCurrent,
     mmgisGetTimeCurrentFormatted,
+    mmgisGetTemporalExtents,
     mmgisFormatTime,
+    type LayerConfig,
     type LegendSwatch,
+    type TemporalExtent,
 } from '../adapters/mmgisAPI'
 
 export type ExportLegendRow =
     | {
           kind: 'gradient'
           title: string
+          dateLine: string | null
           colors: string[] | null
           min: number | null
           max: number | null
@@ -21,13 +38,15 @@ export type ExportLegendRow =
     | {
           kind: 'categorical'
           title: string
+          dateLine: string | null
           stops: LegendSwatch[]
       }
     /** A layer with nothing to draw: it is still on the map, so it is still
-     *  on the band, as a name. */
+     *  on the band, as a name and its date line. */
     | {
           kind: 'plain'
           title: string
+          dateLine: string | null
       }
 
 export type ExportLegendModel = {
@@ -36,6 +55,177 @@ export type ExportLegendModel = {
      *  prints them without knowing which is the cursor and which the export. */
     headerLines: string[]
     rows: ExportLegendRow[]
+}
+
+/** The cursor a layer's tiles were requested at, and the window start that
+ *  request ran from. */
+type TimeCursor = { cursor: string | null; windowStart: string | null }
+
+const globalTimeCursor = async (): Promise<TimeCursor> => {
+    try {
+        const [cursor, windowStart] = await Promise.all([
+            mmgisGetTimeCurrent(),
+            mmgisGetTimeStart(),
+        ])
+        return { cursor, windowStart }
+    } catch (err) {
+        console.warn('[export legend] core reported no time cursor', err)
+        return { cursor: null, windowStart: null }
+    }
+}
+
+const temporalExtents = async (): Promise<Record<
+    string,
+    TemporalExtent
+> | null> => {
+    try {
+        return await mmgisGetTemporalExtents()
+    } catch (err) {
+        console.warn('[export legend] core reported no layer extents', err)
+        return null
+    }
+}
+
+// Point mode on the Time Control sets the window start to the epoch, rebuilt
+// from local date components — so it arrives shifted by the browser's UTC
+// offset, at most ±14 hours either side of 1970-01-01. Nothing on the bus says
+// which mode is active, so only a start within a day of the epoch is read as
+// "no start was asked for"; a genuine window start decades ago must survive
+// and be printed.
+const isOpenEndedStart = (windowStart: string | null): boolean => {
+    if (!windowStart) return true
+    const ms = Date.parse(windowStart)
+    return Number.isNaN(ms) ? false : Math.abs(ms) < 86_400_000
+}
+
+/**
+ * A dated span, worded. Both ends of a span print at the same precision, so
+ * a span narrower than that precision reads the same at both ends; it says
+ * the label once, because `X → X` would only look like a mistake.
+ */
+const spanLine = (verb: string, start: string, end: string): string =>
+    start === end ? `${verb} ${start}` : `${verb} ${start} → ${end}`
+
+/**
+ * The span the map asked the server for, which runs from the window start to
+ * the cursor and never to the window's right edge. All the app can say about
+ * a layer that never told it where its data exists.
+ */
+const requestedDateLine = (
+    { start, end }: RequestSpan,
+    precision: Duration | null,
+): string | null => {
+    const cursorText = formatAtPrecision(precision, end)
+    if (!cursorText) return null
+    const startText = start ? formatAtPrecision(precision, start) : null
+    return startText
+        ? `Requested ${startText} → ${cursorText}`
+        : `Requested up to ${cursorText}`
+}
+
+/**
+ * The part of a layer's coverage the request could have returned — the only
+ * range the pixels on screen can be from. Null when the request and the
+ * coverage never meet: the server had nothing inside the span to draw, so the
+ * caller falls back to naming the request alone.
+ */
+const collectedDateLine = (
+    request: RequestSpan,
+    coverage: Coverage,
+    precision: Duration | null,
+): string | null => {
+    const overlap = coverageOverlap(request, coverage)
+    if (!overlap) return null
+    // An overlap's ends are instants the layer's data reaches, so they print
+    // as they are.
+    const end = formatAtPrecision(precision, overlap.end)
+    if (!end) return null
+    const start = overlap.start
+        ? formatAtPrecision(precision, overlap.start)
+        : null
+    return start ? spanLine('Collected', start, end) : `Collected until ${end}`
+}
+
+/**
+ * The date line for a layer that follows the time cursor. Its coverage says
+ * where the layer's data exists at all and the request says what the map asked
+ * for; with both, the row can name where the pixels came from, and with only
+ * the request it can name only the request.
+ */
+const cursorDateLine = (
+    { cursor, windowStart }: TimeCursor,
+    extent: TemporalExtent | undefined,
+    precision: Duration | null,
+): string | null => {
+    // A window with no cursor in it has no truthful wording: nothing says
+    // where in the window the map was asked to stop.
+    if (!cursor) return null
+    const request: RequestSpan = {
+        start: isOpenEndedStart(windowStart) ? null : windowStart,
+        end: cursor,
+    }
+    const coverage: Coverage = {
+        start: extent?.start ?? null,
+        end: extent?.end ?? null,
+    }
+    if (coverage.start !== null || coverage.end !== null) {
+        const collected = collectedDateLine(request, coverage, precision)
+        if (collected) return collected
+    }
+    return requestedDateLine(request, precision)
+}
+
+/**
+ * The date line for a layer that ignores the time cursor: when its data was
+ * collected, as far as the mission authored it. A half-open extent stays
+ * half-open rather than being closed with a date nobody supplied.
+ */
+const extentDateLine = (
+    extent: TemporalExtent | undefined,
+    precision: Duration | null,
+): string | null => {
+    if (!extent) return null
+    const start = extent.start
+        ? formatAtPrecision(precision, extent.start)
+        : null
+    const end = extent.end ? formatAtPrecision(precision, extent.end) : null
+    if (start && end) return spanLine('Collected', start, end)
+    if (start) return `Collected from ${start}`
+    if (end) return `Collected until ${end}`
+    return null
+}
+
+/**
+ * Every date line opens with `Collected` or `Requested`, so a bare `A → B` can
+ * never be read as a claim about when the pixels were collected. How precisely
+ * its dates print is the layer's own `time.interval`'s business, whichever
+ * line it ends up on. Null when no date can be had, which is always safer than
+ * a borrowed one.
+ */
+const dateLineFor = (
+    cfg: LayerConfig | undefined,
+    extent: TemporalExtent | undefined,
+    globalCursor: TimeCursor,
+): string | null => {
+    const time = cfg?.time
+    try {
+        const interval =
+            typeof time?.interval === 'string' ? time.interval : null
+        const precision = interval ? parseISODuration(interval.trim()) : null
+        if (time?.enabled !== true) {
+            return extentDateLine(extent, precision)
+        }
+        // A 'local' layer keeps its own window and is not restamped when the
+        // time cursor moves; everything else follows the global cursor.
+        const cursor: TimeCursor =
+            time.type === 'local'
+                ? { cursor: time.end ?? null, windowStart: time.start ?? null }
+                : globalCursor
+        return cursorDateLine(cursor, extent, precision)
+    } catch (err) {
+        console.warn('[export legend] could not build a layer date line', err)
+        return null
+    }
 }
 
 /**
@@ -69,11 +259,15 @@ const buildHeaderLines = async (): Promise<string[]> => {
  * this only picks the shape that answer draws as; a layer core had no legend
  * for is still on the map, and still gets its name on the band.
  */
-const toRow = (layer: LayerWithLegend): ExportLegendRow => {
+const toRow = (
+    layer: LayerWithLegend,
+    dateLine: string | null,
+): ExportLegendRow => {
     if (layer.type === 'categorical' && layer.categoricalStops?.length) {
         return {
             kind: 'categorical',
             title: layer.title,
+            dateLine,
             stops: layer.categoricalStops,
         }
     }
@@ -81,13 +275,14 @@ const toRow = (layer: LayerWithLegend): ExportLegendRow => {
         return {
             kind: 'gradient',
             title: layer.title,
+            dateLine,
             colors: layer.stops,
             min: layer.min ?? null,
             max: layer.max ?? null,
             unit: layer.unit?.label ?? null,
         }
     }
-    return { kind: 'plain', title: layer.title }
+    return { kind: 'plain', title: layer.title, dateLine }
 }
 
 /**
@@ -102,14 +297,29 @@ const toRow = (layer: LayerWithLegend): ExportLegendRow => {
  * paints nothing.
  */
 export const getExportLegendModel = async (): Promise<ExportLegendModel> => {
-    const [viewState, layers, headerLines] = await Promise.all([
-        mmgisGetViewState(),
-        getLayersWithLegends({ showOnlyVisible: true }),
-        buildHeaderLines(),
-    ])
+    const [viewState, layers, headerLines, layerConfigs, globalCursor, extents] =
+        await Promise.all([
+            mmgisGetViewState(),
+            getLayersWithLegends({ showOnlyVisible: true }),
+            buildHeaderLines(),
+            mmgisGetLayerConfigs(),
+            globalTimeCursor(),
+            temporalExtents(),
+        ])
     return {
         missionName: viewState?.missionName ?? null,
         headerLines,
-        rows: layers.filter((layer) => layer.opacity !== 0).map(toRow),
+        rows: layers
+            .filter((layer) => layer.opacity !== 0)
+            .map((layer) =>
+                toRow(
+                    layer,
+                    dateLineFor(
+                        layerConfigs?.[layer.id],
+                        extents?.[layer.id],
+                        globalCursor,
+                    ),
+                ),
+            ),
     }
 }

@@ -7,14 +7,22 @@ vi.mock('../getLayersWithLegends', () => ({
 // fail loudly if it started requesting anything else.
 vi.mock('../../adapters/mmgisAPI', () => ({
     mmgisGetViewState: vi.fn(),
+    mmgisGetLayerConfigs: vi.fn(),
+    mmgisGetTimeStart: vi.fn(),
+    mmgisGetTimeCurrent: vi.fn(),
     mmgisGetTimeCurrentFormatted: vi.fn(),
+    mmgisGetTemporalExtents: vi.fn(),
     mmgisFormatTime: vi.fn(),
 }))
 
 import { getLayersWithLegends } from '../getLayersWithLegends'
 import {
     mmgisGetViewState,
+    mmgisGetLayerConfigs,
+    mmgisGetTimeStart,
+    mmgisGetTimeCurrent,
     mmgisGetTimeCurrentFormatted,
+    mmgisGetTemporalExtents,
     mmgisFormatTime,
 } from '../../adapters/mmgisAPI'
 import { getExportLegendModel } from '../getExportLegendModel'
@@ -33,6 +41,9 @@ const baseLayer = (overrides) => ({
 // marks that a timestamp went through core.
 const formatted = (time) => `fmt(${time})`
 
+const CURSOR = '2026-08-25T00:00:00Z'
+const WINDOW_START = '2015-03-13T00:00:00Z'
+
 beforeEach(() => {
     vi.resetAllMocks()
     vi.mocked(mmgisGetViewState).mockResolvedValue({
@@ -41,7 +52,11 @@ beforeEach(() => {
         center: null,
         zoom: null,
     })
+    vi.mocked(mmgisGetLayerConfigs).mockResolvedValue(null)
+    vi.mocked(mmgisGetTimeStart).mockResolvedValue(WINDOW_START)
+    vi.mocked(mmgisGetTimeCurrent).mockResolvedValue(CURSOR)
     vi.mocked(mmgisGetTimeCurrentFormatted).mockResolvedValue(null)
+    vi.mocked(mmgisGetTemporalExtents).mockResolvedValue(null)
     vi.mocked(mmgisFormatTime).mockImplementation(async (time) =>
         time == null ? null : formatted(time),
     )
@@ -73,6 +88,7 @@ describe('getExportLegendModel', () => {
             {
                 kind: 'gradient',
                 title: 'Displacement',
+                dateLine: null,
                 colors: ['#000', '#fff'],
                 min: 0,
                 max: 10,
@@ -81,10 +97,11 @@ describe('getExportLegendModel', () => {
             {
                 kind: 'categorical',
                 title: 'Classes',
+                dateLine: null,
                 stops: [{ color: '#abc', label: 'Rock' }],
             },
-            { kind: 'plain', title: 'Basemap' },
-            { kind: 'plain', title: 'Empty gradient' },
+            { kind: 'plain', title: 'Basemap', dateLine: null },
+            { kind: 'plain', title: 'Empty gradient', dateLine: null },
         ])
     })
 
@@ -103,6 +120,109 @@ describe('getExportLegendModel', () => {
         expect(vi.mocked(getLayersWithLegends).mock.calls).toEqual([
             [{ showOnlyVisible: true }],
         ])
+    })
+
+    // Every date line names what kind of date it is, so a bare range can
+    // never be read as a claim about when the pixels were collected.
+    describe('date lines', () => {
+        const rowsFor = async (configs) => {
+            vi.mocked(getLayersWithLegends).mockResolvedValue(
+                Object.keys(configs).map((id) =>
+                    baseLayer({ id, title: id, type: 'none' }),
+                ),
+            )
+            vi.mocked(mmgisGetLayerConfigs).mockResolvedValue(configs)
+            return (await getExportLegendModel()).rows
+        }
+
+        // Core appends `datetime=` itself, so a layer varies with the cursor
+        // with no URL placeholder in sight: `time.enabled` is the signal.
+        const timeEnabled = (interval) => ({
+            url: 'stac-collection:no2-monthly',
+            time: {
+                enabled: true,
+                type: 'global',
+                ...(interval ? { interval } : {}),
+            },
+        })
+
+        // Nothing says the server had data inside the span, so the line says
+        // what was asked for rather than what came back.
+        test('a time-enabled layer with no coverage prints the requested span', async () => {
+            const rows = await rowsFor({ stac: timeEnabled() })
+            expect(rows[0].dateLine).toBe('Requested 2015-03-13 → 2026-08-25')
+        })
+
+        // Point mode sets the window start to the epoch. "Requested 1970 →"
+        // describes a span nobody asked for.
+        test('an epoch window start prints an open-ended request', async () => {
+            vi.mocked(mmgisGetTimeStart).mockResolvedValue(
+                '1970-01-01T00:00:00Z',
+            )
+            const rows = await rowsFor({ live: timeEnabled() })
+            expect(rows[0].dateLine).toBe('Requested up to 2026-08-25')
+        })
+
+        // A cursor parked past everything the layer holds is no collection
+        // date; what the request could have returned is the coverage.
+        test('a cursor past the coverage falls back to the covered part of the request', async () => {
+            vi.mocked(mmgisGetTimeStart).mockResolvedValue(
+                '2010-01-01T00:00:00Z',
+            )
+            vi.mocked(mmgisGetTimeCurrent).mockResolvedValue(
+                '2024-05-01T00:00:00Z',
+            )
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                plain: {
+                    start: '2015-01-01T00:00:00Z',
+                    end: '2016-12-31T00:00:00Z',
+                },
+            })
+            const rows = await rowsFor({ plain: timeEnabled() })
+            expect(rows[0].dateLine).toBe('Collected 2015-01-01 → 2016-12-31')
+        })
+
+        // A layer that ignores the time cursor prints the extent it holds, and
+        // an extent open at one end reads as open rather than as a range.
+        test('an untimed layer shows its authored extent, open ends and all', async () => {
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                bounded: {
+                    start: '2016-05-01T00:00:00Z',
+                    end: '2016-09-01T00:00:00Z',
+                },
+                fromOnly: { start: '2016-05-01T00:00:00Z', end: null },
+                untilOnly: { start: null, end: '2016-09-01T00:00:00Z' },
+                neither: { start: null, end: null },
+            })
+            const untimed = { url: 'https://host/{z}/{x}/{y}.png' }
+            const rows = await rowsFor({
+                bounded: { ...untimed, time: { enabled: false } },
+                fromOnly: untimed,
+                untilOnly: untimed,
+                neither: untimed,
+            })
+            expect(rows.map((row) => row.dateLine)).toEqual([
+                'Collected 2016-05-01 → 2016-09-01',
+                'Collected from 2016-05-01',
+                'Collected until 2016-09-01',
+                null,
+            ])
+        })
+
+        // A time bus that cannot answer costs the rows their dates, never the
+        // band its rows.
+        test('a throwing time bus leaves the rows intact', async () => {
+            vi.mocked(mmgisGetTimeStart).mockRejectedValue(new Error('no time'))
+            vi.mocked(mmgisGetTimeCurrent).mockRejectedValue(
+                new Error('no time'),
+            )
+            vi.mocked(mmgisGetTemporalExtents).mockRejectedValue(
+                new Error('no extents'),
+            )
+            const rows = await rowsFor({ live: timeEnabled() })
+            expect(rows.map((row) => row.title)).toEqual(['live'])
+            expect(rows[0].dateLine).toBeNull()
+        })
     })
 
     test('prints the cursor and the export time under the mission name', async () => {

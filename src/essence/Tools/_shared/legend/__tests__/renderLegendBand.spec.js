@@ -124,6 +124,19 @@ describe('drawLegendBand', () => {
         ])
     })
 
+    // The date line sits under the name it belongs to, in the smaller
+    // metadata type rather than the row title's.
+    test("prints a row's date line under its name", () => {
+        const { ctx, fillTextCalls } = makeCtx()
+        const m = model([plainRow({ dateLine: 'Collected 2016-05' })])
+        drawLegendBand(ctx, m, 400, 0, measureLegendBand(ctx, m, 400, 1), 1)
+        const [title, date] = fillTextCalls
+        expect(date.args[0]).toBe('Collected 2016-05')
+        expect(date.args[1]).toBe(title.args[1])
+        expect(date.args[2]).toBeGreaterThan(title.args[2])
+        expect(fontPx(date.font)).toBeLessThan(fontPx(title.font))
+    })
+
     test('clips text that will not fit rather than overflowing the band', () => {
         const { ctx, fillTextCalls } = makeCtx()
         const m = model(
@@ -186,8 +199,8 @@ describe('what is drawn fits the band that was measured', () => {
 
     const mixedRows = model(
         [
-            gradientRow(),
-            plainRow(),
+            gradientRow({ dateLine: 'Collected 2024-01-08 → 2024-02-01' }),
+            plainRow({ dateLine: 'Collected from 2016-05-01' }),
             categoricalRow(manyStops),
             categoricalRow(manyStops.slice(0, 3)),
         ],
