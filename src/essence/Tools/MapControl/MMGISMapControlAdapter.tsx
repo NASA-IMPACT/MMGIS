@@ -4,7 +4,7 @@ import type { ActionIcon, BasemapStyle } from './lib'
 // The shared share-menu control (_shared/share) — same look
 // and behaves identically wherever it's hosted. Importing the lib barrel also
 // loads its (host-class-scoped) styles.
-import { ShareMenu } from '../_shared/share'
+import { ShareMenu, resolveIncludeLegend } from '../_shared/share'
 import { resolveAction } from '../_shared/actions/resolveAction'
 import { resolveIconClass } from '../_shared/content/iconClass'
 import { useMMGISToolVars } from '../_shared/adapters/useMMGISToolVars'
@@ -35,6 +35,7 @@ type ToolVars = {
     showMeasure?: unknown
     showZoom?: unknown
     showShare?: unknown
+    includeLegend?: unknown
     actionButtonText?: unknown
     actionButtonLink?: unknown
     actionButtonIconSource?: unknown
@@ -76,6 +77,8 @@ export function MMGISMapControlAdapter() {
     const [shareCopied, setShareCopied] = useState(false)
     const copiedTimer = useRef<number | null>(null)
     const vars = useMMGISToolVars<ToolVars>('mapcontrol')
+    // Shared with ShareExport's adapter — see _shared/share/resolveIncludeLegend.
+    const includeLegend = resolveIncludeLegend(vars)
 
     // Uploaded icons are stored mission-relative, so drawing one needs the path.
     const [missionPath, setMissionPath] = useState<string | null>(null)
@@ -108,23 +111,23 @@ export function MMGISMapControlAdapter() {
     const handleDownloadPng = useCallback(async () => {
         setShareBusy(true)
         try {
-            await downloadSharePng()
+            await downloadSharePng({ includeLegend })
         } catch (err) {
             console.error('MapControl: PNG download failed', err)
         } finally {
             setShareBusy(false)
         }
-    }, [])
+    }, [includeLegend])
     const handleDownloadPdf = useCallback(async () => {
         setShareBusy(true)
         try {
-            await downloadSharePdf()
+            await downloadSharePdf({ includeLegend })
         } catch (err) {
             console.error('MapControl: PDF download failed', err)
         } finally {
             setShareBusy(false)
         }
-    }, [])
+    }, [includeLegend])
 
     // Default ON; a saved false/0 disables the feature.
     const showBasemapSwitcher = !isFalsy(vars.showBasemapSwitcher)
