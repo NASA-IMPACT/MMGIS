@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import moment from 'moment'
 import type { LayerTimeData, TimeMode } from '../types'
+import { revealStart, type LayerNavigation } from '../utils/layerNavigation'
 import {
     clampWindow,
     fitWindow,
@@ -67,6 +68,20 @@ export interface TimelineZoom {
 }
 
 /**
+ * The instant a fit must open the view at to show a layer's first data. A
+ * sparse layer's start is a stop at its first listed day's last instant, but
+ * the chart draws that day as a whole-day box from the day's first instant,
+ * so a view opening at the stop meets the box's trailing edge and leaves the
+ * whole first day off the left of the chart. The end needs no allowance: a
+ * box ends on the instant its day does. A periodic start is returned as is.
+ *
+ * The revealed start is a fixed function of the layer's own listed days and
+ * never of the global window, so a widen to it is a fixed point: the refetch
+ * that follows finds the same instant, not one moved outward again.
+ */
+const framedStart = (nav: LayerNavigation): Date => revealStart(nav, nav.start)
+
+/**
  * The span a layer contributes to an automatic fit: only the bounds it named
  * itself, with a borrowed side left out entirely.
  *
@@ -87,9 +102,10 @@ const ownExtent = (layer: LayerTimeData): ViewWindow | null => {
     const nav = layer.navigation
     if (!nav) return null
     if (!nav.hasOwnStart && !nav.hasOwnEnd) return null
+    const start = framedStart(nav)
     return {
-        start: nav.hasOwnStart ? nav.start : nav.end,
-        end: nav.hasOwnEnd ? nav.end : nav.start,
+        start: nav.hasOwnStart ? start : nav.end,
+        end: nav.hasOwnEnd ? nav.end : start,
     }
 }
 
@@ -347,7 +363,7 @@ export function useTimelineZoom({
         (layer: LayerTimeData) => {
             const nav = layer.navigation
             if (!nav) return
-            applyFit([{ start: nav.start, end: nav.end }])
+            applyFit([{ start: framedStart(nav), end: nav.end }])
         },
         [applyFit]
     )
