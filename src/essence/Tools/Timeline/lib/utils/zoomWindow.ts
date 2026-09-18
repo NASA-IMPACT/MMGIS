@@ -16,6 +16,17 @@ const MS_HOUR = 60 * MS_MINUTE
 const MS_DAY = 24 * MS_HOUR
 
 /**
+ * A window of whole milliseconds from a fractional start and span. The start
+ * is rounded once and the rounded span added to it, so the span survives
+ * exactly: rounding the two endpoints on their own can leave them a
+ * millisecond apart from the span they were meant to enclose.
+ */
+const windowOf = (start: number, span: number): ViewWindow => {
+    const from = Math.round(start)
+    return { start: new Date(from), end: new Date(from + Math.round(span)) }
+}
+
+/**
  * How far in the view may go, by the granularity the dashboard is configured
  * to display. Each floor leaves enough tick marks for the axis to read as an
  * axis rather than as a pair of endpoints: 24 hourly, 3 daily, 2 monthly,
@@ -49,6 +60,10 @@ export function minViewDuration(granularity: TimeMode): number {
  * that changes is grown or shrunk about the window's own centre; a span that
  * does not change keeps its start untouched, so a window already in range
  * comes back bit-for-bit and the view can be compared by value.
+ *
+ * Both windows are expected to hold valid Dates. A NaN timestamp is not caught
+ * here and passes straight through into two Invalid Dates, so a caller that
+ * takes times from configuration validates them before they arrive.
  */
 export function clampWindow(
     win: ViewWindow,
@@ -61,6 +76,10 @@ export function clampWindow(
 
     let start = win.start.getTime()
     let end = win.end.getTime()
+    // A reversed window is reachable: a layer configured with dataStartTime
+    // after dataEndTime — the case layerNavigation warns about — reaches
+    // fitWindow inverted, and the swap turns it into a forward window of the
+    // same span.
     if (end < start) {
         const swap = start
         start = end
@@ -104,20 +123,14 @@ export function zoomAround(
     const nextSpan = span * factor
     const nextStart = at - fraction * nextSpan
 
-    return clampWindow(
-        {
-            start: new Date(Math.round(nextStart)),
-            end: new Date(Math.round(nextStart + nextSpan)),
-        },
-        bounds,
-        minMs
-    )
+    return clampWindow(windowOf(nextStart, nextSpan), bounds, minMs)
 }
 
 /**
- * Whether the slider has any travel at all. A bounds span at or below the
- * floor leaves the logarithm undefined or degenerate, and one position is the
- * only one reachable.
+ * The floor as a fraction of the bounds' span — the base of the slider's
+ * logarithm — or null when the slider has no travel. A bounds span at or below
+ * the floor puts the ratio at or above one, where the logarithm is degenerate
+ * or undefined, and only one position is reachable.
  */
 const sliderRatio = (bounds: ViewWindow, minMs: number): number | null => {
     const fullSpan = bounds.end.getTime() - bounds.start.getTime()
@@ -170,14 +183,7 @@ export function sliderToWindow(
     const span = fullSpan * Math.pow(ratio, position)
     const start = anchor.getTime() - span / 2
 
-    return clampWindow(
-        {
-            start: new Date(Math.round(start)),
-            end: new Date(Math.round(start + span)),
-        },
-        bounds,
-        minMs
-    )
+    return clampWindow(windowOf(start, span), bounds, minMs)
 }
 
 /**
@@ -205,10 +211,7 @@ export function fitWindow(
     const pad = (end - start) * padFraction
 
     return clampWindow(
-        {
-            start: new Date(Math.round(start - pad)),
-            end: new Date(Math.round(end + pad)),
-        },
+        windowOf(start - pad, end - start + 2 * pad),
         bounds,
         minMs
     )
