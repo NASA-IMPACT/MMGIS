@@ -14,11 +14,14 @@
 .layer-fit-slot .layer-color-dot {
     display: block;
     margin-right: 0;
-    /* Opacity, not visibility: the two controls cross-fade in one slot, and
-       the dot has to keep the space while the button is on top of it. */
+    /* Opacity rather than visibility: the dot and the button cross-fade in
+       one slot, and visibility is discrete, so it cannot be transitioned. */
     transition: opacity 0.15s ease;
 }
 
+/* Styled after the row's navigation buttons, in the row's own text colour:
+   the icon sits where the layer's swatch sits and reads as part of that row
+   rather than as a header control. */
 .layer-fit-btn {
     position: absolute;
     top: 50%;
@@ -30,7 +33,7 @@
     background: transparent;
     border: none;
     cursor: pointer;
-    color: var(--theme-color-primary, #0e7482);
+    color: var(--theme-color-base-darker, #3d4551);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -38,7 +41,14 @@
        the tab order, leaving the control reachable by mouse alone. */
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.15s ease;
+    transition:
+        opacity 0.15s ease,
+        background 0.2s ease;
+}
+
+/* Hover shows the rectangle only; the icon keeps its colour. */
+.layer-fit-btn:hover {
+    background: var(--theme-color-primary-lightest, #e6f4f6);
 }
 
 /* Revealed by a pointer over the row, or by focus reaching any control in it
@@ -63,12 +73,15 @@
 
 /* A pointer that cannot hover has no way to reveal the button: there is no
    :hover, and a tap cannot raise :focus-within while it is still
-   pointer-events: none. It stays out on such a device, covering the dot,
-   since an unreachable control is worse than a missing colour swatch. */
+   pointer-events: none. It stays out on such a device, covering the dot.
+   So that the row does not lose its swatch, the glyph takes the layer's
+   colour and stands in for the dot; its contrast against the row is the
+   same the 8px dot already carried. */
 @media (hover: none) {
     .layer-fit-btn {
         opacity: 1;
         pointer-events: auto;
+        color: var(--layer-color);
     }
 
     .layer-fit-slot .layer-color-dot {
@@ -76,6 +89,9 @@
     }
 }
 
+/* The button costs the row no width at any size; it shrinks here only to
+   match the navigation buttons, which tighten at the same width, so the
+   controls on one row stay one size. */
 @media (max-width: 768px) {
     .layer-fit-btn {
         height: 14px;

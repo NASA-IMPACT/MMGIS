@@ -28,14 +28,15 @@ const FIT_ICON =
  * the timeline through its dates, and — in the colour dot's own slot — a
  * magnifier that frames the layer.
  *
- * The magnifier replaces the dot on hover rather than sitting beside it. The
- * sidebar is 160px, 100px when narrow, and the four navigation buttons already
- * leave the name little room; a fifth permanent control would leave roughly
- * 22px of readable name at the narrow width.
- *
  * Both controls key on `layer.navigation`, which is present exactly when the
  * layer declares bounds of its own — so the magnifier never appears on a row
  * where fitting would frame the global window and do nothing.
+ *
+ * The slot wrapping the dot is conditional for the same reason, not only
+ * tidiness: the stylesheet blanks the dot inside a slot wherever the device
+ * cannot hover, on the grounds that the magnifier is covering it. Wrapping
+ * every row's dot would blank the swatch on rows that have no magnifier to
+ * show in its place.
  */
 export const LayerSidebarItem: React.FC<LayerSidebarItemProps> = ({
     layer,
@@ -54,10 +55,15 @@ export const LayerSidebarItem: React.FC<LayerSidebarItemProps> = ({
 
     const fitLabel = `${layer.displayName}: fit to this layer`
 
+    // Handed to the stylesheet so the magnifier can take the layer's colour
+    // where it stands in for the dot permanently. Custom properties are not
+    // part of React's CSSProperties type, hence the cast.
+    const slotStyle = { '--layer-color': layer.color } as React.CSSProperties
+
     return (
         <div className="layer-item" style={{ height, flexShrink: 0 }}>
             {layer.navigation ? (
-                <span className="layer-fit-slot">
+                <span className="layer-fit-slot" style={slotStyle}>
                     {dot}
                     <button
                         type="button"
