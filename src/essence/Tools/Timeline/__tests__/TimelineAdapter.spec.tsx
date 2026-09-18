@@ -125,6 +125,17 @@ const LAYER_CONFIGS = {
         display_name: 'Basemap',
         time: { enabled: false },
     },
+    // Three days inside the window: shorter than every zoom floor but the
+    // hourly one, so a fit to it lands on whichever floor is in force.
+    short: {
+        name: 'short',
+        display_name: 'Short Campaign',
+        time: {
+            enabled: true,
+            dataStartTime: '2024-05-01T00:00:00Z',
+            dataEndTime: '2024-05-04T00:00:00Z',
+        },
+    },
 }
 
 type Listener = (payload?: unknown) => void
@@ -404,16 +415,17 @@ describe('TimelineAdapter zoom before and at the seed', () => {
     const requests = () => emits.filter((e) => e.event === 'time:changeRequested')
 
     /**
-     * Mounts with the given layers visible. The seed can be held back behind
-     * `releaseSeed` so the layers land first.
+     * Mounts with the given layers visible. One of core's answers can be
+     * held back behind the returned release, so the layers land first: the
+     * seed, or the tool vars, which answer with a monthly granularity.
      */
     const mount = async (
         visible: Record<string, boolean>,
-        holdSeed: boolean
+        hold: 'time:getStart' | 'tool:getVars' | null
     ): Promise<() => void> => {
-        let releaseSeed: () => void = () => {}
-        const seedGate = new Promise<void>((resolve) => {
-            releaseSeed = resolve
+        let release: () => void = () => {}
+        const gate = new Promise<void>((resolve) => {
+            release = resolve
         })
         listeners = {}
         installSparseApi(emits, visible, listeners)
@@ -422,7 +434,8 @@ describe('TimelineAdapter zoom before and at the seed', () => {
         }).mmgisAPI
         const request = api.request
         api.request = async (name: string) => {
-            if (holdSeed && name === 'time:getStart') await seedGate
+            if (name === hold) await gate
+            if (name === 'tool:getVars') return { defaultTimeMode: 'MONTH' }
             return request(name)
         }
 
@@ -433,7 +446,7 @@ describe('TimelineAdapter zoom before and at the seed', () => {
             root.render(<TimelineAdapter />)
         })
         await act(async () => {})
-        return releaseSeed
+        return release
     }
 
     beforeEach(() => {
@@ -453,14 +466,17 @@ describe('TimelineAdapter zoom before and at the seed', () => {
     })
 
     test('with nothing to fit, the view opens on the whole seeded window', async () => {
-        await mount({ basemap: true }, false)
+        await mount({ basemap: true }, null)
 
         expect(slider()!.value).toBe('0')
         expect(requests()).toHaveLength(0)
     })
 
     test('layers arriving ahead of the seed commit nothing until it lands', async () => {
-        const releaseSeed = await mount({ sparse: true, basemap: true }, true)
+        const releaseSeed = await mount(
+            { sparse: true, basemap: true },
+            'time:getStart'
+        )
 
         expect(container.querySelector('.timeline-loading')).not.toBeNull()
         expect(requests()).toHaveLength(0)
@@ -481,7 +497,10 @@ describe('TimelineAdapter zoom before and at the seed', () => {
     })
 
     test('layers load once core answers, even when its window reached the bus first', async () => {
-        const releaseSeed = await mount({ sparse: true, basemap: true }, true)
+        const releaseSeed = await mount(
+            { sparse: true, basemap: true },
+            'time:getStart'
+        )
 
         // Core broadcasts every commit, and one can carry the very instants
         // the seed will answer with. The adapter keeps its Date identities
@@ -508,6 +527,27 @@ describe('TimelineAdapter zoom before and at the seed', () => {
             container.querySelector('[aria-label="Rover Images: next date"]')
         ).not.toBeNull()
         expect(requests()).toHaveLength(1)
+    })
+
+    test('the first fit waits for the configured granularity and runs at its floor', async () => {
+        // The seed and the layer configs answer at once; the tool vars,
+        // carrying the monthly granularity, are held back. A fit before they
+        // answer would be made at a provisional floor and redone at the real
+        // one: on this three-day layer, a three-day view jumping to two
+        // months. So there is nothing to fit against until they do.
+        const releaseVars = await mount({ short: true }, 'tool:getVars')
+
+        expect(container.querySelector('.timeline-loading')).not.toBeNull()
+        expect(slider()).toBeNull()
+
+        await act(async () => {
+            releaseVars()
+        })
+        await act(async () => {})
+
+        expect(container.querySelector('.timeline-loading')).toBeNull()
+        expect(slider()!.getAttribute('aria-valuetext')).toBe('2 months')
+        expect(requests()).toHaveLength(0)
     })
 })
 

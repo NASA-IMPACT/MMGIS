@@ -83,13 +83,20 @@ export const TimelineAdapter: React.FC = () => {
     // Collapsed hides the layer list / scrubber area, leaving just the header
     const [isCollapsed, setIsCollapsed] = useState(false)
     /**
-     * The dashboard's display granularity, read once at load. Zoom's floor and
-     * its auto-fit signature both follow it, and never the runtime `timeMode`
-     * control: that control is playback-and-navigation, and a floor that moved
-     * when a playback button was pressed would permit a 24-hour view of a
+     * The dashboard's display granularity, written exactly once, when the
+     * tool vars answer, and null until then. Zoom's floor and its auto-fit
+     * signature both follow it, and never the runtime `timeMode` control:
+     * that control is playback-and-navigation, and a floor that moved when a
+     * playback button was pressed would permit a 24-hour view of a
      * twenty-year mission without the axis having changed at all.
+     *
+     * Null holds the timeline on its loading state and keeps layers from
+     * being fetched, so the first fit can only ever run at the configured
+     * floor; a fit at a provisional floor redone at the real one would be a
+     * visible jump on any dashboard not configured for days.
      */
-    const [configuredGranularity, setConfiguredGranularity] = useState<TimeMode>('DAY')
+    const [configuredGranularity, setConfiguredGranularity] =
+        useState<TimeMode | null>(null)
     const infoButtonRef = useRef<HTMLButtonElement>(null)
 
     // Mirror the committed window so emit/step callbacks keep a stable identity
@@ -182,7 +189,12 @@ export const TimelineAdapter: React.FC = () => {
         bounds,
         layers,
         currentTime,
-        granularity: configuredGranularity,
+        // The floor stood in for here is inert: while the granularity is
+        // unsettled no layer reaches the hook, so nothing is fitted, and the
+        // loading state is shown, so no control reads it. It only decides
+        // how the placeholder view is clamped, and that view is reopened
+        // onto the whole window once core has answered.
+        granularity: configuredGranularity ?? 'DAY',
         onBoundsWiden: handleBoundsWiden,
     })
 
@@ -213,7 +225,10 @@ export const TimelineAdapter: React.FC = () => {
                 defaultTimeMode?: string
                 shownTimeModes?: string[]
             }>('tool:getVars', 'timeline')
-            if (!vars) return
+            if (!vars) {
+                setConfiguredGranularity((held) => held ?? 'DAY')
+                return
+            }
 
             if (typeof vars.allowPlayback === 'boolean') {
                 setAllowPlayback(vars.allowPlayback)
@@ -241,10 +256,15 @@ export const TimelineAdapter: React.FC = () => {
             if (!effectiveModes.includes(mode)) mode = effectiveModes[0]
             setTimeMode(mode)
             // The same validated mode, held apart from the runtime control so
-            // a later press of that control cannot move the zoom floor.
-            setConfiguredGranularity(mode)
+            // a later press of that control cannot move the zoom floor. The
+            // first value written is the one kept, on every path out of
+            // here: the granularity is settled once and stays settled.
+            setConfiguredGranularity((held) => held ?? mode)
         } catch (err) {
             console.warn('[Timeline] Failed to fetch tool vars:', err)
+            // Tool vars that cannot be read leave the default granularity,
+            // rather than a timeline that never leaves its loading state.
+            setConfiguredGranularity((held) => held ?? 'DAY')
         }
     }, [])
     useMMGISHandlerReady('tool:getVars', fetchVars)
@@ -264,11 +284,20 @@ export const TimelineAdapter: React.FC = () => {
     const markLayersApiReady = useCallback(() => setLayersApiReady(true), [])
     useMMGISHandlerReady('layers:getAllConfigs', markLayersApiReady)
 
-    // Layers wait for the seeded window. Fetched earlier, they would carry
-    // the placeholder as their fallback bounds, and auto-fit would frame them
-    // against it, committing a window derived from the placeholder to core.
+    // Layers wait for the seeded window and the settled granularity. Fetched
+    // before the window, they would carry the placeholder as their fallback
+    // bounds, and auto-fit would frame them against it, committing a window
+    // derived from the placeholder to core. Fetched before the granularity,
+    // they would be fitted at a provisional floor and refitted at the real
+    // one. Core registers the tool vars and the layer configs together, so
+    // the second wait costs nothing the first did not.
     useEffect(() => {
-        if (!layersApiReady || readiness !== 'ready') return
+        if (
+            !layersApiReady ||
+            readiness !== 'ready' ||
+            configuredGranularity === null
+        )
+            return
         let cancelled = false
 
         const fetchLayers = async () => {
@@ -329,7 +358,14 @@ export const TimelineAdapter: React.FC = () => {
         return () => {
             cancelled = true
         }
-    }, [layersApiReady, readiness, startTime, endTime, layerVisibilityVersion])
+    }, [
+        layersApiReady,
+        readiness,
+        configuredGranularity,
+        startTime,
+        endTime,
+        layerVisibilityVersion,
+    ])
 
     // Seed from TimeControl, then follow every committed change.
     const fetchInitialTimeData = useCallback(async () => {
@@ -470,14 +506,6 @@ export const TimelineAdapter: React.FC = () => {
 
     const infoPopupId = 'timeline-info-popup'
 
-    if (readiness === 'loading') {
-        return (
-            <div className="timeline-loading">
-                <div className="loading-message">Loading timeline...</div>
-            </div>
-        )
-    }
-
     if (readiness === 'unavailable') {
         return (
             <div className="timeline-unavailable">
@@ -487,6 +515,17 @@ export const TimelineAdapter: React.FC = () => {
                 <div className="timeline-unavailable-hint">
                     Enable time in the mission configuration to use the timeline.
                 </div>
+            </div>
+        )
+    }
+
+    // Loading until both core's window and the configured granularity are
+    // held: every control below reads the zoom floor, and the floor is not
+    // known before the tool vars answer.
+    if (readiness === 'loading' || configuredGranularity === null) {
+        return (
+            <div className="timeline-loading">
+                <div className="loading-message">Loading timeline...</div>
             </div>
         )
     }
