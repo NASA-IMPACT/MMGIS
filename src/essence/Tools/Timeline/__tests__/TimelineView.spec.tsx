@@ -41,6 +41,8 @@ const sparseNav = (...days: string[]): LayerNavigation => {
         stops,
         start: stops[0],
         end: stops[stops.length - 1],
+        hasOwnStart: true,
+        hasOwnEnd: true,
     }
 }
 
@@ -162,6 +164,8 @@ describe('TimelineView layer navigation', () => {
                 kind: 'periodic',
                 start: START,
                 end: END,
+                hasOwnStart: true,
+                hasOwnEnd: true,
             })],
             'MONTH',
         )

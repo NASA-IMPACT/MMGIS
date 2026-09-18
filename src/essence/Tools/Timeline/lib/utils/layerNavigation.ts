@@ -15,6 +15,10 @@ export interface LayerNavigation {
     /** The span covered — for a sparse layer, its outermost stops. */
     start: Date
     end: Date
+    /** False when `start` came from the timeline's window rather than the layer. */
+    hasOwnStart: boolean
+    /** False when `end` came from the timeline's window rather than the layer. */
+    hasOwnEnd: boolean
 }
 
 /**
@@ -50,6 +54,10 @@ export function resolveLayerNavigation(
             stops,
             start: stops[0],
             end: stops[stops.length - 1],
+            // A sparse layer's stops are read from its own list, so neither
+            // outermost stop was completed from the timeline's window.
+            hasOwnStart: true,
+            hasOwnEnd: true,
         }
 
     const { start, end, hasOwnStart, hasOwnEnd } = resolveLayerExtent(
@@ -64,8 +72,10 @@ export function resolveLayerNavigation(
     // would complete the open side past it, running the extent backwards
     // through a span the layer holds no data for. Close on the bound the layer
     // names instead, leaving the open direction inert.
-    if (!hasOwnStart && start > end) return { kind: 'periodic', start: end, end }
-    if (!hasOwnEnd && end < start) return { kind: 'periodic', start, end: start }
+    if (!hasOwnStart && start > end)
+        return { kind: 'periodic', start: end, end, hasOwnStart, hasOwnEnd }
+    if (!hasOwnEnd && end < start)
+        return { kind: 'periodic', start, end: start, hasOwnStart, hasOwnEnd }
 
     // Both bounds named, and the end before the start: a span the layer cannot
     // hold data in. Every direction through it contradicts another — first
@@ -80,7 +90,7 @@ export function resolveLayerNavigation(
         return null
     }
 
-    return { kind: 'periodic', start, end }
+    return { kind: 'periodic', start, end, hasOwnStart, hasOwnEnd }
 }
 
 /**
