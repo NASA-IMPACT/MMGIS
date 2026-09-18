@@ -1,9 +1,9 @@
-/* The zoom group sits inline in the toolbar, left of info and collapse, and
-   carries the divider that separates it from them. */
+/* The group carries the divider that separates it from whatever the toolbar
+   places to its right. */
 .timeline-zoom-controls {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: 4px;
     padding-right: 8px;
     margin-right: 4px;
     border-right: 1px solid var(--theme-color-base-lighter, #dfe1e2);
@@ -23,18 +23,30 @@
 }
 
 /* Lit while auto-fit is armed, so the standing intent is visible at a glance
-   rather than only through aria-pressed. */
-.timeline-zoom-autofit--on {
-    background: var(--theme-color-primary-lightest, #e6f4f6);
+   rather than only through aria-pressed. Inverted like .time-mode-button.active,
+   the toolbar's toggled-on idiom.
+
+   The selector names the base class on purpose. A lone
+   .timeline-zoom-autofit--on has the same specificity as .timeline-tool-btn,
+   whose transparent background then wins or loses on stylesheet order alone,
+   and this file is evaluated before Timeline.css. The hover variant is repeated
+   because .timeline-tool-btn:hover:not(:disabled) outranks the compound
+   selector and would otherwise repaint an armed button in the hover tint the
+   moment the pointer arrives. */
+.timeline-tool-btn.timeline-zoom-autofit--on,
+.timeline-tool-btn.timeline-zoom-autofit--on:hover:not(:disabled) {
+    background: var(--theme-color-primary, #0e7482);
+    color: var(--theme-color-white, #ffffff);
+    opacity: 1;
 }
 
-/* Below this width the header stacks to a column. The group wraps as a unit
-   and the slider keeps a usable minimum, rather than compressing to a few
-   unreachable pixels. */
+/* Below this width the header stacks to a column. The group refuses to
+   compress, keeping every control reachable; wrapping happens one level up,
+   in the header row that holds it, so the group moves as a whole rather than
+   splitting between rows with the divider spanning both. */
 @media (max-width: 768px) {
     .timeline-zoom-controls {
-        flex-wrap: wrap;
-        justify-content: center;
+        flex-shrink: 0;
     }
 
     .timeline-zoom-slider {

@@ -13,15 +13,15 @@ export interface ZoomControlsProps {
     canFit: boolean
     /** Standing intent to keep the view framed as layers come and go. */
     autoFit: boolean
-    onZoomIn(): void
-    onZoomOut(): void
-    onSliderChange(v: number): void
-    onToggleAutoFit(): void
-    onFitNow(): void
+    onZoomIn: () => void
+    onZoomOut: () => void
+    onSliderChange: (v: number) => void
+    onToggleAutoFit: () => void
+    onFitNow: () => void
 }
 
-const ZOOM_OUT_ICON = 'M5 11h14v2H5z'
-const ZOOM_IN_ICON = 'M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z'
+const ZOOM_OUT_ICON = 'M5 10.5h14v3H5z'
+const ZOOM_IN_ICON = 'M10.5 5h3v5.5H19v3h-5.5V19h-3v-5.5H5v-3h5.5z'
 
 /** Corner brackets: a frame standing for the view being held to the data. */
 const AUTO_FIT_ICON =
@@ -75,13 +75,17 @@ export const ZoomControls: React.FC<ZoomControlsProps> = ({
         {/* A native range input rather than a custom control, so it is
             keyboard-operable and reaches assistive technology without
             reimplementing either. The raw 0–1 position means nothing spoken
-            aloud, so the span it stands for is what gets read. */}
+            aloud, so the span it stands for is what gets read.
+
+            An arrow press moves one step, so the step sets how many presses
+            span the track: a hundred positions keep a logarithmic slider
+            smooth without making the keyboard walk endless. */}
         <input
             type="range"
             className="timeline-zoom-slider"
             min={0}
             max={1}
-            step={0.001}
+            step={0.01}
             value={sliderValue}
             onChange={(event) => onSliderChange(Number(event.target.value))}
             disabled={!canZoom}
@@ -123,7 +127,6 @@ export const ZoomControls: React.FC<ZoomControlsProps> = ({
             onClick={onFitNow}
             title="Fit to visible layers"
             aria-label="Fit to visible layers"
-            // The same condition that makes an automatic refit a no-op.
             disabled={!canFit}
         >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
