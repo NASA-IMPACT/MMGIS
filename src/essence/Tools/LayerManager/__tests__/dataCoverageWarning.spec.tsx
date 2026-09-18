@@ -17,13 +17,10 @@ const layer = (id: string, outOfDataRange?: boolean): Layer => ({
 
 const warnings = (container: HTMLElement) =>
     Array.from(
-        container.querySelectorAll<HTMLButtonElement>(
+        container.querySelectorAll<HTMLElement>(
             '.blocks-layer-legend__coverage-warning',
         ),
     )
-
-const popovers = () =>
-    document.body.querySelectorAll('.blocks-layer-legend__coverage-popover')
 
 let mounted: Mounted | null = null
 
@@ -56,7 +53,9 @@ describe('the no-data warning on a layer row', () => {
         expect(warnings(container)).toHaveLength(0)
     })
 
-    test('opens on focus naming the selected time, and closes on Escape', async () => {
+    // The message is a label, not something to open, so the selected time has
+    // to reach it without any interaction.
+    test('labels the mark with the selected time', async () => {
         mounted = await mount(
             <LayerManagerPanel
                 layers={[layer('Suppressed', true)]}
@@ -65,33 +64,28 @@ describe('the no-data warning on a layer row', () => {
         )
         const [warning] = warnings(mounted.container)
 
-        await act(async () => warning.focus())
-        expect(popovers()).toHaveLength(1)
-        expect(popovers()[0].textContent).toBe(
+        expect(warning.getAttribute('title')).toBe(
             'Data not available for Oct 31, 2024 14:00 UTC',
         )
-
-        await act(async () => {
-            document.dispatchEvent(
-                new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
-            )
-        })
-        expect(popovers()).toHaveLength(0)
+        expect(warning.getAttribute('aria-label')).toBe(
+            'Suppressed: Data not available for Oct 31, 2024 14:00 UTC',
+        )
     })
 
-    test('hands focus to the checkbox when the layer comes back into range', async () => {
+    // It offers no action, so it stays out of the tab order — no focus to
+    // strand when the layer comes back into range.
+    test('takes no focus', async () => {
         mounted = await mount(
             <LayerManagerPanel layers={[layer('Suppressed', true)]} />,
         )
         const [warning] = warnings(mounted.container)
-        await act(async () => warning.focus())
+
+        expect(warning.tagName).toBe('SPAN')
+        expect(warning.hasAttribute('tabindex')).toBe(false)
 
         await mounted.rerender(
             <LayerManagerPanel layers={[layer('Suppressed', false)]} />,
         )
-        expect(popovers()).toHaveLength(0)
-        expect(document.activeElement).toBe(
-            mounted.container.querySelector('.blocks-layer-legend__checkbox'),
-        )
+        expect(warnings(mounted.container)).toHaveLength(0)
     })
 })
