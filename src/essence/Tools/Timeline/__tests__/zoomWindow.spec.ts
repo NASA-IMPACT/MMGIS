@@ -128,6 +128,15 @@ describe('zoomAround', () => {
         const anchor = new Date('2019-01-03T00:00:00Z')
         expect(span(zoomAround(held, 0.1, anchor, bounds, 3 * DAY))).toBe(3 * DAY)
     })
+
+    test('returns a zero-span window as it is rather than as Invalid Dates', () => {
+        // The anchor's fractional position across a zero-span window is 0/0;
+        // the fallback keeps that from turning both endpoints into NaN.
+        const point = win('2019-01-01T00:00:00Z', '2019-01-01T00:00:00Z')
+        expect(iso(zoomAround(point, 0.5, point.start, point, 3 * DAY))).toEqual(
+            iso(point)
+        )
+    })
 })
 
 describe('the logarithmic slider', () => {
@@ -159,6 +168,14 @@ describe('the logarithmic slider', () => {
         expect(iso(sliderToWindow(0.5, anchor, narrow, 3 * DAY))).toEqual(
             iso(narrow)
         )
+
+        // Bounds exactly as wide as the floor: the ratio is one, whose
+        // logarithm is zero, so this is the case a division would blow up on.
+        const exact = win('2019-01-01T00:00:00Z', '2019-01-04T00:00:00Z')
+        expect(windowToSlider(exact, exact, 3 * DAY)).toBe(0)
+        expect(iso(sliderToWindow(0.5, anchor, exact, 3 * DAY))).toEqual(
+            iso(exact)
+        )
     })
 })
 
@@ -185,6 +202,24 @@ describe('fitWindow', () => {
         ])
     })
 
+    test('frames a reversed extent forwards, padded by its own span', () => {
+        // A layer configured with its start after its end arrives here
+        // inverted. The union then runs backwards and the pad comes out
+        // negative, and the result is the same forward window the extent
+        // would have produced the right way round.
+        const result = fitWindow(
+            [win('2019-01-21T00:00:00Z', '2019-01-01T00:00:00Z')],
+            bounds,
+            3 * DAY,
+            0.04
+        )!
+
+        expect(iso(result)).toEqual([
+            '2018-12-31T04:48:00.000Z',
+            '2019-01-21T19:12:00.000Z',
+        ])
+    })
+
     test('expands a below-floor fit to the floor around its centre', () => {
         const result = fitWindow(
             [win('2019-06-01T12:00:00Z', '2019-06-01T12:00:00Z')],
@@ -202,11 +237,36 @@ describe('fitWindow', () => {
 })
 
 describe('the d3 transform conversions', () => {
-    test('round-trip a window to the millisecond', () => {
-        const held = win('2019-03-07T13:41:07.123Z', '2019-08-22T04:02:59.999Z')
-        const transform = windowToTransform(held, bounds, 960)
+    /**
+     * Millisecond-exact equality here is load-bearing, not a nicety. The view
+     * that consumes these conversions pushes its window into d3 as a
+     * transform and reads d3's zoom events back as a window, and it tells
+     * its own echo from a real user gesture by comparing the two windows for
+     * equality. A single millisecond of drift in either direction would make
+     * every echo look like a gesture, and the two would feed each other
+     * forever. So the sweep covers the awkward cases — one-pixel and
+     * odd-pixel widths, a view pinned on each bound of a twenty-year range,
+     * a one-millisecond window, the full range, and endpoints on odd
+     * milliseconds — and asserts exact ISO strings rather than closeness.
+     */
+    test('round-trip a window to the millisecond at every width', () => {
+        const twentyYears = win('2005-01-01T00:00:00Z', '2025-01-01T00:00:00Z')
+        const windows = [
+            win('2005-01-01T00:00:00Z', '2005-01-02T00:00:00Z'),
+            win('2024-12-31T00:00:00Z', '2025-01-01T00:00:00Z'),
+            win('2015-06-15T12:00:00.000Z', '2015-06-15T12:00:00.001Z'),
+            twentyYears,
+            win('2019-03-07T13:41:07.123Z', '2019-08-22T04:02:59.999Z'),
+        ]
 
-        expect(iso(transformToWindow(transform, bounds, 960))).toEqual(iso(held))
+        for (const width of [1, 7, 960, 3840]) {
+            for (const held of windows) {
+                const transform = windowToTransform(held, twentyYears, width)
+                expect(
+                    iso(transformToWindow(transform, twentyYears, width))
+                ).toEqual(iso(held))
+            }
+        }
     })
 
     test('scale the full window to the identity transform', () => {
