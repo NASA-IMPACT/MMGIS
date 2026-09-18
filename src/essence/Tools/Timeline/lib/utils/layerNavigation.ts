@@ -15,9 +15,15 @@ export interface LayerNavigation {
     /** The span covered — for a sparse layer, its outermost stops. */
     start: Date
     end: Date
-    /** False when `start` came from the timeline's window rather than the layer. */
+    /**
+     * False when `dataStartTime` names no readable bound: `start` was then
+     * completed from the timeline's window, or closed on the layer's own end.
+     */
     hasOwnStart: boolean
-    /** False when `end` came from the timeline's window rather than the layer. */
+    /**
+     * False when `dataEndTime` names no readable bound: `end` was then
+     * completed from the timeline's window, or closed on the layer's own start.
+     */
     hasOwnEnd: boolean
 }
 
