@@ -20,7 +20,7 @@ import {
 } from '../lib/hooks/useTimelineZoom'
 import type { LayerTimeData, TimeMode } from '../lib/types'
 import type { LayerNavigation } from '../lib/utils/layerNavigation'
-import type { ViewWindow } from '../lib/utils/zoomWindow'
+import { windowToSlider, type ViewWindow } from '../lib/utils/zoomWindow'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean })
     .IS_REACT_ACT_ENVIRONMENT = true
@@ -89,11 +89,24 @@ describe('useTimelineZoom', () => {
         })
     }
 
+    /** A layer whose own start predates the global window by seven months. */
+    const reaching = () =>
+        layer(
+            'Sea Ice',
+            nav({
+                start: new Date('2018-06-01T00:00:00Z'),
+                end: BOUNDS.end,
+                hasOwnStart: true,
+                hasOwnEnd: false,
+            })
+        )
+
     beforeEach(() => {
         container = document.createElement('div')
         document.body.appendChild(container)
         root = createRoot(container)
         widened = []
+        api = undefined as unknown as TimelineZoom
     })
 
     afterEach(() => {
@@ -136,6 +149,20 @@ describe('useTimelineZoom', () => {
         expect(iso(api.view)).toEqual(iso(BOUNDS))
     })
 
+    test('applies two presses landing in one batch one after the other', () => {
+        // A double-click on the button, or a caller zooming twice in one
+        // handler, are one React batch. Each press has to act on the other's
+        // result, not both on the view as it stood before either.
+        render(defaults())
+
+        act(() => {
+            api.zoomIn()
+            api.zoomIn()
+        })
+
+        expect(span(api.view)).toBe(span(BOUNDS) / 4)
+    })
+
     test('anchors on the view centre when the scrubber sits outside it', () => {
         render(defaults({ currentTime: new Date('2019-01-02T00:00:00Z') }))
 
@@ -159,8 +186,9 @@ describe('useTimelineZoom', () => {
     })
 
     test('unions only the bounds a layer named itself', () => {
-        // The borrowed end must not reach the union, or it would drag the view
-        // out to the global window and hide the layer's real extent.
+        // The borrowed end is the global window's own edge. Read into the
+        // union it would open the view out to the whole window and hide the
+        // layer's real extent.
         render(
             defaults({
                 layers: [
@@ -182,22 +210,12 @@ describe('useTimelineZoom', () => {
         expect(api.view.start.toISOString()).toBe('2019-02-27T12:00:00.000Z')
     })
 
-    describe('loop 1 — fallback-completed bounds', () => {
-        test('emits exactly one widen for a layer reaching outside the window, and settles', () => {
-            // A layer whose own start predates the global window. Auto-fit
-            // widens to reach it; the refetch that follows must not produce a
-            // second, wider union off the back of the first.
-            const reaching = layer(
-                'Sea Ice',
-                nav({
-                    start: new Date('2018-06-01T00:00:00Z'),
-                    end: BOUNDS.end,
-                    hasOwnStart: true,
-                    hasOwnEnd: false,
-                })
-            )
-
-            render(defaults({ layers: [reaching] }))
+    describe('widening to reach a layer', () => {
+        test('widens once for a layer reaching outside the window, and settles on the refetch', () => {
+            // Auto-fit widens to reach the layer's own start. The refetch that
+            // follows completes the borrowed end to the new window edge, which
+            // never entered the union, so there is nothing to widen to again.
+            render(defaults({ layers: [reaching()] }))
             expect(widened).toHaveLength(1)
 
             const widerBounds = widened[0]
@@ -205,9 +223,6 @@ describe('useTimelineZoom', () => {
                 '2018-06-01T00:00:00.000Z'
             )
 
-            // The widen re-runs the layer fetch. The borrowed end follows the
-            // new, wider global end — and must change nothing, because it
-            // never entered the union.
             const refetched = layer(
                 'Sea Ice',
                 nav({
@@ -227,17 +242,7 @@ describe('useTimelineZoom', () => {
             // re-renders for unrelated reasons — a scrubber tick, say — with
             // the old window rebuilt as a new object of equal value. The fit
             // must not be snapped back inside that stale window.
-            const reaching = layer(
-                'Sea Ice',
-                nav({
-                    start: new Date('2018-06-01T00:00:00Z'),
-                    end: BOUNDS.end,
-                    hasOwnStart: true,
-                    hasOwnEnd: false,
-                })
-            )
-
-            render(defaults({ layers: [reaching] }))
+            render(defaults({ layers: [reaching()] }))
             const fitted = iso(api.view)
             expect(api.view.start.getTime()).toBeLessThan(
                 BOUNDS.start.getTime()
@@ -246,13 +251,80 @@ describe('useTimelineZoom', () => {
             render(
                 defaults({
                     bounds: { start: new Date(BOUNDS.start), end: new Date(BOUNDS.end) },
-                    layers: [reaching],
+                    layers: [reaching()],
                     currentTime: new Date('2019-07-01T00:00:01Z'),
                 })
             )
 
             expect(iso(api.view)).toEqual(fitted)
             expect(widened).toHaveLength(1)
+        })
+
+        test('holds a widened fit through a development-mode effect replay', () => {
+            // StrictMode runs every effect twice on mount. The replay must
+            // neither emit a second widen nor queue a clamp against the window
+            // as it stood before the fit, which would land after the fit and
+            // pull the view back inside the unwidened span.
+            act(() => {
+                root.render(
+                    <React.StrictMode>
+                        <Harness options={defaults({ layers: [reaching()] })} />
+                    </React.StrictMode>
+                )
+            })
+
+            expect(widened).toHaveLength(1)
+            // The floor-span window about the layer's start, clamped inside
+            // the widened span, which begins exactly at that start.
+            expect(iso(api.view)).toEqual([
+                '2018-06-01T00:00:00.000Z',
+                '2018-06-04T00:00:00.000Z',
+            ])
+        })
+
+        test('reads the slider against the widened span before core commits it', () => {
+            // Until core echoes the widen, the prop still carries the old
+            // window. The slider position has to describe the view within the
+            // span the fit was made for, or it reports a position the view is
+            // not at.
+            const wide = layer(
+                'Sea Ice',
+                nav({
+                    start: new Date('2018-06-01T00:00:00Z'),
+                    end: new Date('2018-09-01T00:00:00Z'),
+                    hasOwnStart: true,
+                    hasOwnEnd: true,
+                })
+            )
+            render(defaults({ layers: [wide] }))
+            expect(widened).toHaveLength(1)
+
+            const againstWidened = windowToSlider(api.view, widened[0], 3 * DAY)
+            const againstStale = windowToSlider(api.view, BOUNDS, 3 * DAY)
+            expect(againstWidened).not.toBeCloseTo(againstStale, 3)
+            expect(api.sliderValue).toBeCloseTo(againstWidened, 10)
+        })
+
+        test('lets a later narrowing by core stand once it has committed the widen', () => {
+            // The pending widen is only a bridge to core's commit. Once the
+            // window covers it, a narrower window arriving afterwards is
+            // core's decision, and the view is brought inside it rather than
+            // held out in a span the hook once asked for.
+            render(defaults({ layers: [reaching()] }))
+            const committed = widened[0]
+            render(defaults({ bounds: committed, layers: [reaching()] }))
+            expect(api.view.start.getTime()).toBeLessThan(
+                BOUNDS.start.getTime()
+            )
+
+            render(defaults({ bounds: BOUNDS, layers: [reaching()] }))
+
+            expect(api.view.start.getTime()).toBeGreaterThanOrEqual(
+                BOUNDS.start.getTime()
+            )
+            expect(api.view.end.getTime()).toBeLessThanOrEqual(
+                BOUNDS.end.getTime()
+            )
         })
     })
 
@@ -337,33 +409,49 @@ describe('useTimelineZoom', () => {
         )
     })
 
-    test('refits on arming and leaves the view alone on disarming', () => {
-        const only = layer(
-            'Sea Ice',
-            nav({
-                start: new Date('2019-03-01T00:00:00Z'),
-                end: new Date('2019-04-01T00:00:00Z'),
-                hasOwnStart: true,
-                hasOwnEnd: true,
-            })
-        )
-        render(defaults({ layers: [only] }))
-        const fitted = iso(api.view)
+    describe('the auto-fit toggle', () => {
+        const only = () =>
+            layer(
+                'Sea Ice',
+                nav({
+                    start: new Date('2019-03-01T00:00:00Z'),
+                    end: new Date('2019-04-01T00:00:00Z'),
+                    hasOwnStart: true,
+                    hasOwnEnd: true,
+                })
+            )
 
-        act(() => api.toggleAutoFit())
-        expect(api.autoFit).toBe(false)
-        act(() => api.zoomOut())
-        const manual = iso(api.view)
-        expect(manual).not.toEqual(fitted)
+        test('disarmed, leaves the view alone through a layer-set change', () => {
+            render(defaults({ layers: [only()] }))
+            const fitted = iso(api.view)
 
-        // Disarmed: a layer-set change no longer moves the view.
-        render(defaults({ layers: [only, layer('Basemap')] }))
-        expect(iso(api.view)).toEqual(manual)
+            act(() => api.toggleAutoFit())
+            expect(api.autoFit).toBe(false)
+            act(() => api.zoomOut())
+            const manual = iso(api.view)
+            expect(manual).not.toEqual(fitted)
 
-        // Arming refits at once, with the signature unchanged since the last fit.
-        act(() => api.toggleAutoFit())
-        expect(api.autoFit).toBe(true)
-        expect(iso(api.view)).toEqual(fitted)
+            render(defaults({ layers: [only(), layer('Basemap')] }))
+
+            expect(iso(api.view)).toEqual(manual)
+        })
+
+        test('refits on arming even when nothing has changed since the last fit', () => {
+            // The layer set is the same one the view was last fitted to, so
+            // the signature alone gives the refit no reason to run. Arming
+            // itself has to be the reason.
+            render(defaults({ layers: [only()] }))
+            const fitted = iso(api.view)
+
+            act(() => api.toggleAutoFit())
+            act(() => api.zoomOut())
+            expect(iso(api.view)).not.toEqual(fitted)
+
+            act(() => api.toggleAutoFit())
+
+            expect(api.autoFit).toBe(true)
+            expect(iso(api.view)).toEqual(fitted)
+        })
     })
 
     test('reports no fit available when no visible layer carries its own bounds', () => {
