@@ -470,6 +470,15 @@
         justify-content: center;
     }
 
+    /* The header stacks to a column here, and the toolbar row runs out of
+       width. Wrapping happens at this level so the zoom group drops to the
+       next line whole; the group itself refuses to shrink, and letting it wrap
+       internally would split its slider from its buttons. */
+    .timeline-header-right {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
     .timeline-sidebar {
         width: 100px;
     }
