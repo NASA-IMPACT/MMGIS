@@ -357,10 +357,14 @@ describe('TimelineAdapter zoom wiring', () => {
         )
     })
 
-    test('a fit reaching outside the global window widens it once, leaving the scrubber be', () => {
+    test('a fit reaching outside the global window widens it once, onto the whole of its first day, leaving the scrubber be', () => {
+        // The widen opens on the first instant of the earliest day, the
+        // same instant a row's backwards control opens the window to, so
+        // the box drawn over that day is inside the chart. The end needs no
+        // such allowance: a box ends on the instant its day does.
         expect(requests()).toHaveLength(1)
         expect(requests()[0].payload).toEqual({
-            startTime: BEFORE_WINDOW,
+            startTime: BEFORE_WINDOW_DAY_START,
             endTime: PAST_WINDOW,
             currentTime: new Date(CURRENT).toISOString(),
         })
@@ -464,10 +468,10 @@ describe('TimelineAdapter zoom before and at the seed', () => {
         await act(async () => {})
 
         // The one widen frames the layer against the seeded window, never
-        // the placeholder.
+        // the placeholder, and opens on the whole of the layer's first day.
         expect(requests()).toHaveLength(1)
         expect(requests()[0].payload).toEqual({
-            startTime: BEFORE_WINDOW,
+            startTime: BEFORE_WINDOW_DAY_START,
             endTime: PAST_WINDOW,
             currentTime: new Date(CURRENT).toISOString(),
         })
