@@ -226,8 +226,23 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         zoomBehaviorRef.current = zoomBehavior
         const svg = select(svgRef.current)
         svg.call(zoomBehavior as any)
+        // A fresh behaviour starts from the window held, not from d3's
+        // identity: the first gesture would otherwise jump from the global
+        // window to wherever it lands.
+        svg.call(
+            zoomBehavior.transform as any,
+            windowToTransform(viewRef.current, bounds, dimensions.width)
+        )
 
         return () => {
+            // A gesture open across this teardown — a drag's window listeners,
+            // or a wheel inside its settle delay — keeps dispatching through
+            // this behaviour, and a transform pushed into the replacement
+            // reuses that open gesture. Detaching the handler is what stops
+            // those events from reading the window through these bounds and
+            // this width. The window listeners themselves are left alone: the
+            // mouseup among them is what re-enables text selection.
+            zoomBehavior.on('zoom', null)
             svg.on('.zoom', null)
             zoomBehaviorRef.current = null
         }
@@ -235,8 +250,6 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
     // Push the window into d3 so wheel and drag gestures start from where the
     // view actually is, rather than from wherever the last gesture left it.
-    // Declared after the behaviour's effect so the ref is populated by the
-    // time this first runs.
     useEffect(() => {
         const zoomBehavior = zoomBehaviorRef.current
         if (!svgRef.current || !zoomBehavior) return
