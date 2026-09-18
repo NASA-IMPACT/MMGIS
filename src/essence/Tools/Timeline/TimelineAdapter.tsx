@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { FloatingPopover } from './lib/FloatingPopover'
 import {
     mmgisRequest,
@@ -20,6 +20,7 @@ import {
     DateSelector,
     PlaybackControls,
     PlaybackSpeedControl,
+    ZoomControls,
     getNextPlaybackSpeed,
     TIME_MODE_ORDER,
     type TimeMode,
@@ -32,6 +33,8 @@ import {
 } from './lib/utils/timeUtils'
 import { resolveLayerNavigation, revealStart } from './lib/utils/layerNavigation'
 import type { LayerNavigation } from './lib/utils/layerNavigation'
+import { useTimelineZoom } from './lib/hooks/useTimelineZoom'
+import type { ViewWindow } from './lib/utils/zoomWindow'
 import './Timeline.css'
 
 /** The wire shape of both 'time:changeRequested' and 'time:changed'. */
@@ -79,7 +82,14 @@ export const TimelineAdapter: React.FC = () => {
     const [showInfoPopup, setShowInfoPopup] = useState(false)
     // Collapsed hides the layer list / scrubber area, leaving just the header
     const [isCollapsed, setIsCollapsed] = useState(false)
-    const [resetZoomFn, setResetZoomFn] = useState<(() => void) | null>(null)
+    /**
+     * The dashboard's display granularity, read once at load. Zoom's floor and
+     * its auto-fit signature both follow it, and never the runtime `timeMode`
+     * control: that control is playback-and-navigation, and a floor that moved
+     * when a playback button was pressed would permit a 24-hour view of a
+     * twenty-year mission without the axis having changed at all.
+     */
+    const [configuredGranularity, setConfiguredGranularity] = useState<TimeMode>('DAY')
     const infoButtonRef = useRef<HTMLButtonElement>(null)
 
     // Mirror the committed window so emit/step callbacks keep a stable identity
@@ -101,10 +111,6 @@ export const TimelineAdapter: React.FC = () => {
     // commit back on 'time:changed', including this one; matching it here keeps
     // the echo from fighting an in-flight drag or playback tick.
     const lastRequestedRef = useRef<TimePayload | null>(null)
-
-    const handleResetZoomReady = useCallback((fn: () => void) => {
-        setResetZoomFn(() => fn)
-    }, [])
 
     /**
      * Asks core to commit an instant, within the window given, and moves local
@@ -155,6 +161,42 @@ export const TimelineAdapter: React.FC = () => {
         [requestTime]
     )
 
+    /**
+     * Opens the global window to the span a fit needs, leaving the scrubber
+     * where it is. Widening only adds reachable instants, so the current time
+     * never needs reclamping on this path.
+     */
+    const handleBoundsWiden = useCallback(
+        (start: Date, end: Date) => {
+            requestTime(start, end, currentTimeRef.current)
+        },
+        [requestTime]
+    )
+
+    const bounds = useMemo<ViewWindow>(
+        () => ({ start: startTime, end: endTime }),
+        [startTime, endTime]
+    )
+
+    const zoom = useTimelineZoom({
+        bounds,
+        layers,
+        currentTime,
+        granularity: configuredGranularity,
+        onBoundsWiden: handleBoundsWiden,
+    })
+
+    // The hook seeds its view from the first bounds it sees, and those are
+    // the placeholder held until core answers; clamping that placeholder into
+    // the seeded window would leave a month-wide view at its end. Once core
+    // has answered, the view opens onto the whole window. Layers are fetched
+    // only from this point on, so no fit runs against the placeholder.
+    useEffect(() => {
+        if (readiness !== 'ready') return
+        zoom.setView({ start: startTimeRef.current, end: endTimeRef.current })
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [readiness])
+
     // Tool variables from the mission config. 'tool:getVars' is registered by
     // Layers_.fina() during mission load, after this tool mounts.
     const fetchVars = useCallback(async () => {
@@ -191,6 +233,9 @@ export const TimelineAdapter: React.FC = () => {
                     : 'DAY'
             if (!effectiveModes.includes(mode)) mode = effectiveModes[0]
             setTimeMode(mode)
+            // The same validated mode, held apart from the runtime control so
+            // a later press of that control cannot move the zoom floor.
+            setConfiguredGranularity(mode)
         } catch (err) {
             console.warn('[Timeline] Failed to fetch tool vars:', err)
         }
@@ -212,8 +257,11 @@ export const TimelineAdapter: React.FC = () => {
     const markLayersApiReady = useCallback(() => setLayersApiReady(true), [])
     useMMGISHandlerReady('layers:getAllConfigs', markLayersApiReady)
 
+    // Layers wait for the seeded window. Fetched earlier, they would carry
+    // the placeholder as their fallback bounds, and auto-fit would frame them
+    // against it, committing a window derived from the placeholder to core.
     useEffect(() => {
-        if (!layersApiReady) return
+        if (!layersApiReady || readiness !== 'ready') return
         let cancelled = false
 
         const fetchLayers = async () => {
@@ -475,18 +523,18 @@ export const TimelineAdapter: React.FC = () => {
                         modes={shownTimeModes}
                     />
                     <div className="timeline-toolbar">
-                        <button
-                            type="button"
-                            className="timeline-tool-btn"
-                            onClick={() => resetZoomFn?.()}
-                            title="Reset Zoom"
-                            aria-label="Reset zoom"
-                            disabled={!resetZoomFn}
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
-                                <path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8A5.87 5.87 0 0 1 6 12c0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z"/>
-                            </svg>
-                        </button>
+                        <ZoomControls
+                            sliderValue={zoom.sliderValue}
+                            spanMs={zoom.view.end.getTime() - zoom.view.start.getTime()}
+                            canZoom={zoom.canZoom}
+                            canFit={zoom.canFit}
+                            autoFit={zoom.autoFit}
+                            onZoomIn={zoom.zoomIn}
+                            onZoomOut={zoom.zoomOut}
+                            onSliderChange={zoom.setSliderValue}
+                            onToggleAutoFit={zoom.toggleAutoFit}
+                            onFitNow={zoom.fitToLayers}
+                        />
                         <button
                             type="button"
                             ref={infoButtonRef}
@@ -534,11 +582,14 @@ export const TimelineAdapter: React.FC = () => {
                         endTime={endTime}
                         currentTime={currentTime}
                         timeMode={timeMode}
+                        configuredGranularity={configuredGranularity}
                         layers={layers}
+                        view={zoom.view}
+                        onViewChange={zoom.setView}
                         onCurrentTimeChange={handleCurrentTimeChange}
                         onCurrentTimePreview={handleCurrentTimePreview}
                         onLayerNavigate={handleLayerNavigate}
-                        onResetZoomReady={handleResetZoomReady}
+                        onFitLayer={zoom.fitToLayer}
                     />
                 )}
             </div>
@@ -554,7 +605,7 @@ export const TimelineAdapter: React.FC = () => {
             >
                 <div className="timeline-info-tooltip-content">
                     <strong>Timeline Controls</strong>
-                    <p>Scroll to zoom • Drag scrubber to change time • Click to jump • Hover a layer to step through its dates</p>
+                    <p>Scroll or use the zoom controls to change the span shown • Drag scrubber to change time • Click to jump • Hover a layer to step through its dates or frame it</p>
                 </div>
             </FloatingPopover>
         </div>
