@@ -202,8 +202,9 @@ describe('TimelineAdapter layer navigation', () => {
             autoFitToggle(container)!.click()
         })
         visible.sparse = true
+        expect(listeners['layer:visibilityChange']).toBeDefined()
         await act(async () => {
-            listeners['layer:visibilityChange']?.()
+            listeners['layer:visibilityChange']()
         })
         await act(async () => {})
     })
@@ -394,6 +395,7 @@ describe('TimelineAdapter zoom before and at the seed', () => {
     let container: HTMLElement
     let root: Root
     let emits: Emit[]
+    let listeners: Record<string, Listener>
     let originalResizeObserver: unknown
 
     const slider = () =>
@@ -413,7 +415,8 @@ describe('TimelineAdapter zoom before and at the seed', () => {
         const seedGate = new Promise<void>((resolve) => {
             releaseSeed = resolve
         })
-        installSparseApi(emits, visible, {})
+        listeners = {}
+        installSparseApi(emits, visible, listeners)
         const api = (window as unknown as {
             mmgisAPI: { request: (name: string) => Promise<unknown> }
         }).mmgisAPI
@@ -475,6 +478,36 @@ describe('TimelineAdapter zoom before and at the seed', () => {
             endTime: PAST_WINDOW,
             currentTime: new Date(CURRENT).toISOString(),
         })
+    })
+
+    test('layers load once core answers, even when its window reached the bus first', async () => {
+        const releaseSeed = await mount({ sparse: true, basemap: true }, true)
+
+        // Core broadcasts every commit, and one can carry the very instants
+        // the seed will answer with. The adapter keeps its Date identities
+        // when an instant is unchanged, so from here the seed changes
+        // nothing but readiness; the layer fetch has to follow readiness
+        // itself, not the window's identity.
+        expect(listeners['time:changed']).toBeDefined()
+        act(() => {
+            listeners['time:changed']({
+                startTime: START,
+                endTime: END,
+                currentTime: CURRENT,
+            })
+        })
+        expect(container.querySelector('.timeline-loading')).not.toBeNull()
+
+        await act(async () => {
+            releaseSeed()
+        })
+        await act(async () => {})
+
+        expect(container.querySelector('.timeline-loading')).toBeNull()
+        expect(
+            container.querySelector('[aria-label="Rover Images: next date"]')
+        ).not.toBeNull()
+        expect(requests()).toHaveLength(1)
     })
 })
 

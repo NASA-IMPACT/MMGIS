@@ -191,6 +191,13 @@ export const TimelineAdapter: React.FC = () => {
     // the seeded window would leave a month-wide view at its end. Once core
     // has answered, the view opens onto the whole window. Layers are fetched
     // only from this point on, so no fit runs against the placeholder.
+    //
+    // Keyed on readiness alone, deliberately. `setView`'s identity follows
+    // the zoom floor, which follows the configured granularity, and the tool
+    // vars carrying that granularity are registered later in boot than the
+    // time handlers, so they typically land after the seed. Listed here,
+    // `setView` would re-run this and throw a view the user may already have
+    // zoomed back open to the full window when the tool vars arrive.
     useEffect(() => {
         if (readiness !== 'ready') return
         zoom.setView({ start: startTimeRef.current, end: endTimeRef.current })
@@ -322,7 +329,7 @@ export const TimelineAdapter: React.FC = () => {
         return () => {
             cancelled = true
         }
-    }, [layersApiReady, startTime, endTime, layerVisibilityVersion])
+    }, [layersApiReady, readiness, startTime, endTime, layerVisibilityVersion])
 
     // Seed from TimeControl, then follow every committed change.
     const fetchInitialTimeData = useCallback(async () => {

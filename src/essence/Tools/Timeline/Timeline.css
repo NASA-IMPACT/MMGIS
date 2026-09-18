@@ -471,12 +471,22 @@
     }
 
     /* The header stacks to a column here, and the toolbar row runs out of
-       width. Wrapping happens at this level so the zoom group drops to the
-       next line whole; the group itself refuses to shrink, and letting it wrap
-       internally would split its slider from its buttons. */
+       width. Wrapping happens at this level, between the mode buttons and
+       the toolbar, so the toolbar and the zoom group inside it drop to the
+       next line whole; the group refuses to shrink, and a toolbar that
+       wrapped itself would split the slider from its buttons. The row is
+       centred like the playback row above it. */
     .timeline-header-right {
         flex-wrap: wrap;
         justify-content: center;
+    }
+
+    /* Without its divider: on its own line the toolbar would open with a
+       stray rule, and on a shared line the row's gap already separates it
+       from the mode buttons. */
+    .timeline-toolbar {
+        border-left: none;
+        padding-left: 0;
     }
 
     .timeline-sidebar {
