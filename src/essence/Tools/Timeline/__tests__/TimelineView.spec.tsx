@@ -16,6 +16,7 @@ vi.hoisted(() => {
 
 import { TimelineView } from '../lib/geo/TimelineView/TimelineView'
 import type { LayerNavigation } from '../lib/utils/layerNavigation'
+import type { ViewWindow } from '../lib/utils/zoomWindow'
 import type { LayerTimeData, TimeMode } from '../lib/types'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean })
@@ -96,9 +97,13 @@ describe('TimelineView layer navigation', () => {
                     endTime={END}
                     currentTime={currentTime}
                     timeMode={timeMode}
+                    configuredGranularity={timeMode}
                     layers={layers}
+                    view={{ start: START, end: END }}
+                    onViewChange={() => {}}
                     onCurrentTimeChange={(date) => committed.push(date)}
                     onLayerNavigate={(date) => navigated.push(date)}
+                    onFitLayer={() => {}}
                 />,
             )
         })
@@ -121,12 +126,15 @@ describe('TimelineView layer navigation', () => {
         })
     }
 
-    test('gives a layer that carries a navigation model its four controls', () => {
+    test('gives a layer that carries a navigation model its controls', () => {
+        // The magnifier that frames the layer sits in the colour dot's slot,
+        // ahead of the name; the four stepping controls follow it.
         render([layer('MODIS Daily', sparseNav('2020-01-02', '2020-11-02'))])
 
         expect(
             rowButtons(0).map((button) => button.getAttribute('aria-label')),
         ).toEqual([
+            'MODIS Daily: fit to this layer',
             'MODIS Daily: first date',
             'MODIS Daily: previous date',
             'MODIS Daily: next date',
@@ -142,7 +150,7 @@ describe('TimelineView layer navigation', () => {
             layer('Basemap'),
         ])
 
-        expect(rowButtons(0)).toHaveLength(4)
+        expect(rowButtons(0)).toHaveLength(5)
         expect(rowButtons(1)).toHaveLength(0)
     })
 
@@ -206,5 +214,89 @@ describe('TimelineView layer navigation', () => {
                 `${chartRows[index].getAttribute('height')}px`,
             )
         })
+    })
+})
+
+describe('TimelineView visible window', () => {
+    let container: HTMLElement
+    let root: Root
+    let reported: ViewWindow[]
+    let originalResizeObserver: unknown
+
+    const FULL: ViewWindow = { start: START, end: END }
+
+    beforeEach(() => {
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+        reported = []
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver as typeof ResizeObserver
+    })
+
+    const render = (view: ViewWindow) => {
+        act(() => {
+            root.render(
+                <TimelineView
+                    startTime={START}
+                    endTime={END}
+                    currentTime={CURRENT}
+                    timeMode="DAY"
+                    configuredGranularity="DAY"
+                    layers={[layer('MODIS Daily', sparseNav('2020-01-02'))]}
+                    view={view}
+                    onViewChange={(next) => reported.push(next)}
+                    onCurrentTimeChange={() => {}}
+                    onLayerNavigate={() => {}}
+                    onFitLayer={() => {}}
+                />,
+            )
+        })
+    }
+
+    /** The label text of every tick drawn on the bottom axis. */
+    const axisLabels = () =>
+        Array.from(
+            container.querySelectorAll<SVGTextElement>(
+                '.timeline-axis .tick text',
+            ),
+        ).map((text) => text.textContent)
+
+    test('draws the axes over the window it is given', () => {
+        render(FULL)
+        const full = axisLabels()
+
+        render({
+            start: new Date('2020-03-01T00:00:00Z'),
+            end: new Date('2020-03-08T00:00:00Z'),
+        })
+
+        expect(axisLabels()).not.toEqual(full)
+        expect(axisLabels().length).toBeGreaterThan(0)
+        // A week-wide window is labelled in days within March.
+        expect(axisLabels().every((label) => label?.startsWith('Mar'))).toBe(true)
+    })
+
+    test('does not echo a window it was handed', () => {
+        // The window is pushed into d3 so its internal state stays in step,
+        // which re-fires the zoom handler. The handler compares and skips.
+        render(FULL)
+        render({
+            start: new Date('2020-03-01T00:00:00Z'),
+            end: new Date('2020-03-08T00:00:00Z'),
+        })
+        render(FULL)
+
+        expect(reported).toEqual([])
     })
 })
