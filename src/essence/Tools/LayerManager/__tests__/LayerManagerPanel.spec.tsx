@@ -220,6 +220,33 @@ describe('LayerManagerPanel without a host', () => {
         await unmount()
     })
 
+    // A capability, not a state: a layer carries the mark whether or not it is
+    // currently drawn.
+    test('marks only the layers that support area analysis', async () => {
+        const { container, unmount } = await mount(
+            <LayerManagerPanel
+                layers={[
+                    { ...GRADIENT_LAYER, analysisSupported: true, visible: false },
+                    {
+                        ...GRADIENT_LAYER,
+                        id: 'Plain_0123456789abcdef',
+                        title: 'Plain',
+                    },
+                ]}
+            />,
+        )
+
+        const marked = container.querySelectorAll(
+            '.blocks-layer-legend__analysis-marker',
+        )
+        expect(marked).toHaveLength(1)
+        expect(
+            marked[0].closest('[data-legend-id]')?.getAttribute('data-legend-id'),
+        ).toBe(GRADIENT_LAYER.id)
+        expect(marked[0].getAttribute('aria-label')).toBe('Supports area analysis')
+        await unmount()
+    })
+
     test('renders without any callbacks wired', async () => {
         const { container, unmount } = await mount(
             <LayerManagerPanel layers={[GRADIENT_LAYER]} />,

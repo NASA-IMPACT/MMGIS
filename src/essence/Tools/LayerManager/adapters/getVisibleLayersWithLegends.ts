@@ -13,6 +13,18 @@ import type { Layer } from '../lib/types'
 
 export type FetchOptions = { showOnlyVisible?: boolean }
 
+/**
+ * Whether a layer offers area analysis, read from the same mission-config flag
+ * the analysis plugins gate on. Nothing about a layer's data or type implies
+ * it — the layer opts in through its configuration.
+ */
+const supportsAnalysis = (cfg: Record<string, unknown>): boolean =>
+    (
+        cfg.variables as
+            | { analysis?: { is_analysis_supported?: boolean } }
+            | undefined
+    )?.analysis?.is_analysis_supported === true
+
 export const getVisibleLayersWithLegends = async ({
     showOnlyVisible = false,
 }: FetchOptions = {}): Promise<Layer[]> => {
@@ -51,6 +63,7 @@ export const getVisibleLayersWithLegends = async ({
                 titilerUrls?.[layerName] ?? null,
             ),
             outOfDataRange: coverage?.[layerName]?.outOfDataRange === true,
+            analysisSupported: supportsAnalysis(cfg),
         })
     }
     // Top first as the map draws; config order against a core with no order.

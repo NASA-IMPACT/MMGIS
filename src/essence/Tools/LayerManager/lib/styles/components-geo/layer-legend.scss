@@ -4,6 +4,14 @@
    past the checkbox (16px) and its gap (12px). */
 $legend-content-indent: 28px;
 
+/* Gap between the drag handle and the checkbox. Tighter than the header's own
+   gap, since the two read as one cluster at the row's start. */
+$legend-handle-gap: 8px;
+
+/* The card's surface while its controls are showing. The action strip paints
+   itself the same color to hide the title underneath it. */
+$legend-hover-surface: var(--theme-color-base-lightest, #f1f3f6);
+
 .blocks-layer-legend {
     display: flex;
     flex-direction: column;
@@ -19,16 +27,22 @@ $legend-content-indent: 28px;
     border-radius: var(--theme-radius-0, 0);
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 
+    /* A row with an open popover is neither hovered nor focused within, since
+       the popover is portaled away — it keeps the surface anyway, so the
+       action strip's fill still matches. */
     &:hover,
-    &:focus-within {
-        background: var(--theme-color-base-lightest, #f1f3f6);
+    &:focus-within,
+    &--menu-open {
+        background: $legend-hover-surface;
         border-color: var(--theme-color-base-lighter, #dfe1e2);
     }
 
+    /* Positioning context for the action strip, which overlays the title
+       rather than taking a column of its own. */
     &__header {
+        position: relative;
         display: flex;
         align-items: center;
-        justify-content: space-between;
         gap: var(--theme-spacing-105, 0.75rem);
         min-height: 22px;
     }
@@ -70,20 +84,13 @@ $legend-content-indent: 28px;
         }
     }
 
-    /* The title and, while the layer has no data at this time, the warning
-       after it. The title gives way first, so the warning is never cut off. */
-    &__title-group {
-        display: flex;
-        align-items: center;
-        gap: var(--theme-spacing-05, 0.25rem);
+    &__title {
         flex: 1;
         min-width: 0;
-    }
-
-    &__title {
-        min-width: 0;
         font-size: var(--theme-font-size-2xs, 0.88rem);
-        font-weight: var(--theme-font-weight-semibold, 600);
+        /* One grade above body text. Computed because the theme defines no
+           medium grade to name. */
+        font-weight: calc(var(--theme-font-weight-normal, 400) + 100);
         color: var(--theme-color-ink, #1c1d1f);
         line-height: 1.6;
         white-space: nowrap;
@@ -91,16 +98,41 @@ $legend-content-indent: 28px;
         text-overflow: ellipsis;
     }
 
+    /* Out of the header's flow and pinned right, so the title runs the full
+       width and the controls come down over it. The fill hides the title
+       underneath. */
     &__actions {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
         display: flex;
         align-items: center;
         gap: calc(var(--theme-spacing-05, 0.25rem) * 0.5);
-        flex-shrink: 0;
+        background: $legend-hover-surface;
 
-        /* Controls surface only on card hover. Fading opacity (rather than
-           toggling display) keeps them focusable and the header from reflowing. */
+        /* Controls surface only on card hover. Fading opacity rather than
+           toggling display keeps them focusable and the header from reflowing;
+           faded out they sit over the title, so they take no clicks. */
         opacity: 0;
+        pointer-events: none;
         transition: opacity 0.15s ease;
+
+        /* Softens the strip's left edge into the title it covers. */
+        &::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            right: 100%;
+            width: var(--theme-spacing-3, 1.5rem);
+            background: linear-gradient(
+                to right,
+                transparent,
+                $legend-hover-surface
+            );
+            pointer-events: none;
+        }
     }
 
     /* An open popover lives in a portal, so focus leaving the row would
@@ -109,6 +141,7 @@ $legend-content-indent: 28px;
     &:focus-within &__actions,
     &--menu-open &__actions {
         opacity: 1;
+        pointer-events: auto;
     }
 
     &__action-btn {
@@ -153,27 +186,48 @@ $legend-content-indent: 28px;
         }
     }
 
-    /* Always shown, unlike the actions: it explains why the layer is absent
-       from the map. A button so keyboard focus, a click or a tap can open its
-       popover. */
-    &__coverage-warning {
+    /* Short statements about the layer, under its name and indented to the
+       content column. Wraps rather than truncating. */
+    &__marks {
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-        width: 20px;
-        height: 20px;
-        padding: 2px;
-        background: transparent;
-        border: none;
-        border-radius: var(--theme-radius-0, 0);
-        color: var(--theme-color-warning-dark, #e5a000);
-        cursor: pointer;
+        gap: var(--theme-spacing-05, 0.25rem) var(--theme-spacing-105, 0.75rem);
+        padding-left: $legend-content-indent;
+    }
 
-        &:focus-visible {
-            outline: 2px solid var(--theme-color-primary, #1c67e3);
-            outline-offset: 1px;
-        }
+    /* Always shown, unlike the hover-only actions. Neither is a control, so
+       both read as text with a mark rather than as something to press. */
+    &__analysis-marker,
+    &__coverage-warning {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--theme-spacing-05, 0.25rem);
+        font-size: var(--theme-font-size-3xs, 0.75rem);
+        line-height: 1.6;
+        color: var(--theme-color-base-dark, #565c65);
+    }
+
+    /* Sized to the body text around it, not the row's 16px controls. The
+       compound selector outranks the icon base class, which would otherwise
+       hold the masked warning icon at 16px. */
+    &__analysis-marker &__mark-icon,
+    &__coverage-warning &__mark-icon {
+        flex-shrink: 0;
+        width: 14px;
+        height: 14px;
+        font-size: 14px;
+        line-height: 1;
+    }
+
+    /* Only the mark is colored; its label stays body text, so a held-back
+       layer reads as a statement rather than an alarm. */
+    &__analysis-marker &__mark-icon {
+        color: var(--theme-color-primary, #1c67e3);
+    }
+
+    &__coverage-warning &__mark-icon {
+        color: var(--theme-color-warning-dark, #e5a000);
     }
 
     /* Always shown, unlike the hover-only actions: it is how a row is picked
@@ -187,16 +241,20 @@ $legend-content-indent: 28px;
         cursor: grab;
         touch-action: none;
 
+        /* Closes the header's gap down to the tighter handle gap. */
+        margin-right: calc(#{$legend-handle-gap} - var(--theme-spacing-105, 0.75rem));
+
         &:active {
             cursor: grabbing;
         }
     }
 
     /* The handle sits before the checkbox, so the content under the title
-       indents by its width and the header gap to stay aligned. */
+       indents by its width and the handle gap to stay aligned. */
+    &--draggable &__marks,
     &--draggable &__unit-label,
     &--draggable &__content {
-        padding-left: calc(#{$legend-content-indent} + 22px + var(--theme-spacing-105, 0.75rem));
+        padding-left: calc(#{$legend-content-indent} + 22px + #{$legend-handle-gap});
     }
 
     /* Icons are the exported SVGs used as masks, tinted by the button's color.
@@ -249,14 +307,8 @@ $legend-content-indent: 28px;
     &__unit-label {
         padding-left: $legend-content-indent;
         font-size: var(--theme-font-size-3xs, 0.75rem);
-        line-height: 1.6;
+        line-height: 1.5;
         color: var(--theme-color-base-dark, #565c65);
-
-        /* The card's flex gap is too loose between the unit and the bar it
-           labels, so pull the graphic back up to --theme-spacing-05. */
-        margin-bottom: calc(
-            var(--theme-spacing-05, 0.25rem) - var(--theme-spacing-105, 0.75rem)
-        );
     }
 
     /* Legend Content (graphics area) */
@@ -389,40 +441,6 @@ $legend-content-indent: 28px;
     &::-webkit-scrollbar-thumb:hover {
         background: var(--theme-color-base-dark, #565c65);
     }
-}
-
-/* No Data Popover
-   Same portaled surface as the info popover: the warning icon beside the
-   message. */
-.blocks-layer-legend__coverage-popover {
-    width: max-content;
-    max-width: 280px;
-    padding: var(--theme-spacing-105, 0.75rem);
-    background: var(--theme-color-white, #ffffff);
-    border: 1px solid var(--theme-color-warning-dark, #e5a000);
-    box-shadow: 0 4px 12px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
-    font-family: var(--theme-font-body, 'Public Sans Web', sans-serif);
-    line-height: 1.4;
-}
-
-/* Two columns: the icon, centered against the text beside it. */
-.blocks-layer-legend__coverage-body {
-    display: flex;
-    align-items: center;
-    gap: var(--theme-spacing-105, 0.75rem);
-}
-
-.blocks-layer-legend__coverage-icon {
-    width: 24px;
-    height: 24px;
-    color: var(--theme-color-warning-dark, #e5a000);
-}
-
-.blocks-layer-legend__coverage-title {
-    flex: 1;
-    min-width: 0;
-    font-size: var(--theme-font-size-2xs, 0.88rem);
-    color: var(--theme-color-ink, #1c1d1f);
 }
 
 /* Names the layer the description belongs to. The popover is portaled away

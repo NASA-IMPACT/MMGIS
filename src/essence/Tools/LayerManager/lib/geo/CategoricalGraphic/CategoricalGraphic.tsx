@@ -65,7 +65,6 @@ export function CategoricalGraphic({
                             </div>
                         )}
                     </div>
-                    <div className="blocks-categorical-graphic__spacer" />
                 </div>
                 {stops.length > 1 && (
                     <div

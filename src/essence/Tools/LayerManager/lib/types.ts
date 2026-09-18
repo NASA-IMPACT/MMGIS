@@ -38,4 +38,6 @@ export type Layer = {
   cog: CogData | null
   // true while the host has no data for the layer at the selected time
   outOfDataRange?: boolean
+  // true when the layer opts into area analysis, as the analysis plugins read it
+  analysisSupported?: boolean
 }

@@ -21,8 +21,14 @@ const CONFIGS = {
         cogColormap: 'viridis',
         cogMin: 0,
         cogMax: 1,
+        variables: { analysis: { is_analysis_supported: true } },
     },
-    [BASEMAP]: { display_name: 'Basemap', cogColormap: 'viridis' },
+    [BASEMAP]: {
+        display_name: 'Basemap',
+        cogColormap: 'viridis',
+        // An analysis block without the flag: configured, but not opted in.
+        variables: { analysis: { itemUrl: 'https://raster.test/items/basemap' } },
+    },
 }
 
 const setupMock = ({
@@ -171,6 +177,16 @@ describe('getVisibleLayersWithLegends', () => {
 
         expect(byId(layers, DISPLACEMENT).outOfDataRange).toBe(true)
         expect(byId(layers, BASEMAP).outOfDataRange).toBe(false)
+    })
+
+    // The same flag the analysis plugins gate on, so the mark and the layers
+    // those plugins act on cannot disagree.
+    test('flags a layer whose config opts into area analysis', async () => {
+        setupMock({ capabilities: {} })
+        const layers = await getVisibleLayersWithLegends()
+
+        expect(byId(layers, DISPLACEMENT).analysisSupported).toBe(true)
+        expect(byId(layers, BASEMAP).analysisSupported).toBe(false)
     })
 
     // The list reads top down as the map stacks. The config lists
