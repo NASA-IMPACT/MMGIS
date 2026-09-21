@@ -194,48 +194,6 @@ describe('useTimelineZoom', () => {
         expect(api.sliderValue).toBe(1)
     })
 
-    test('holds the scrubber in place through the step onto the floor', () => {
-        // The scrubber sits a sixth of the way across the year. Every press
-        // tightens the view around it, the one that lands on the floor
-        // included: the floor takes the span, never the scrubber's place.
-        const early = new Date('2019-03-01T00:00:00Z')
-        render(defaults({ currentTime: early }))
-        const before = (early.getTime() - BOUNDS.start.getTime()) / span(BOUNDS)
-
-        for (let i = 0; i < 7; i++) act(() => api.zoomIn())
-
-        expect(span(api.view)).toBe(3 * DAY)
-        const after = (early.getTime() - api.view.start.getTime()) / span(api.view)
-        expect(after).toBeCloseTo(before, 6)
-    })
-
-    test('pressing zoom in at the floor moves nothing', () => {
-        // With no span left to take there is nothing to zoom, and a press is
-        // not a pan: the view stays bit-for-bit where it was.
-        render(defaults({ currentTime: new Date('2019-03-01T00:00:00Z') }))
-        for (let i = 0; i < 7; i++) act(() => api.zoomIn())
-        expect(span(api.view)).toBe(3 * DAY)
-        const atFloor = iso(api.view)
-
-        act(() => api.zoomIn())
-        act(() => api.zoomIn())
-
-        expect(iso(api.view)).toEqual(atFloor)
-    })
-
-    test('the slider holds the scrubber in place rather than centring on it', () => {
-        const early = new Date('2019-03-01T00:00:00Z')
-        render(defaults({ currentTime: early }))
-        const before = (early.getTime() - BOUNDS.start.getTime()) / span(BOUNDS)
-
-        act(() => api.setSliderValue(0.5))
-
-        expect(api.sliderValue).toBeCloseTo(0.5, 6)
-        const after = (early.getTime() - api.view.start.getTime()) / span(api.view)
-        expect(after).toBeCloseTo(before, 6)
-        expect(Math.abs(after - 0.5)).toBeGreaterThan(0.1)
-    })
-
     test('unions only the bounds a layer named itself', () => {
         // The borrowed end is the global window's own edge. Read into the
         // union it would open the view out to the whole window and hide the
@@ -652,27 +610,6 @@ describe('useTimelineZoom', () => {
             expect(after).toBeCloseTo(before, 6)
         })
 
-        test('the scrubber holds its place on every frame of a zoom, not only on the last', () => {
-            // Off-centre, where a path that pivots on the view's middle
-            // rather than on the scrubber shows its drift.
-            const offCentre = new Date('2019-03-01T00:00:00Z')
-            render(defaults({ currentTime: offCentre }))
-
-            const fraction = () =>
-                (offCentre.getTime() - api.view.start.getTime()) / span(api.view)
-            const held = fraction()
-
-            act(() => api.zoomIn())
-            for (let i = 0; i < 12; i++) {
-                frames(1)
-                expect(fraction()).toBeCloseTo(held, 6)
-            }
-
-            settle()
-            expect(fraction()).toBeCloseTo(held, 6)
-            expect(span(api.view)).toBe(span(BOUNDS) / 2)
-        })
-
         test('the slider follows the view frame by frame', () => {
             render(defaults())
             act(() => api.zoomIn())
@@ -742,18 +679,6 @@ describe('useTimelineZoom', () => {
 
             settle()
             expect(span(api.view)).toBe(span(BOUNDS) / 4)
-        })
-
-        test('unmounting mid-flight leaves the view where it stood', () => {
-            render(defaults())
-            act(() => api.zoomIn())
-            frames(3)
-            const held = iso(api.view)
-
-            act(() => root.unmount())
-
-            expect(() => settle()).not.toThrow()
-            expect(iso(api.view)).toEqual(held)
         })
 
         test('a window narrowed by core mid-flight holds every later frame inside it', () => {

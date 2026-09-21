@@ -289,11 +289,13 @@ const PURE_ZOOM_SHIFT = 1e-6
  * between the two windows crosses the chart at a readable rate, and zooms
  * back in on arrival. d3's implementation is not used directly because it
  * evaluates `log(sqrt(b² + 1) − b)`, which cancels catastrophically once `b`
- * passes about 1e8; `b` grows with the span over the centre shift, so a
- * zoom-out about a centre that moves by a rounding millisecond — reachable
- * from any zoom about the scrubber — puts NaN into every frame. The ratio is
- * scale-invariant, so no change of units mends it. That expression is
- * `−asinh(b)`, which `Math.asinh` evaluates stably at any magnitude.
+ * passes about 1e8, putting −Infinity into every frame. `b` grows as the
+ * spans over the centre shift, so the exposed band is a shift just wide
+ * enough to clear `PURE_ZOOM_SHIFT` and no wider: fitting a view at the
+ * hourly floor out to a four-year window reaches it at a shift between
+ * roughly two and eight minutes. The ratio is scale-invariant, so no change
+ * of units mends it. That expression is `−asinh(b)`, which `Math.asinh`
+ * evaluates stably at any magnitude.
  *
  * Given an `anchor`, the path pivots on it instead: the span still changes
  * geometrically, but each frame is placed so the anchor keeps the fraction of

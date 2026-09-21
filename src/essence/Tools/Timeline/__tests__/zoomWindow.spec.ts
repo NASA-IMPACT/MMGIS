@@ -107,52 +107,23 @@ describe('clampWindow', () => {
     })
 })
 
+/**
+ * Scaling a span is `windowAtSpan` with the span multiplied, so the floor and
+ * the anchor's placement are covered there. What is `zoomAround`'s own is the
+ * multiply, and the degenerate window the fraction divides by zero on.
+ */
 describe('zoomAround', () => {
-    test('holds the anchor at the same fractional position across a zoom', () => {
+    test('scales the span by the factor given, holding the anchor at its fraction', () => {
         const held = win('2019-01-01T00:00:00Z', '2019-01-11T00:00:00Z')
         const anchor = new Date('2019-01-03T00:00:00Z') // 20% across
-        const result = zoomAround(held, 0.5, anchor, bounds, DAY)
+        const halved = zoomAround(held, 0.5, anchor, bounds, DAY)
 
-        expect(span(result)).toBe(5 * DAY)
+        expect(span(halved)).toBe(5 * DAY)
         const fraction =
-            (anchor.getTime() - result.start.getTime()) / span(result)
+            (anchor.getTime() - halved.start.getTime()) / span(halved)
         expect(fraction).toBeCloseTo(0.2, 10)
-    })
 
-    test('widens by the factor given when zooming out', () => {
-        const held = win('2019-01-01T00:00:00Z', '2019-01-11T00:00:00Z')
-        const anchor = new Date('2019-01-06T00:00:00Z')
         expect(span(zoomAround(held, 2, anchor, bounds, DAY))).toBe(20 * DAY)
-    })
-
-    test('never zooms in past the floor', () => {
-        const held = win('2019-01-01T00:00:00Z', '2019-01-05T00:00:00Z')
-        const anchor = new Date('2019-01-03T00:00:00Z')
-        expect(span(zoomAround(held, 0.1, anchor, bounds, 3 * DAY))).toBe(3 * DAY)
-    })
-
-    test('holds the anchor on the step that lands on the floor', () => {
-        // Five days halved is two and a half, below a three-day floor. The
-        // floor takes the span but not the anchor: at 20% before, 20% after.
-        const held = win('2019-01-01T00:00:00Z', '2019-01-06T00:00:00Z')
-        const anchor = new Date('2019-01-02T00:00:00Z')
-        const result = zoomAround(held, 0.5, anchor, bounds, 3 * DAY)
-
-        expect(span(result)).toBe(3 * DAY)
-        const fraction =
-            (anchor.getTime() - result.start.getTime()) / span(result)
-        expect(fraction).toBeCloseTo(0.2, 10)
-    })
-
-    test('leaves a window at the floor exactly where it is on a further zoom in', () => {
-        // With no span left to take, a press moves nothing: not the span, and
-        // not the anchor's place in it. The window comes back bit-for-bit, so
-        // the view's by-value comparison sees no change to commit.
-        const held = win('2019-01-01T00:00:00Z', '2019-01-04T00:00:00Z')
-        const anchor = new Date('2019-01-01T14:24:00Z') // 20% across
-        const result = zoomAround(held, 0.5, anchor, bounds, 3 * DAY)
-
-        expect(iso(result)).toEqual(iso(held))
     })
 
     test('returns a zero-span window as it is rather than as Invalid Dates', () => {
@@ -227,21 +198,20 @@ describe('the logarithmic slider', () => {
     })
 
     test('round-trips a position through a window and back', () => {
-        for (const v of [0, 0.15, 0.4, 0.5, 0.73, 0.9, 1]) {
-            const window = sliderToWindow(v, bounds, anchor, bounds, minMs)
-            expect(windowToSlider(window, bounds, minMs)).toBeCloseTo(v, 4)
-        }
-    })
-
-    test('round-trips a position from a window the scrubber sits off-centre in', () => {
         // The span a position names does not depend on where the scrubber
         // is; only the placement does. The slider's own position, read back
-        // from the view, has to agree with where it was dragged to.
-        const held = win('2019-01-01T00:00:00Z', '2019-01-11T00:00:00Z')
-        const offCentre = new Date('2019-01-02T00:00:00Z')
-        for (const v of [0, 0.15, 0.4, 0.5, 0.73, 0.9, 1]) {
-            const window = sliderToWindow(v, held, offCentre, bounds, minMs)
-            expect(windowToSlider(window, bounds, minMs)).toBeCloseTo(v, 4)
+        // from the view, has to agree with where it was dragged to — from a
+        // window the scrubber sits off-centre in as much as a centred one.
+        const offCentre = win('2019-01-01T00:00:00Z', '2019-01-11T00:00:00Z')
+        const cases: [ViewWindow, Date][] = [
+            [bounds, anchor],
+            [offCentre, new Date('2019-01-02T00:00:00Z')],
+        ]
+        for (const [held, at] of cases) {
+            for (const v of [0, 0.15, 0.4, 0.5, 0.73, 0.9, 1]) {
+                const window = sliderToWindow(v, held, at, bounds, minMs)
+                expect(windowToSlider(window, bounds, minMs)).toBeCloseTo(v, 4)
+            }
         }
     })
 
@@ -505,10 +475,10 @@ describe('interpolateWindow', () => {
         expect(fractions[50]).toBeCloseTo((held - to.start.getTime()) / span(to), 6)
     })
 
-    test('stays finite on a zoom out whose centre moves by a rounding millisecond', () => {
-        // The case d3's interpolateZoom turns into NaN at these magnitudes:
-        // the span over the centre shift is ~1e11, far past where its
-        // log(sqrt(b² + 1) − b) cancels to log(0).
+    test('reads a centre shift of a rounding millisecond as a pure zoom', () => {
+        // Below PURE_ZOOM_SHIFT the shift is spent linearly and the path is
+        // the geometric one, so the midpoint is the geometric mean of the
+        // spans. Every zoom about a scrubber that sits dead centre lands here.
         const from = about(CENTRE, 1.5 * YEAR)
         const to = about(CENTRE + 1, 3 * YEAR)
         const at = interpolateWindow(from, to)
@@ -518,6 +488,26 @@ describe('interpolateWindow', () => {
         expect(isMonotonic(spans, 1)).toBe(true)
         expect(Math.abs(span(at(0.5)) - Math.sqrt(1.5 * YEAR * 3 * YEAR))).toBeLessThanOrEqual(1)
         expect(iso(at(1))).toEqual(iso(to))
+    })
+
+    test('stays finite where d3 interpolateZoom would return -Infinity', () => {
+        // A shift just past PURE_ZOOM_SHIFT, across the widest ratio the
+        // plugin reaches: a view at the hourly floor fitted out to a
+        // four-year window. `b` lands near 3.5e8, well past where
+        // log(sqrt(b² + 1) − b) cancels to log(0); -asinh(b) holds.
+        const from = about(CENTRE, DAY)
+        const to = about(CENTRE + 130 * 1000, 1460 * DAY)
+
+        const w0 = DAY
+        const w1 = 1460 * DAY
+        const d = 130 * 1000
+        const b0 = (w1 * w1 - w0 * w0 + 4 * d * d) / (2 * w0 * 2 * d)
+        expect(b0).toBeGreaterThan(1e8)
+        expect(Math.log(Math.sqrt(b0 * b0 + 1) - b0)).toBe(-Infinity)
+
+        const spans = spansAlong(interpolateWindow(from, to))
+        expect(spans.every(Number.isFinite)).toBe(true)
+        expect(Math.max(...spans)).toBeGreaterThanOrEqual(1460 * DAY)
     })
 
     test('opens out to cross a long distance, and closes back in on arrival', () => {
