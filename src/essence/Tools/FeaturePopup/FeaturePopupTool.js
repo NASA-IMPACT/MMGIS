@@ -1,3 +1,4 @@
+import F_ from '../../Basics/Formulae_/Formulae_'
 import { MAP_ENGINE } from '../../Basics/MapEngines/types/engine'
 
 const PLUGIN_ID = 'feature-popup'
@@ -132,12 +133,22 @@ function resolveActions(actions, layerId) {
 }
 
 /**
- * The card's heading: the property the popup names, else the one the layer
- * already names its features by, which the rest of MMGIS reads as either a
- * string or a list of candidates.
+ * The card's heading. The configured title is a template in the form External
+ * Links and TopBar Information already use: text as written, with every
+ * `{prop}` replaced by that property's value. A template resolving to nothing
+ * leaves the card headingless rather than blank-headed.
+ *
+ * With no title configured, fall back to the property the layer already names
+ * its features by, which the rest of MMGIS reads as a string or as a list of
+ * candidates.
  */
 function cardTitle(properties, config) {
-    const named = config.popup.title ?? config.useKeyAsName
+    const template = config.popup.title
+    if (typeof template === 'string' && template.trim() !== '') {
+        const filled = F_.bracketReplace(template, properties).trim()
+        return filled === '' ? undefined : filled
+    }
+    const named = config.useKeyAsName
     const key = Array.isArray(named) ? named[0] : named
     return key == null ? undefined : properties[key]
 }
@@ -179,7 +190,10 @@ function optedInLayers(configs) {
     const opted = new Map()
     Object.entries(configs || {}).forEach(([id, layer]) => {
         const popup = layer?.variables?.featurePopup
-        if (popup) {
+        // The block exists as soon as a mission touches the field, so the
+        // switch is what opts the layer in; an untouched block still counts,
+        // which is how a hand-written config reads.
+        if (popup && popup.enabled !== false) {
             opted.set(id, {
                 popup,
                 useKeyAsName: layer.variables.useKeyAsName,

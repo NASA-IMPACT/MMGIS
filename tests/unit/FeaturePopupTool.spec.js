@@ -14,7 +14,7 @@ const layerConfigs = () => ({
         type: 'vector',
         variables: {
             featurePopup: {
-                title: 'site_name',
+                title: '{site_name}',
                 properties: ['depth_m', 'sample_class'],
             },
         },
@@ -239,7 +239,7 @@ test('stays out of the way on Leaflet, which has its own feature click path', as
 test('picks up a layer that opts in after the mission has loaded', async () => {
     await start()
 
-    LAYER_CONFIGS.basemapLabels.variables.featurePopup = { title: 'site_name' }
+    LAYER_CONFIGS.basemapLabels.variables.featurePopup = { title: '{site_name}' }
     api.emit('layers:listChanged')
     await flushBus()
     api.emit('map:featureClick', clickOn('basemapLabels'))
@@ -292,4 +292,44 @@ test('shows one card when the controller both initializes and makes the tool', a
     await flushBus()
 
     expect(api.namesOf('map:showPopup')).toHaveLength(1)
+})
+
+test('reads the title as a template, so a mission can write text around a property', async () => {
+    LAYER_CONFIGS.craters.variables.featurePopup.title = 'Crater {site_name} ({depth_m} m)'
+    await start()
+
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+
+    expect(api.namesOf('map:showPopup')[0].payload.title).toBe('Crater Jezero (12 m)')
+})
+
+test('shows a constant title with no property in it', async () => {
+    LAYER_CONFIGS.craters.variables.featurePopup.title = 'Sample site'
+    await start()
+
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+
+    expect(api.namesOf('map:showPopup')[0].payload.title).toBe('Sample site')
+})
+
+test('shows no heading when the template resolves to nothing', async () => {
+    LAYER_CONFIGS.craters.variables.featurePopup.title = '{absent_property}'
+    await start()
+
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+
+    expect(api.namesOf('map:showPopup')[0].payload.title).toBeUndefined()
+})
+
+test('shows nothing for a layer whose popup is switched off', async () => {
+    LAYER_CONFIGS.craters.variables.featurePopup.enabled = false
+    await start()
+
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+
+    expect(api.namesOf('map:showPopup')).toHaveLength(0)
 })

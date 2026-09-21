@@ -851,6 +851,56 @@
               ]
             }
           ]
+        },
+        {
+          "name": "Feature Popup",
+          "components": [
+            {
+              "field": "variables.featurePopup.enabled",
+              "name": "Show Feature Popup",
+              "description": "Show a popup card when one of this layer's features is clicked. Requires the deck.gl map engine.",
+              "type": "checkbox",
+              "width": 3,
+              "defaultChecked": false
+            },
+            {
+              "field": "variables.featurePopup.title",
+              "name": "Card Heading",
+              "description": "The card's heading, written as a template. Text appears as written and every '{prop}' is replaced with the corresponding features[i].properties.prop value, with dot notation for nested props: 'Crater {site.name}'. Leave empty to use the layer's naming property from the Feature Name fields above.",
+              "type": "text",
+              "width": 9
+            },
+            {
+              "field": "variables.featurePopup.properties",
+              "name": "Properties To List",
+              "description": "Which feature properties the card lists, in this order. Leave empty to list every property the feature carries.",
+              "type": "textarray",
+              "width": 12
+            },
+            {
+              "field": "variables.featurePopup.actions",
+              "name": "Card Actions",
+              "description": "Buttons on the card, at most two. Pressing one closes the card and emits 'plugin:feature-popup:<event>' on the event bus, carrying the clicked feature, for another plugin to act on.",
+              "type": "objectarray",
+              "width": 12,
+              "object": [
+                {
+                  "field": "label",
+                  "name": "Button Label",
+                  "description": "The text on the button.",
+                  "type": "text",
+                  "width": 4
+                },
+                {
+                  "field": "event",
+                  "name": "Event Name",
+                  "description": "The event emitted when the button is pressed, under the plugin's own address: an event of 'analyzeFeature' is emitted as 'plugin:feature-popup:analyzeFeature'.",
+                  "type": "text",
+                  "width": 8
+                }
+              ]
+            }
+          ]
         }
       ]
     },
