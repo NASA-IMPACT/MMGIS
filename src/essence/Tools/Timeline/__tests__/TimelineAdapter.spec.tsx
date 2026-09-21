@@ -1,5 +1,5 @@
 import React, { act } from 'react'
-import { describe, test, expect, beforeEach, afterEach } from 'vitest'
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 import { TimelineAdapter } from '../TimelineAdapter'
 
@@ -12,6 +12,20 @@ import { TimelineAdapter } from '../TimelineAdapter'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean })
     .IS_REACT_ACT_ENVIRONMENT = true
+
+// The zoom state applies a fit at once under reduced motion, and every
+// assertion here that reads the view or the slider after a fit relies on
+// that. jsdom has no `matchMedia`, so the preference is stubbed rather than
+// left unreadable.
+beforeEach(() => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+        matches: query === '(prefers-reduced-motion: reduce)',
+    }))
+})
+
+afterEach(() => {
+    vi.unstubAllGlobals()
+})
 
 const START = '2024-01-01T00:00:00Z'
 const END = '2024-12-31T00:00:00Z'

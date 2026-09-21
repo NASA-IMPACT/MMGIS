@@ -15,6 +15,7 @@ import {
     clampWindow,
     describeSpan,
     fitWindow,
+    interpolateWindow,
     minViewDuration,
     sliderToWindow,
     transformToWindow,
@@ -288,5 +289,100 @@ describe('describeSpan', () => {
         expect(describeSpan(6 * HOUR)).toBe('6 hours')
         expect(describeSpan(400 * DAY)).toBe('1 year')
         expect(describeSpan(90 * DAY)).toBe('3 months')
+    })
+})
+
+describe('interpolateWindow', () => {
+    const YEAR = 365 * DAY
+    const CENTRE = new Date('2020-01-01T00:00:00Z').getTime()
+
+    /** A window of `ms` about `centre`. */
+    const about = (centre: number, ms: number): ViewWindow => ({
+        start: new Date(centre - ms / 2),
+        end: new Date(centre + ms / 2),
+    })
+
+    const centre = (w: ViewWindow) => (w.start.getTime() + w.end.getTime()) / 2
+
+    const spansAlong = (at: (t: number) => ViewWindow, steps = 50) =>
+        Array.from({ length: steps + 1 }, (_, k) => span(at(k / steps)))
+
+    const isMonotonic = (values: number[], direction: 1 | -1) =>
+        values.every((v, k) => k === 0 || Math.sign(v - values[k - 1]) !== -direction)
+
+    test('returns the endpoints themselves at t = 0 and t = 1', () => {
+        const from = about(CENTRE, YEAR)
+        const to = about(CENTRE + 40 * DAY, 10 * DAY)
+        const at = interpolateWindow(from, to)
+
+        expect(at(0)).toBe(from)
+        expect(at(1)).toBe(to)
+        expect(at(-0.5)).toBe(from)
+        expect(at(1.5)).toBe(to)
+    })
+
+    test('passes through the geometric mean of the spans on a zoom about a fixed centre', () => {
+        const from = about(CENTRE, YEAR)
+        const to = about(CENTRE, YEAR / 8)
+        const mid = interpolateWindow(from, to)(0.5)
+
+        const geometric = Math.sqrt(YEAR * (YEAR / 8))
+        const arithmetic = (YEAR + YEAR / 8) / 2
+        expect(Math.abs(span(mid) - geometric)).toBeLessThanOrEqual(1)
+        expect(Math.abs(span(mid) - arithmetic)).toBeGreaterThan(DAY)
+        expect(Math.abs(centre(mid) - CENTRE)).toBeLessThanOrEqual(1)
+    })
+
+    test('tightens monotonically on a zoom in about the scrubber, and opens monotonically on the way back', () => {
+        // The scrubber sits off-centre, so the centre moves as the span
+        // changes, as it does for every press of the buttons.
+        const full = about(CENTRE, YEAR)
+        const anchor = new Date(CENTRE + 100 * DAY)
+        const tight = zoomAround(full, 0.5, anchor, bounds, 3 * DAY)
+
+        expect(isMonotonic(spansAlong(interpolateWindow(full, tight)), -1)).toBe(true)
+        expect(isMonotonic(spansAlong(interpolateWindow(tight, full)), 1)).toBe(true)
+    })
+
+    test('stays finite on a zoom out whose centre moves by a rounding millisecond', () => {
+        // The case d3's interpolateZoom turns into NaN at these magnitudes:
+        // the span over the centre shift is ~1e11, far past where its
+        // log(sqrt(b² + 1) − b) cancels to log(0).
+        const from = about(CENTRE, 1.5 * YEAR)
+        const to = about(CENTRE + 1, 3 * YEAR)
+        const at = interpolateWindow(from, to)
+
+        const spans = spansAlong(at)
+        expect(spans.every(Number.isFinite)).toBe(true)
+        expect(isMonotonic(spans, 1)).toBe(true)
+        expect(Math.abs(span(at(0.5)) - Math.sqrt(1.5 * YEAR * 3 * YEAR))).toBeLessThanOrEqual(1)
+        expect(iso(at(1))).toEqual(iso(to))
+    })
+
+    test('opens out to cross a long distance, and closes back in on arrival', () => {
+        // Three days at one end of the mission to three days at the other.
+        // Panning at three days wide would sweep years past in a blur; the
+        // path zooms out to travel, so what crosses the chart is readable.
+        const from = win('2018-01-02T00:00:00Z', '2018-01-05T00:00:00Z')
+        const to = win('2021-12-20T00:00:00Z', '2021-12-23T00:00:00Z')
+        const at = interpolateWindow(from, to)
+
+        const spans = spansAlong(at)
+        expect(Math.max(...spans)).toBeGreaterThan(YEAR)
+        expect(span(at(0.5))).toBe(Math.max(...spans))
+        expect(at(0.5).start.getTime()).toBeLessThan(centre(from))
+        expect(at(0.5).end.getTime()).toBeGreaterThan(centre(to))
+        expect(iso(at(1))).toEqual(iso(to))
+    })
+
+    test('interpolates a window without a span linearly', () => {
+        // A degenerate global window collapses the view to an instant, and
+        // an instant has no geometric path to anywhere.
+        const from: ViewWindow = { start: new Date(CENTRE), end: new Date(CENTRE) }
+        const to = win('2020-03-01T00:00:00Z', '2020-05-01T00:00:00Z')
+        const mid = interpolateWindow(from, to)(0.5)
+
+        expect(mid.start.getTime()).toBe((CENTRE + to.start.getTime()) / 2)
+        expect(span(mid)).toBe(span(to) / 2)
     })
 })

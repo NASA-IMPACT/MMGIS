@@ -11,6 +11,7 @@ import {
     zoomAround,
     type ViewWindow,
 } from '../utils/zoomWindow'
+import { useWindowTransition } from './useWindowTransition'
 
 /** How much of the union's span a fit leaves clear at each edge. */
 const PAD_FRACTION = 0.04
@@ -49,7 +50,11 @@ export interface UseTimelineZoomOptions {
 }
 
 export interface TimelineZoom {
-    /** The visible window — the source of truth the d3 transform derives from. */
+    /**
+     * The visible window — the source of truth the d3 transform derives
+     * from. While a zoom or fit is in transition it is the window on screen
+     * on that frame, so the slider and the chart move together.
+     */
     view: ViewWindow
     autoFit: boolean
     /** Where the view sits on the logarithmic slider, 0 (full) to 1 (floor). */
@@ -58,12 +63,18 @@ export interface TimelineZoom {
     canZoom: boolean
     /** False when no visible layer carries bounds of its own to frame. */
     canFit: boolean
+    /** Halves the span, in transition. Instant under reduced motion. */
     zoomIn(): void
+    /** Doubles the span, in transition. Instant under reduced motion. */
     zoomOut(): void
+    /** Direct manipulation: takes effect at once and drops any transition. */
     setSliderValue(v: number): void
+    /** Direct manipulation: takes effect at once and drops any transition. */
     setView(win: ViewWindow): void
     toggleAutoFit(): void
+    /** Frames the visible layers' own bounds, in transition. */
     fitToLayers(): void
+    /** Frames one layer's span, in transition. */
     fitToLayer(layer: LayerTimeData): void
 }
 
@@ -232,33 +243,54 @@ export function useTimelineZoom({
         widenRef.current = onBoundsWiden
     }, [onBoundsWiden])
 
+    // The view as the actions see it. Written by every commit as well as
+    // synced from state, so two presses landing in one batch each act on the
+    // other's result instead of both on the view as it stood before either,
+    // and a frame of a transition reads the window the frame before it set.
+    const viewRef = useRef(view)
+    useEffect(() => {
+        viewRef.current = view
+    }, [view])
+
+    // Every path that moves the view ends here. Not clamped: a fit's window
+    // can lie in a span the render has yet to see, since the widen it made
+    // lands in the same render as the window, and the reconciliation above
+    // brings any window into range as part of the render that sees it.
+    const commit = useCallback((next: ViewWindow) => {
+        if (sameWindow(viewRef.current, next)) return
+        viewRef.current = next
+        setViewState(next)
+    }, [])
+
+    const transition = useWindowTransition(commit)
+
+    // A gesture is the user's own hand on the view: it takes effect at once,
+    // and a transition still running would only fight it.
     const setView = useCallback(
         (next: ViewWindow) => {
-            setViewState((prev) => {
-                const clamped = clampWindow(next, boundsRef.current, minMs)
-                return sameWindow(prev, clamped) ? prev : clamped
-            })
+            transition.cancel()
+            commit(clampWindow(next, boundsRef.current, minMs))
         },
-        [minMs]
+        [transition, commit, minMs]
     )
 
-    // The zoom actions read the view through the updater rather than from a
-    // copy taken earlier, so two presses landing in one batch each act on the
-    // other's result instead of both on the view as it stood before either.
+    // A press landing mid-flight steps from the flight's destination, not
+    // from wherever that frame happens to be, so a run of quick presses is a
+    // run of whole steps; the flight restarts from the view as it stands, so
+    // nothing on screen jumps.
     const zoomBy = useCallback(
         (factor: number) => {
-            setViewState((prev) => {
-                const next = zoomAround(
-                    prev,
-                    factor,
-                    anchorIn(prev, currentTimeRef.current),
-                    boundsRef.current,
-                    minMs
-                )
-                return sameWindow(prev, next) ? prev : next
-            })
+            const origin = transition.target() ?? viewRef.current
+            const next = zoomAround(
+                origin,
+                factor,
+                anchorIn(origin, currentTimeRef.current),
+                boundsRef.current,
+                minMs
+            )
+            transition.animateTo(viewRef.current, next)
         },
-        [minMs]
+        [transition, minMs]
     )
 
     const zoomIn = useCallback(() => zoomBy(ZOOM_IN_FACTOR), [zoomBy])
@@ -266,17 +298,18 @@ export function useTimelineZoom({
 
     const setSliderValue = useCallback(
         (v: number) => {
-            setViewState((prev) => {
-                const next = sliderToWindow(
+            transition.cancel()
+            const held = viewRef.current
+            commit(
+                sliderToWindow(
                     v,
-                    anchorIn(prev, currentTimeRef.current),
+                    anchorIn(held, currentTimeRef.current),
                     boundsRef.current,
                     minMs
                 )
-                return sameWindow(prev, next) ? prev : next
-            })
+            )
         },
-        [minMs]
+        [transition, commit, minMs]
     )
 
     /**
@@ -319,9 +352,9 @@ export function useTimelineZoom({
 
             const fitted = fitWindow(extents, target, minMs, PAD_FRACTION)
             if (!fitted) return
-            setViewState((prev) => (sameWindow(prev, fitted) ? prev : fitted))
+            transition.animateTo(viewRef.current, fitted)
         },
-        [minMs]
+        [transition, minMs]
     )
 
     const ownExtents = useMemo(
