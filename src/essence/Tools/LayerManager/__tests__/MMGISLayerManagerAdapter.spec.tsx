@@ -13,12 +13,14 @@ const CONTINUOUS = 'Continuous_fedcba9876543210'
 const EVENT = 'layers:dataCoverageChanged'
 
 let outOfRange: Record<string, boolean>
+let listed: Record<string, boolean>
 let listeners: Map<string, Set<(payload?: unknown) => void>>
 let gate: Promise<void> | null
 let mounted: Mounted | null
 
 beforeEach(() => {
     outOfRange = {}
+    listed = {}
     listeners = new Map()
     gate = null
     mounted = null
@@ -36,6 +38,7 @@ beforeEach(() => {
             return { [SPARSE]: true, [CONTINUOUS]: true }
         },
         'layers:getAllOpacities': () => ({}),
+        'layers:getListed': () => listed,
         'layers:getDataCoverage': () =>
             Object.fromEntries(
                 Object.entries(outOfRange).map(([id, flag]) => [
@@ -124,5 +127,29 @@ describe('MMGISLayerManagerAdapter data coverage', () => {
         await mounted!.unmount()
         mounted = null
         expect(listeners.get(EVENT)?.size ?? 0).toBe(0)
+    })
+})
+
+const hideButton = () =>
+    mounted!.container.querySelector('.blocks-layer-manager__hide-filtered')
+
+describe('MMGISLayerManagerAdapter filtered-out layers', () => {
+    test('offers to hide the layers on the map that the list leaves out, naming them on hover', async () => {
+        listed = { [SPARSE]: false }
+        await mountAdapter()
+        expect(hideButton()?.textContent).toBe('Hide 1 filtered-out layer')
+        expect(hideButton()?.getAttribute('title')).toBe('Switch off: Sparse')
+    })
+
+    test('withdraws the offer when the list changes to leave nothing out', async () => {
+        listed = { [SPARSE]: false, [CONTINUOUS]: false }
+        await mountAdapter()
+        expect(hideButton()?.textContent).toBe('Hide 2 filtered-out layers')
+        expect(hideButton()?.getAttribute('title')).toBe('Switch off: Sparse, Continuous')
+
+        listed = {}
+        await emit('layer:listedChange')
+        await settle()
+        expect(hideButton()).toBeNull()
     })
 })
