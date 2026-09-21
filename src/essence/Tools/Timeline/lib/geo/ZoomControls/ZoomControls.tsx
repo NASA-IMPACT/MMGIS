@@ -87,6 +87,12 @@ export const ZoomControls: React.FC<ZoomControlsProps> = ({
             max={1}
             step={0.01}
             value={sliderValue}
+            /* The covered range is painted from this; CSS cannot read it. */
+            style={
+                {
+                    '--timeline-zoom-fill': `${sliderValue * 100}%`,
+                } as React.CSSProperties
+            }
             onChange={(event) => onSliderChange(Number(event.target.value))}
             disabled={!canZoom}
             aria-label="Zoom level"
