@@ -194,6 +194,48 @@ describe('useTimelineZoom', () => {
         expect(api.sliderValue).toBe(1)
     })
 
+    test('holds the scrubber in place through the step onto the floor', () => {
+        // The scrubber sits a sixth of the way across the year. Every press
+        // tightens the view around it, the one that lands on the floor
+        // included: the floor takes the span, never the scrubber's place.
+        const early = new Date('2019-03-01T00:00:00Z')
+        render(defaults({ currentTime: early }))
+        const before = (early.getTime() - BOUNDS.start.getTime()) / span(BOUNDS)
+
+        for (let i = 0; i < 7; i++) act(() => api.zoomIn())
+
+        expect(span(api.view)).toBe(3 * DAY)
+        const after = (early.getTime() - api.view.start.getTime()) / span(api.view)
+        expect(after).toBeCloseTo(before, 6)
+    })
+
+    test('pressing zoom in at the floor moves nothing', () => {
+        // With no span left to take there is nothing to zoom, and a press is
+        // not a pan: the view stays bit-for-bit where it was.
+        render(defaults({ currentTime: new Date('2019-03-01T00:00:00Z') }))
+        for (let i = 0; i < 7; i++) act(() => api.zoomIn())
+        expect(span(api.view)).toBe(3 * DAY)
+        const atFloor = iso(api.view)
+
+        act(() => api.zoomIn())
+        act(() => api.zoomIn())
+
+        expect(iso(api.view)).toEqual(atFloor)
+    })
+
+    test('the slider holds the scrubber in place rather than centring on it', () => {
+        const early = new Date('2019-03-01T00:00:00Z')
+        render(defaults({ currentTime: early }))
+        const before = (early.getTime() - BOUNDS.start.getTime()) / span(BOUNDS)
+
+        act(() => api.setSliderValue(0.5))
+
+        expect(api.sliderValue).toBeCloseTo(0.5, 6)
+        const after = (early.getTime() - api.view.start.getTime()) / span(api.view)
+        expect(after).toBeCloseTo(before, 6)
+        expect(Math.abs(after - 0.5)).toBeGreaterThan(0.1)
+    })
+
     test('unions only the bounds a layer named itself', () => {
         // The borrowed end is the global window's own edge. Read into the
         // union it would open the view out to the whole window and hide the

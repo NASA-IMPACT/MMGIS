@@ -19,6 +19,7 @@ import {
     minViewDuration,
     sliderToWindow,
     transformToWindow,
+    windowAtSpan,
     windowToSlider,
     windowToTransform,
     zoomAround,
@@ -130,6 +131,30 @@ describe('zoomAround', () => {
         expect(span(zoomAround(held, 0.1, anchor, bounds, 3 * DAY))).toBe(3 * DAY)
     })
 
+    test('holds the anchor on the step that lands on the floor', () => {
+        // Five days halved is two and a half, below a three-day floor. The
+        // floor takes the span but not the anchor: at 20% before, 20% after.
+        const held = win('2019-01-01T00:00:00Z', '2019-01-06T00:00:00Z')
+        const anchor = new Date('2019-01-02T00:00:00Z')
+        const result = zoomAround(held, 0.5, anchor, bounds, 3 * DAY)
+
+        expect(span(result)).toBe(3 * DAY)
+        const fraction =
+            (anchor.getTime() - result.start.getTime()) / span(result)
+        expect(fraction).toBeCloseTo(0.2, 10)
+    })
+
+    test('leaves a window at the floor exactly where it is on a further zoom in', () => {
+        // With no span left to take, a press moves nothing: not the span, and
+        // not the anchor's place in it. The window comes back bit-for-bit, so
+        // the view's by-value comparison sees no change to commit.
+        const held = win('2019-01-01T00:00:00Z', '2019-01-04T00:00:00Z')
+        const anchor = new Date('2019-01-01T14:24:00Z') // 20% across
+        const result = zoomAround(held, 0.5, anchor, bounds, 3 * DAY)
+
+        expect(iso(result)).toEqual(iso(held))
+    })
+
     test('returns a zero-span window as it is rather than as Invalid Dates', () => {
         // The anchor's fractional position across a zero-span window is 0/0;
         // the fallback keeps that from turning both endpoints into NaN.
@@ -140,18 +165,82 @@ describe('zoomAround', () => {
     })
 })
 
+describe('windowAtSpan', () => {
+    test('holds the anchor at its fraction across any change of span', () => {
+        const held = win('2019-01-01T00:00:00Z', '2019-01-11T00:00:00Z')
+        const anchor = new Date('2019-01-08T00:00:00Z') // 70% across
+        for (const target of [4 * DAY, 10 * DAY, 25 * DAY]) {
+            const result = windowAtSpan(held, target, anchor, bounds, DAY)
+            expect(span(result)).toBe(target)
+            const fraction =
+                (anchor.getTime() - result.start.getTime()) / span(result)
+            expect(fraction).toBeCloseTo(0.7, 10)
+        }
+    })
+
+    test('settles the span on the floor before placing, so the floor never recentres', () => {
+        // Asking for a day against a three-day floor places three days about
+        // the anchor, not a day about the anchor widened about its own middle.
+        const held = win('2019-01-01T00:00:00Z', '2019-01-11T00:00:00Z')
+        const anchor = new Date('2019-01-02T00:00:00Z') // 10% across
+        const result = windowAtSpan(held, DAY, anchor, bounds, 3 * DAY)
+
+        expect(span(result)).toBe(3 * DAY)
+        expect(iso(result)).toEqual([
+            '2019-01-01T16:48:00.000Z',
+            '2019-01-04T16:48:00.000Z',
+        ])
+    })
+
+    test('slides to a bound, and no further, when the held fraction runs past it', () => {
+        // Ten days at the end of the mission, anchor a day in (10%). Doubling
+        // while holding 10% would run nine days past the end; the window ends
+        // at the bound and the anchor takes the smallest fraction reachable.
+        const held = win('2021-12-22T00:00:00Z', '2022-01-01T00:00:00Z')
+        const anchor = new Date('2021-12-23T00:00:00Z')
+        const result = windowAtSpan(held, 20 * DAY, anchor, bounds, DAY)
+
+        expect(span(result)).toBe(20 * DAY)
+        expect(result.end.toISOString()).toBe(bounds.end.toISOString())
+        expect(result.start.toISOString()).toBe('2021-12-12T00:00:00.000Z')
+    })
+
+    test('caps the span at the bounds and returns them', () => {
+        const held = win('2019-01-01T00:00:00Z', '2019-01-11T00:00:00Z')
+        const anchor = new Date('2019-01-02T00:00:00Z')
+        const result = windowAtSpan(held, 100 * 365 * DAY, anchor, bounds, DAY)
+
+        expect(iso(result)).toEqual(iso(bounds))
+    })
+})
+
 describe('the logarithmic slider', () => {
-    const anchor = new Date('2020-01-01T00:00:00Z') // the bounds' centre
+    // The slider moves from the full window, with the scrubber at its centre.
+    const anchor = new Date('2020-01-01T00:00:00Z')
     const minMs = 3 * DAY
 
     test('puts the full window at zero and the floor at one', () => {
-        expect(span(sliderToWindow(0, anchor, bounds, minMs))).toBe(span(bounds))
-        expect(span(sliderToWindow(1, anchor, bounds, minMs))).toBe(minMs)
+        expect(span(sliderToWindow(0, bounds, anchor, bounds, minMs))).toBe(
+            span(bounds)
+        )
+        expect(span(sliderToWindow(1, bounds, anchor, bounds, minMs))).toBe(minMs)
     })
 
     test('round-trips a position through a window and back', () => {
         for (const v of [0, 0.15, 0.4, 0.5, 0.73, 0.9, 1]) {
-            const window = sliderToWindow(v, anchor, bounds, minMs)
+            const window = sliderToWindow(v, bounds, anchor, bounds, minMs)
+            expect(windowToSlider(window, bounds, minMs)).toBeCloseTo(v, 4)
+        }
+    })
+
+    test('round-trips a position from a window the scrubber sits off-centre in', () => {
+        // The span a position names does not depend on where the scrubber
+        // is; only the placement does. The slider's own position, read back
+        // from the view, has to agree with where it was dragged to.
+        const held = win('2019-01-01T00:00:00Z', '2019-01-11T00:00:00Z')
+        const offCentre = new Date('2019-01-02T00:00:00Z')
+        for (const v of [0, 0.15, 0.4, 0.5, 0.73, 0.9, 1]) {
+            const window = sliderToWindow(v, held, offCentre, bounds, minMs)
             expect(windowToSlider(window, bounds, minMs)).toBeCloseTo(v, 4)
         }
     })
@@ -159,14 +248,47 @@ describe('the logarithmic slider', () => {
     test('spends half its travel on the geometric midpoint of the range', () => {
         // Logarithmic, not linear: at v = 0.5 the span is the geometric mean of
         // the full window and the floor, not their average.
-        const half = span(sliderToWindow(0.5, anchor, bounds, minMs))
+        const half = span(sliderToWindow(0.5, bounds, anchor, bounds, minMs))
         expect(half).toBeCloseTo(Math.sqrt(span(bounds) * minMs), -3)
+    })
+
+    test('holds the scrubber at its fractional position rather than centring on it', () => {
+        // The scrubber sits a fifth of the way across; a slider move tightens
+        // the view around that instant, which stays a fifth of the way across.
+        const held = win('2019-01-01T00:00:00Z', '2019-01-11T00:00:00Z')
+        const scrubber = new Date('2019-01-03T00:00:00Z')
+        const result = sliderToWindow(0.5, held, scrubber, bounds, minMs)
+
+        const fraction =
+            (scrubber.getTime() - result.start.getTime()) / span(result)
+        expect(fraction).toBeCloseTo(0.2, 6)
+        expect(Math.abs(fraction - 0.5)).toBeGreaterThan(0.1)
+    })
+
+    test('slides only as far as a bound requires when the held fraction is unreachable', () => {
+        // Ten days at the start of the mission, scrubber nine days in. Opening
+        // to fifteen days while holding it at 90% would put the start four and
+        // a half days before the mission; the window slides to the bound and
+        // no further, and the scrubber keeps the largest fraction reachable.
+        // Placing the span about the scrubber's centre would not have reached
+        // the bound at all, and would have left the scrubber at 50%.
+        const held = win('2018-01-01T00:00:00Z', '2018-01-11T00:00:00Z')
+        const scrubber = new Date('2018-01-10T00:00:00Z')
+        const fifteenDays = win('2018-01-01T00:00:00Z', '2018-01-16T00:00:00Z')
+        const v = windowToSlider(fifteenDays, bounds, minMs)
+        const result = sliderToWindow(v, held, scrubber, bounds, minMs)
+
+        expect(result.start.toISOString()).toBe(bounds.start.toISOString())
+        expect(Math.abs(span(result) - 15 * DAY)).toBeLessThanOrEqual(1)
+        const fraction =
+            (scrubber.getTime() - result.start.getTime()) / span(result)
+        expect(fraction).toBeCloseTo(0.6, 6)
     })
 
     test('pins at zero when the bounds are no wider than the floor', () => {
         const narrow = win('2019-01-01T00:00:00Z', '2019-01-02T00:00:00Z')
         expect(windowToSlider(narrow, narrow, 3 * DAY)).toBe(0)
-        expect(iso(sliderToWindow(0.5, anchor, narrow, 3 * DAY))).toEqual(
+        expect(iso(sliderToWindow(0.5, narrow, anchor, narrow, 3 * DAY))).toEqual(
             iso(narrow)
         )
 
@@ -174,7 +296,7 @@ describe('the logarithmic slider', () => {
         // logarithm is zero, so this is the case a division would blow up on.
         const exact = win('2019-01-01T00:00:00Z', '2019-01-04T00:00:00Z')
         expect(windowToSlider(exact, exact, 3 * DAY)).toBe(0)
-        expect(iso(sliderToWindow(0.5, anchor, exact, 3 * DAY))).toEqual(
+        expect(iso(sliderToWindow(0.5, exact, anchor, exact, 3 * DAY))).toEqual(
             iso(exact)
         )
     })

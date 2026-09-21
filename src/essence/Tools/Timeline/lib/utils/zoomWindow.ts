@@ -108,13 +108,49 @@ export function clampWindow(
 }
 
 /**
- * The window scaled by `factor` about `anchor`, which holds the same
+ * The window resized to `span` about `anchor`, which holds the same
  * fractional position across the window before and after — so the instant
- * under the pointer, or under the scrubber, stays where it is.
+ * under the scrubber stays where it is on screen and the view tightens or
+ * opens around it. Every control that names a target span goes through here,
+ * so the buttons and the slider place the view by one rule.
+ *
+ * The span is brought into `[minMs, bounds]` before the window is placed,
+ * not after. Placing first and clamping second would hand `clampWindow` a
+ * below-floor window, and it widens such a window about its own centre,
+ * which walks the anchor towards the middle of the view on every press once
+ * the floor is reached. With the span settled first, a press at the floor
+ * asks for the span the view already has and leaves it exactly where it is.
  *
  * The anchor is expected to lie inside the window; callers that cannot
- * guarantee that pass the window's centre instead. Clamping can move the
- * result, and with it the anchor, when the zoom runs into a bound.
+ * guarantee that pass the window's centre instead. Sliding into range can
+ * still move the result, and with it the anchor, when a wider span runs into
+ * a bound: the anchor then keeps the fraction nearest the one it had.
+ */
+export function windowAtSpan(
+    win: ViewWindow,
+    span: number,
+    anchor: Date,
+    bounds: ViewWindow,
+    minMs: number
+): ViewWindow {
+    const start = win.start.getTime()
+    const held = win.end.getTime() - start
+    const at = anchor.getTime()
+    const fraction = held > 0 ? (at - start) / held : 0.5
+
+    const boundsSpan = Math.max(
+        0,
+        bounds.end.getTime() - bounds.start.getTime()
+    )
+    const nextSpan = Math.min(Math.max(span, minMs), boundsSpan)
+    const nextStart = at - fraction * nextSpan
+
+    return clampWindow(windowOf(nextStart, nextSpan), bounds, minMs)
+}
+
+/**
+ * The window scaled by `factor` about `anchor`. The `±` buttons use factors
+ * of 0.5 and 2.
  */
 export function zoomAround(
     win: ViewWindow,
@@ -123,15 +159,8 @@ export function zoomAround(
     bounds: ViewWindow,
     minMs: number
 ): ViewWindow {
-    const start = win.start.getTime()
-    const span = win.end.getTime() - start
-    const at = anchor.getTime()
-    const fraction = span > 0 ? (at - start) / span : 0.5
-
-    const nextSpan = span * factor
-    const nextStart = at - fraction * nextSpan
-
-    return clampWindow(windowOf(nextStart, nextSpan), bounds, minMs)
+    const span = win.end.getTime() - win.start.getTime()
+    return windowAtSpan(win, span * factor, anchor, bounds, minMs)
 }
 
 /**
@@ -172,13 +201,16 @@ export function windowToSlider(
 }
 
 /**
- * The window a slider position names, centred on `anchor`.
+ * The window a slider position names, placed about `anchor` as it sits in
+ * `win`, the window on screen when the slider moved.
  *
  * The inverse of `windowToSlider`: `duration(v) = fullSpan · ratio ^ v`, where
- * `ratio` is the floor over the full span.
+ * `ratio` is the floor over the full span. The slider names only a span; where
+ * that span sits is `windowAtSpan`'s rule, the same one the buttons follow.
  */
 export function sliderToWindow(
     v: number,
+    win: ViewWindow,
     anchor: Date,
     bounds: ViewWindow,
     minMs: number
@@ -189,9 +221,8 @@ export function sliderToWindow(
     const fullSpan = bounds.end.getTime() - bounds.start.getTime()
     const position = Math.min(1, Math.max(0, v))
     const span = fullSpan * Math.pow(ratio, position)
-    const start = anchor.getTime() - span / 2
 
-    return clampWindow(windowOf(start, span), bounds, minMs)
+    return windowAtSpan(win, span, anchor, bounds, minMs)
 }
 
 /**

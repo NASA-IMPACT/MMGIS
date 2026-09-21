@@ -303,6 +303,7 @@ export function useTimelineZoom({
             commit(
                 sliderToWindow(
                     v,
+                    held,
                     anchorIn(held, currentTimeRef.current),
                     boundsRef.current,
                     minMs
