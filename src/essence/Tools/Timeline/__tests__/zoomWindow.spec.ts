@@ -475,54 +475,19 @@ describe('interpolateWindow', () => {
         expect(fractions[50]).toBeCloseTo((held - to.start.getTime()) / span(to), 6)
     })
 
-    test('reads a centre shift of a rounding millisecond as a pure zoom', () => {
-        // Below PURE_ZOOM_SHIFT the shift is spent linearly and the path is
-        // the geometric one, so the midpoint is the geometric mean of the
-        // spans. Every zoom about a scrubber that sits dead centre lands here.
-        const from = about(CENTRE, 1.5 * YEAR)
-        const to = about(CENTRE + 1, 3 * YEAR)
-        const at = interpolateWindow(from, to)
-
-        const spans = spansAlong(at)
-        expect(spans.every(Number.isFinite)).toBe(true)
-        expect(isMonotonic(spans, 1)).toBe(true)
-        expect(Math.abs(span(at(0.5)) - Math.sqrt(1.5 * YEAR * 3 * YEAR))).toBeLessThanOrEqual(1)
-        expect(iso(at(1))).toEqual(iso(to))
-    })
-
-    test('stays finite where d3 interpolateZoom would return -Infinity', () => {
-        // A shift just past PURE_ZOOM_SHIFT, across the widest ratio the
-        // plugin reaches: a view at the hourly floor fitted out to a
-        // four-year window. `b` lands near 3.5e8, well past where
-        // log(sqrt(b² + 1) − b) cancels to log(0); -asinh(b) holds.
-        const from = about(CENTRE, DAY)
-        const to = about(CENTRE + 130 * 1000, 1460 * DAY)
-
-        const w0 = DAY
-        const w1 = 1460 * DAY
-        const d = 130 * 1000
-        const b0 = (w1 * w1 - w0 * w0 + 4 * d * d) / (2 * w0 * 2 * d)
-        expect(b0).toBeGreaterThan(1e8)
-        expect(Math.log(Math.sqrt(b0 * b0 + 1) - b0)).toBe(-Infinity)
-
-        const spans = spansAlong(interpolateWindow(from, to))
-        expect(spans.every(Number.isFinite)).toBe(true)
-        expect(Math.max(...spans)).toBeGreaterThanOrEqual(1460 * DAY)
-    })
-
-    test('opens out to cross a long distance, and closes back in on arrival', () => {
-        // Three days at one end of the mission to three days at the other.
-        // Panning at three days wide would sweep years past in a blur; the
-        // path zooms out to travel, so what crosses the chart is readable.
+    test('crosses a long distance without opening wider than its endpoints', () => {
+        // Three days at one end of the mission to three days at the other:
+        // the centre travels the whole way while the span stays where both
+        // endpoints hold it, rather than opening out to cross and closing
+        // back in.
         const from = win('2018-01-02T00:00:00Z', '2018-01-05T00:00:00Z')
         const to = win('2021-12-20T00:00:00Z', '2021-12-23T00:00:00Z')
         const at = interpolateWindow(from, to)
 
         const spans = spansAlong(at)
-        expect(Math.max(...spans)).toBeGreaterThan(YEAR)
-        expect(span(at(0.5))).toBe(Math.max(...spans))
-        expect(at(0.5).start.getTime()).toBeLessThan(centre(from))
-        expect(at(0.5).end.getTime()).toBeGreaterThan(centre(to))
+        expect(Math.max(...spans)).toBeLessThanOrEqual(3 * DAY)
+        expect(Math.min(...spans)).toBeGreaterThanOrEqual(3 * DAY - 1)
+        expect(centre(at(0.5))).toBeCloseTo((centre(from) + centre(to)) / 2, -1)
         expect(iso(at(1))).toEqual(iso(to))
     })
 

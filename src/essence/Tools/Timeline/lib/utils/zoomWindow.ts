@@ -257,59 +257,29 @@ export function fitWindow(
 }
 
 /**
- * Van Wijk and Nuij's smoothness parameter, the value d3's `interpolateZoom`
- * uses: it trades the length of the path against how far it zooms out to
- * travel.
- */
-const RHO = Math.SQRT2
-const RHO2 = RHO * RHO
-const RHO4 = RHO2 * RHO2
-
-/**
- * Below this fraction of the wider span, a shift of the centre is treated as
- * none at all: it is under a pixel on any chart narrower than a million
- * pixels, and a path that is a pure zoom is what the shift rounds to.
- */
-const PURE_ZOOM_SHIFT = 1e-6
-
-/**
  * The path from one window to another, as a function of progress `t` in
  * [0, 1]: `from` at 0 and `to` at 1, exactly, with the span changing
  * geometrically in between.
  *
  * Geometric, not linear, for the reason the slider is logarithmic: a linear
  * span visibly decelerates as it tightens, since each equal step is a larger
- * fraction of what remains. A pure zoom about a fixed centre therefore passes
- * through the geometric mean of the two spans at `t = 0.5`, not the
- * arithmetic mean.
+ * fraction of what remains. A zoom therefore passes through the geometric
+ * mean of the two spans at `t = 0.5`, not the arithmetic mean.
  *
- * The path is Van Wijk and Nuij's ("Smooth and efficient zooming and panning",
- * 2003), the one behind d3's `interpolateZoom`, in one dimension: a change of
- * centre that is long relative to the spans zooms out first, so the content
- * between the two windows crosses the chart at a readable rate, and zooms
- * back in on arrival. d3's implementation is not used directly because it
- * evaluates `log(sqrt(b² + 1) − b)`, which cancels catastrophically once `b`
- * passes about 1e8, putting −Infinity into every frame. `b` grows as the
- * spans over the centre shift, so the exposed band is a shift just wide
- * enough to clear `PURE_ZOOM_SHIFT` and no wider: fitting a view at the
- * hourly floor out to a four-year window reaches it at a shift between
- * roughly two and eight minutes. The ratio is scale-invariant, so no change
- * of units mends it. That expression is `−asinh(b)`, which `Math.asinh`
- * evaluates stably at any magnitude.
+ * Where each frame sits follows from the point the path holds. Given an
+ * `anchor` it pivots on that instant: the anchor keeps the fraction of the
+ * view it started with, travelling to the fraction it ends with only when a
+ * bound moved it, so the scrubber a zoom was made about holds its pixel from
+ * the first frame to the last. Without one the centre is held instead, and
+ * travels linearly from the one window's to the other's.
  *
- * Given an `anchor`, the path pivots on it instead: the span still changes
- * geometrically, but each frame is placed so the anchor keeps the fraction of
- * the view it started with, travelling to the fraction it ends with only when
- * a bound moved it. Every zoom about the scrubber passes one, because Van
- * Wijk's path holds the endpoints alone — it reads an off-centre zoom as a
- * zoom plus a shift of the centre, and spends that shift on a trajectory of
- * its own, which walks the anchor off its pixel mid-flight and brings it back
- * by the last frame. A fit passes none: its travel is real, and the
- * zoom-out-to-cross is what makes it readable.
- *
- * A span the path passes through can exceed both endpoints' spans and, with
- * it, the bounds; callers clamp each frame as they would any window. A window
- * without a span has no geometric path, and is interpolated linearly.
+ * The span is monotone between the two endpoints' spans, so no frame opens
+ * wider than the wider of them. Placement is not bounded that tightly: an
+ * anchored path carries a fraction that travels linearly against a span that
+ * travels geometrically, and their product can put an edge further from the
+ * anchor than either endpoint does, so callers clamp each frame as they would
+ * any window. A window without a span has no geometric path, and is
+ * interpolated linearly.
  */
 export function interpolateWindow(
     from: ViewWindow,
@@ -337,30 +307,12 @@ export function interpolateWindow(
         }
     } else {
         const centre0 = start0 + w0 / 2
-        const dx = start1 + w1 / 2 - centre0
-        const d = Math.abs(dx)
-
-        if (d <= PURE_ZOOM_SHIFT * Math.max(w0, w1)) {
-            const growth = Math.log(w1 / w0)
-            at = (t) => {
-                const span = w0 * Math.exp(t * growth)
-                return windowOf(centre0 + t * dx - span / 2, span)
-            }
-        } else {
-            const b0 = (w1 * w1 - w0 * w0 + RHO4 * d * d) / (2 * w0 * RHO2 * d)
-            const b1 = (w1 * w1 - w0 * w0 - RHO4 * d * d) / (2 * w1 * RHO2 * d)
-            const r0 = -Math.asinh(b0)
-            const r1 = -Math.asinh(b1)
-            const S = (r1 - r0) / RHO
-            const coshr0 = Math.cosh(r0)
-            const sinhr0 = Math.sinh(r0)
-            at = (t) => {
-                const x = RHO * t * S + r0
-                const travelled =
-                    (w0 / (RHO2 * d)) * (coshr0 * Math.tanh(x) - sinhr0)
-                const span = (w0 * coshr0) / Math.cosh(x)
-                return windowOf(centre0 + travelled * dx - span / 2, span)
-            }
+        const centre1 = start1 + w1 / 2
+        const growth = Math.log(w1 / w0)
+        at = (t) => {
+            const span = w0 * Math.exp(t * growth)
+            const centre = centre0 + t * (centre1 - centre0)
+            return windowOf(centre - span / 2, span)
         }
     }
 
