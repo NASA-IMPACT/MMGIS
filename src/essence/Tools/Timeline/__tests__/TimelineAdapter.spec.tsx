@@ -655,3 +655,66 @@ describe('TimelineAdapter open-ended layer time', () => {
         })
     })
 })
+
+describe('TimelineAdapter without the tool vars', () => {
+    let container: HTMLElement
+    let root: Root
+    let originalResizeObserver: unknown
+
+    beforeEach(() => {
+        // The poll behind 'tool:getVars' gives up on a wall-clock deadline,
+        // so the clock it reads has to be one the test can wind forward.
+        vi.useFakeTimers({
+            toFake: ['setInterval', 'clearInterval', 'Date'],
+        })
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+
+        installSparseApi([], { basemap: true }, {})
+        const api = (window as unknown as {
+            mmgisAPI: { hasHandler: (name: string) => boolean }
+        }).mmgisAPI
+        // 'tool:getVars' registers in Layers_.fina(), the time handlers in
+        // TimeControl. A mission whose layers never finish loading leaves the
+        // first absent while the second answers, which is the shape here.
+        api.hasHandler = (name: string) => name !== 'tool:getVars'
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        delete (window as { mmgisAPI?: unknown }).mmgisAPI
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver
+        vi.useRealTimers()
+    })
+
+    const mount = async () => {
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+        await act(async () => {
+            root.render(<TimelineAdapter />)
+        })
+        await act(async () => {})
+    }
+
+    test('settles on the default granularity rather than loading for good', async () => {
+        await mount()
+
+        // Core has answered on time, so the only thing still outstanding is
+        // the granularity.
+        expect(container.querySelector('.timeline-loading')).not.toBeNull()
+
+        await act(async () => {
+            vi.advanceTimersByTime(11000)
+        })
+        await act(async () => {})
+
+        expect(container.querySelector('.timeline-loading')).toBeNull()
+        expect(container.querySelector('.timeline')).not.toBeNull()
+        expect(container.querySelector('.timeline-zoom-slider')).not.toBeNull()
+    })
+})

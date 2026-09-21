@@ -9,14 +9,25 @@ import { mmgisHasHandler } from './mmgisAPI'
  * layers are loaded). Without this, components that request a not-yet-registered
  * handler at mount silently get null/empty results.
  *
- * Stops after `timeoutMs` if the handler never appears (with a console warning).
+ * Stops after `timeoutMs` if the handler never appears (with a console warning),
+ * calling `onTimeout` if one was given. A caller that holds work back until
+ * `onReady` runs needs that second callback: the handler may belong to a part
+ * of boot that failed, and nothing else reports it.
+ *
+ * Both callbacks are effect dependencies, so both must keep a stable identity
+ * across renders. A fresh one each render restarts the poll, and with it the
+ * deadline `timeoutMs` is measured from, so `onTimeout` would never fire.
  */
 export const useMMGISHandlerReady = (
     handlerName: string,
     onReady: () => void,
-    options: { intervalMs?: number; timeoutMs?: number } = {},
+    options: {
+        intervalMs?: number
+        timeoutMs?: number
+        onTimeout?: () => void
+    } = {},
 ): void => {
-    const { intervalMs = 200, timeoutMs = 10000 } = options
+    const { intervalMs = 200, timeoutMs = 10000, onTimeout } = options
     useEffect(() => {
         if (mmgisHasHandler(handlerName)) {
             onReady()
@@ -32,8 +43,9 @@ export const useMMGISHandlerReady = (
                 console.warn(
                     `[useMMGISHandlerReady] '${handlerName}' not registered after ${timeoutMs}ms`,
                 )
+                onTimeout?.()
             }
         }, intervalMs)
         return () => window.clearInterval(id)
-    }, [handlerName, onReady, intervalMs, timeoutMs])
+    }, [handlerName, onReady, intervalMs, timeoutMs, onTimeout])
 }

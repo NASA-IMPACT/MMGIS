@@ -216,6 +216,16 @@ export const TimelineAdapter: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [readiness])
 
+    /**
+     * Settles the granularity on the mode given, or on the fallback where the
+     * configuration named none. The first value written is the one kept, so
+     * whichever path out of the tool vars arrives first decides, and a later
+     * one cannot move a floor the view has already been fitted at.
+     */
+    const settleGranularity = useCallback((mode: TimeMode = 'DAY') => {
+        setConfiguredGranularity((held) => held ?? mode)
+    }, [])
+
     // Tool variables from the mission config. 'tool:getVars' is registered by
     // Layers_.fina() during mission load, after this tool mounts.
     const fetchVars = useCallback(async () => {
@@ -226,7 +236,7 @@ export const TimelineAdapter: React.FC = () => {
                 shownTimeModes?: string[]
             }>('tool:getVars', 'timeline')
             if (!vars) {
-                setConfiguredGranularity((held) => held ?? 'DAY')
+                settleGranularity()
                 return
             }
 
@@ -256,18 +266,23 @@ export const TimelineAdapter: React.FC = () => {
             if (!effectiveModes.includes(mode)) mode = effectiveModes[0]
             setTimeMode(mode)
             // The same validated mode, held apart from the runtime control so
-            // a later press of that control cannot move the zoom floor. The
-            // first value written is the one kept, on every path out of
-            // here: the granularity is settled once and stays settled.
-            setConfiguredGranularity((held) => held ?? mode)
+            // a later press of that control cannot move the zoom floor.
+            settleGranularity(mode)
         } catch (err) {
             console.warn('[Timeline] Failed to fetch tool vars:', err)
             // Tool vars that cannot be read leave the default granularity,
             // rather than a timeline that never leaves its loading state.
-            setConfiguredGranularity((held) => held ?? 'DAY')
+            settleGranularity()
         }
-    }, [])
-    useMMGISHandlerReady('tool:getVars', fetchVars)
+    }, [settleGranularity])
+    // The timeline renders nothing until the granularity settles, so the
+    // handler never appearing has to settle it too. 'tool:getVars' comes from
+    // Layers_.fina() and the time handlers from TimeControl, so a mission
+    // whose layers fail to load answers for the window and never for the
+    // configuration — which without this leaves the loading state up for good.
+    useMMGISHandlerReady('tool:getVars', fetchVars, {
+        onTimeout: settleGranularity,
+    })
 
     // Stop playback if it becomes disabled via config
     useEffect(() => {
