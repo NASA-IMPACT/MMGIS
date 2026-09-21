@@ -16,6 +16,8 @@ import {
     compareLayer,
     showAddLayer,
     dropLayer,
+    getFilteredOutLayers,
+    hideFilteredOutLayers,
 } from './adapters/handlers'
 import {
     mmgisGetLayerBounds,
@@ -49,6 +51,7 @@ const withOutOfRange = (rows: Layer[], flags: Map<string, boolean>): Layer[] => 
 
 export function MMGISLayerManagerAdapter() {
     const [layers, setLayers] = useState<Layer[]>([])
+    const [filteredOut, setFilteredOut] = useState<string[]>([])
     const [loading, setLoading] = useState(true)
     const toolVars = useMMGISToolVars<ToolVars>('layermanager')
 
@@ -62,13 +65,18 @@ export function MMGISLayerManagerAdapter() {
         const announced = new Map<string, boolean>()
         inFlight.current.add(announced)
         try {
-            const data = await getVisibleLayersWithLegends({
-                showOnlyVisible: toolVars.showOnlyVisible === true,
-            })
+            const [data, leftOut] = await Promise.all([
+                getVisibleLayersWithLegends({
+                    showOnlyVisible: toolVars.showOnlyVisible === true,
+                }),
+                getFilteredOutLayers(),
+            ])
             setLayers(withOutOfRange(data, announced))
+            setFilteredOut(leftOut.map((layer) => layer.title))
         } catch (err) {
             console.error('LayerManager: refresh failed', err)
             setLayers([])
+            setFilteredOut([])
         } finally {
             inFlight.current.delete(announced)
             setLoading(false)
@@ -149,6 +157,8 @@ export function MMGISLayerManagerAdapter() {
             onCompareLayer={compareLayer}
             onReorder={onReorder}
             onAddLayer={showAddLayer}
+            onHideFilteredLayers={() => { report('hideFilteredOutLayers', hideFilteredOutLayers()) }}
+            filteredOutLayers={filteredOut}
         />
     )
 }
