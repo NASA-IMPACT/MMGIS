@@ -27,6 +27,8 @@ export type LayerManagerPanelProps = {
      * narrows the list only; the layers it leaves out stay on the map.
      */
     onHideFilteredLayers?: () => void
+    /** Titles of those layers. No handler or none to hide, no button. */
+    filteredOutLayers?: string[]
 }
 
 export function LayerManagerPanel({
@@ -45,7 +47,9 @@ export function LayerManagerPanel({
     onReorder,
     onAddLayer,
     onHideFilteredLayers,
+    filteredOutLayers = [],
 }: LayerManagerPanelProps) {
+    const filteredOutCount = filteredOutLayers.length
     return (
         <div className="blocks-layer-manager">
             <div className="blocks-layer-manager__header">
@@ -62,18 +66,23 @@ export function LayerManagerPanel({
                         <span>Add layer from URL</span>
                     </button>
                 )}
-                <button
-                    type="button"
-                    className="blocks-layer-manager__hide-filtered"
-                    onClick={onHideFilteredLayers}
-                    title="Switch off the layers a filter has taken out of this list"
-                >
-                    <i
-                        className="mdi mdi-eye-off-outline blocks-layer-manager__hide-filtered-icon"
-                        aria-hidden="true"
-                    />
-                    <span>Hide filtered-out layers</span>
-                </button>
+                {onHideFilteredLayers && filteredOutCount > 0 && (
+                    <button
+                        type="button"
+                        className="blocks-layer-manager__hide-filtered"
+                        onClick={onHideFilteredLayers}
+                        title={`Switch off: ${filteredOutLayers.join(', ')}`}
+                    >
+                        <i
+                            className="mdi mdi-eye-off-outline blocks-layer-manager__hide-filtered-icon"
+                            aria-hidden="true"
+                        />
+                        <span>
+                            Hide {filteredOutCount} filtered-out{' '}
+                            {filteredOutCount === 1 ? 'layer' : 'layers'}
+                        </span>
+                    </button>
+                )}
             </div>
             <div className="blocks-layer-manager__content">
                 {loading ? (

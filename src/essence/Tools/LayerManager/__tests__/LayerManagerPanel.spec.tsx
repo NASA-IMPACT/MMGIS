@@ -134,6 +134,57 @@ describe('LayerManagerPanel without a host', () => {
         await unmount()
     })
 
+    test('omits the hide-filtered button without a handler or with nothing to hide', async () => {
+        const noHandler = await mount(
+            <LayerManagerPanel layers={[GRADIENT_LAYER]} filteredOutLayers={['Quakes', 'Faults']} />,
+        )
+        expect(noHandler.container.querySelector('.blocks-layer-manager__hide-filtered')).toBeNull()
+        await noHandler.unmount()
+
+        const nothingToHide = await mount(
+            <LayerManagerPanel
+                layers={[GRADIENT_LAYER]}
+                onHideFilteredLayers={vi.fn()}
+                filteredOutLayers={[]}
+            />,
+        )
+        expect(nothingToHide.container.querySelector('.blocks-layer-manager__hide-filtered')).toBeNull()
+        await nothingToHide.unmount()
+    })
+
+    test('shows the hide-filtered button with its count, names the layers on hover, and reports clicks', async () => {
+        const onHideFilteredLayers = vi.fn()
+        const { container, unmount } = await mount(
+            <LayerManagerPanel
+                layers={[GRADIENT_LAYER]}
+                onHideFilteredLayers={onHideFilteredLayers}
+                filteredOutLayers={['Quakes', 'Faults', 'Aftershocks']}
+            />,
+        )
+
+        const button = container.querySelector('.blocks-layer-manager__hide-filtered')!
+        expect(button.textContent).toBe('Hide 3 filtered-out layers')
+        expect(button.getAttribute('title')).toBe('Switch off: Quakes, Faults, Aftershocks')
+        await click(button)
+
+        expect(onHideFilteredLayers).toHaveBeenCalledTimes(1)
+        await unmount()
+    })
+
+    test('singularises the hide-filtered label for one layer', async () => {
+        const { container, unmount } = await mount(
+            <LayerManagerPanel
+                layers={[GRADIENT_LAYER]}
+                onHideFilteredLayers={vi.fn()}
+                filteredOutLayers={['Quakes']}
+            />,
+        )
+        expect(
+            container.querySelector('.blocks-layer-manager__hide-filtered')!.textContent,
+        ).toBe('Hide 1 filtered-out layer')
+        await unmount()
+    })
+
     test('reports visibility changes through its callback', async () => {
         const onVisibilityChange = vi.fn()
         const { container, unmount } = await mount(
