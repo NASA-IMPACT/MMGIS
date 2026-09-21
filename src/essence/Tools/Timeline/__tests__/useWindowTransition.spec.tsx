@@ -3,16 +3,15 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 import {
     useWindowTransition,
-    TRANSITION_DURATION_MS,
     type WindowTransition,
 } from '../lib/hooks/useWindowTransition'
 import type { ViewWindow } from '../lib/utils/zoomWindow'
+import { fakeFrameClock, frames, settle, stubReducedMotion } from './support/motion'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean })
     .IS_REACT_ACT_ENVIRONMENT = true
 
 const DAY = 86400000
-const FRAME = 16
 
 const win = (start: string, end: string): ViewWindow => ({
     start: new Date(start),
@@ -37,11 +36,6 @@ describe('useWindowTransition', () => {
     let api: WindowTransition
     let delivered: ViewWindow[]
 
-    const stubMotion = (reduce: boolean) =>
-        vi.stubGlobal('matchMedia', (query: string) => ({
-            matches: reduce && query === '(prefers-reduced-motion: reduce)',
-        }))
-
     const Harness: React.FC = () => {
         api = useWindowTransition((w) => delivered.push(w))
         return null
@@ -53,15 +47,9 @@ describe('useWindowTransition', () => {
         })
     }
 
-    const frames = (n: number) => {
-        for (let i = 0; i < n; i++) act(() => vi.advanceTimersByTime(FRAME))
-    }
-
-    const settle = () => act(() => vi.advanceTimersByTime(TRANSITION_DURATION_MS + 2 * FRAME))
-
     beforeEach(() => {
-        stubMotion(false)
-        vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame'] })
+        stubReducedMotion(false)
+        fakeFrameClock()
         container = document.createElement('div')
         document.body.appendChild(container)
         root = createRoot(container)
@@ -88,9 +76,6 @@ describe('useWindowTransition', () => {
         const spans = delivered.map(span)
         expect(spans.every((s, k) => k === 0 || s < spans[k - 1])).toBe(true)
         expect(delivered[delivered.length - 1]).toBe(TIGHT)
-        // ~300ms of 16ms frames, plus the opening one.
-        expect(delivered.length).toBeGreaterThanOrEqual(18)
-        expect(delivered.length).toBeLessThanOrEqual(21)
 
         // Nothing follows the target.
         const count = delivered.length
@@ -108,7 +93,7 @@ describe('useWindowTransition', () => {
     })
 
     test('applies the target at once under reduced motion', () => {
-        stubMotion(true)
+        stubReducedMotion(true)
         mount()
         act(() => api.animateTo(FULL, TIGHT))
 

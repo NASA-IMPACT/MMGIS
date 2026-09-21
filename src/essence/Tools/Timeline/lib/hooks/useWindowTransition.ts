@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { prefersReducedMotion } from '../utils/reducedMotion'
-import { interpolateWindow, type ViewWindow } from '../utils/zoomWindow'
+import { interpolateWindow, sameWindow, type ViewWindow } from '../utils/zoomWindow'
 
 /**
  * How long a transition takes, whatever its distance. A duration derived from
@@ -92,10 +92,7 @@ export function useWindowTransition(
         (from: ViewWindow, to: ViewWindow) => {
             cancel()
 
-            const still =
-                from.start.getTime() === to.start.getTime() &&
-                from.end.getTime() === to.end.getTime()
-            if (still || prefersReducedMotion() || !canSchedule()) {
+            if (sameWindow(from, to) || prefersReducedMotion() || !canSchedule()) {
                 onFrameRef.current(to)
                 return
             }

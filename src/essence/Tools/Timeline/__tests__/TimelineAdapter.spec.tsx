@@ -2,6 +2,7 @@ import React, { act } from 'react'
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 import { TimelineAdapter } from '../TimelineAdapter'
+import { stubReducedMotion } from './support/motion'
 
 /**
  * The "Compare date" action is a hand-off, not a call: the timeline knows the
@@ -15,12 +16,9 @@ import { TimelineAdapter } from '../TimelineAdapter'
 
 // The zoom state applies a fit at once under reduced motion, and every
 // assertion here that reads the view or the slider after a fit relies on
-// that. jsdom has no `matchMedia`, so the preference is stubbed rather than
-// left unreadable.
+// that.
 beforeEach(() => {
-    vi.stubGlobal('matchMedia', (query: string) => ({
-        matches: query === '(prefers-reduced-motion: reduce)',
-    }))
+    stubReducedMotion(true)
 })
 
 afterEach(() => {

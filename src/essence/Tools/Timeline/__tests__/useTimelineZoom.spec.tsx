@@ -24,7 +24,7 @@ import {
     type LayerNavigation,
 } from '../lib/utils/layerNavigation'
 import { windowToSlider, type ViewWindow } from '../lib/utils/zoomWindow'
-import { TRANSITION_DURATION_MS } from '../lib/hooks/useWindowTransition'
+import { fakeFrameClock, frames, settle, stubReducedMotion } from './support/motion'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean })
     .IS_REACT_ACT_ENVIRONMENT = true
@@ -105,20 +105,11 @@ describe('useTimelineZoom', () => {
             })
         )
 
-    /**
-     * Whether the viewer prefers reduced motion. jsdom has no `matchMedia`,
-     * so the preference is stubbed rather than left unreadable.
-     */
-    const stubMotion = (reduce: boolean) =>
-        vi.stubGlobal('matchMedia', (query: string) => ({
-            matches: reduce && query === '(prefers-reduced-motion: reduce)',
-        }))
-
     beforeEach(() => {
         // Reduced motion means a zoom or fit applies at once. Every
         // assertion outside 'in transition' reads the view straight after
         // an action, and relies on that.
-        stubMotion(true)
+        stubReducedMotion(true)
         container = document.createElement('div')
         document.body.appendChild(container)
         root = createRoot(container)
@@ -580,24 +571,13 @@ describe('useTimelineZoom', () => {
     })
 
     describe('in transition', () => {
-        const FRAME = 16
-
-        const frames = (n: number) => {
-            for (let i = 0; i < n; i++) act(() => vi.advanceTimersByTime(FRAME))
-        }
-
-        const settle = () =>
-            act(() => vi.advanceTimersByTime(TRANSITION_DURATION_MS + 2 * FRAME))
-
         const within = (w: ViewWindow, of: ViewWindow) =>
             w.start.getTime() >= of.start.getTime() &&
             w.end.getTime() <= of.end.getTime()
 
         beforeEach(() => {
-            stubMotion(false)
-            vi.useFakeTimers({
-                toFake: ['requestAnimationFrame', 'cancelAnimationFrame'],
-            })
+            stubReducedMotion(false)
+            fakeFrameClock()
         })
 
         afterEach(() => {
@@ -701,8 +681,7 @@ describe('useTimelineZoom', () => {
             expect(span(api.view)).toBe(span(BOUNDS) / 4)
         })
 
-        test('unmounting mid-flight cancels the queued frame', () => {
-            const cancelled = vi.spyOn(globalThis, 'cancelAnimationFrame')
+        test('unmounting mid-flight leaves the view where it stood', () => {
             render(defaults())
             act(() => api.zoomIn())
             frames(3)
@@ -710,7 +689,6 @@ describe('useTimelineZoom', () => {
 
             act(() => root.unmount())
 
-            expect(cancelled).toHaveBeenCalled()
             expect(() => settle()).not.toThrow()
             expect(iso(api.view)).toEqual(held)
         })

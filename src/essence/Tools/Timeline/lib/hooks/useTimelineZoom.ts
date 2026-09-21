@@ -6,6 +6,7 @@ import {
     clampWindow,
     fitWindow,
     minViewDuration,
+    sameWindow,
     sliderToWindow,
     windowToSlider,
     zoomAround,
@@ -151,9 +152,6 @@ const layersSignature = (
         .join('|')
 }
 
-const sameWindow = (a: ViewWindow, b: ViewWindow): boolean =>
-    a.start.getTime() === b.start.getTime() && a.end.getTime() === b.end.getTime()
-
 /** The scrubber when it is on screen, or the view's centre when it is not. */
 const anchorIn = (win: ViewWindow, at: Date): Date => {
     const ms = at.getTime()
@@ -246,16 +244,18 @@ export function useTimelineZoom({
     // The view as the actions see it. Written by every commit as well as
     // synced from state, so two presses landing in one batch each act on the
     // other's result instead of both on the view as it stood before either,
-    // and a frame of a transition reads the window the frame before it set.
+    // and `commit` compares against it to skip a frame that changes nothing.
     const viewRef = useRef(view)
     useEffect(() => {
         viewRef.current = view
     }, [view])
 
-    // Every path that moves the view ends here. Not clamped: a fit's window
-    // can lie in a span the render has yet to see, since the widen it made
-    // lands in the same render as the window, and the reconciliation above
-    // brings any window into range as part of the render that sees it.
+    // Every action that moves the view ends here; the reconciliation above
+    // is the one other writer, and the ref catches up with it in the effect
+    // above. Not clamped: a fit's window can lie in a span the render has
+    // yet to see, since the widen it made lands in the same render as the
+    // window, and the reconciliation brings any window into range as part
+    // of the render that sees it.
     const commit = useCallback((next: ViewWindow) => {
         if (sameWindow(viewRef.current, next)) return
         viewRef.current = next

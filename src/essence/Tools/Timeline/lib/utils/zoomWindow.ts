@@ -27,6 +27,14 @@ const windowOf = (start: number, span: number): ViewWindow => {
 }
 
 /**
+ * Whether two windows name the same span, to the millisecond. Windows are
+ * compared by value throughout: the same span is routinely rebuilt as a fresh
+ * object, by a parent's render or by a transform round-tripped through d3.
+ */
+export const sameWindow = (a: ViewWindow, b: ViewWindow): boolean =>
+    a.start.getTime() === b.start.getTime() && a.end.getTime() === b.end.getTime()
+
+/**
  * How far in the view may go, by the granularity the dashboard is configured
  * to display. Each floor leaves enough tick marks for the axis to read as an
  * axis rather than as a pair of endpoints: 24 hourly, 3 daily, 2 monthly,
