@@ -1,0 +1,25 @@
+{
+    "defaults": {
+        "variables": {}
+    },
+    "description": "Background plugin that shows a map-anchored card when a feature is clicked, for layers that opt in. No UI panel.",
+    "descriptionFull": {
+        "title": "Shows a popup card for a clicked feature on any layer whose config carries a `featurePopup` block. The card lists the layer's configured properties and can offer up to two actions, each emitting an event other plugins act on. Requires the deck.gl map engine; on Leaflet the plugin stays inactive, since MMGIS opens features there through its own click path. A vector tile layer whose features carry differing property sets may show 0 for a property a given feature lacks.",
+        "example": {
+            "variables.featurePopup": {
+                "title": "(str) property holding the card's heading; falls back to the layer's useKeyAsName",
+                "properties": "(arr) property keys to list, in order; omit to list every property",
+                "actions": "(arr) up to two { label, event } pairs; a press emits plugin:feature-popup:<event> with { feature, layerId, latlng }"
+            }
+        }
+    },
+    "hasVars": false,
+    "name": "FeaturePopup",
+    "separatedTool": false,
+    "paths": {
+        "FeaturePopupTool": "essence/Tools/FeaturePopup/FeaturePopupTool"
+    },
+    "config": {
+        "rows": []
+    }
+}

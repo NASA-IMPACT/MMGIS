@@ -1053,6 +1053,10 @@ mmgisAPI.provide('map:writeCoordinateURL', () =>
     mmgisAPI_.writeCoordinateURL()
 )
 mmgisAPI.provide('map:getViewState', () => mmgisAPI_.getViewState())
+// Which engine is drawing the map. A plugin whose behaviour differs by engine
+// — or that only one engine can support — has no other way to tell. Null until
+// the mission has built an engine.
+mmgisAPI.provide('map:getEngineType', () => L_.Map_?.engine?.engineType ?? null)
 mmgisAPI.provide('map:getScreenshot', () => mmgisAPI_.getMapScreenshot())
 mmgisAPI.provide('app:copyText', (text) =>
     // Bus payloads arrive from arbitrary plugins; refuse non-strings rather
