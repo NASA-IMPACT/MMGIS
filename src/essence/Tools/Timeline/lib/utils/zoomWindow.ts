@@ -295,13 +295,24 @@ const PURE_ZOOM_SHIFT = 1e-6
  * scale-invariant, so no change of units mends it. That expression is
  * `−asinh(b)`, which `Math.asinh` evaluates stably at any magnitude.
  *
+ * Given an `anchor`, the path pivots on it instead: the span still changes
+ * geometrically, but each frame is placed so the anchor keeps the fraction of
+ * the view it started with, travelling to the fraction it ends with only when
+ * a bound moved it. Every zoom about the scrubber passes one, because Van
+ * Wijk's path holds the endpoints alone — it reads an off-centre zoom as a
+ * zoom plus a shift of the centre, and spends that shift on a trajectory of
+ * its own, which walks the anchor off its pixel mid-flight and brings it back
+ * by the last frame. A fit passes none: its travel is real, and the
+ * zoom-out-to-cross is what makes it readable.
+ *
  * A span the path passes through can exceed both endpoints' spans and, with
  * it, the bounds; callers clamp each frame as they would any window. A window
  * without a span has no geometric path, and is interpolated linearly.
  */
 export function interpolateWindow(
     from: ViewWindow,
-    to: ViewWindow
+    to: ViewWindow,
+    anchor?: Date
 ): (t: number) => ViewWindow {
     const start0 = from.start.getTime()
     const start1 = to.start.getTime()
@@ -312,6 +323,16 @@ export function interpolateWindow(
 
     if (!(w0 > 0) || !(w1 > 0)) {
         at = (t) => windowOf(start0 + t * (start1 - start0), w0 + t * (w1 - w0))
+    } else if (anchor) {
+        const at0 = anchor.getTime()
+        const fraction0 = (at0 - start0) / w0
+        const fraction1 = (at0 - start1) / w1
+        const growth = Math.log(w1 / w0)
+        at = (t) => {
+            const span = w0 * Math.exp(t * growth)
+            const fraction = fraction0 + t * (fraction1 - fraction0)
+            return windowOf(at0 - fraction * span, span)
+        }
     } else {
         const centre0 = start0 + w0 / 2
         const dx = start1 + w1 / 2 - centre0

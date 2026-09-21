@@ -17,12 +17,13 @@ const easeCubicInOut = (t: number): number =>
 export interface WindowTransition {
     /**
      * Moves the view from `from` to `to`, delivering a window per frame and
-     * `to` itself on the last. Delivered at once, in one call, when the
-     * viewer prefers reduced motion, when frames cannot be scheduled, or when
-     * there is no distance to cover. A transition already in flight is
+     * `to` itself on the last. An `anchor` pivots every frame on that instant,
+     * for a zoom that promised to hold it. Delivered at once, in one call,
+     * when the viewer prefers reduced motion, when frames cannot be scheduled,
+     * or when there is no distance to cover. A transition already in flight is
      * dropped where it stands.
      */
-    animateTo(from: ViewWindow, to: ViewWindow): void
+    animateTo(from: ViewWindow, to: ViewWindow, anchor?: Date): void
     /** Drops a transition in flight where it stands. Nothing more is delivered. */
     cancel(): void
     /** Where a transition in flight is heading, or null when none is. */
@@ -89,7 +90,7 @@ export function useWindowTransition(
     }, [])
 
     const animateTo = useCallback(
-        (from: ViewWindow, to: ViewWindow) => {
+        (from: ViewWindow, to: ViewWindow, anchor?: Date) => {
             cancel()
 
             if (sameWindow(from, to) || prefersReducedMotion() || !canSchedule()) {
@@ -99,7 +100,7 @@ export function useWindowTransition(
 
             const flight: Flight = {
                 to,
-                at: interpolateWindow(from, to),
+                at: interpolateWindow(from, to, anchor),
                 startedAt: null,
                 frame: null,
             }

@@ -466,6 +466,45 @@ describe('interpolateWindow', () => {
         expect(isMonotonic(spansAlong(interpolateWindow(tight, full)), 1)).toBe(true)
     })
 
+    test('holds the anchor still on every frame of a zoom about it, not only at the ends', () => {
+        // The pivot is what the press promised: the instant under the
+        // scrubber does not move while the view tightens around it.
+        const full = about(CENTRE, YEAR)
+        const anchor = new Date(CENTRE + 140 * DAY)
+        const held = anchor.getTime()
+        const fractionAt = (w: ViewWindow) =>
+            (held - w.start.getTime()) / span(w)
+
+        for (const factor of [0.5, 2]) {
+            const to = zoomAround(full, factor, anchor, bounds, 3 * DAY)
+            const at = interpolateWindow(full, to, anchor)
+            const start = fractionAt(full)
+
+            for (let k = 0; k <= 50; k++) {
+                expect(fractionAt(at(k / 50))).toBeCloseTo(start, 6)
+            }
+        }
+    })
+
+    test('carries the anchor across when a bound moves it, without overshooting', () => {
+        // A zoom out at the edge of the mission cannot hold the anchor where
+        // it was; the fraction travels to where it lands and stops there.
+        const edge = win('2018-01-01T00:00:00Z', '2018-07-01T00:00:00Z')
+        const anchor = new Date('2018-05-01T00:00:00Z')
+        const held = anchor.getTime()
+        const to = zoomAround(edge, 2, anchor, bounds, 3 * DAY)
+        const at = interpolateWindow(edge, to, anchor)
+
+        const fractions = Array.from({ length: 51 }, (_, k) => {
+            const w = at(k / 50)
+            return (held - w.start.getTime()) / span(w)
+        })
+
+        expect(isMonotonic(fractions, -1)).toBe(true)
+        expect(fractions[0]).toBeCloseTo((held - edge.start.getTime()) / span(edge), 6)
+        expect(fractions[50]).toBeCloseTo((held - to.start.getTime()) / span(to), 6)
+    })
+
     test('stays finite on a zoom out whose centre moves by a rounding millisecond', () => {
         // The case d3's interpolateZoom turns into NaN at these magnitudes:
         // the span over the centre shift is ~1e11, far past where its
