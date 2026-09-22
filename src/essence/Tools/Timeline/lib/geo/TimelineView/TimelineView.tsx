@@ -170,7 +170,12 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
     // Setup zoom behavior
     useEffect(() => {
-        if (!svgRef.current) return
+        const node = svgRef.current
+        if (!node) return
+        // At zero width both conversions fall back to the global window, so a
+        // push here reads that back out and discards the view. A chart this
+        // wide is hidden anyway; the effect reruns once it has width.
+        if (!(dimensions.width > 0)) return
 
         // The cap is the ratio of the global window to the tightest span the
         // displayed granularity allows, so the tightest reachable view carries
@@ -224,7 +229,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
             })
 
         zoomBehaviorRef.current = zoomBehavior
-        const svg = select(svgRef.current)
+        const svg = select(node)
         svg.call(zoomBehavior as any)
         // A fresh behaviour starts from the window held, not from d3's
         // identity: the first gesture would otherwise jump from the global
@@ -235,15 +240,28 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         )
 
         return () => {
-            // A gesture open across this teardown — a drag's window listeners,
-            // or a wheel inside its settle delay — keeps dispatching through
-            // this behaviour, and a transform pushed into the replacement
-            // reuses that open gesture. Detaching the handler is what stops
-            // those events from reading the window through these bounds and
-            // this width. The window listeners themselves are left alone: the
-            // mouseup among them is what re-enables text selection.
+            // A gesture open across this teardown keeps dispatching through
+            // this behaviour. Detaching stops it reading the window through
+            // these bounds and this width.
             zoomBehavior.on('zoom', null)
             svg.on('.zoom', null)
+
+            // d3 writes the node's transform before it notifies, so a
+            // silenced gesture still walks it away from the window. Only an
+            // open gesture needs releasing.
+            const gestured = node as unknown as { __zooming?: unknown }
+            if (gestured.__zooming) {
+                // The move listener does the walking. Its mouseup stays: that
+                // re-enables text selection and ends the gesture.
+                const nodeWindow = node.ownerDocument?.defaultView
+                if (nodeWindow) select(nodeWindow).on('mousemove.zoom', null)
+
+                // A gesture is claimed by name from the node, so the
+                // replacement finds this one and dispatches through the
+                // listeners just detached, leaving the chart inert.
+                delete gestured.__zooming
+            }
+
             zoomBehaviorRef.current = null
         }
     }, [bounds, dimensions, configuredGranularity])
@@ -253,6 +271,8 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     useEffect(() => {
         const zoomBehavior = zoomBehaviorRef.current
         if (!svgRef.current || !zoomBehavior) return
+        // No behaviour is built at zero width; this guards the same fallback.
+        if (!(dimensions.width > 0)) return
 
         select(svgRef.current).call(
             zoomBehavior.transform as any,
