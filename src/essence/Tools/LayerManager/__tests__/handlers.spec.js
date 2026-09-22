@@ -3,6 +3,9 @@ import {
     toggleVisibility,
     getFilteredOutLayers,
     hideFilteredOutLayers,
+    applyRun,
+    selectRun,
+    ensureRunSelected,
     setOpacity,
     setColormap,
     setRescale,
@@ -11,6 +14,7 @@ import {
     showAddLayer,
     dropLayer,
 } from '../adapters/handlers.ts'
+import { clearForecastRunsCache } from '../adapters/forecastRuns.ts'
 import {
     ZOOM_TO_LAYER_PADDING,
     ZOOM_TO_LAYER_POINT_MAX_ZOOM,
@@ -420,5 +424,206 @@ test.describe('dropLayer', () => {
         await Promise.all([first, second])
 
         expect(writes).toEqual([['c', 'a', 'b']])
+    })
+})
+
+test.describe('forecast runs', () => {
+    const TILES =
+        'https://svc.example/tiles/WebMercatorQuad/{z}/{x}/{y}?url=s3://bucket/o3_conus&variable=ozcon&sel=reference_time=nearest::{reftime}&sel=lead=nearest::{lead}'
+    const RUNS_URL = 'https://svc.example/dataset/coordinates/reference_time?url=s3%3A%2F%2Fbucket%2Fo3_conus'
+    const LEAD_URL = 'https://svc.example/dataset/coordinates/lead?url=s3%3A%2F%2Fbucket%2Fo3_conus'
+    const NEWEST = '2026-09-21T12:00:00'
+    const OLDER = '2026-09-21T06:00:00'
+    const HOURLY = { leadStep: 'PT1H', leadRange: [1, 72] }
+
+    const configFor = (forecast = {}, extra = {}) => ({
+        fc: {
+            url: TILES,
+            time: { enabled: true, format: '%Y-%m-%dT%H:%M:%SZ' },
+            variables: { forecast, urlReplacements: { other: { on: 'timeChange', kind: 'value', value: 'x' } } },
+            ...extra,
+        },
+    })
+
+    const stubCoordinates = (runs, leads) => {
+        const fetch = vi.fn(async (url) => ({
+            ok: true,
+            json: async () => ({ data: url === RUNS_URL ? runs : url === LEAD_URL ? leads : null }),
+        }))
+        vi.stubGlobal('fetch', fetch)
+        return fetch
+    }
+
+    const beforeEachRun = () => clearForecastRunsCache()
+
+    test('applyRun writes the run, both replacements, and the window, then refreshes a layer that is on', async () => {
+        beforeEachRun()
+        const { requests } = setupMock({
+            'layers:getAllConfigs': configFor({ runs: 5 }),
+            'layers:getVisible': { fc: true },
+            'layers:updateConfig': true,
+            'layers:refresh': true,
+        })
+        expect(await applyRun('fc', OLDER, HOURLY)).toBe(true)
+
+        const update = requests.find((r) => r.name === 'layers:updateConfig')
+        expect(update.params).toEqual({
+            layerUUID: 'fc',
+            updates: {
+                variables: {
+                    forecast: { runs: 5, selectedRun: OLDER, leadRange: [1, 72] },
+                    urlReplacements: {
+                        other: { on: 'timeChange', kind: 'value', value: 'x' },
+                        reftime: { on: 'timeChange', kind: 'value', value: OLDER },
+                        lead: { on: 'timeChange', kind: 'elapsed', from: OLDER, step: 'PT1H' },
+                    },
+                },
+                time: {
+                    enabled: true,
+                    format: '%Y-%m-%dT%H:%M:%SZ',
+                    dataStartTime: '2026-09-21T07:00:00Z',
+                    dataEndTime: '2026-09-24T06:00:00Z',
+                },
+            },
+        })
+        expect(requests.map((r) => r.name)).toContain('layers:refresh')
+    })
+
+    test('applyRun leaves a layer that is off unrefreshed, and leaves time alone without a lead range', async () => {
+        beforeEachRun()
+        const { requests } = setupMock({
+            'layers:getAllConfigs': configFor(),
+            'layers:getVisible': { fc: false },
+            'layers:updateConfig': true,
+            'layers:refresh': true,
+        })
+        expect(await applyRun('fc', OLDER, { leadStep: 'PT1H', leadRange: null })).toBe(true)
+        const update = requests.find((r) => r.name === 'layers:updateConfig')
+        expect(update.params.updates.time).toBeUndefined()
+        expect(requests.some((r) => r.name === 'layers:refresh')).toBe(false)
+    })
+
+    test('applyRun reports a layer core does not know', async () => {
+        beforeEachRun()
+        setupMock({ 'layers:getAllConfigs': {} })
+        expect(await applyRun('nope', OLDER, HOURLY)).toBe(false)
+    })
+
+    test('selectRun leaves the clock alone when it already sits inside the run window', async () => {
+        beforeEachRun()
+        const { requests } = setupMock({
+            'layers:getAllConfigs': configFor(),
+            'layers:getVisible': { fc: true },
+            'layers:updateConfig': true,
+            'layers:refresh': true,
+            'time:getCurrent': '2026-09-22T00:00:00Z',
+            'time:getStart': '2020-01-01T00:00:00Z',
+            'time:getEnd': '2027-01-01T00:00:00Z',
+            'time:set': true,
+        })
+        await selectRun('fc', OLDER, HOURLY)
+        expect(requests.some((r) => r.name === 'time:set')).toBe(false)
+    })
+
+    test('selectRun moves the clock to now when now is inside the run window', async () => {
+        beforeEachRun()
+        const { requests } = setupMock({
+            'layers:getAllConfigs': configFor(),
+            'layers:getVisible': { fc: true },
+            'layers:updateConfig': true,
+            'layers:refresh': true,
+            'time:getCurrent': '2026-08-01T00:00:00Z',
+            'time:getStart': '2020-01-01T00:00:00Z',
+            'time:getEnd': '2027-01-01T00:00:00Z',
+            'time:set': true,
+        })
+        await selectRun('fc', OLDER, HOURLY, new Date('2026-09-22T03:30:00Z'))
+        const set = requests.find((r) => r.name === 'time:set')
+        expect(set.params).toEqual({
+            startTime: '2020-01-01T00:00:00Z',
+            endTime: '2027-01-01T00:00:00Z',
+            currentTime: '2026-09-22T03:30:00Z',
+        })
+    })
+
+    test('selectRun moves the clock to the window start otherwise, widening the window to hold it', async () => {
+        beforeEachRun()
+        const { requests } = setupMock({
+            'layers:getAllConfigs': configFor(),
+            'layers:getVisible': { fc: true },
+            'layers:updateConfig': true,
+            'layers:refresh': true,
+            'time:getCurrent': '2026-08-01T00:00:00Z',
+            'time:getStart': '2026-01-01T00:00:00Z',
+            'time:getEnd': '2026-09-22T00:00:00Z',
+            'time:set': true,
+        })
+        await selectRun('fc', OLDER, HOURLY, new Date('2026-12-01T00:00:00Z'))
+        const set = requests.find((r) => r.name === 'time:set')
+        expect(set.params).toEqual({
+            startTime: '2026-01-01T00:00:00Z',
+            endTime: '2026-09-24T06:00:00Z',
+            currentTime: '2026-09-21T07:00:00Z',
+        })
+    })
+
+    test('selectRun does nothing further when the update was refused', async () => {
+        beforeEachRun()
+        const { requests } = setupMock({
+            'layers:getAllConfigs': configFor(),
+            'layers:updateConfig': false,
+            'time:getCurrent': '2026-08-01T00:00:00Z',
+            'time:set': true,
+        })
+        await selectRun('fc', OLDER, HOURLY)
+        expect(requests.map((r) => r.name)).toEqual(['layers:getAllConfigs', 'layers:updateConfig'])
+    })
+
+    test('ensureRunSelected reads runs and leads from the service and pins the newest run', async () => {
+        beforeEachRun()
+        const fetch = stubCoordinates(['2026-09-20T12:00:00', OLDER, NEWEST], [1, 2, 3, 72])
+        const { requests } = setupMock({
+            'layers:getAllConfigs': configFor(),
+            'layers:getVisible': { fc: false },
+            'layers:updateConfig': true,
+        })
+        const forecast = { runs: [], selectedRun: null, leadStep: 'PT1H', leadRange: null, maxRuns: 2 }
+
+        const found = await ensureRunSelected('fc', { url: TILES }, forecast)
+
+        expect(found).toEqual({ runs: [NEWEST, OLDER], leadRange: [1, 72] })
+        expect(fetch.mock.calls.map((c) => c[0]).sort()).toEqual([LEAD_URL, RUNS_URL].sort())
+        const update = requests.find((r) => r.name === 'layers:updateConfig')
+        expect(update.params.updates.variables.forecast.selectedRun).toBe(NEWEST)
+        expect(update.params.updates.time.dataEndTime).toBe('2026-09-24T12:00:00Z')
+    })
+
+    test('ensureRunSelected leaves an existing pick alone and serves runs from cache', async () => {
+        beforeEachRun()
+        const fetch = stubCoordinates([OLDER, NEWEST], [1, 72])
+        const { requests } = setupMock({ 'layers:getAllConfigs': configFor(), 'layers:updateConfig': true })
+        const forecast = { runs: [], selectedRun: OLDER, leadStep: 'PT1H', leadRange: [1, 72], maxRuns: null }
+
+        await ensureRunSelected('fc', { url: TILES }, forecast)
+        await ensureRunSelected('fc', { url: TILES }, forecast)
+
+        expect(fetch).toHaveBeenCalledTimes(2)
+        expect(requests.some((r) => r.name === 'layers:updateConfig')).toBe(false)
+    })
+
+    test('ensureRunSelected honours runsUrl and leadUrl overrides', async () => {
+        beforeEachRun()
+        const fetch = vi.fn(async (url) => ({
+            ok: true,
+            json: async () => ({ data: url === 'https://a/runs' ? [OLDER] : [3, 4] }),
+        }))
+        vi.stubGlobal('fetch', fetch)
+        setupMock({ 'layers:getAllConfigs': configFor(), 'layers:updateConfig': true, 'layers:getVisible': {} })
+        const forecast = { runs: [], selectedRun: null, leadStep: 'P1D', leadRange: null, maxRuns: null, runsUrl: 'https://a/runs', leadUrl: 'https://a/leads' }
+
+        const found = await ensureRunSelected('fc', { url: 'https://not-multidim/{z}' }, forecast)
+
+        expect(found).toEqual({ runs: [OLDER], leadRange: [3, 4] })
+        expect(fetch.mock.calls.map((c) => c[0]).sort()).toEqual(['https://a/leads', 'https://a/runs'])
     })
 })

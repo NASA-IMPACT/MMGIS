@@ -10,6 +10,9 @@ import {
     mmgisGetVisibleLayers,
     mmgisGetListedLayers,
     mmgisGetLayerConfigs,
+    mmgisGetTimeCurrent,
+    mmgisGetTimeStart,
+    mmgisGetTimeEnd,
 } from '../../_shared/adapters/mmgisAPI'
 import {
     ZOOM_TO_LAYER_PADDING,
@@ -17,6 +20,9 @@ import {
 } from '../lib/utils/constants'
 import { placeInOrder } from '../lib/utils/layerOrder'
 import { filteredOutLayers } from '../lib/utils/filteredOut'
+import { parseStep, runSpan, parseUtc, toIso, DEFAULT_LEAD_STEP } from '../lib/utils/forecast'
+import { fetchForecastRuns, type RunsAndLeads } from './forecastRuns'
+import type { ForecastData } from '../lib/types'
 
 type Refresh = () => Promise<void> | void
 
@@ -56,6 +62,96 @@ export const hideFilteredOutLayers = async (): Promise<void> => {
     for (const { id } of await getFilteredOutLayers()) {
         await toggleVisibility(id)
     }
+}
+
+export const DEFAULT_MAX_RUNS = 10
+
+type RunSettings = { leadStep: string; leadRange: [number, number] | null }
+
+// Pins the layer to a run: the run's time fills {reftime}, the lead counts
+// from it, and the data times become the run's window so the gate and the
+// timeline follow. Only a layer that is on is refreshed.
+export const applyRun = async (
+    layerId: string,
+    run: string,
+    { leadStep, leadRange }: RunSettings,
+): Promise<boolean> => {
+    const config = (await mmgisGetLayerConfigs())?.[layerId] as
+        | { time?: Record<string, unknown>; variables?: Record<string, unknown> }
+        | undefined
+    if (!config) return false
+    const step = parseStep(leadStep) ?? parseStep(DEFAULT_LEAD_STEP)!
+    const span = leadRange ? runSpan(run, step, leadRange) : null
+    const variables = config.variables ?? {}
+    const updates: Record<string, unknown> = {
+        variables: {
+            ...variables,
+            forecast: { ...(variables.forecast as object), selectedRun: run, leadRange },
+            urlReplacements: {
+                ...(variables.urlReplacements as object),
+                reftime: { on: 'timeChange', kind: 'value', value: run },
+                lead: { on: 'timeChange', kind: 'elapsed', from: run, step: leadStep },
+            },
+        },
+        ...(span ? { time: { ...config.time, dataStartTime: span.start, dataEndTime: span.end } } : {}),
+    }
+    const ok = await mmgisRequest<boolean>('layers:updateConfig', { layerUUID: layerId, updates })
+    if (!ok) return false
+    const visible = await mmgisGetVisibleLayers()
+    if (visible?.[layerId] === true) await mmgisRequest('layers:refresh', { layerUUID: layerId })
+    return true
+}
+
+// A user's pick. Beyond applying the run, the clock is moved into the run's
+// window when it sits outside it, so the layer has something to draw.
+export const selectRun = async (
+    layerId: string,
+    run: string,
+    settings: RunSettings,
+    now: Date = new Date(),
+): Promise<void> => {
+    if (!(await applyRun(layerId, run, settings))) return
+    if (!settings.leadRange) return
+    const step = parseStep(settings.leadStep) ?? parseStep(DEFAULT_LEAD_STEP)!
+    const span = runSpan(run, step, settings.leadRange)
+    if (!span) return
+    const [current, start, end] = await Promise.all([
+        mmgisGetTimeCurrent(),
+        mmgisGetTimeStart(),
+        mmgisGetTimeEnd(),
+    ])
+    const at = parseUtc(current)
+    const spanStart = parseUtc(span.start)!
+    const spanEnd = parseUtc(span.end)!
+    if (at && at >= spanStart && at <= spanEnd) return
+    const next = now >= spanStart && now <= spanEnd ? now : spanStart
+    const windowStart = parseUtc(start)
+    const windowEnd = parseUtc(end)
+    await mmgisRequest('time:set', {
+        startTime: toIso(windowStart && windowStart < spanStart ? windowStart : spanStart),
+        endTime: toIso(windowEnd && windowEnd > spanEnd ? windowEnd : spanEnd),
+        currentTime: toIso(next),
+    })
+}
+
+// Reads a forecast layer's runs and leads, and pins it to the newest run when
+// nothing has been picked yet, so it never asks for tiles with no run.
+export const ensureRunSelected = async (
+    layerId: string,
+    source: { url?: string },
+    forecast: ForecastData,
+    defaultMaxRuns: number = DEFAULT_MAX_RUNS,
+): Promise<RunsAndLeads> => {
+    const found = await fetchForecastRuns(
+        layerId,
+        { url: source.url, runsUrl: forecast.runsUrl, leadUrl: forecast.leadUrl },
+        forecast.maxRuns ?? defaultMaxRuns,
+    )
+    const leadRange = found.leadRange ?? forecast.leadRange
+    if (!forecast.selectedRun && found.runs[0]) {
+        await applyRun(layerId, found.runs[0], { leadStep: forecast.leadStep, leadRange })
+    }
+    return { runs: found.runs, leadRange }
 }
 
 export const setOpacity = async (layerId: string, opacity: number): Promise<void> => {
