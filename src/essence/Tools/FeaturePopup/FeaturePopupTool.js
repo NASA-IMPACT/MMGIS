@@ -27,7 +27,7 @@
  *   - map:showPopup (resolves with how the card closed) / map:hidePopup
  */
 
-import { fillTemplate } from '../_shared/content/fillTemplate'
+import { fillTemplate, getIn } from '../_shared/content/fillTemplate'
 import { whenMMGISHandlerReady } from '../_shared/adapters/whenMMGISHandlerReady'
 
 const PLUGIN_ID = 'feature-popup'
@@ -248,8 +248,12 @@ function cardTitle(properties, config) {
     const named = config.useKeyAsName
     const key = Array.isArray(named) ? named[0] : named
     if (key == null) return undefined
-    const value = properties[key]
-    return value == null ? undefined : value
+    // The service takes a string and refuses anything else, so a layer named
+    // by a number — an id, a sol — would otherwise cost the card entirely.
+    // Blank reads the same as unnamed rather than as an empty heading.
+    const namedValue = properties[key]
+    const text = namedValue == null ? '' : String(namedValue)
+    return isNonBlank(text) ? text : undefined
 }
 
 /**
@@ -261,18 +265,35 @@ function cardTitle(properties, config) {
  * swallowing the rest of the row.
  */
 function propertyTable(properties, keys) {
-    const shown = Array.isArray(keys) ? keys : Object.keys(properties)
+    const shown = Array.isArray(keys)
+        ? // Configure stores this list by splitting on commas and nothing
+          // else, so 'depth_m, sample_class' arrives with the space still
+          // attached and would look up nothing.
+          keys.map((key) => String(key).trim()).filter((key) => key !== '')
+        : Object.keys(properties)
     const rows = shown
         // A property the feature does not carry, and one carrying no value,
         // both have nothing to show; a row reading 'null' is noise.
-        .filter((key) => properties[key] != null)
+        .filter((key) => readProperty(properties, key) != null)
         .map(
             (key) =>
                 `<tr><th>${escapeHtml(key)}</th><td>${escapeHtml(
-                    formatValue(properties[key])
+                    formatValue(readProperty(properties, key))
                 )}</td></tr>`
         )
     return rows.length ? `<table>${rows.join('')}</table>` : undefined
+}
+
+/**
+ * A configured key names a property directly, or reaches a nested one by the
+ * same dot path the heading template accepts. Its own name wins over the path
+ * reading, so a feature genuinely carrying a key with a dot in it still shows.
+ */
+function readProperty(properties, key) {
+    if (Object.prototype.hasOwnProperty.call(properties, key)) {
+        return properties[key]
+    }
+    return getIn(properties, key)
 }
 
 /** A nested value would otherwise reach the card as '[object Object]'. */

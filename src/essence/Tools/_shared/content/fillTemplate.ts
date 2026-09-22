@@ -26,7 +26,7 @@ export function fillTemplate(
 }
 
 /** Read `a.b.c` out of a plain object, without reaching for a core utility. */
-function getIn(source: unknown, path: string): unknown {
+export function getIn(source: unknown, path: string): unknown {
     if (source == null || typeof source !== 'object') return undefined
     return path
         .split('.')

@@ -873,7 +873,7 @@
             {
               "field": "variables.featurePopup.properties",
               "name": "Properties To List",
-              "description": "Which feature properties the card lists, in this order. Leave empty to list every property the feature carries.",
+              "description": "Which feature properties the card lists, in this order. Dot notation reaches a nested one: 'site.name'. Leave empty to list every property the feature carries.",
               "type": "textarray",
               "width": 12
             },

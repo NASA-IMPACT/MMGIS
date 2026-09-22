@@ -483,3 +483,79 @@ test('resolves a nested property in the title template', async () => {
 
     expect(api.namesOf('map:showPopup')[0].payload.title).toBe('Crater Jezero')
 })
+
+test('names a feature by a numeric property, which the service would refuse raw', async () => {
+    LAYER_CONFIGS.craters.variables.useKeyAsName = 'sol'
+    delete LAYER_CONFIGS.craters.variables.featurePopup.title
+    await start()
+
+    api.emit('map:featureClick', clickOn('craters', {
+        ...CRATER,
+        properties: { ...CRATER.properties, sol: 412 },
+    }))
+    await flushBus()
+
+    expect(api.namesOf('map:showPopup')).toHaveLength(1)
+    expect(api.namesOf('map:showPopup')[0].payload.title).toBe('412')
+})
+
+test('shows the card without a heading when the naming property is blank', async () => {
+    LAYER_CONFIGS.craters.variables.useKeyAsName = 'site_name'
+    delete LAYER_CONFIGS.craters.variables.featurePopup.title
+    await start()
+
+    api.emit('map:featureClick', clickOn('craters', {
+        ...CRATER,
+        properties: { ...CRATER.properties, site_name: '   ' },
+    }))
+    await flushBus()
+
+    const payload = api.namesOf('map:showPopup')[0].payload
+    expect(payload.title).toBeUndefined()
+    expect(payload.html).toContain('depth_m')
+})
+
+test('lists every configured property when the keys arrive with spaces', async () => {
+    // Configure's textarray splits on ',' without trimming, so this is what a
+    // mission typing 'depth_m, sample_class' actually stores.
+    LAYER_CONFIGS.craters.variables.featurePopup.properties = ['depth_m', ' sample_class']
+    await start()
+
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+
+    const { html } = api.namesOf('map:showPopup')[0].payload
+    expect(html).toContain('depth_m')
+    expect(html).toContain('sample_class')
+    expect(html).toContain('sedimentary')
+})
+
+test('lists a nested property by the dot path the heading already accepts', async () => {
+    LAYER_CONFIGS.craters.variables.featurePopup.properties = ['site.name']
+    await start()
+
+    api.emit('map:featureClick', clickOn('craters', {
+        ...CRATER,
+        properties: { site: { name: 'Nili' } },
+    }))
+    await flushBus()
+
+    const { html } = api.namesOf('map:showPopup')[0].payload
+    expect(html).toContain('site.name')
+    expect(html).toContain('Nili')
+})
+
+test('prefers a property whose own name contains a dot over a nested path', async () => {
+    LAYER_CONFIGS.craters.variables.featurePopup.properties = ['site.name']
+    await start()
+
+    api.emit('map:featureClick', clickOn('craters', {
+        ...CRATER,
+        properties: { 'site.name': 'Flat', site: { name: 'Nested' } },
+    }))
+    await flushBus()
+
+    const { html } = api.namesOf('map:showPopup')[0].payload
+    expect(html).toContain('Flat')
+    expect(html).not.toContain('Nested')
+})

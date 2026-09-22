@@ -9,7 +9,7 @@
             "variables.featurePopup": {
                 "enabled": "(bool) required; the opt-in. A block without it is ignored",
                 "title": "(str) heading template; text as written, with every '{prop}' replaced by that property's value. Falls back to the layer's useKeyAsName",
-                "properties": "(arr) property keys to list, in order; omit to list every property",
+                "properties": "(arr) property keys to list, in order, dot notation for nested ones; omit to list every property",
                 "actions": "(arr) up to two { label, event } pairs; a press emits plugin:feature-popup:<event> with { feature, layerId, latlng }"
             }
         }
