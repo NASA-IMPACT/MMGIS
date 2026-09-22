@@ -29,6 +29,13 @@
  *   - map:showPopup (resolves with how the card closed) / map:hidePopup
  */
 
+import {
+    mmgisEmit,
+    mmgisForPlugin,
+    mmgisGetLayerConfigs,
+    mmgisOn,
+    mmgisRequest,
+} from '../_shared/adapters/mmgisAPI'
 import { fillTemplate, getIn } from '../_shared/content/fillTemplate'
 import { whenMMGISHandlerReady } from '../_shared/adapters/whenMMGISHandlerReady'
 
@@ -60,9 +67,7 @@ const FeaturePopupTool = {
         // to render, initialize() is itself a make(). Subscribing twice would
         // ask for two cards per click, the first of which the second closes.
         if (this.made) return
-        const api = window.mmgisAPI
-        if (!api?.on) return
-        this._api = api.forPlugin(PLUGIN_ID)
+        this._api = mmgisForPlugin(PLUGIN_ID)
         this.made = true
 
         // The layer providers are registered by Layers_.fina(), which runs
@@ -78,8 +83,7 @@ const FeaturePopupTool = {
         )
 
         const subscribe = (event, handler) => {
-            const off = api.on(event, handler)
-            this._cleanups.push(typeof off === 'function' ? off : () => {})
+            this._cleanups.push(mmgisOn(event, handler))
         }
         subscribe('map:featureClick', (info) => this._onFeatureClick(info))
         // A mission can gain or lose a layer after load, and with it the
@@ -113,11 +117,10 @@ const FeaturePopupTool = {
      * burst of layer changes settles on the last answer.
      */
     _readLayerConfigs() {
-        const api = window.mmgisAPI
         const token = ++this._readToken
         Promise.all([
-            api.request('layers:getAllConfigs'),
-            api.request('map:getEngineType'),
+            mmgisGetLayerConfigs(),
+            mmgisRequest('map:getEngineType'),
         ])
             .then(([configs, engineType]) => {
                 if (token !== this._readToken) return
@@ -150,8 +153,7 @@ const FeaturePopupTool = {
         const actions = config.actions
         const card = {}
         this._openCard = card
-        window.mmgisAPI
-            .request('map:showPopup', {
+        mmgisRequest('map:showPopup', {
                 latlng: info.latlng,
                 title,
                 html,
@@ -159,12 +161,15 @@ const FeaturePopupTool = {
                 // the request's answer rather than through a handler.
                 primaryAction: actions[0] && { label: actions[0].label },
                 secondaryAction: actions[1] && { label: actions[1].label },
-            })
+        })
             // Two-arg `then`, so a throw out of the emit is not reported as a
             // failure to show the card.
             .then(
-                ({ action } = {}) => {
+                (result) => {
                     if (this._openCard === card) this._openCard = null
+                    // Null is the wrapper reporting no bus at all, which is
+                    // not an outcome the card reached.
+                    const action = result?.action
                     const pressed =
                         action === 'primary'
                             ? actions[0]
@@ -198,7 +203,7 @@ const FeaturePopupTool = {
      */
     _emitAction(event, payload) {
         if (event.includes(':')) {
-            window.mmgisAPI?.emit?.(event, payload)
+            mmgisEmit(event, payload)
             return
         }
         this._api?.emit(event, payload)
@@ -211,7 +216,7 @@ const FeaturePopupTool = {
     _hideOwnCard() {
         if (!this._openCard) return
         this._openCard = null
-        window.mmgisAPI?.request?.('map:hidePopup').catch(() => {})
+        mmgisRequest('map:hidePopup').catch(() => {})
     },
 }
 
