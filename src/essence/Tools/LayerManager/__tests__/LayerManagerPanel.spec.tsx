@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { act } from 'react'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { LayerManagerPanel } from '../lib/geo/LayerManagerPanel/LayerManagerPanel'
 import type { Layer } from '../lib/types'
@@ -306,5 +306,82 @@ describe('LayerManagerPanel without a host', () => {
         const checkbox = container.querySelector('.blocks-layer-legend__checkbox')!
         await expect(click(checkbox)).resolves.toBeUndefined()
         await unmount()
+    })
+})
+
+describe('LayerManagerPanel forecast runs', () => {
+    const forecastLayer = (overrides: Partial<Layer['forecast']> = {}): Layer => ({
+        ...GRADIENT_LAYER,
+        id: 'Forecast_00aa11bb22cc33dd',
+        title: 'NAQFC O3',
+        forecast: {
+            runs: [{ datetime: '2026-09-21T12:00:00' }, { datetime: '2026-09-21T06:00:00' }],
+            selectedRun: '2026-09-21T06:00:00',
+            leadStep: 'PT1H',
+            leadRange: [1, 72],
+            maxRuns: null,
+            ...overrides,
+        },
+    })
+
+    const select = (container: HTMLElement) =>
+        container.querySelector<HTMLSelectElement>('.blocks-layer-legend__run-select')
+
+    test('a layer without a forecast has no run control', async () => {
+        const { container, unmount } = await mount(<LayerManagerPanel layers={[GRADIENT_LAYER]} />)
+        expect(select(container)).toBeNull()
+        await unmount()
+    })
+
+    test('offers the runs newest first, named by hour for an hourly step, on the pinned run', async () => {
+        const { container, unmount } = await mount(<LayerManagerPanel layers={[forecastLayer()]} />)
+        const options = Array.from(select(container)!.options).map((o) => o.textContent)
+        expect(options[0]).toBe('Sep 21, 12Z · Latest')
+        expect(options[1]).toMatch(/^Sep 21, 06Z · \d+ [hd] ago$/)
+        expect(select(container)!.value).toBe('2026-09-21T06:00:00')
+        await unmount()
+    })
+
+    test('names daily runs by day', async () => {
+        const layer = forecastLayer({
+            leadStep: 'P1D',
+            runs: [{ datetime: '2026-09-21T00:00:00' }],
+            selectedRun: '2026-09-21T00:00:00',
+        })
+        const { container, unmount } = await mount(<LayerManagerPanel layers={[layer]} />)
+        expect(select(container)!.options[0].textContent).toBe('Sep 21 · Latest')
+        await unmount()
+    })
+
+    test('reports a pick through its callback', async () => {
+        const onRunChange = vi.fn()
+        const { container, unmount } = await mount(
+            <LayerManagerPanel layers={[forecastLayer()]} onRunChange={onRunChange} />,
+        )
+        const el = select(container)!
+        el.value = '2026-09-21T12:00:00'
+        await act(async () => {
+            el.dispatchEvent(new Event('change', { bubbles: true }))
+        })
+        expect(onRunChange).toHaveBeenCalledWith('Forecast_00aa11bb22cc33dd', '2026-09-21T12:00:00')
+        await unmount()
+    })
+
+    test('shows the lead from the pinned run to the selected time, in step units', async () => {
+        const { container, unmount } = await mount(
+            <LayerManagerPanel layers={[forecastLayer()]} selectedTime="2026-09-22T00:00:00Z" />,
+        )
+        expect(container.querySelector('.blocks-layer-legend__run-lead')!.textContent).toBe('+18 h')
+        await unmount()
+    })
+
+    test('hides the run control while the layer is off or before runs are known', async () => {
+        const off = await mount(<LayerManagerPanel layers={[{ ...forecastLayer(), visible: false }]} />)
+        expect(select(off.container)).toBeNull()
+        await off.unmount()
+
+        const unknown = await mount(<LayerManagerPanel layers={[forecastLayer({ runs: [] })]} />)
+        expect(select(unknown.container)).toBeNull()
+        await unknown.unmount()
     })
 })
