@@ -394,6 +394,23 @@ describe('TimelineAdapter zoom wiring', () => {
         })
     })
 
+    test('takes the zoom group away while collapsed', () => {
+        // Collapsed, the chart the zoom group acts on is not on screen, so
+        // the group has nothing to show a change against.
+        const zoomGroup = () =>
+            container.querySelector('[role="group"][aria-label="Zoom"]')
+        const collapse = () =>
+            container.querySelector<HTMLButtonElement>('.timeline-collapse-btn')!
+
+        expect(zoomGroup()).not.toBeNull()
+
+        act(() => collapse().click())
+        expect(zoomGroup()).toBeNull()
+
+        act(() => collapse().click())
+        expect(zoomGroup()).not.toBeNull()
+    })
+
     test('the help popover covers the zoom controls', () => {
         act(() => {
             container
@@ -653,6 +670,142 @@ describe('TimelineAdapter open-ended layer time', () => {
             endTime: new Date(END).toISOString(),
             currentTime: FLOORED_END,
         })
+    })
+})
+
+/**
+ * 'tool:getVars' can be registered and still never answer — the request has
+ * no deadline of its own. The granularity gates every control that reads the
+ * zoom floor, so an unanswered request has to fall back like an absent one.
+ */
+/**
+ * The zoom floor follows the configured granularity, so a mode finer than it
+ * relabels the axis to a detail the view can never be zoomed tight enough to
+ * separate. Those modes are not offered.
+ */
+describe('TimelineAdapter time modes against the configured granularity', () => {
+    let container: HTMLElement
+    let root: Root
+    let originalResizeObserver: unknown
+
+    const modeButtons = () =>
+        Array.from(
+            container.querySelectorAll<HTMLButtonElement>('.time-mode-button')
+        ).map((button) => button.textContent)
+
+    const mount = async (vars: unknown) => {
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+        installSparseApi([], { basemap: true }, {})
+        const api = (window as unknown as {
+            mmgisAPI: { request: (name: string) => Promise<unknown> }
+        }).mmgisAPI
+        const request = api.request
+        api.request = async (name: string) => {
+            if (name === 'tool:getVars') return vars
+            return request(name)
+        }
+
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+        await act(async () => {
+            root.render(<TimelineAdapter />)
+        })
+        await act(async () => {})
+    }
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        delete (window as { mmgisAPI?: unknown }).mmgisAPI
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver
+    })
+
+    test('a daily mission is not offered the hour button', async () => {
+        await mount({ defaultTimeMode: 'DAY' })
+
+        expect(modeButtons()).toEqual(['YEAR', 'MONTH', 'DAY'])
+    })
+
+    test('an hourly mission keeps every mode', async () => {
+        await mount({ defaultTimeMode: 'HOUR' })
+
+        expect(modeButtons()).toEqual(['YEAR', 'MONTH', 'DAY', 'HOUR'])
+    })
+
+    test('the trim applies to a mission that configured its own list', async () => {
+        await mount({
+            defaultTimeMode: 'MONTH',
+            shownTimeModes: ['MONTH', 'DAY', 'HOUR'],
+        })
+
+        expect(modeButtons()).toEqual(['MONTH'])
+    })
+
+    test('vars that never arrive leave the default floor in place', async () => {
+        await mount(null)
+
+        expect(modeButtons()).toEqual(['YEAR', 'MONTH', 'DAY'])
+    })
+})
+
+describe('TimelineAdapter when the tool vars never answer', () => {
+    let container: HTMLElement
+    let root: Root
+    let originalResizeObserver: unknown
+
+    beforeEach(() => {
+        vi.useFakeTimers({
+            toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'],
+        })
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+
+        installSparseApi([], { basemap: true }, {})
+        const api = (window as unknown as {
+            mmgisAPI: { request: (name: string) => Promise<unknown> }
+        }).mmgisAPI
+        const request = api.request
+        // Registered, so the poll hands over at once, and then silent.
+        api.request = async (name: string) => {
+            if (name === 'tool:getVars') return new Promise(() => {})
+            return request(name)
+        }
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        delete (window as { mmgisAPI?: unknown }).mmgisAPI
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver
+        vi.useRealTimers()
+    })
+
+    test('settles on the default granularity rather than loading for good', async () => {
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+        await act(async () => {
+            root.render(<TimelineAdapter />)
+        })
+        await act(async () => {})
+
+        expect(container.querySelector('.timeline-loading')).not.toBeNull()
+
+        await act(async () => {
+            vi.advanceTimersByTime(11000)
+        })
+        await act(async () => {})
+
+        expect(container.querySelector('.timeline-loading')).toBeNull()
+        expect(container.querySelector('.timeline-zoom-slider')).not.toBeNull()
     })
 })
 

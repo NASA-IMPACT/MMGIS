@@ -389,4 +389,29 @@ describe('TimelineView visible window', () => {
             win.start.getTime() + spanOf(win) / 4
         expect(Math.abs(quarterIn(next) - quarterIn(FULL))).toBeLessThanOrEqual(1)
     })
+
+    test('keeps its window when the chart is measured at zero width', () => {
+        // Collapsing the timeline hides the chart, and the observer then
+        // reports no width. The transform conversions have no scale to work
+        // through at that width and fall back to the global window;
+        // committing that fallback would discard the zoom the user had.
+        const observed: ((entries: { contentRect: { width: number } }[]) => void)[] = []
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
+            constructor(callback: (entries: { contentRect: { width: number } }[]) => void) {
+                observed.push(callback)
+            }
+            observe() {}
+            unobserve() {}
+            disconnect() {}
+        }
+
+        render(WEEK)
+        reported.length = 0
+
+        act(() => {
+            observed.forEach((callback) => callback([{ contentRect: { width: 0 } }]))
+        })
+
+        expect(reported).toEqual([])
+    })
 })
