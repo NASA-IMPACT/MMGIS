@@ -20,6 +20,26 @@ export type CogData = {
   titilerUrl: string | null
 }
 
+export type ForecastRun = {
+  /** When the model ran, ISO datetime as the service lists it (naive = UTC). */
+  datetime: string
+}
+
+export type ForecastData = {
+  /** Model runs offered, newest first. Empty until the adapter has read them. */
+  runs: ForecastRun[]
+  /** The run the layer is pinned to, or null before the first pick. */
+  selectedRun: string | null
+  /** One lead unit as an ISO 8601 duration: PT1H, P1D, P1M, ... */
+  leadStep: string
+  /** First and last lead index the store carries, in leadStep units. */
+  leadRange: [number, number] | null
+  /** How many newest runs to offer; null defers to the tool's default. */
+  maxRuns: number | null
+  runsUrl?: string
+  leadUrl?: string
+}
+
 export type Layer = {
   id: string
   title: string
@@ -40,4 +60,6 @@ export type Layer = {
   outOfDataRange?: boolean
   // true when the layer opts into area analysis, as the analysis plugins read it
   analysisSupported?: boolean
+  // present when the layer is a forecast: a run must be picked before it draws
+  forecast?: ForecastData | null
 }

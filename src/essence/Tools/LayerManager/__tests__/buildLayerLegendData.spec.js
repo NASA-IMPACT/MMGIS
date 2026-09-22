@@ -170,3 +170,22 @@ test.describe('buildLayerLegendData', () => {
         expect(buildLayerLegendData('layer11', cfg, null, true, undefined).cog).toBeNull()
     })
 })
+
+test.describe('buildLayerLegendData forecast', () => {
+    const NO_COG = { hasColormap: false, canChangeColormap: false }
+
+    test('a layer without a forecast block carries no forecast', () => {
+        expect(buildLayerLegendData('l', {}, null, true, NO_COG).forecast).toBeNull()
+    })
+
+    test('a forecast block is read into the row, runs left for the adapter', () => {
+        const cfg = { variables: { forecast: { runs: 3, leadStep: 'P1D', selectedRun: '2026-09-21T00:00:00' } } }
+        expect(buildLayerLegendData('l', cfg, null, true, NO_COG).forecast).toEqual({
+            runs: [],
+            selectedRun: '2026-09-21T00:00:00',
+            leadStep: 'P1D',
+            leadRange: null,
+            maxRuns: 3,
+        })
+    })
+})

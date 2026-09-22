@@ -1,5 +1,6 @@
 import type { CogCapabilities } from '../../_shared/adapters/mmgisAPI'
 import type { Layer, LegendType, CategoricalStop, CogData } from '../lib/types'
+import { readForecastConfig } from '../lib/utils/forecast'
 
 type MMGISLegendEntry = {
     shape?: string
@@ -20,6 +21,7 @@ type MMGISLayerConfig = {
     currentCogMax?: number
     cogMax?: number
     cogUnits?: string | null
+    variables?: { forecast?: unknown }
 }
 
 const detectLegendType = (legend: MMGISLegendEntry[] | undefined): LegendType => {
@@ -104,6 +106,7 @@ export const buildLayerLegendData = (
         visible,
         type: 'none',
         cog,
+        forecast: readForecastConfig(layerConfig.variables?.forecast),
     }
 
     const legend = layerConfig._legend
