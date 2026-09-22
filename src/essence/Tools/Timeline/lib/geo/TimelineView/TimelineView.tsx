@@ -249,6 +249,12 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
             // d3 writes the node's transform before it notifies, so a
             // silenced gesture still walks it away from the window. Only an
             // open gesture needs releasing.
+            //
+            // Both names are d3-zoom internals, from 3.0.0's src/zoom.js: the
+            // open gesture lives on the node as `__zooming` (lines 178, 197,
+            // 212) and the drag's move listener on the window as
+            // `mousemove.zoom` (line 274). The drag-across-a-rebuild specs
+            // in TimelineView.spec.tsx exercise both.
             const gestured = node as unknown as { __zooming?: unknown }
             if (gestured.__zooming) {
                 // The move listener does the walking. Its mouseup stays: that
