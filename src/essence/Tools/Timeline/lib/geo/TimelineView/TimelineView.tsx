@@ -4,7 +4,15 @@ import { axisBottom } from 'd3-axis'
 import { select } from 'd3-selection'
 import { zoom, ZoomBehavior } from 'd3-zoom'
 import type { TimeMode, LayerTimeData } from '../../types'
-import { generateTimeTicks, formatDateByMode, clampDate, stepTime } from '../../utils/timeUtils'
+import {
+    generateTimeTicks,
+    formatDateByMode,
+    clampDate,
+    stepTime,
+    tickModeForSpan,
+    contextTicks,
+    formatContext,
+} from '../../utils/timeUtils'
 import {
     minViewDuration,
     sameWindow,
@@ -16,6 +24,9 @@ import moment from 'moment'
 import { LayerTimeline } from '../LayerTimeline/LayerTimeline'
 import { LayerSidebarItem } from '../LayerSidebarItem/LayerSidebarItem'
 import type { LayerNavigation } from '../../utils/layerNavigation'
+
+/** Room a top-axis label takes, in pixels, the widest being "Mar 30, 2020". */
+const CONTEXT_LABEL_WIDTH = 96
 
 export interface TimelineViewProps {
     startTime: Date
@@ -124,15 +135,24 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         [view, dimensions.width]
     )
 
+    // The bottom axis's unit follows the visible span, not the step mode, so
+    // the axes relabel as the view zooms and hold still when the step
+    // changes. Shared with the top axis, which names the periods it falls in.
+    const maxTicks = Math.max(2, Math.floor(dimensions.width / 80))
+    const tickMode = useMemo(
+        () => tickModeForSpan(view.start, view.end, maxTicks),
+        [view, maxTicks]
+    )
+
     // Render bottom axis
     useEffect(() => {
         if (!axisRef.current) return
 
         const [visibleStart, visibleEnd] = transformedXScale.domain() as [Date, Date]
-        const tickValues = generateTimeTicks(visibleStart, visibleEnd, timeMode, Math.max(2, Math.floor(dimensions.width / 80)))
+        const tickValues = generateTimeTicks(visibleStart, visibleEnd, tickMode, maxTicks)
         const axis = axisBottom(transformedXScale)
             .tickValues(tickValues)
-            .tickFormat((d) => formatDateByMode(d as Date, timeMode))
+            .tickFormat((d) => formatDateByMode(d as Date, tickMode))
             .tickSize(6)
             .tickPadding(8)
 
@@ -146,17 +166,28 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         // Sizing only — fill and family come from .timeline-axis .tick text
         axisGroup.selectAll('.tick text')
             .style('font-size', '11px')
-    }, [transformedXScale, timeMode, totalLayersHeight, dimensions.width])
+    }, [transformedXScale, tickMode, maxTicks, totalLayersHeight])
 
-    // Render top axis for month/year (like JAN 2025)
+    // Render top axis: the day, month or year each stretch of the bottom
+    // axis falls in, so the two read together as a whole date. Each label
+    // starts at its period's boundary, and one at the left edge names the
+    // period the view opens in.
     useEffect(() => {
         if (!topAxisRef.current) return
 
         const [visibleStart, visibleEnd] = transformedXScale.domain() as [Date, Date]
-        const tickValues = generateTimeTicks(visibleStart, visibleEnd, 'MONTH', Math.max(2, Math.floor(dimensions.width / 100)))
+        const msPerPx =
+            (visibleEnd.getTime() - visibleStart.getTime()) /
+            Math.max(1, dimensions.width)
+        const { mode, ticks } = contextTicks(
+            visibleStart,
+            visibleEnd,
+            tickMode,
+            CONTEXT_LABEL_WIDTH * msPerPx
+        )
         const topAxis = axisBottom(transformedXScale)
-            .tickValues(tickValues)
-            .tickFormat((d) => formatDateByMode(d as Date, 'MONTH'))
+            .tickValues(ticks)
+            .tickFormat((d) => (mode ? formatContext(d as Date, mode) : ''))
             .tickSize(0)
             .tickPadding(6)
 
@@ -166,9 +197,11 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
         // Sizing only — fill and family come from .timeline-top-axis .tick text
         topAxisGroup.selectAll('.tick text')
+            .attr('text-anchor', 'start')
+            .attr('x', 4)
             .style('font-size', '11px')
             .style('font-weight', '600')
-    }, [transformedXScale, dimensions.width])
+    }, [transformedXScale, tickMode, dimensions.width])
 
     // The zoom behaviour is held so the push effect below can hand it a
     // transform, keeping d3's own internal state in step with the window.
