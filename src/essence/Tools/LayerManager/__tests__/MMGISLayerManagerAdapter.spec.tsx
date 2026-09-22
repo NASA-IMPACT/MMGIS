@@ -1,5 +1,5 @@
 import React, { act } from 'react'
-import { describe, test, expect, beforeEach, afterEach } from 'vitest'
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { MMGISLayerManagerAdapter } from '../MMGISLayerManagerAdapter'
 import { mount, type Mounted } from '../../_shared/__tests__/reactHarness'
 
@@ -14,6 +14,9 @@ const EVENT = 'layers:dataCoverageChanged'
 
 let outOfRange: Record<string, boolean>
 let listed: Record<string, boolean>
+let configs: Record<string, Record<string, unknown>>
+let configWrites: unknown[]
+let visible: Record<string, boolean>
 let listeners: Map<string, Set<(payload?: unknown) => void>>
 let gate: Promise<void> | null
 let mounted: Mounted | null
@@ -21,21 +24,26 @@ let mounted: Mounted | null
 beforeEach(() => {
     outOfRange = {}
     listed = {}
+    configs = {
+        [SPARSE]: { display_name: 'Sparse' },
+        [CONTINUOUS]: { display_name: 'Continuous' },
+    }
+    configWrites = []
+    visible = { [SPARSE]: true, [CONTINUOUS]: true }
     listeners = new Map()
     gate = null
     mounted = null
     const handlers: Record<string, () => unknown> = {
         'layers:getAll': () => ({}),
         'tool:getVars': () => ({}),
-        'layers:getAllConfigs': () => ({
-            [SPARSE]: { display_name: 'Sparse' },
-            [CONTINUOUS]: { display_name: 'Continuous' },
-        }),
+        'layers:getAllConfigs': () => configs,
+        'layers:updateConfig': () => true,
+        'layers:refresh': () => true,
         // Read after coverage, so a held gate stands for a refresh that has
         // already read coverage but not yet landed.
         'layers:getVisible': async () => {
             if (gate) await gate
-            return { [SPARSE]: true, [CONTINUOUS]: true }
+            return visible
         },
         'layers:getAllOpacities': () => ({}),
         'layers:getListed': () => listed,
@@ -48,8 +56,9 @@ beforeEach(() => {
             ),
     }
     ;(window as any).mmgisAPI = {
-        request: async (name: string) => {
+        request: async (name: string, params?: unknown) => {
             if (!handlers[name]) throw new Error(`No handler for ${name}`)
+            if (name === 'layers:updateConfig') configWrites.push(params)
             return handlers[name]()
         },
         hasHandler: (name: string) => name in handlers,
@@ -151,5 +160,75 @@ describe('MMGISLayerManagerAdapter filtered-out layers', () => {
         await emit('layer:listedChange')
         await settle()
         expect(hideButton()).toBeNull()
+    })
+})
+
+const FORECAST = 'Forecast_0011223344556677'
+const TILES =
+    'https://svc.example/tiles/WebMercatorQuad/{z}/{x}/{y}?url=s3://bucket/o3&variable=ozcon&sel=reference_time=nearest::{reftime}&sel=lead=nearest::{lead}'
+
+describe('MMGISLayerManagerAdapter forecast layers', () => {
+    const runSelect = () =>
+        mounted!.container.querySelector<HTMLSelectElement>('.blocks-layer-legend__run-select')
+
+    beforeEach(async () => {
+        const { clearForecastRunsCache } = await import('../adapters/forecastRuns')
+        clearForecastRunsCache()
+        configs[FORECAST] = {
+            display_name: 'NAQFC O3',
+            url: TILES,
+            time: { enabled: true },
+            variables: { forecast: { runs: 2 } },
+        }
+        visible[FORECAST] = true
+        vi.stubGlobal('fetch', async (url: string) => ({
+            ok: true,
+            json: async () => ({
+                data: url.includes('reference_time')
+                    ? ['2026-09-20T12:00:00', '2026-09-21T06:00:00', '2026-09-21T12:00:00']
+                    : [1, 2, 72],
+            }),
+        }))
+    })
+
+    afterEach(() => {
+        vi.unstubAllGlobals()
+        vi.restoreAllMocks()
+    })
+
+    test('reads the runs, pins the newest, and offers them on the card', async () => {
+        await mountAdapter()
+        await settle()
+
+        const options = Array.from(runSelect()!.options).map((o) => o.value)
+        expect(options).toEqual(['2026-09-21T12:00:00', '2026-09-21T06:00:00'])
+        expect(runSelect()!.value).toBe('2026-09-21T12:00:00')
+
+        const pin = configWrites[0] as { layerUUID: string; updates: any }
+        expect(pin.layerUUID).toBe(FORECAST)
+        expect(pin.updates.variables.forecast.selectedRun).toBe('2026-09-21T12:00:00')
+        expect(pin.updates.variables.urlReplacements.lead).toEqual({
+            on: 'timeChange', kind: 'elapsed', from: '2026-09-21T12:00:00', step: 'PT1H',
+        })
+        expect(pin.updates.time.dataEndTime).toBe('2026-09-24T12:00:00Z')
+    })
+
+    test('does not pin again once the config carries a run', async () => {
+        ;(configs[FORECAST].variables as any).forecast.selectedRun = '2026-09-21T06:00:00'
+        await mountAdapter()
+        await settle()
+
+        expect(configWrites).toEqual([])
+        expect(runSelect()!.value).toBe('2026-09-21T06:00:00')
+    })
+
+    test('leaves a forecast row without a control when the service is down', async () => {
+        vi.stubGlobal('fetch', async () => { throw new Error('down') })
+        vi.spyOn(console, 'warn').mockImplementation(() => {})
+        await mountAdapter()
+        await settle()
+
+        expect(runSelect()).toBeNull()
+        expect(configWrites).toEqual([])
     })
 })

@@ -2,7 +2,8 @@
     "defaults": {
         "variables": {
             "displayOnStart": false,
-            "showOnlyVisible": false
+            "showOnlyVisible": false,
+            "forecastRuns": 10
         }
     },
     "defaultIcon": "layers-triple-outline",
@@ -11,7 +12,8 @@
         "title": "A unified layer management tool that shows all layers with their visibility state, opacity controls, and for COG-enabled layers, colormap selection and rescale controls. This tool uses the event bus architecture exclusively for communication with core modules.",
         "example": {
             "displayOnStart": false,
-            "showOnlyVisible": false
+            "showOnlyVisible": false,
+            "forecastRuns": 10
         }
     },
     "hasVars": true,
@@ -26,7 +28,10 @@
     "metadata": {
         "icon": "layers-triple-outline",
         "requiredOrientation": "vertical",
-        "compatiblePositions": ["left", "right"],
+        "compatiblePositions": [
+            "left",
+            "right"
+        ],
         "preferredPosition": "left",
         "modernLayoutSupport": true,
         "width": 320,
@@ -51,6 +56,14 @@
                         "type": "checkbox",
                         "width": 3,
                         "defaultChecked": false
+                    },
+                    {
+                        "field": "variables.forecastRuns",
+                        "name": "Forecast Runs",
+                        "description": "How many of the newest model runs a forecast layer offers in its Model run dropdown. A layer's own variables.forecast.runs overrides this.",
+                        "type": "number",
+                        "width": 3,
+                        "defaultValue": 10
                     }
                 ]
             }

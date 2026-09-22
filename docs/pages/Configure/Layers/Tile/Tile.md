@@ -105,6 +105,10 @@ _type:_ boolean
 
 When using MMGIS-served time tiles (time enabled, `{t}` in the url, tiles served under /Missions in the format described in Time_Tiles), whether to composite/merge each tile with with the other tiles are the same location across the time query. This is useful when Time Tile data is sparse. It is a more expensive operation. If your Time Tiles are complete (no alpha in a tile), leave this False as merging tiles historically would have no effect.
 
+#### Forecast runs
+
+For a forecast served by a multidimensional tile service (titiler-multidim). Switch on **Forecast Layer** and write `{reftime}` where the Source URL takes the run time and `{lead}` where it takes the lead, for example `sel=reference_time=nearest::{reftime}&sel=lead=nearest::{lead}`. The Layer Manager reads the runs the service lists, offers the newest in a "Model run" dropdown, and pins the layer to one; the timeline then scrubs valid time within that run. **Lead Step** is one lead unit as an ISO 8601 duration (`PT1H`, `P1D`, `P1M`). **Runs To Offer** overrides the Layer Manager tool's Forecast Runs setting. **Runs URL** and **Leads URL** are derived from the Source URL's service and first `url=` store unless set. These fields are stored under `variables.forecast`.
+
 #### Raw Variables
 
 Clicking "Set Default Variables" will add a template of all possible raw variables (without overwriting ones that are already set). All raw variables are optional.
@@ -125,6 +129,20 @@ Example:
         return:
           "value_in_response_to_replace_with.use.dot.notation.to.traverse.objects",
       },
+      "a_literal": { on: "timeChange", kind: "value", value: "(str) used as written" },
+      "steps_since": {
+        on: "timeChange",
+        kind: "elapsed",
+        from: "(ISO datetime) the anchor",
+        step: "(ISO 8601 duration) PT1H, P1D, P1M ... one step",
+      },
+    },
+    "forecast": {
+      "enabled": "(bool) the Time tab's Forecast Layer switch",
+      "runs": "(int) how many newest model runs to offer; defaults to the LayerManager tool's Forecast Runs",
+      "leadStep": "(ISO 8601 duration) one lead unit, default PT1H",
+      "runsUrl": "(str, optional) overrides the derived .../dataset/coordinates/reference_time endpoint",
+      "leadUrl": "(str, optional) overrides the derived .../dataset/coordinates/lead endpoint",
     },
     "downloadURL": "(str) url_to_data/data.tif",
     "tools": {
@@ -152,5 +170,6 @@ Example:
 ```
 
 - `shortcutSuffix`: A single letter to 'ALT + {letter}' toggle the layer on and off. Please verify that your chosen shortcut does not conflict with other system or browser-level keyboard shortcuts.
-- `urlReplacements`: For the case where parts or all of a tileset's url comes from intermediary endpoints. For example a service may require sending a query to a server that then returns a uuid and that uuid is required in the tileset's url to query it.
+- `urlReplacements`: For the case where parts or all of a tileset's url comes from intermediary endpoints. For example a service may require sending a query to a server that then returns a uuid and that uuid is required in the tileset's url to query it. An entry with no `kind` asks a service. `kind: "value"` fills its `{key}` with `value` as written. `kind: "elapsed"` fills it with the whole number of `step`s (an ISO 8601 duration) from `from` to the layer's current end time, counted calendar-aware, so a `P1M` step counts month boundaries.
+- `forecast`: Marks a forecast layer served by titiler-multidim. The LayerManager offers the newest runs in a "Model run" dropdown and pins the layer to one by writing `{reftime}` and `{lead}` replacements and the run's data window. Author the url with `sel=reference_time=nearest::{reftime}&sel=lead=nearest::{lead}`. Runs and leads are read from the service's `/dataset/coordinates/` endpoints, derived from the url's first `url=` store unless `runsUrl`/`leadUrl` say otherwise. `leadStep` is one lead unit (`PT1H` hourly, `P1D` daily, `P1M` monthly).
 - `downloadURL`: Provides a menu option for users to download the specified source data file for the layer.

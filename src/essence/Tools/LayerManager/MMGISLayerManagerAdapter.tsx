@@ -18,15 +18,53 @@ import {
     dropLayer,
     getFilteredOutLayers,
     hideFilteredOutLayers,
+    ensureRunSelected,
+    selectRun,
+    DEFAULT_MAX_RUNS,
 } from './adapters/handlers'
 import {
     mmgisGetLayerBounds,
+    mmgisGetLayerConfigs,
     mmgisGetTimeCurrent,
     mmgisOnDataCoverageChanged,
     type LayerDataCoverageChange,
 } from '../_shared/adapters/mmgisAPI'
 
-type ToolVars = { showOnlyVisible?: boolean; width?: number }
+type ToolVars = { showOnlyVisible?: boolean; width?: number; forecastRuns?: number }
+
+// Forecast rows get their runs from the service, and a row with no run yet
+// is pinned to the newest so it never asks for tiles without one. A service
+// that cannot be reached leaves the row as read, with no run control.
+const withRuns = (
+    rows: Layer[],
+    configs: Record<string, { url?: string }> | null,
+    defaultMaxRuns: number,
+): Promise<Layer[]> =>
+    Promise.all(
+        rows.map(async (row) => {
+            if (!row.forecast) return row
+            try {
+                const found = await ensureRunSelected(
+                    row.id,
+                    { url: configs?.[row.id]?.url },
+                    row.forecast,
+                    defaultMaxRuns,
+                )
+                return {
+                    ...row,
+                    forecast: {
+                        ...row.forecast,
+                        runs: found.runs.map((datetime) => ({ datetime })),
+                        leadRange: found.leadRange,
+                        selectedRun: row.forecast.selectedRun ?? found.runs[0] ?? null,
+                    },
+                }
+            } catch (err) {
+                console.warn(`LayerManager: model runs for '${row.id}' are unavailable`, err)
+                return row
+            }
+        }),
+    )
 
 // Panel controls are event callbacks and cannot await the requests they fire,
 // so a rejected one would surface only as an unhandled rejection. Log it
@@ -65,13 +103,19 @@ export function MMGISLayerManagerAdapter() {
         const announced = new Map<string, boolean>()
         inFlight.current.add(announced)
         try {
-            const [data, leftOut] = await Promise.all([
+            const [data, leftOut, configs] = await Promise.all([
                 getVisibleLayersWithLegends({
                     showOnlyVisible: toolVars.showOnlyVisible === true,
                 }),
                 getFilteredOutLayers(),
+                mmgisGetLayerConfigs(),
             ])
-            setLayers(withOutOfRange(data, announced))
+            const rows = await withRuns(
+                data,
+                configs as Record<string, { url?: string }> | null,
+                toolVars.forecastRuns ?? DEFAULT_MAX_RUNS,
+            )
+            setLayers(withOutOfRange(rows, announced))
             setFilteredOut(leftOut.map((layer) => layer.title))
         } catch (err) {
             console.error('LayerManager: refresh failed', err)
@@ -81,7 +125,19 @@ export function MMGISLayerManagerAdapter() {
             inFlight.current.delete(announced)
             setLoading(false)
         }
-    }, [toolVars.showOnlyVisible])
+    }, [toolVars.showOnlyVisible, toolVars.forecastRuns])
+
+    const onRunChange = useCallback(
+        (layerId: string, run: string) => {
+            const forecast = layers.find((row) => row.id === layerId)?.forecast
+            if (!forecast) return
+            report(
+                'selectRun',
+                selectRun(layerId, run, { leadStep: forecast.leadStep, leadRange: forecast.leadRange }),
+            )
+        },
+        [layers],
+    )
 
     // Core announces a layer's record whenever its verdict or coverage
     // changes, so this keeps each row's warning current between refreshes.
@@ -113,6 +169,7 @@ export function MMGISLayerManagerAdapter() {
     useMMGISEvent('layer:refreshStatusChange', refresh)
     useMMGISEvent('layer:opacityChange', refresh)
     useMMGISEvent('layer:listedChange', refresh)
+    useMMGISEvent('layers:configChanged', refresh)
     useMMGISEvent('layers:listChanged', refresh)
     useMMGISEvent('layers:orderChanged', refresh)
 
@@ -159,6 +216,7 @@ export function MMGISLayerManagerAdapter() {
             onAddLayer={showAddLayer}
             onHideFilteredLayers={() => { report('hideFilteredOutLayers', hideFilteredOutLayers()) }}
             filteredOutLayers={filteredOut}
+            onRunChange={onRunChange}
         />
     )
 }
