@@ -19,6 +19,8 @@ vi.hoisted(() => {
 })
 
 import { DateSelector } from '../lib/geo/DateSelector/DateSelector'
+import moment from 'moment'
+import { DayCalendar } from '../lib/geo/DateSelector/DayCalendar'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean })
     .IS_REACT_ACT_ENVIRONMENT = true
@@ -419,5 +421,128 @@ describe('DateSelector Today', () => {
             todayButton()!.click()
         })
         expect(picked).toEqual([])
+    })
+})
+
+describe('DayCalendar month dropdown', () => {
+    let container: HTMLElement
+    let root: Root
+
+    beforeEach(() => {
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+    })
+
+    const render = () => {
+        act(() => {
+            root.render(
+                <DayCalendar
+                    value={new Date('2024-06-15T00:00:00Z')}
+                    startTime={new Date('2024-03-15T00:00:00Z')}
+                    endTime={new Date('2024-10-10T00:00:00Z')}
+                    onSelect={() => {}}
+                />,
+            )
+        })
+    }
+
+    const monthSelect = () =>
+        container.querySelector<HTMLSelectElement>('select[aria-label="Month"]')!
+
+    test('lists every month, with those outside the range disabled', () => {
+        render()
+
+        const options = Array.from(monthSelect().options)
+        expect(options.map((option) => option.textContent)).toEqual(
+            moment.monthsShort(),
+        )
+        expect(
+            options.filter((option) => option.disabled).map((o) => o.textContent),
+        ).toEqual(['Jan', 'Feb', 'Nov', 'Dec'])
+        expect(monthSelect().value).toBe('5')
+    })
+
+    test('picking a month shows its days', () => {
+        render()
+
+        act(() => {
+            monthSelect().value = '8'
+            monthSelect().dispatchEvent(new Event('change', { bubbles: true }))
+        })
+
+        expect(monthSelect().value).toBe('8')
+        expect(container.querySelectorAll('.day-calendar-cell')).toHaveLength(30)
+    })
+})
+
+describe('DayCalendar month steppers', () => {
+    let container: HTMLElement
+    let root: Root
+
+    beforeEach(() => {
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+    })
+
+    const render = (value: string) => {
+        act(() => {
+            root.render(
+                <DayCalendar
+                    value={new Date(value)}
+                    startTime={new Date('2023-06-01T00:00:00Z')}
+                    endTime={new Date('2025-06-30T00:00:00Z')}
+                    onSelect={() => {}}
+                />,
+            )
+        })
+    }
+
+    const shown = () => ({
+        month: container.querySelector<HTMLSelectElement>(
+            'select[aria-label="Month"]',
+        )!.value,
+        year: container.querySelector<HTMLInputElement>(
+            'input[aria-label="Year"]',
+        )!.value,
+    })
+
+    const step = (label: string) => {
+        act(() => {
+            container
+                .querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!
+                .click()
+        })
+    }
+
+    test('stepping past December moves into January of the next year', () => {
+        render('2024-12-10T00:00:00Z')
+        step('Next month')
+        expect(shown()).toEqual({ month: '0', year: '2025' })
+    })
+
+    test('stepping before January moves into December of the previous year', () => {
+        render('2024-01-10T00:00:00Z')
+        step('Previous month')
+        expect(shown()).toEqual({ month: '11', year: '2023' })
+    })
+
+    test('stops at the edge of the range', () => {
+        render('2025-06-10T00:00:00Z')
+        const next = container.querySelector<HTMLButtonElement>(
+            'button[aria-label="Next month"]',
+        )!
+        expect(next.disabled).toBe(true)
     })
 })
