@@ -470,3 +470,16 @@ test('drops an action whose event name is blank, and says so', async () => {
     expect(payload.secondaryAction).toBeUndefined()
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('craters'))
 })
+
+test('resolves a nested property in the title template', async () => {
+    LAYER_CONFIGS.craters.variables.featurePopup.title = 'Crater {site.name}'
+    await start()
+
+    api.emit('map:featureClick', clickOn('craters', {
+        ...CRATER,
+        properties: { site: { name: 'Jezero' } },
+    }))
+    await flushBus()
+
+    expect(api.namesOf('map:showPopup')[0].payload.title).toBe('Crater Jezero')
+})

@@ -27,11 +27,17 @@
  *   - map:showPopup (resolves with how the card closed) / map:hidePopup
  */
 
-import F_ from '../../Basics/Formulae_/Formulae_'
-import { MAP_ENGINE } from '../../Basics/MapEngines/types/engine'
+import { fillTemplate } from '../_shared/content/fillTemplate'
 import { whenMMGISHandlerReady } from '../_shared/adapters/whenMMGISHandlerReady'
 
 const PLUGIN_ID = 'feature-popup'
+
+/**
+ * The engine this plugin does not run on. Compared as the plain string the
+ * bus reports, rather than against core's own constant: a plugin reaches core
+ * through the event bus alone, and what comes back over it is data.
+ */
+const LEAFLET = 'leaflet'
 
 const FeaturePopupTool = {
     made: false,
@@ -114,9 +120,7 @@ const FeaturePopupTool = {
             .then(([configs, engineType]) => {
                 if (token !== this._readToken) return
                 this._configs =
-                    engineType === MAP_ENGINE.LEAFLET
-                        ? new Map()
-                        : optedInLayers(configs)
+                    engineType === LEAFLET ? new Map() : optedInLayers(configs)
             })
             .catch((err) => {
                 if (token !== this._readToken) return
@@ -226,10 +230,10 @@ function isNonBlank(value) {
 }
 
 /**
- * The card's heading. The configured title is a template in the form External
- * Links and TopBar Information already use: text as written, with every
- * `{prop}` replaced by that property's value. A template resolving to nothing
- * leaves the card headingless rather than blank-headed.
+ * The card's heading. The configured title is a template in the form missions
+ * already write External Links and TopBar Information in: text as written,
+ * with every `{prop}` replaced by that property's value. A template resolving
+ * to nothing leaves the card headingless rather than blank-headed.
  *
  * With no title configured, fall back to the property the layer already names
  * its features by, which the rest of MMGIS reads as a string or as a list of
@@ -238,7 +242,7 @@ function isNonBlank(value) {
 function cardTitle(properties, config) {
     const template = config.popup.title
     if (isNonBlank(template)) {
-        const filled = F_.bracketReplace(template, properties).trim()
+        const filled = fillTemplate(template, properties).trim()
         return filled === '' ? undefined : filled
     }
     const named = config.useKeyAsName
