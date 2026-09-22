@@ -7,6 +7,7 @@ import L_ from '../Layers_/Layers_'
 import Map_ from '../Map_/Map_'
 import { parseTimeWithOffset, parseTimeToSeconds } from './timeUtils'
 import { evaluateLayerDataCoverage } from './layerDataCoverage'
+import { parseISODuration, stepsBetween } from './layerTimePolicy'
 import { formatLayerTime, buildTileUrlOptions } from '../Layers_/tileUrlUtils'
 import { resolveTileLayerSource } from '../Layers_/tileLayerSource'
 import { isRasterTileLayerType } from '../MapEngines/types/engine'
@@ -61,6 +62,35 @@ async function fetchUrlReplacement(r, layer, layerTimeFormat) {
     if (replacement == null)
         throw new Error(`the response has no value at '${r.return}'`)
     return replacement
+}
+
+// A naive ISO datetime is UTC here; Date would otherwise read it as local.
+const parseUtc = (value) => {
+    if (typeof value !== 'string' || value === '') return null
+    const iso = /(Z|[+-]\d\d:?\d\d)$/.test(value) ? value : `${value}Z`
+    const d = new Date(iso)
+    return Number.isNaN(d.getTime()) ? null : d
+}
+
+// `kind` picks how a `{key}` gets its value: 'value' is a literal, 'elapsed'
+// is the whole steps from `from` to the layer's end time, and anything else
+// (today's configs carry no kind) asks the service.
+async function resolveUrlReplacement(r, layer, layerTimeFormat) {
+    if (r.kind === 'value') {
+        // eslint-disable-next-line no-eq-null, eqeqeq
+        if (r.value == null) throw new Error('the value kind has no value')
+        return r.value
+    }
+    if (r.kind === 'elapsed') {
+        const from = parseUtc(r.from)
+        const to = parseUtc(layer.time?.end)
+        const step = typeof r.step === 'string' ? parseISODuration(r.step) : null
+        if (!from) throw new Error(`'${r.from}' is not a datetime to count from`)
+        if (!step) throw new Error(`'${r.step}' is not an ISO 8601 duration`)
+        if (!to) throw new Error('the layer has no end time to count to')
+        return stepsBetween(from, to, step)
+    }
+    return fetchUrlReplacement(r, layer, layerTimeFormat)
 }
 
 // Can be either hh:mm:ss or just seconds
@@ -654,7 +684,7 @@ var TimeControl = {
                 // is the only place that failure is named.
                 let replacement
                 try {
-                    replacement = await fetchUrlReplacement(
+                    replacement = await resolveUrlReplacement(
                         r,
                         layer,
                         layerTimeFormat

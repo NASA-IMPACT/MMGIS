@@ -56,7 +56,7 @@ export function parseISODuration(value: string): Duration | null {
 // date-component math, never ms arithmetic. Applying `factor × d` in one
 // pass keeps a month cadence anchored to the start's day-of-month instead
 // of drifting through short months.
-function addDuration(date: Date, d: Duration, factor: number): Date {
+export function addDuration(date: Date, d: Duration, factor: number): Date {
     const out = new Date(date)
     out.setUTCFullYear(out.getUTCFullYear() + factor * d.years)
     out.setUTCMonth(out.getUTCMonth() + factor * d.months)
@@ -125,6 +125,18 @@ function approximateMs(d: Duration): number {
         d.minutes * 60000 +
         d.seconds * 1000
     )
+}
+
+// Whole steps from `from` to `to`, nearest; negative when `to` is earlier.
+// Calendar-aware like floorToStep, so a month step counts month boundaries.
+export function stepsBetween(from: Date, to: Date, step: Duration): number {
+    const stepAt = (n: number) => addDuration(from, step, n).getTime()
+    const target = to.getTime()
+    const distance = (n: number) => Math.abs(stepAt(n) - target)
+    let n = Math.round((target - from.getTime()) / approximateMs(step))
+    while (distance(n + 1) < distance(n)) n++
+    while (distance(n - 1) < distance(n)) n--
+    return n
 }
 
 // Last start-anchored step at or before `end`: start + N × cadence for the

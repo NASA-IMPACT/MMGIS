@@ -504,3 +504,96 @@ describe('TimeControl.performTimeUrlReplacements', () => {
         expect(warn).toHaveBeenCalledTimes(1)
     })
 })
+
+describe('TimeControl.performTimeUrlReplacements kinds', () => {
+    let TimeControl
+    let warn
+
+    beforeEach(async () => {
+        vi.resetModules()
+        TimeControl = (await import('../../src/essence/Basics/TimeControl_/TimeControl'))
+            .default
+        warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        // No kind may reach the network.
+        vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('unexpected fetch') }))
+    })
+
+    afterEach(() => {
+        vi.restoreAllMocks()
+        vi.unstubAllGlobals()
+    })
+
+    const RUN = '2026-09-21T06:00:00'
+    const makeForecastLayer = (end, lead = { kind: 'elapsed', from: RUN, step: 'PT1H' }) => ({
+        name: 'NAQFC O3',
+        url: 'https://example.com/tiles/{z}/{x}/{y}?sel=reference_time=nearest::{reftime}&sel=lead=nearest::{lead}',
+        time: { ...timeConfig, end },
+        variables: {
+            urlReplacements: {
+                reftime: { on: 'timeChange', kind: 'value', value: RUN },
+                lead: { on: 'timeChange', ...lead },
+            },
+        },
+    })
+
+    test('a value kind splices its literal in, URL-encoded', async () => {
+        const layer = makeForecastLayer('2026-09-21T07:00:00Z')
+        const url = await TimeControl.performTimeUrlReplacements(layer.url, layer, false)
+        expect(url).toContain('sel=reference_time=nearest::2026-09-21T06%3A00%3A00')
+        expect(warn).not.toHaveBeenCalled()
+    })
+
+    test('an elapsed kind counts whole hours from the run to the layer end time', async () => {
+        const layer = makeForecastLayer('2026-09-22T00:00:00Z')
+        const url = await TimeControl.performTimeUrlReplacements(layer.url, layer, false)
+        expect(url).toContain('sel=lead=nearest::18')
+        expect(warn).not.toHaveBeenCalled()
+    })
+
+    test('an elapsed kind rounds to the nearest step', async () => {
+        const layer = makeForecastLayer('2026-09-21T11:40:00Z')
+        const url = await TimeControl.performTimeUrlReplacements(layer.url, layer, false)
+        expect(url).toContain('sel=lead=nearest::6')
+    })
+
+    test('an elapsed kind counts calendar months, not 30-day blocks', async () => {
+        const layer = makeForecastLayer('2026-02-28T00:00:00Z', {
+            kind: 'elapsed',
+            from: '2026-01-31T00:00:00',
+            step: 'P1M',
+        })
+        const url = await TimeControl.performTimeUrlReplacements(layer.url, layer, false)
+        expect(url).toContain('sel=lead=nearest::1')
+    })
+
+    test('an elapsed kind with no anchor substitutes the marker and warns', async () => {
+        const layer = makeForecastLayer('2026-09-22T00:00:00Z', { kind: 'elapsed', step: 'PT1H' })
+        const url = await TimeControl.performTimeUrlReplacements(layer.url, layer, false)
+        expect(url).toContain('sel=lead=nearest::MMGIS_UNRESOLVED')
+        expect(warn).toHaveBeenCalledTimes(1)
+    })
+
+    test('an elapsed kind with a bad step substitutes the marker and warns', async () => {
+        const layer = makeForecastLayer('2026-09-22T00:00:00Z', { kind: 'elapsed', from: RUN, step: '1h' })
+        const url = await TimeControl.performTimeUrlReplacements(layer.url, layer, false)
+        expect(url).toContain('sel=lead=nearest::MMGIS_UNRESOLVED')
+        expect(warn).toHaveBeenCalledTimes(1)
+    })
+
+    test('a value kind with nothing to give substitutes the marker and warns', async () => {
+        const layer = makeForecastLayer('2026-09-22T00:00:00Z')
+        delete layer.variables.urlReplacements.reftime.value
+        const url = await TimeControl.performTimeUrlReplacements(layer.url, layer, false)
+        expect(url).toContain('sel=reference_time=nearest::MMGIS_UNRESOLVED')
+        expect(warn).toHaveBeenCalledTimes(1)
+    })
+
+    test('an entry without a kind still asks the service', async () => {
+        const layer = makeForecastLayer('2026-09-22T00:00:00Z')
+        layer.variables.urlReplacements.reftime = {
+            on: 'timeChange', url: 'https://example.com/svc', type: 'POST', body: {}, return: 'v',
+        }
+        await TimeControl.performTimeUrlReplacements(layer.url, layer, false)
+        expect(fetch).toHaveBeenCalledTimes(1)
+    })
+})
