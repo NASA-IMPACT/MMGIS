@@ -81,20 +81,28 @@
     background-color: var(--theme-color-base-lighter, #dfe1e2);
 }
 
-.compare-date-button {
+/* Text actions after the date: "Today" and "Compare date". */
+.date-selector-action {
     background: transparent;
     border: none;
     color: var(--theme-color-primary, #0e7482);
-    font-size: 12px;
-    font-weight: 600;
+    font-family: inherit;
+    font-size: var(--theme-font-size-3xs, 12px);
+    font-weight: var(--theme-font-weight-semibold, 600);
+    white-space: nowrap;
     cursor: pointer;
     padding: 4px 0;
     transition: opacity 0.2s ease;
 }
 
-.compare-date-button:hover {
+.date-selector-action:hover:not(:disabled) {
     opacity: 0.8;
     text-decoration: underline;
+}
+
+.date-selector-action:disabled {
+    color: var(--theme-color-base-light, #a9aeb1);
+    cursor: default;
 }
 
 /* Placed by FloatingPopover, which positions the portal it lives in. */

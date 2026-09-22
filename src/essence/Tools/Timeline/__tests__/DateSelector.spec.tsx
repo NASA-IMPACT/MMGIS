@@ -309,3 +309,115 @@ describe('DateSelector placeholder', () => {
         expect(dateText()).toBe('Oct 31, 2024')
     })
 })
+
+describe('DateSelector display format', () => {
+    let container: HTMLElement
+    let root: Root
+
+    beforeEach(() => {
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+    })
+
+    test('a given format overrides the one the time mode picks', () => {
+        act(() => {
+            root.render(
+                <DateSelector
+                    selectedDate={new Date('2024-10-31T14:30:00Z')}
+                    startTime={START}
+                    endTime={END}
+                    timeMode="YEAR"
+                    dateFormat="MMM D, YYYY · HH:mm [UTC]"
+                    onDateChange={() => {}}
+                />,
+            )
+        })
+
+        expect(container.querySelector('.date-text')?.textContent).toBe(
+            'Oct 31, 2024 · 14:30 UTC',
+        )
+    })
+})
+
+describe('DateSelector Today', () => {
+    let container: HTMLElement
+    let root: Root
+    let picked: Date[]
+
+    beforeEach(() => {
+        picked = []
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        vi.useRealTimers()
+    })
+
+    const render = (showToday: boolean, onCompareClick?: () => void) => {
+        act(() => {
+            root.render(
+                <DateSelector
+                    selectedDate={new Date('2024-03-01T00:00:00Z')}
+                    startTime={START}
+                    endTime={END}
+                    timeMode="HOUR"
+                    showToday={showToday}
+                    onDateChange={(date) => picked.push(date)}
+                    onCompareClick={onCompareClick}
+                />,
+            )
+        })
+    }
+
+    const todayButton = () =>
+        container.querySelector<HTMLButtonElement>('.today-button')
+
+    test('stays hidden unless asked for', () => {
+        render(false)
+        expect(todayButton()).toBeNull()
+    })
+
+    test('sits between the date and the compare action', () => {
+        render(true, () => {})
+        const actions = Array.from(
+            container.querySelectorAll('.date-selector-action'),
+        ).map((button) => button.textContent)
+        expect(actions).toEqual(['Today', 'Compare date'])
+    })
+
+    test('moves to the current UTC minute', () => {
+        vi.useFakeTimers({ toFake: ['Date'] })
+        vi.setSystemTime(new Date('2024-10-31T14:30:42.500Z'))
+        render(true)
+
+        act(() => {
+            todayButton()!.click()
+        })
+
+        expect(picked.map((date) => date.toISOString())).toEqual([
+            '2024-10-31T14:30:00.000Z',
+        ])
+    })
+
+    test('is disabled while now is outside the range', () => {
+        vi.useFakeTimers({ toFake: ['Date'] })
+        vi.setSystemTime(new Date('2026-09-22T00:00:00Z'))
+        render(true)
+
+        expect(todayButton()!.disabled).toBe(true)
+        act(() => {
+            todayButton()!.click()
+        })
+        expect(picked).toEqual([])
+    })
+})

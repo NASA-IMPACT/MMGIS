@@ -76,7 +76,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     const [dimensions, setDimensions] = useState({ width: 800, height: 200 })
 
     const axisHeight = 24 // Space for the bottom axis
-    const layerBarHeight = 20 // Row pitch, shared by the sidebar item and the SVG row
+    const layerBarHeight = 22 // Row pitch, shared by the sidebar item and the SVG row
     const topBarHeight = 24 // Space for top axis
     const markerSize = 18 // Rendered size of the scrubber marker
     // A strip between the date bar and the first layer row that the

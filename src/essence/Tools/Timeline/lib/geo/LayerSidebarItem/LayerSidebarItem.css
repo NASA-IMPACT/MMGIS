@@ -1,5 +1,5 @@
 /* The magnifier takes the colour dot's slot rather than a slot of its own: the
-   sidebar is 160px, 100px when narrow, and four navigation buttons already
+   sidebar is 240px, 150px when narrow, and four navigation buttons already
    leave the name little room. The slot keeps the dot's 8px footprint, and the
    button overflows it symmetrically so the target is comfortable without the
    row giving up any width. */

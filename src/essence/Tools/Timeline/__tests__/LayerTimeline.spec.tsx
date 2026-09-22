@@ -99,11 +99,11 @@ describe('LayerTimeline', () => {
     })
 
     /**
-     * Zoomed out to a multi-year view a single day is narrower than a pixel.
-     * Boxes are floored to a visible width, so a sparse layer still reads as
-     * having data on those days.
+     * Zoomed out, a single day is only a pixel or two wide. Boxes are floored
+     * to a visible width, so a sparse layer still reads as having data on
+     * those days.
      */
-    test('keeps a sub-pixel day visible', () => {
+    test('keeps a narrow day visible', () => {
         const [rect] = render(
             layerWith([
                 {
@@ -114,7 +114,22 @@ describe('LayerTimeline', () => {
             ])
         )
 
-        expect(Number(rect.getAttribute('width'))).toBeGreaterThanOrEqual(2)
+        expect(Number(rect.getAttribute('width'))).toBe(6)
+    })
+
+    /**
+     * A floored box grows both ways from its span, so it stays over its own
+     * time: an instant sits under the scrubber when the scrubber is on it.
+     */
+    test('centres a floored box on its span', () => {
+        const instant = new Date('2020-07-01T12:00:00Z')
+        const [rect] = render(
+            layerWith([{ start: instant, end: instant, label: 'instant' }])
+        )
+
+        const x = Number(rect.getAttribute('x'))
+        const width = Number(rect.getAttribute('width'))
+        expect(x + width / 2).toBeCloseTo(xScale(instant))
     })
 
     /**

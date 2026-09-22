@@ -103,6 +103,100 @@ describe('TimelineAdapter compare hand-off', () => {
 })
 
 /**
+ * The header reads the exact instant on the map whatever the granularity, and
+ * keeps the granularity beside the step controls it sets the stride of.
+ */
+describe('TimelineAdapter header', () => {
+    let container: HTMLElement
+    let root: Root
+
+    const mount = async (vars: unknown) => {
+        ;(window as unknown as { mmgisAPI: unknown }).mmgisAPI = {
+            request: async (name: string) => {
+                if (name === 'time:isEnabled') return true
+                if (name === 'time:getStart') return START
+                if (name === 'time:getEnd') return END
+                if (name === 'time:getCurrent') return '2024-06-15T09:41:00Z'
+                if (name === 'tool:getVars') return vars
+                return null
+            },
+            hasHandler: (name: string) => name !== 'layers:getAllConfigs',
+            on: () => () => {},
+            emit: () => {},
+        }
+
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+        await act(async () => {
+            root.render(<TimelineAdapter />)
+        })
+        await act(async () => {})
+    }
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        delete (window as { mmgisAPI?: unknown }).mmgisAPI
+    })
+
+    const dateText = () =>
+        container.querySelector('.timeline-header .date-text')?.textContent
+
+    test.each(['YEAR', 'MONTH', 'DAY', 'HOUR'])(
+        'shows the full UTC date and time under %s',
+        async (mode) => {
+            await mount({ defaultTimeMode: mode })
+
+            expect(dateText()).toBe('Jun 15, 2024 · 09:41 UTC')
+        }
+    )
+
+    test('changing the granularity leaves the readout whole', async () => {
+        await mount({ defaultTimeMode: 'HOUR' })
+        const select = container.querySelector<HTMLSelectElement>(
+            '.time-mode-control'
+        )!
+
+        act(() => {
+            select.value = 'YEAR'
+            select.dispatchEvent(new Event('change', { bubbles: true }))
+        })
+
+        expect(select.value).toBe('YEAR')
+        expect(dateText()).toBe('Jun 15, 2024 · 09:41 UTC')
+    })
+
+    test('offers the granularity beside the playback controls', async () => {
+        await mount({ defaultTimeMode: 'DAY' })
+
+        const center = container.querySelector('.timeline-header-center')!
+        expect(center.querySelector('select.time-mode-control')).not.toBeNull()
+        expect(
+            container.querySelector('.timeline-header-right .time-mode-control')
+        ).toBeNull()
+    })
+
+    test('divides the zoom controls from the buttons after them', async () => {
+        await mount({ defaultTimeMode: 'DAY' })
+
+        const divider = container.querySelector('.timeline-toolbar-divider')
+        expect(divider?.previousElementSibling?.className).toBe(
+            'timeline-zoom-controls'
+        )
+    })
+
+    test('offers Today between the date and the compare action', async () => {
+        await mount({ defaultTimeMode: 'DAY' })
+
+        const actions = Array.from(
+            container.querySelectorAll('.date-selector-action')
+        ).map((button) => button.textContent)
+        expect(actions).toEqual(['Today', 'Compare date'])
+    })
+})
+
+/**
  * Where a layer row's navigation controls put the timeline. Reaching a layer's
  * data can mean leaving the window on screen, so the window follows the target
  * out instead of clamping it back in, moving only the edge that has to move.
@@ -955,10 +1049,12 @@ describe('TimelineAdapter time modes against the configured granularity', () => 
     let root: Root
     let originalResizeObserver: unknown
 
-    const modeButtons = () =>
+    const modeOptions = () =>
         Array.from(
-            container.querySelectorAll<HTMLButtonElement>('.time-mode-button')
-        ).map((button) => button.textContent)
+            container.querySelectorAll<HTMLOptionElement>(
+                '.time-mode-control option'
+            )
+        ).map((option) => option.textContent)
 
     const mount = async (vars: unknown) => {
         originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
@@ -992,16 +1088,16 @@ describe('TimelineAdapter time modes against the configured granularity', () => 
             originalResizeObserver
     })
 
-    test('a daily mission is not offered the hour button', async () => {
+    test('a daily mission is not offered the hour option', async () => {
         await mount({ defaultTimeMode: 'DAY' })
 
-        expect(modeButtons()).toEqual(['YEAR', 'MONTH', 'DAY'])
+        expect(modeOptions()).toEqual(['YEAR', 'MONTH', 'DAY'])
     })
 
     test('an hourly mission keeps every mode', async () => {
         await mount({ defaultTimeMode: 'HOUR' })
 
-        expect(modeButtons()).toEqual(['YEAR', 'MONTH', 'DAY', 'HOUR'])
+        expect(modeOptions()).toEqual(['YEAR', 'MONTH', 'DAY', 'HOUR'])
     })
 
     test('the trim applies to a mission that configured its own list', async () => {
@@ -1010,13 +1106,13 @@ describe('TimelineAdapter time modes against the configured granularity', () => 
             shownTimeModes: ['MONTH', 'DAY', 'HOUR'],
         })
 
-        expect(modeButtons()).toEqual(['MONTH'])
+        expect(modeOptions()).toEqual(['MONTH'])
     })
 
     test('vars that never arrive leave the default floor in place', async () => {
         await mount(null)
 
-        expect(modeButtons()).toEqual(['YEAR', 'MONTH', 'DAY'])
+        expect(modeOptions()).toEqual(['YEAR', 'MONTH', 'DAY'])
     })
 })
 
