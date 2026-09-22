@@ -387,7 +387,7 @@
     align-items: center;
 }
 
-/* Divides the zoom group from the info and collapse buttons after it. */
+/* Divides the toolbar's groups: zoom, info, and collapse. */
 .timeline-toolbar-divider {
     width: 1px;
     height: 24px;
