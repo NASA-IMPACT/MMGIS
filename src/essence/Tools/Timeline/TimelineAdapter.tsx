@@ -184,24 +184,48 @@ export const TimelineAdapter: React.FC = () => {
         onBoundsWiden: handleBoundsWiden,
     })
 
-    // Whether the chart is on screen: collapsed, or with no layer to draw, the
-    // view has nothing to show, and a reveal would only pan it unseen and
-    // disarm auto-fit. Read through a ref so the callbacks built on it keep
+    // Whether the chart is on screen, and whether it is kept off screen by the
+    // collapse alone. Read through refs so the callbacks built on them keep
     // their identity and do not re-arm the playback interval.
-    const chartShown = !isCollapsed && layers.length > 0
+    const hasLayers = layers.length > 0
+    const chartShown = !isCollapsed && hasLayers
     const chartShownRef = useRef(chartShown)
+    const collapsedOverLayersRef = useRef(isCollapsed && hasLayers)
     useEffect(() => {
         chartShownRef.current = chartShown
-    }, [chartShown])
+        collapsedOverLayersRef.current = isCollapsed && hasLayers
+    }, [chartShown, isCollapsed, hasLayers])
+
+    // Set when a reveal is held back by the collapse, and answered when the
+    // chart expands.
+    const revealOnExpandRef = useRef(false)
 
     const { revealTime: revealInZoom } = zoom
-    /** Brings an instant into view, while the chart is on screen to show it. */
+    /**
+     * Brings an instant into view, while the chart is on screen to show it.
+     *
+     * Collapsed over drawn layers, the reveal waits for the chart to expand.
+     * With no layer drawn yet it is dropped instead: the layers still to
+     * arrive are what the first fit frames, and a reveal held until then
+     * would pan the view straight off them.
+     */
     const revealTime = useCallback(
         (at: Date) => {
             if (chartShownRef.current) revealInZoom(at)
+            else if (collapsedOverLayersRef.current) revealOnExpandRef.current = true
         },
         [revealInZoom]
     )
+
+    // Expanding answers a reveal the collapse held back. The instant shown is
+    // the current time at expand rather than one the held reveal named: the
+    // scrubber is drawn at the current time, so that is what has to be on
+    // screen, whichever commit moved it last.
+    useEffect(() => {
+        if (isCollapsed || !revealOnExpandRef.current) return
+        revealOnExpandRef.current = false
+        if (hasLayers) revealInZoom(currentTimeRef.current)
+    }, [isCollapsed, hasLayers, revealInZoom])
 
     /**
      * Commits the instant a layer row's controls lead to, widening the window
@@ -482,6 +506,28 @@ export const TimelineAdapter: React.FC = () => {
     }, [])
     useMMGISHandlerReady('time:getStart', fetchInitialTimeData)
 
+    /**
+     * Follows every commit made elsewhere — another plugin, core's own
+     * controls, a programmatic `time:set` — and brings the scrubber into view
+     * when the commit moved it.
+     *
+     * This plugin's own commits come back here too, and are skipped: each
+     * already revealed its instant or deliberately left the view alone, as a
+     * drag and a click in the chart do, and following the echo would pan
+     * under the pointer.
+     *
+     * Only a change to the current time reveals. A commit that moves just the
+     * window leaves the scrubber where it was, and the view is clamped into
+     * the new window as part of the render that sees it. The initial sync
+     * reveals nothing either: the seed is read through core's getters rather
+     * than received here, core's first broadcast repeats the instant that
+     * seed already holds, and until the layers have loaded the chart is not
+     * shown, so the first fit frames the layers undisturbed.
+     *
+     * The reveal is requested in the same batch as the window it carries, so
+     * it clamps against the window core has just committed, widened or
+     * shifted, rather than the one held before.
+     */
     useEffect(() => {
         return mmgisOn('time:changed', (payload?: unknown) => {
             const data = payload as Partial<TimePayload> | undefined
@@ -503,11 +549,28 @@ export const TimelineAdapter: React.FC = () => {
 
             if (data.startTime) setStartTime((prev) => preserveIdentity(prev, new Date(data.startTime as string)))
             if (data.endTime) setEndTime((prev) => preserveIdentity(prev, new Date(data.endTime as string)))
-            if (data.currentTime) setCurrentTime((prev) => preserveIdentity(prev, new Date(data.currentTime as string)))
+            if (data.currentTime) {
+                const next = new Date(data.currentTime)
+                setCurrentTime((prev) => preserveIdentity(prev, next))
+                if (
+                    !Number.isNaN(next.getTime()) &&
+                    !sameInstant(next, currentTimeRef.current)
+                ) {
+                    revealTime(next)
+                }
+                // Held ahead of the render, so a second commit landing before
+                // it is compared against this one rather than the one before.
+                currentTimeRef.current = next
+            }
         })
-    }, [])
+    }, [revealTime])
 
-    // Committed time change from the scrubber
+    /**
+     * Commits an instant the scrubber was dragged to or a click in the chart
+     * sought, clamped to the window. The view is left where it is: the
+     * scrubber is already on screen, and the view must not move under the
+     * pointer.
+     */
     const handleCurrentTimeChange = useCallback(
         (newTime: Date) => {
             commitTime(clampDate(newTime, startTimeRef.current, endTimeRef.current))
@@ -542,11 +605,10 @@ export const TimelineAdapter: React.FC = () => {
     const canStepForward = currentTime < endTime
 
     /**
-     * Commits an instant a playback control or the scrubber head's keyboard
-     * led to, clamped to the window, and pans the view to bring the scrubber
-     * on screen. A drag, a click in the chart and the date selector commit
-     * through `handleCurrentTimeChange` instead: the scrubber is on screen for
-     * the first two already, and the view must not move under the pointer.
+     * Commits an instant a playback control, the date selector or the
+     * scrubber head's keyboard led to, clamped to the window, and pans the
+     * view to bring the scrubber on screen. A drag and a click in the chart
+     * commit through `handleCurrentTimeChange` instead.
      */
     const commitAndReveal = useCallback(
         (next: Date) => {
@@ -639,7 +701,7 @@ export const TimelineAdapter: React.FC = () => {
                         startTime={startTime}
                         endTime={endTime}
                         timeMode={timeMode}
-                        onDateChange={handleCurrentTimeChange}
+                        onDateChange={commitAndReveal}
                         onCompareClick={handleCompareClick}
                     />
                 </div>

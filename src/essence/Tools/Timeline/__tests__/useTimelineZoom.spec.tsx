@@ -612,18 +612,20 @@ describe('useTimelineZoom', () => {
             expect(at.getTime()).toBeGreaterThan(api.view.start.getTime())
         })
 
-        test('disarms auto-fit when it pans', () => {
+        test('leaves auto-fit armed when it pans', () => {
             onJune()
+            const at = new Date('2019-02-01T00:00:00Z')
 
-            act(() => api.revealTime(new Date('2019-02-01T00:00:00Z')))
+            act(() => api.revealTime(at))
 
-            expect(api.autoFit).toBe(false)
+            expect(centre(api.view)).toBe(at.getTime())
+            expect(api.autoFit).toBe(true)
         })
 
-        test('leaves auto-fit armed when the pan clamps back onto the view it started from', () => {
+        test('leaves the view and auto-fit be when the pan clamps back onto the view it started from', () => {
             // The view already ends on the global window's end, and the
             // instant lies past it, so centring is slid straight back to
-            // the same window: nothing moves, so nothing is disarmed.
+            // the same window: nothing moves.
             render(defaults())
             const december = win('2019-12-01T00:00:00Z', BOUNDS.end.toISOString())
             act(() => api.setView(december))
@@ -651,7 +653,7 @@ describe('useTimelineZoom', () => {
             expect(centre(api.view)).toBe(at.getTime())
         })
 
-        test('wins over a refit started in the same render, and leaves auto-fit off', () => {
+        test('wins over a refit started in the same render, and leaves auto-fit armed', () => {
             const march = layer(
                 'Sea Ice',
                 nav({
@@ -681,17 +683,22 @@ describe('useTimelineZoom', () => {
                 api.revealTime(at)
             })
 
-            expect(api.autoFit).toBe(false)
+            expect(api.autoFit).toBe(true)
             expect(at.getTime()).toBeGreaterThanOrEqual(api.view.start.getTime())
             expect(at.getTime()).toBeLessThanOrEqual(api.view.end.getTime())
             // At the refit's span, not the first fit's: the refit is the
             // origin the reveal panned from.
             expect(span(api.view)).not.toBe(span(fitted))
 
-            // Disarmed, a later change to the layer set leaves the view be.
+            // The same layer set, rebuilt, is no reason to refit: the view
+            // stays on the revealed instant.
             const held = iso(api.view)
-            render(defaults({ layers: [march] }))
+            render(defaults({ layers: [march, august] }))
             expect(iso(api.view)).toEqual(held)
+
+            // Still armed, a change to the layer set itself refits.
+            render(defaults({ layers: [march] }))
+            expect(iso(api.view)).toEqual(iso(fitted))
         })
     })
 

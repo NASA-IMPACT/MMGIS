@@ -81,9 +81,9 @@ export interface TimelineZoom {
     /**
      * Pans the view, at the span it has, to bring `at` on screen: centred on
      * it, or stopped at the edge of the global window where centring would
-     * pass it. Nothing moves when `at` is already in view. A pan disarms
-     * auto-fit, as a refit would carry the view back off the instant just
-     * revealed. In transition; instant under reduced motion.
+     * pass it. Nothing moves when `at` is already in view. Auto-fit is left
+     * as it stands: only its toggle disarms it. In transition; instant under
+     * reduced motion.
      */
     revealTime(at: Date): void
 }
@@ -425,14 +425,14 @@ export function useTimelineZoom({
         setRevealRequest((count) => count + 1)
     }, [])
 
-    // Applied once the request's render commits rather than when it is made,
-    // and against the span of that render rather than `boundsRef`. A layer
-    // control widens the global window in the same batch as it asks for the
-    // reveal, and `boundsRef` still holds the window from before the press
-    // until the effects of that render run; clamped against it, a target
-    // past the old edge would be slid straight back out of view. The request
-    // is consumed from the ref, so an effect re-run with nothing new to
-    // reveal does nothing.
+    // Applied once the request's render commits rather than when it is made.
+    // A layer control, or a commit from outside the plugin, moves the global
+    // window in the same batch as it asks for the reveal, so at the call the
+    // hook holds only the window from before; clamped against that, a
+    // target past the old edge would be slid straight back out of view. The
+    // render that carries the request also carries the moved window, and the
+    // effect clamps against that render's span. The request is consumed from
+    // the ref, so an effect re-run with nothing new to reveal does nothing.
     //
     // Measured from the destination of a transition in flight, as a zoom
     // press is, so a reveal landing mid-flight whose instant the flight is
@@ -440,6 +440,11 @@ export function useTimelineZoom({
     // the auto-fit effect, so a refit started in the same render is the
     // origin the reveal measures from and, when it has to pan, the flight
     // the reveal replaces.
+    //
+    // Auto-fit stays armed through a pan. The refit it arms keys on the
+    // layers' own bounds, which a reveal does not touch, and the refetch a
+    // widen causes leaves them as they were, so the view stays on the
+    // revealed instant until the layer set itself changes.
     useEffect(() => {
         const at = pendingRevealRef.current
         if (!at) return
@@ -449,7 +454,6 @@ export function useTimelineZoom({
         const next = revealWindow(origin, at, effectiveBounds, minMs)
         if (next === origin || sameWindow(next, origin)) return
 
-        setAutoFit(false)
         transition.animateTo(viewRef.current, next)
     }, [revealRequest, effectiveBounds, transition, minMs])
 
