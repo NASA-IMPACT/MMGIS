@@ -559,3 +559,36 @@ test('prefers a property whose own name contains a dot over a nested path', asyn
     expect(html).toContain('Flat')
     expect(html).not.toContain('Nested')
 })
+
+test('emits a fully qualified event exactly as the mission wrote it', async () => {
+    withActions({ label: 'Analyze', event: 'plugin:aoi:analyzeFeature' })
+    await start()
+
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+    api.closePopup('primary')
+    await flushBus()
+
+    expect(api.emitsOf('plugin:aoi:analyzeFeature')).toHaveLength(1)
+    expect(api.emitsOf('plugin:aoi:analyzeFeature')[0].data).toEqual({
+        feature: CRATER,
+        layerId: 'craters',
+        latlng: CLICK,
+    })
+    // Not nested under this plugin's own address.
+    expect(
+        api.emitsOf('plugin:feature-popup:plugin:aoi:analyzeFeature')
+    ).toHaveLength(0)
+})
+
+test('keeps a bare event name under this plugin, which is whose event it is', async () => {
+    withActions({ label: 'Analyze', event: 'analyzeFeature' })
+    await start()
+
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+    api.closePopup('primary')
+    await flushBus()
+
+    expect(api.emitsOf('plugin:feature-popup:analyzeFeature')).toHaveLength(1)
+})

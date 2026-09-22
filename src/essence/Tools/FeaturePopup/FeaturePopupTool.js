@@ -15,8 +15,10 @@
  *   - properties  (arr)  property keys to list; omit to list all
  *   - actions     (arr)  up to two { label, event }
  *
- * Emits (auto-prefixed plugin:feature-popup:):
- *   - <action.event>   { feature, layerId, latlng }   — on a card button press
+ * Emits, on a card button press, { feature, layerId, latlng } under:
+ *   - <action.event>                    when the configured name carries a
+ *                                       namespace, e.g. 'plugin:aoi:analyze'
+ *   - plugin:feature-popup:<action.event>  when it does not
  *
  * Listens to:
  *   - map:featureClick    (engine bus; filtered to layers that opted in)
@@ -172,7 +174,7 @@ const FeaturePopupTool = {
                     // 'dismiss' and 'closed' are the card going away, which
                     // says nothing about the feature.
                     if (!pressed) return
-                    this._api?.emit(pressed.event, {
+                    this._emitAction(pressed.event, {
                         feature: info.feature,
                         layerId: info.layerId,
                         latlng: info.latlng,
@@ -183,6 +185,23 @@ const FeaturePopupTool = {
                     console.warn('[FeaturePopup] showPopup failed', err)
                 }
             )
+    },
+
+    /**
+     * Send an action's event, as a mission addressed it.
+     *
+     * A name carrying a namespace is another plugin's — or core's — and goes
+     * out exactly as written, the way a configured action string is resolved
+     * everywhere else. A bare name is this plugin's own event and is emitted
+     * under its address, so a mission wiring up its own listener does not
+     * have to spell the prefix out.
+     */
+    _emitAction(event, payload) {
+        if (event.includes(':')) {
+            window.mmgisAPI?.emit?.(event, payload)
+            return
+        }
+        this._api?.emit(event, payload)
     },
 
     /**

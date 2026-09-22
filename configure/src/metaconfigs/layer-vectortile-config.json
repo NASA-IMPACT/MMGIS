@@ -894,7 +894,7 @@
                 {
                   "field": "event",
                   "name": "Event Name",
-                  "description": "The event emitted when the button is pressed, under the plugin's own address: an event of 'analyzeFeature' is emitted as 'plugin:feature-popup:analyzeFeature'.",
+                  "description": "The event emitted when the button is pressed, carrying the clicked feature. A bare name is this plugin's own event and goes out under its address: 'analyzeFeature' is emitted as 'plugin:feature-popup:analyzeFeature'. A name carrying a namespace is sent exactly as written, so 'plugin:aoi:analyze' reaches the AOI plugin.",
                   "type": "text",
                   "width": 8
                 }
