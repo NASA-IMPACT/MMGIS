@@ -788,7 +788,7 @@ describe('TimelineAdapter when the tool vars never answer', () => {
         vi.useRealTimers()
     })
 
-    test('settles on the default granularity rather than loading for good', async () => {
+    test('settles on the default granularity when the request never resolves', async () => {
         container = document.createElement('div')
         document.body.appendChild(container)
         root = createRoot(container)
@@ -854,7 +854,7 @@ describe('TimelineAdapter without the tool vars', () => {
         await act(async () => {})
     }
 
-    test('settles on the default granularity rather than loading for good', async () => {
+    test('settles on the default granularity when the handler never registers', async () => {
         await mount()
 
         // Core has answered on time, so the only thing still outstanding is
