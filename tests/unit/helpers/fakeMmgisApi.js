@@ -5,9 +5,14 @@ import { vi } from 'vitest'
  * through. Calls are recorded; the popup impls model core's one-slot contract,
  * every show being answered on its own promise with how its card closed.
  *
- * Callers add their own request implementations through `requestImpl`, which
- * take precedence over nothing — a name with no implementation answers `true`,
- * as a provider returning nothing does.
+ * Callers add their own request implementations through `requestImpl`; a name
+ * with no implementation answers `true`, as a provider returning nothing does.
+ *
+ * Handler absence is modelled explicitly rather than by default: `unregister`
+ * makes a name behave as core does before its provider exists — `hasHandler`
+ * false and `request` rejecting — and `register` puts it back. Every other
+ * name is treated as registered, so a test only has to describe the boot
+ * ordering it actually cares about.
  */
 export function makeFakeMmgisApi() {
     const listeners = new Map()
@@ -15,6 +20,7 @@ export function makeFakeMmgisApi() {
     const emits = []
     const provided = new Map()
     const requestImpl = new Map()
+    const absent = new Set()
 
     let openPopup = null
     const settleOpen = (action) => {
@@ -41,7 +47,15 @@ export function makeFakeMmgisApi() {
         },
         // The provider runs inside the call, before the promise is handed back,
         // as core's does.
+        hasHandler(name) {
+            return !absent.has(name)
+        },
         request(name, payload) {
+            if (absent.has(name)) {
+                return Promise.reject(
+                    new Error(`[mmgisAPI] No handler for: "${name}"`)
+                )
+            }
             requests.push({ name, payload })
             const impl = requestImpl.get(name)
             try {
@@ -68,6 +82,10 @@ export function makeFakeMmgisApi() {
 
         // Test-only accessors.
         requestImpl,
+        /** Make `name` behave as a provider that has not been registered yet. */
+        unregister: (name) => absent.add(name),
+        /** Register `name`, as the matching core module does during boot. */
+        register: (name) => absent.delete(name),
         listenerCount: (event) => listeners.get(event)?.size || 0,
         namesOf: (name) => requests.filter((r) => r.name === name),
         emitsOf: (event) => emits.filter((e) => e.event === event),

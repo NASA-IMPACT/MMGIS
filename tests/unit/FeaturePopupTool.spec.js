@@ -14,6 +14,7 @@ const layerConfigs = () => ({
         type: 'vector',
         variables: {
             featurePopup: {
+                enabled: true,
                 title: '{site_name}',
                 properties: ['depth_m', 'sample_class'],
             },
@@ -64,6 +65,26 @@ beforeEach(() => {
     api.requestImpl.set('map:getEngineType', () => 'deckgl')
     window.mmgisAPI = api
 })
+
+/**
+ * Boot the way MMGIS does: tools load before Layers_.fina() registers the
+ * layer providers, so the plugin starts with nothing to ask.
+ */
+async function startBeforeLayersLoad() {
+    api.unregister('layers:getAllConfigs')
+    api.requestImpl.set('map:getEngineType', () => null)
+    FeaturePopupTool.initialize()
+    await flushBus()
+    api.reset()
+}
+
+/** Layers_.fina(): the providers appear and the engine becomes readable. */
+async function finishLayersLoad(engineType = 'deckgl') {
+    api.register('layers:getAllConfigs')
+    api.requestImpl.set('map:getEngineType', () => engineType)
+    await vi.advanceTimersByTimeAsync(250)
+    await flushBus()
+}
 
 afterEach(() => {
     FeaturePopupTool.destroy()
@@ -239,7 +260,10 @@ test('stays out of the way on Leaflet, which has its own feature click path', as
 test('picks up a layer that opts in after the mission has loaded', async () => {
     await start()
 
-    LAYER_CONFIGS.basemapLabels.variables.featurePopup = { title: '{site_name}' }
+    LAYER_CONFIGS.basemapLabels.variables.featurePopup = {
+        enabled: true,
+        title: '{site_name}',
+    }
     api.emit('layers:listChanged')
     await flushBus()
     api.emit('map:featureClick', clickOn('basemapLabels'))
@@ -332,4 +356,117 @@ test('shows nothing for a layer whose popup is switched off', async () => {
     await flushBus()
 
     expect(api.namesOf('map:showPopup')).toHaveLength(0)
+})
+
+test('waits for the layer providers, which register after tools load', async () => {
+    await startBeforeLayersLoad()
+
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+    expect(api.namesOf('map:showPopup')).toHaveLength(0)
+
+    await finishLayersLoad()
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+
+    expect(api.namesOf('map:showPopup')).toHaveLength(1)
+})
+
+test('gates on the engine once there is one to read', async () => {
+    await startBeforeLayersLoad()
+    await finishLayersLoad('leaflet')
+
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+
+    expect(api.namesOf('map:showPopup')).toHaveLength(0)
+})
+
+test('takes the open card down when the next feature has nothing to show', async () => {
+    LAYER_CONFIGS.craters.variables.featurePopup.properties = ['depth_m']
+    delete LAYER_CONFIGS.craters.variables.featurePopup.title
+    await start()
+
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+    expect(api.hasOpenPopup()).toBe(true)
+    api.reset()
+
+    // A feature of the same layer carrying none of the configured properties.
+    api.emit('map:featureClick', clickOn('craters', {
+        ...CRATER,
+        properties: { internal_id: 'x-92' },
+    }))
+    await flushBus()
+
+    expect(api.namesOf('map:showPopup')).toHaveLength(0)
+    expect(api.namesOf('map:hidePopup')).toHaveLength(1)
+    expect(api.hasOpenPopup()).toBe(false)
+})
+
+test('leaves a layer out when the switch was never turned on', async () => {
+    // An admin who fills a field but never ticks the box: Maker writes the
+    // key it touched and nothing else.
+    LAYER_CONFIGS.basemapLabels.variables.featurePopup = { title: 'Labels' }
+    await start()
+
+    api.emit('map:featureClick', clickOn('basemapLabels'))
+    await flushBus()
+
+    expect(api.namesOf('map:showPopup')).toHaveLength(0)
+})
+
+test("leaves another plugin's card alone when torn down with none of its own", async () => {
+    await start()
+
+    FeaturePopupTool.destroy()
+    await flushBus()
+
+    expect(api.namesOf('map:hidePopup')).toHaveLength(0)
+})
+
+test('finishes teardown when an unsubscribe throws', async () => {
+    await start()
+    FeaturePopupTool._cleanups.unshift(() => {
+        throw new Error('bad unsubscribe')
+    })
+
+    FeaturePopupTool.destroy()
+    await flushBus()
+
+    expect(FeaturePopupTool.made).toBe(false)
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+    expect(api.namesOf('map:showPopup')).toHaveLength(0)
+})
+
+test('leaves out a property that is null and renders an object value readably', async () => {
+    delete LAYER_CONFIGS.craters.variables.featurePopup.properties
+    await start()
+
+    api.emit('map:featureClick', clickOn('craters', {
+        ...CRATER,
+        properties: { site_name: 'Jezero', retired: null, extent: { w: 2 } },
+    }))
+    await flushBus()
+
+    const { html } = api.namesOf('map:showPopup')[0].payload
+    expect(html).not.toContain('retired')
+    expect(html).not.toContain('[object Object]')
+    // Escaped, as every value the card renders is.
+    expect(html).toContain('{&quot;w&quot;:2}')
+})
+
+test('drops an action whose event name is blank, and says so', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    withActions({ label: 'Go', event: '   ' }, { label: 'Fine', event: 'fine' })
+    await start()
+
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+
+    const payload = api.namesOf('map:showPopup')[0].payload
+    expect(payload.primaryAction).toEqual({ label: 'Fine' })
+    expect(payload.secondaryAction).toBeUndefined()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('craters'))
 })

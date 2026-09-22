@@ -858,7 +858,7 @@
             {
               "field": "variables.featurePopup.enabled",
               "name": "Show Feature Popup",
-              "description": "Show a popup card when one of this layer's features is clicked. Requires the deck.gl map engine.",
+              "description": "Show a popup card when one of this layer's features is clicked. Nothing below takes effect until this is ticked. Requires the deck.gl map engine.",
               "type": "checkbox",
               "width": 3,
               "defaultChecked": false
