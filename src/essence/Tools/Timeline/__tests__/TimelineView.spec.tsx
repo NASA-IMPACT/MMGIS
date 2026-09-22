@@ -17,7 +17,7 @@ vi.hoisted(() => {
 
 import { TimelineView } from '../lib/geo/TimelineView/TimelineView'
 import type { LayerNavigation } from '../lib/utils/layerNavigation'
-import type { ViewWindow } from '../lib/utils/zoomWindow'
+import { transformToWindow, type ViewWindow } from '../lib/utils/zoomWindow'
 import type { LayerTimeData, TimeMode } from '../lib/types'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean })
@@ -413,5 +413,70 @@ describe('TimelineView visible window', () => {
         })
 
         expect(reported).toEqual([])
+    })
+
+    test('leaves d3 holding the window after a drag open across a rebuild', () => {
+        // d3 writes the transform before it notifies, so a silenced drag
+        // walks it somewhere the window never went.
+        const view = document.defaultView!
+        const mouse = (type: string, clientX: number) => {
+            const event = new MouseEvent(type, {
+                bubbles: true,
+                clientX,
+                clientY: 10,
+            })
+            Object.defineProperty(event, 'view', { value: view })
+            return event
+        }
+
+        const wider: ViewWindow = {
+            start: new Date('2019-01-01T00:00:00Z'),
+            end: END,
+        }
+
+        render(WEEK)
+        act(() => {
+            chart().dispatchEvent(mouse('mousedown', 400))
+        })
+
+        render(WEEK, wider)
+        act(() => {
+            view.dispatchEvent(mouse('mousemove', 420))
+            view.dispatchEvent(mouse('mouseup', 420))
+        })
+
+        // 800 is the width the view starts at, which the stub leaves alone.
+        const held = transformToWindow(zoomTransform(chart()), wider, 800)
+        expect(held.start.toISOString()).toBe(WEEK.start.toISOString())
+        expect(held.end.toISOString()).toBe(WEEK.end.toISOString())
+    })
+
+    test('keeps the chart live when a drag is open across a rebuild', () => {
+        // A replacement behaviour claims an open gesture by name and
+        // dispatches through the detached listeners, so the chart goes inert.
+        const view = document.defaultView!
+        const mouse = (type: string, clientX: number) => {
+            const event = new MouseEvent(type, {
+                bubbles: true,
+                clientX,
+                clientY: 10,
+            })
+            Object.defineProperty(event, 'view', { value: view })
+            return event
+        }
+
+        render(WEEK)
+        act(() => {
+            chart().dispatchEvent(mouse('mousedown', 400))
+        })
+
+        render(WEEK, { start: new Date('2019-01-01T00:00:00Z'), end: END })
+        act(() => {
+            chart().dispatchEvent(
+                new WheelEvent('wheel', { bubbles: true, deltaY: -100, clientX: 400, clientY: 10 })
+            )
+        })
+
+        expect(reported.length).toBeGreaterThan(0)
     })
 })
