@@ -17,6 +17,7 @@ import {
     fitWindow,
     interpolateWindow,
     minViewDuration,
+    revealWindow,
     sliderToWindow,
     transformToWindow,
     windowAtSpan,
@@ -133,6 +134,65 @@ describe('zoomAround', () => {
         expect(iso(zoomAround(point, 0.5, point.start, point, 3 * DAY))).toEqual(
             iso(point)
         )
+    })
+})
+
+/**
+ * What a playback or layer control does to the view when it moves the
+ * scrubber: nothing when the scrubber is on screen, a pan that centres it
+ * when it is not, and never a change of span.
+ */
+describe('revealWindow', () => {
+    const month = win('2019-06-01T00:00:00Z', '2019-07-01T00:00:00Z')
+
+    test('returns the window itself for an instant already inside it', () => {
+        const at = new Date('2019-06-20T00:00:00Z')
+        expect(revealWindow(month, at, bounds, 3 * DAY)).toBe(month)
+    })
+
+    test('counts both edges as inside', () => {
+        expect(revealWindow(month, month.start, bounds, 3 * DAY)).toBe(month)
+        expect(revealWindow(month, month.end, bounds, 3 * DAY)).toBe(month)
+    })
+
+    test('centres an instant past either edge, at the same span', () => {
+        const after = new Date('2019-09-15T12:00:00Z')
+        const forward = revealWindow(month, after, bounds, 3 * DAY)
+
+        expect(span(forward)).toBe(span(month))
+        expect(forward.start.getTime() + span(forward) / 2).toBe(after.getTime())
+
+        const before = new Date('2019-02-10T00:00:00Z')
+        const backward = revealWindow(month, before, bounds, 3 * DAY)
+
+        expect(span(backward)).toBe(span(month))
+        expect(backward.start.getTime() + span(backward) / 2).toBe(
+            before.getTime()
+        )
+    })
+
+    test('stops at the bound an instant near it would have the window pass', () => {
+        // Four days before the end of the bounds, in a thirty-day window:
+        // centring would hang eleven days past the end.
+        const nearEnd = new Date('2021-12-28T00:00:00Z')
+        const result = revealWindow(month, nearEnd, bounds, 3 * DAY)
+
+        expect(span(result)).toBe(span(month))
+        expect(result.end.toISOString()).toBe(bounds.end.toISOString())
+        expect(nearEnd.getTime()).toBeGreaterThan(result.start.getTime())
+
+        const nearStart = new Date('2018-01-02T00:00:00Z')
+        const opening = revealWindow(month, nearStart, bounds, 3 * DAY)
+
+        expect(span(opening)).toBe(span(month))
+        expect(opening.start.toISOString()).toBe(bounds.start.toISOString())
+    })
+
+    test('lands on the bound itself when the instant is the bound', () => {
+        const result = revealWindow(month, bounds.end, bounds, 3 * DAY)
+
+        expect(result.end.toISOString()).toBe(bounds.end.toISOString())
+        expect(span(result)).toBe(span(month))
     })
 })
 

@@ -149,6 +149,30 @@ export function windowAtSpan(
 }
 
 /**
+ * The window that brings `at` on screen at the span `win` already has. An
+ * instant already inside the window, edges included, returns `win` itself, so
+ * a caller can tell "nothing to do" by identity and playback inside the view
+ * never moves it. An instant outside gets a window centred on it, slid back
+ * inside the bounds where centring would overhang one: at the global window's
+ * edge the instant is still on screen, only off-centre.
+ *
+ * Only ever a pan. The span is left to `clampWindow`, which changes it only
+ * when the bounds cannot hold it.
+ */
+export function revealWindow(
+    win: ViewWindow,
+    at: Date,
+    bounds: ViewWindow,
+    minMs: number
+): ViewWindow {
+    const ms = at.getTime()
+    if (ms >= win.start.getTime() && ms <= win.end.getTime()) return win
+
+    const span = win.end.getTime() - win.start.getTime()
+    return clampWindow(windowOf(ms - span / 2, span), bounds, minMs)
+}
+
+/**
  * The window scaled by `factor` about `anchor`. The `±` buttons use factors
  * of 0.5 and 2.
  */

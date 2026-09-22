@@ -570,6 +570,131 @@ describe('useTimelineZoom', () => {
         expect(iso(api.view)).toEqual(floored)
     })
 
+    describe('revealing the scrubber', () => {
+        const JUNE = win('2019-06-01T00:00:00Z', '2019-07-01T00:00:00Z')
+
+        const centre = (w: ViewWindow) => w.start.getTime() + span(w) / 2
+
+        /** Mounted on the full window, then zoomed by hand onto June. */
+        const onJune = (over: Partial<UseTimelineZoomOptions> = {}) => {
+            render(defaults(over))
+            act(() => api.setView(JUNE))
+            expect(iso(api.view)).toEqual(iso(JUNE))
+        }
+
+        test('leaves the view and auto-fit alone for an instant already on screen', () => {
+            onJune()
+
+            act(() => api.revealTime(new Date('2019-06-20T00:00:00Z')))
+
+            expect(iso(api.view)).toEqual(iso(JUNE))
+            expect(api.autoFit).toBe(true)
+        })
+
+        test('pans an instant past the edge to the centre, at the same span', () => {
+            onJune()
+            const at = new Date('2019-09-15T00:00:00Z')
+
+            act(() => api.revealTime(at))
+
+            expect(span(api.view)).toBe(span(JUNE))
+            expect(centre(api.view)).toBe(at.getTime())
+        })
+
+        test('stops at the edge of the global window rather than centring past it', () => {
+            onJune()
+            const at = new Date('2019-12-28T00:00:00Z')
+
+            act(() => api.revealTime(at))
+
+            expect(span(api.view)).toBe(span(JUNE))
+            expect(api.view.end.toISOString()).toBe(BOUNDS.end.toISOString())
+            expect(at.getTime()).toBeGreaterThan(api.view.start.getTime())
+        })
+
+        test('disarms auto-fit when it pans', () => {
+            onJune()
+
+            act(() => api.revealTime(new Date('2019-02-01T00:00:00Z')))
+
+            expect(api.autoFit).toBe(false)
+        })
+
+        test('leaves auto-fit armed when the pan clamps back onto the view it started from', () => {
+            // The view already ends on the global window's end, and the
+            // instant lies past it, so centring is slid straight back to
+            // the same window: nothing moves, so nothing is disarmed.
+            render(defaults())
+            const december = win('2019-12-01T00:00:00Z', BOUNDS.end.toISOString())
+            act(() => api.setView(december))
+
+            act(() => api.revealTime(new Date('2020-02-01T00:00:00Z')))
+
+            expect(iso(api.view)).toEqual(iso(december))
+            expect(api.autoFit).toBe(true)
+        })
+
+        test('clamps against a window widened in the same batch, not the one held before it', () => {
+            // A layer control opens the global window and asks for the
+            // reveal together. Against the window held at the press, the
+            // target past its end would be slid back out of view.
+            onJune()
+            const wider = win('2019-01-01T00:00:00Z', '2020-12-31T00:00:00Z')
+            const at = new Date('2020-05-01T00:00:00Z')
+
+            act(() => {
+                root.render(<Harness options={defaults({ bounds: wider })} />)
+                api.revealTime(at)
+            })
+
+            expect(span(api.view)).toBe(span(JUNE))
+            expect(centre(api.view)).toBe(at.getTime())
+        })
+
+        test('wins over a refit started in the same render, and leaves auto-fit off', () => {
+            const march = layer(
+                'Sea Ice',
+                nav({
+                    start: new Date('2019-03-01T00:00:00Z'),
+                    end: new Date('2019-04-01T00:00:00Z'),
+                    hasOwnStart: true,
+                    hasOwnEnd: true,
+                })
+            )
+            const august = layer(
+                'Sea Surface Temperature',
+                nav({
+                    start: new Date('2019-08-01T00:00:00Z'),
+                    end: new Date('2019-08-10T00:00:00Z'),
+                    hasOwnStart: true,
+                    hasOwnEnd: true,
+                })
+            )
+            render(defaults({ layers: [march] }))
+            const fitted = api.view
+            const at = new Date('2019-11-15T00:00:00Z')
+
+            act(() => {
+                root.render(
+                    <Harness options={defaults({ layers: [march, august] })} />
+                )
+                api.revealTime(at)
+            })
+
+            expect(api.autoFit).toBe(false)
+            expect(at.getTime()).toBeGreaterThanOrEqual(api.view.start.getTime())
+            expect(at.getTime()).toBeLessThanOrEqual(api.view.end.getTime())
+            // At the refit's span, not the first fit's: the refit is the
+            // origin the reveal panned from.
+            expect(span(api.view)).not.toBe(span(fitted))
+
+            // Disarmed, a later change to the layer set leaves the view be.
+            const held = iso(api.view)
+            render(defaults({ layers: [march] }))
+            expect(iso(api.view)).toEqual(held)
+        })
+    })
+
     describe('in transition', () => {
         const within = (w: ViewWindow, of: ViewWindow) =>
             w.start.getTime() >= of.start.getTime() &&
@@ -741,6 +866,42 @@ describe('useTimelineZoom', () => {
                 '2018-06-01T00:00:00.000Z',
                 '2018-06-04T00:00:00.000Z',
             ])
+        })
+
+        test('a reveal pans over frames and lands centred on the instant', () => {
+            render(defaults())
+            const june = win('2019-06-01T00:00:00Z', '2019-07-01T00:00:00Z')
+            act(() => api.setView(june))
+            const at = new Date('2019-09-15T00:00:00Z')
+
+            act(() => api.revealTime(at))
+            expect(iso(api.view)).toEqual(iso(june))
+
+            frames(4)
+            expect(api.view.start.getTime()).toBeGreaterThan(june.start.getTime())
+            expect(api.view.start.getTime() + span(api.view) / 2).toBeLessThan(
+                at.getTime()
+            )
+
+            settle()
+            expect(span(api.view)).toBe(span(june))
+            expect(api.view.start.getTime() + span(api.view) / 2).toBe(
+                at.getTime()
+            )
+        })
+
+        test('a reveal mid-flight to an instant the flight will show lets it finish', () => {
+            render(defaults())
+
+            act(() => api.zoomIn())
+            frames(2)
+            // A day on from the scrubber the zoom is made about: inside the
+            // zoom's destination, which is what the reveal measures from.
+            act(() => api.revealTime(new Date(CURRENT.getTime() + DAY)))
+            settle()
+
+            expect(span(api.view)).toBe(span(BOUNDS) / 2)
+            expect(api.autoFit).toBe(true)
         })
 
         test('a fit on demand animates too', () => {

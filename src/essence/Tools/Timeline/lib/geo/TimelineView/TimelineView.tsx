@@ -28,6 +28,12 @@ export interface TimelineViewProps {
     /** Live time while the scrubber is being dragged, for display only. */
     onCurrentTimePreview?: (time: Date) => void
     /**
+     * Committed time change from the keyboard on the focused scrubber head,
+     * which can step the head off screen, unlike a drag or a click. Falls
+     * back to `onCurrentTimeChange` when not given.
+     */
+    onCurrentTimeStep?: (time: Date) => void
+    /**
      * The instant a layer row's navigation controls lead to, with the model it
      * came from. Separate from `onCurrentTimeChange`, which clamps to the
      * timeline's window: a layer's data may sit outside the window shown.
@@ -51,6 +57,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     layers,
     onCurrentTimeChange,
     onCurrentTimePreview,
+    onCurrentTimeStep,
     onLayerNavigate,
     view,
     onViewChange,
@@ -72,12 +79,19 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     const layerBarHeight = 20 // Row pitch, shared by the sidebar item and the SVG row
     const topBarHeight = 24 // Space for top axis
     const markerSize = 18 // Rendered size of the scrubber marker
+    // A strip between the date bar and the first layer row that the
+    // scrubber's head sits in, so the head never covers a row's bars at the
+    // current time. The sidebar opens with a spacer of the same height to
+    // keep each name level with its row.
+    const headGutter = markerSize
 
     // Calculate total height needed for layers
     const totalLayersHeight = layers.length * layerBarHeight
+    // Where the layer rows end and the bottom axis begins
+    const layersBottom = headGutter + totalLayersHeight
 
     // Calculate required SVG height
-    const requiredHeight = axisHeight + totalLayersHeight
+    const requiredHeight = headGutter + axisHeight + totalLayersHeight
 
     // Update dimensions on resize
     useEffect(() => {
@@ -125,7 +139,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         axisGroup.selectAll('*').remove() // Clear existing axis
         axisGroup.call(axis as any)
 
-        // Grid lines shooting up through the layers
+        // Grid lines shooting up through the layers, stopping at the gutter
         axisGroup.selectAll('.tick line').attr('y2', -totalLayersHeight)
 
         // Sizing only — fill and family come from .timeline-axis .tick text
@@ -355,9 +369,17 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
             event.preventDefault()
             event.stopPropagation()
-            onCurrentTimeChange(clampDate(next, startTime, endTime))
+            const commit = onCurrentTimeStep ?? onCurrentTimeChange
+            commit(clampDate(next, startTime, endTime))
         },
-        [currentTime, timeMode, startTime, endTime, onCurrentTimeChange]
+        [
+            currentTime,
+            timeMode,
+            startTime,
+            endTime,
+            onCurrentTimeStep,
+            onCurrentTimeChange,
+        ]
     )
 
     // Handle click on timeline to jump to that time
@@ -392,6 +414,11 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                 <div className="timeline-sidebar" style={{ flexShrink: 0 }}>
                     <div className="timeline-sidebar-header" style={{ height: topBarHeight, flexShrink: 0, minHeight: topBarHeight }}></div>
                     <div className="timeline-sidebar-layers">
+                        <div
+                            className="timeline-sidebar-gutter"
+                            style={{ height: headGutter, flexShrink: 0 }}
+                            aria-hidden="true"
+                        />
                         {layers.map((layer) => (
                             <LayerSidebarItem
                                 key={layer.name}
@@ -445,7 +472,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                 <g key={layer.name}>
                                     <rect 
                                         x={0} 
-                                        y={index * layerBarHeight} 
+                                        y={headGutter + index * layerBarHeight} 
                                         width={dimensions.width} 
                                         height={layerBarHeight} 
                                         fill="transparent"
@@ -454,7 +481,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                     <LayerTimeline
                                         layer={layer}
                                         xScale={transformedXScale}
-                                        y={index * layerBarHeight}
+                                        y={headGutter + index * layerBarHeight}
                                         height={layerBarHeight}
                                     />
                                 </g>
@@ -464,28 +491,29 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                         {/* Bottom Time axis */}
                         <g
                             ref={axisRef}
-                            transform={`translate(0, ${totalLayersHeight})`}
+                            transform={`translate(0, ${layersBottom})`}
                             className="timeline-axis"
                         />
 
                         {/* Current time scrubber */}
                         <g className="timeline-scrubber">
-                            {/* Scrubber line through all layers */}
+                            {/* Scrubber line from the head down through all layers */}
                             <line
                                 x1={scrubberX}
-                                y1={0}
+                                y1={headGutter / 2}
                                 x2={scrubberX}
-                                y2={totalLayersHeight}
+                                y2={layersBottom}
                                 strokeWidth="2"
                                 className="timeline-scrubber-line"
                                 style={{ pointerEvents: 'none' }}
                             />
 
-                            {/* Scrubber diamond head at the top of the layers.
-                                Drawn in the marker artwork's own 43x42 space, then
-                                scaled to markerSize and centred on the scrubber. */}
+                            {/* Scrubber diamond head, centred in the gutter above
+                                the layers. Drawn in the marker artwork's own 43x42
+                                space, then scaled to markerSize and centred on the
+                                scrubber. */}
                             <g
-                                transform={`translate(${scrubberX}, ${markerSize / 2}) scale(${markerSize / 22}) translate(-21.3609, -21)`}
+                                transform={`translate(${scrubberX}, ${headGutter / 2}) scale(${markerSize / 22}) translate(-21.3609, -21)`}
                                 filter="url(#timeline-scrubber-shadow)"
                                 className="timeline-scrubber-handle"
                                 style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
@@ -511,12 +539,14 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                 />
                             </g>
 
-                            {/* Invisible band widening the grab area along the line */}
+                            {/* Invisible band widening the grab area along the
+                                line, from the head's centre down, so the stretch
+                                of line in the gutter below the head grabs too */}
                             <rect
                                 x={scrubberX - 5}
-                                y={0}
+                                y={headGutter / 2}
                                 width={10}
-                                height={Math.max(totalLayersHeight, 16)}
+                                height={Math.max(totalLayersHeight, 16) + headGutter / 2}
                                 fill="transparent"
                                 className="timeline-scrubber-handle"
                                 style={{ cursor: isDragging ? 'grabbing' : 'grab' }}

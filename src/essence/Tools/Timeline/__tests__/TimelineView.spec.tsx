@@ -212,6 +212,130 @@ describe('TimelineView layer navigation', () => {
     })
 })
 
+/**
+ * The scrubber's head sits in a strip of its own above the first layer row,
+ * so it never covers a row's bars at the current time. The sidebar opens
+ * with a spacer of the same height, so each name stays level with its row.
+ */
+describe('TimelineView head room', () => {
+    let container: HTMLElement
+    let root: Root
+    let originalResizeObserver: unknown
+
+    beforeEach(() => {
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+        act(() => {
+            root.render(
+                <TimelineView
+                    startTime={START}
+                    endTime={END}
+                    currentTime={CURRENT}
+                    timeMode="DAY"
+                    configuredGranularity="DAY"
+                    layers={[
+                        layer('MODIS Daily', sparseNav('2020-05-01')),
+                        layer('Basemap'),
+                        layer('Hillshade'),
+                    ]}
+                    view={{ start: START, end: END }}
+                    onViewChange={() => {}}
+                    onCurrentTimeChange={() => {}}
+                    onLayerNavigate={() => {}}
+                    onFitLayer={() => {}}
+                />,
+            )
+        })
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver as typeof ResizeObserver
+    })
+
+    const chartRows = () =>
+        Array.from(container.querySelectorAll<SVGRectElement>('.layer-row-bg'))
+
+    const num = (el: Element, name: string) => Number(el.getAttribute(name))
+
+    /** The head's vertical centre and scale, read off its transform. */
+    const headPlacement = () => {
+        const transform = container
+            .querySelector('g.timeline-scrubber-handle')!
+            .getAttribute('transform')!
+        const [, y] = /translate\([^,]+,\s*([^)]+)\)/.exec(transform)!
+        const [, scale] = /scale\(([^)]+)\)/.exec(transform)!
+        return { centre: Number(y), scale: Number(scale) }
+    }
+
+    test('draws the head wholly above the first layer row', () => {
+        // The artwork's diamond is 22 units tall in its own space.
+        const { centre, scale } = headPlacement()
+        const halfHeight = (22 * scale) / 2
+
+        expect(centre - halfHeight).toBeGreaterThanOrEqual(0)
+        expect(centre + halfHeight).toBeLessThanOrEqual(num(chartRows()[0], 'y'))
+    })
+
+    test('opens the sidebar with a spacer the height of the chart\'s gutter', () => {
+        const spacer = container.querySelector<HTMLElement>(
+            '.timeline-sidebar-layers > .timeline-sidebar-gutter',
+        )!
+        const firstItem = container.querySelector('.timeline-sidebar-layers > .layer-item')
+
+        expect(spacer).not.toBeNull()
+        expect(spacer.style.height).toBe(`${num(chartRows()[0], 'y')}px`)
+        // Before every row, so the pitch below it is unchanged.
+        expect(spacer.nextElementSibling).toBe(firstItem)
+    })
+
+    test('stacks the rows at one pitch below the gutter, as the sidebar does', () => {
+        const rows = chartRows()
+        const top = num(rows[0], 'y')
+
+        rows.forEach((row, index) => {
+            expect(num(row, 'y')).toBe(top + index * num(row, 'height'))
+        })
+    })
+
+    test('runs the scrubber line to the bottom of the last row, with the axis below it', () => {
+        const rows = chartRows()
+        const last = rows[rows.length - 1]
+        const bottom = num(last, 'y') + num(last, 'height')
+
+        const line = container.querySelector('.timeline-scrubber-line')!
+        expect(num(line, 'y2')).toBe(bottom)
+        expect(num(line, 'y1')).toBeLessThan(num(rows[0], 'y'))
+
+        expect(
+            container.querySelector('.timeline-axis')!.getAttribute('transform'),
+        ).toBe(`translate(0, ${bottom})`)
+
+        const svg = container.querySelector('.timeline-svg-container > svg')!
+        expect(num(svg, 'height')).toBeGreaterThan(bottom)
+    })
+
+    test('grabs along the line from the head down, gutter included', () => {
+        // The stretch of line between the head and the first row would
+        // otherwise seek on a press meant to grab.
+        const band = container.querySelector('rect.timeline-scrubber-handle')!
+        const rows = chartRows()
+        const last = rows[rows.length - 1]
+
+        expect(num(band, 'y')).toBe(headPlacement().centre)
+        expect(num(band, 'y') + num(band, 'height')).toBeGreaterThanOrEqual(
+            num(last, 'y') + num(last, 'height'),
+        )
+    })
+})
+
 describe('TimelineView visible window', () => {
     let container: HTMLElement
     let root: Root

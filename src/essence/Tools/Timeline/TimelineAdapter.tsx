@@ -155,28 +155,6 @@ export const TimelineAdapter: React.FC = () => {
     )
 
     /**
-     * Commits the instant a layer row's controls lead to, widening the window
-     * to reach it. A layer's data need not sit inside the window on screen, so
-     * the target is committed as given rather than clamped back in.
-     *
-     * The window opens to `revealStart` rather than to the target: a sparse
-     * target is a day's last instant, and a window starting there would meet
-     * the trailing edge of that day's bar and leave the whole of it off the
-     * left of the chart. Forwards needs no such allowance, since a bar ends on
-     * the instant its day does.
-     */
-    const handleLayerNavigate = useCallback(
-        (target: Date, navigation: LayerNavigation) => {
-            const reach = revealStart(navigation, target)
-            const start =
-                reach < startTimeRef.current ? reach : startTimeRef.current
-            const end = target > endTimeRef.current ? target : endTimeRef.current
-            requestTime(start, end, target)
-        },
-        [requestTime]
-    )
-
-    /**
      * Opens the global window to the span a fit needs, leaving the scrubber
      * where it is. Widening only adds reachable instants, so the current time
      * never needs reclamping on this path.
@@ -205,6 +183,52 @@ export const TimelineAdapter: React.FC = () => {
         granularity: configuredGranularity ?? 'DAY',
         onBoundsWiden: handleBoundsWiden,
     })
+
+    // Whether the chart is on screen: collapsed, or with no layer to draw, the
+    // view has nothing to show, and a reveal would only pan it unseen and
+    // disarm auto-fit. Read through a ref so the callbacks built on it keep
+    // their identity and do not re-arm the playback interval.
+    const chartShown = !isCollapsed && layers.length > 0
+    const chartShownRef = useRef(chartShown)
+    useEffect(() => {
+        chartShownRef.current = chartShown
+    }, [chartShown])
+
+    const { revealTime: revealInZoom } = zoom
+    /** Brings an instant into view, while the chart is on screen to show it. */
+    const revealTime = useCallback(
+        (at: Date) => {
+            if (chartShownRef.current) revealInZoom(at)
+        },
+        [revealInZoom]
+    )
+
+    /**
+     * Commits the instant a layer row's controls lead to, widening the window
+     * to reach it. A layer's data need not sit inside the window on screen, so
+     * the target is committed as given rather than clamped back in.
+     *
+     * The window opens to `revealStart` rather than to the target: a sparse
+     * target is a day's last instant, and a window starting there would meet
+     * the trailing edge of that day's bar and leave the whole of it off the
+     * left of the chart. Forwards needs no such allowance, since a bar ends on
+     * the instant its day does.
+     *
+     * The view follows the target once the widened window reaches the zoom
+     * state. Both are set in the one batch, so the reveal clamps against the
+     * window opened here and not the one held when the control was pressed.
+     */
+    const handleLayerNavigate = useCallback(
+        (target: Date, navigation: LayerNavigation) => {
+            const reach = revealStart(navigation, target)
+            const start =
+                reach < startTimeRef.current ? reach : startTimeRef.current
+            const end = target > endTimeRef.current ? target : endTimeRef.current
+            requestTime(start, end, target)
+            revealTime(target)
+        },
+        [requestTime, revealTime]
+    )
 
     // The hook seeds its view from the first bounds it sees, and those are
     // the placeholder held until core answers; clamping that placeholder into
@@ -517,21 +541,37 @@ export const TimelineAdapter: React.FC = () => {
     const canStepBackward = currentTime > startTime
     const canStepForward = currentTime < endTime
 
+    /**
+     * Commits an instant a playback control or the scrubber head's keyboard
+     * led to, clamped to the window, and pans the view to bring the scrubber
+     * on screen. A drag, a click in the chart and the date selector commit
+     * through `handleCurrentTimeChange` instead: the scrubber is on screen for
+     * the first two already, and the view must not move under the pointer.
+     */
+    const commitAndReveal = useCallback(
+        (next: Date) => {
+            const clamped = clampDate(next, startTimeRef.current, endTimeRef.current)
+            commitTime(clamped)
+            revealTime(clamped)
+        },
+        [commitTime, revealTime]
+    )
+
     const handleStepForward = useCallback(() => {
-        handleCurrentTimeChange(stepTime(currentTimeRef.current, timeMode, 1))
-    }, [timeMode, handleCurrentTimeChange])
+        commitAndReveal(stepTime(currentTimeRef.current, timeMode, 1))
+    }, [timeMode, commitAndReveal])
 
     const handleStepBackward = useCallback(() => {
-        handleCurrentTimeChange(stepTime(currentTimeRef.current, timeMode, -1))
-    }, [timeMode, handleCurrentTimeChange])
+        commitAndReveal(stepTime(currentTimeRef.current, timeMode, -1))
+    }, [timeMode, commitAndReveal])
 
     const handleGoToStart = useCallback(() => {
-        commitTime(startTimeRef.current)
-    }, [commitTime])
+        commitAndReveal(startTimeRef.current)
+    }, [commitAndReveal])
 
     const handleGoToEnd = useCallback(() => {
-        commitTime(endTimeRef.current)
-    }, [commitTime])
+        commitAndReveal(endTimeRef.current)
+    }, [commitAndReveal])
 
     /** Playing from the end restarts at the beginning rather than stalling. */
     const handlePlayToggle = useCallback(() => {
@@ -540,10 +580,10 @@ export const TimelineAdapter: React.FC = () => {
             return
         }
         if (currentTimeRef.current >= endTimeRef.current) {
-            commitTime(startTimeRef.current)
+            commitAndReveal(startTimeRef.current)
         }
         setIsPlaying(true)
-    }, [isPlaying, commitTime])
+    }, [isPlaying, commitAndReveal])
 
     useEffect(() => {
         if (!isPlaying) return
@@ -558,11 +598,11 @@ export const TimelineAdapter: React.FC = () => {
                 setIsPlaying(false)
                 return
             }
-            commitTime(nextTime)
+            commitAndReveal(nextTime)
         }, speed)
 
         return () => clearInterval(interval)
-    }, [isPlaying, timeMode, playbackSpeed, commitTime])
+    }, [isPlaying, timeMode, playbackSpeed, commitAndReveal])
 
     const infoPopupId = 'timeline-info-popup'
 
@@ -698,6 +738,7 @@ export const TimelineAdapter: React.FC = () => {
                         onViewChange={zoom.setView}
                         onCurrentTimeChange={handleCurrentTimeChange}
                         onCurrentTimePreview={handleCurrentTimePreview}
+                        onCurrentTimeStep={commitAndReveal}
                         onLayerNavigate={handleLayerNavigate}
                         onFitLayer={zoom.fitToLayer}
                     />
