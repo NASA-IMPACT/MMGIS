@@ -146,14 +146,14 @@ describe('TimelineAdapter header', () => {
     test.each(['YEAR', 'MONTH', 'DAY', 'HOUR'])(
         'shows the full UTC date and time under %s',
         async (mode) => {
-            await mount({ defaultTimeMode: mode })
+            await mount({ timeMode: mode })
 
             expect(dateText()).toBe('Jun 15, 2024 · 09:41 UTC')
         }
     )
 
     test('changing the granularity leaves the readout whole', async () => {
-        await mount({ defaultTimeMode: 'HOUR' })
+        await mount({ timeMode: 'HOUR' })
         const select = container.querySelector<HTMLSelectElement>(
             '.time-mode-control'
         )!
@@ -168,7 +168,7 @@ describe('TimelineAdapter header', () => {
     })
 
     test('offers the granularity beside the playback controls', async () => {
-        await mount({ defaultTimeMode: 'DAY' })
+        await mount({ timeMode: 'DAY' })
 
         const center = container.querySelector('.timeline-header-center')!
         expect(center.querySelector('select.time-mode-control')).not.toBeNull()
@@ -178,7 +178,7 @@ describe('TimelineAdapter header', () => {
     })
 
     test('divides the zoom controls from the buttons after them', async () => {
-        await mount({ defaultTimeMode: 'DAY' })
+        await mount({ timeMode: 'DAY' })
 
         const divider = container.querySelector('.timeline-toolbar-divider')
         expect(divider?.previousElementSibling?.className).toBe(
@@ -187,7 +187,7 @@ describe('TimelineAdapter header', () => {
     })
 
     test('offers Today between the date and the compare action', async () => {
-        await mount({ defaultTimeMode: 'DAY' })
+        await mount({ timeMode: 'DAY' })
 
         const actions = Array.from(
             container.querySelectorAll('.date-selector-action')
@@ -795,7 +795,7 @@ describe('TimelineAdapter zoom before and at the seed', () => {
         const request = api.request
         api.request = async (name: string) => {
             if (name === hold) await gate
-            if (name === 'tool:getVars') return { defaultTimeMode: 'MONTH' }
+            if (name === 'tool:getVars') return { timeMode: 'MONTH' }
             return request(name)
         }
 
@@ -1040,9 +1040,8 @@ describe('TimelineAdapter open-ended layer time', () => {
  * zoom floor, so an unanswered request has to fall back like an absent one.
  */
 /**
- * The zoom floor follows the configured granularity, so a mode finer than it
- * relabels the axis to a detail the view can never be zoomed tight enough to
- * separate. Those modes are not offered.
+ * The configured time mode names the finest step offered: the step control
+ * lists every mode from YEAR down to it and starts on it.
  */
 describe('TimelineAdapter time modes against the configured granularity', () => {
     let container: HTMLElement
@@ -1088,26 +1087,43 @@ describe('TimelineAdapter time modes against the configured granularity', () => 
             originalResizeObserver
     })
 
-    test('a daily mission is not offered the hour option', async () => {
-        await mount({ defaultTimeMode: 'DAY' })
+    const selectedMode = () =>
+        container.querySelector<HTMLSelectElement>('.time-mode-control')?.value
 
-        expect(modeOptions()).toEqual(['YEAR', 'MONTH', 'DAY'])
+    test.each([
+        ['YEAR', ['YEAR']],
+        ['MONTH', ['YEAR', 'MONTH']],
+        ['DAY', ['YEAR', 'MONTH', 'DAY']],
+        ['HOUR', ['YEAR', 'MONTH', 'DAY', 'HOUR']],
+    ])('a mission configured for %s offers %j and starts on it', async (mode, offered) => {
+        await mount({ timeMode: mode })
+
+        expect(modeOptions()).toEqual(offered)
+        expect(selectedMode()).toBe(mode)
     })
 
-    test('an hourly mission keeps every mode', async () => {
-        await mount({ defaultTimeMode: 'HOUR' })
+    test('a mission saved with only the older default mode keeps it', async () => {
+        await mount({ defaultTimeMode: 'MONTH' })
 
-        expect(modeOptions()).toEqual(['YEAR', 'MONTH', 'DAY', 'HOUR'])
+        expect(modeOptions()).toEqual(['YEAR', 'MONTH'])
+        expect(selectedMode()).toBe('MONTH')
     })
 
-    test('the trim applies to a mission that configured its own list', async () => {
-        await mount({
-            defaultTimeMode: 'MONTH',
-            shownTimeModes: ['MONTH', 'DAY', 'HOUR'],
-        })
+    test('the time mode wins over the older default mode', async () => {
+        await mount({ timeMode: 'HOUR', defaultTimeMode: 'YEAR' })
 
-        expect(modeOptions()).toEqual(['MONTH'])
+        expect(selectedMode()).toBe('HOUR')
     })
+
+    test.each([{}, { timeMode: '' }, { timeMode: 'WEEK' }])(
+        'vars %j fall back to DAY',
+        async (vars) => {
+            await mount(vars)
+
+            expect(modeOptions()).toEqual(['YEAR', 'MONTH', 'DAY'])
+            expect(selectedMode()).toBe('DAY')
+        }
+    )
 
     test('vars that never arrive leave the default floor in place', async () => {
         await mount(null)

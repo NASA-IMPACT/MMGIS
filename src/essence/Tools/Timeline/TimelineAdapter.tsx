@@ -78,7 +78,6 @@ export const TimelineAdapter: React.FC = () => {
         return d
     })
     const [timeMode, setTimeMode] = useState<TimeMode>('DAY')
-    const [shownTimeModes, setShownTimeModes] = useState<TimeMode[]>(TIME_MODE_ORDER)
     const [layers, setLayers] = useState<LayerTimeData[]>([])
     const [readiness, setReadiness] = useState<Readiness>('loading')
 
@@ -283,24 +282,17 @@ export const TimelineAdapter: React.FC = () => {
     }, [])
 
     /**
-     * The modes offered, which are those the configured granularity can
-     * actually be zoomed to. A finer mode relabels the axis to a detail the
-     * zoom floor keeps out of reach — HOUR on a mission configured for days
-     * gives hourly ticks across a window that can never be narrowed below
-     * three of them — so it is left out rather than shown and unreachable.
-     *
-     * Derived rather than trimmed where the modes are read, so every path
-     * that settles a granularity is covered, including the fallbacks that
-     * leave the configured list untouched. TIME_MODE_ORDER runs coarse to
-     * fine, so the granularity's own index is the cut.
+     * The modes offered: every mode from YEAR down to the configured
+     * granularity, so the configuration names the finest step and the
+     * coarser ones come with it. TIME_MODE_ORDER runs coarse to fine, so the
+     * granularity's own index is the cut. Until it settles the timeline shows
+     * its loading state, so the full list is never rendered.
      */
     const availableTimeModes = useMemo(() => {
-        if (configuredGranularity === null) return shownTimeModes
+        if (configuredGranularity === null) return TIME_MODE_ORDER
         const floor = TIME_MODE_ORDER.indexOf(configuredGranularity)
-        return shownTimeModes.filter(
-            (mode) => TIME_MODE_ORDER.indexOf(mode) <= floor
-        )
-    }, [shownTimeModes, configuredGranularity])
+        return TIME_MODE_ORDER.slice(0, floor + 1)
+    }, [configuredGranularity])
 
     // Tool variables from the mission config. 'tool:getVars' is registered by
     // Layers_.fina() during mission load, after this tool mounts.
@@ -315,12 +307,12 @@ export const TimelineAdapter: React.FC = () => {
             // the deadline the configuration is treated as absent, which is
             // the same fallback an unregistered handler takes. The answer is
             // dropped whole rather than applied late, so the granularity and
-            // the modes shown alongside it always come from one source.
+            // the step mode it starts on always come from one source.
             const vars = await Promise.race([
                 mmgisRequest<{
                     allowPlayback?: boolean
+                    timeMode?: string
                     defaultTimeMode?: string
-                    shownTimeModes?: string[]
                 }>('tool:getVars', 'timeline'),
                 new Promise<null>((resolve) => {
                     deadline = setTimeout(() => resolve(null), VARS_TIMEOUT_MS)
@@ -335,26 +327,15 @@ export const TimelineAdapter: React.FC = () => {
                 setAllowPlayback(vars.allowPlayback)
             }
 
-            // Which mode buttons to show (canonical order, empty = all)
-            let effectiveModes = TIME_MODE_ORDER
-            if (Array.isArray(vars.shownTimeModes)) {
-                const requested = vars.shownTimeModes.map((m) => String(m).toUpperCase())
-                const normalized = TIME_MODE_ORDER.filter((m) => requested.includes(m))
-                if (normalized.length > 0) effectiveModes = normalized
-            }
-            setShownTimeModes(effectiveModes)
-
-            // Initial mode: the configured default when valid, else 'DAY',
-            // then clamped to a shown mode.
-            const requestedDefault = vars.defaultTimeMode?.toUpperCase()
-            let mode: TimeMode =
-                requestedDefault === 'YEAR' ||
-                requestedDefault === 'MONTH' ||
-                requestedDefault === 'DAY' ||
-                requestedDefault === 'HOUR'
-                    ? (requestedDefault as TimeMode)
-                    : 'DAY'
-            if (!effectiveModes.includes(mode)) mode = effectiveModes[0]
+            // The configured granularity, with the older defaultTimeMode key
+            // read where timeMode is absent or empty so saved missions keep
+            // their setting, and DAY where neither names a mode.
+            const requested = String(
+                vars.timeMode || vars.defaultTimeMode || ''
+            ).toUpperCase()
+            const mode: TimeMode = TIME_MODE_ORDER.includes(requested as TimeMode)
+                ? (requested as TimeMode)
+                : 'DAY'
             setTimeMode(mode)
             // The same validated mode, held apart from the runtime control so
             // a later press of that control cannot move the zoom floor.
