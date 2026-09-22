@@ -1053,9 +1053,12 @@ mmgisAPI.provide('map:writeCoordinateURL', () =>
     mmgisAPI_.writeCoordinateURL()
 )
 mmgisAPI.provide('map:getViewState', () => mmgisAPI_.getViewState())
-// Which engine is drawing the map. A plugin whose behaviour differs by engine
-// — or that only one engine can support — has no other way to tell. Null until
-// the mission has built an engine.
+// Which engine is drawing the map, for a plugin whose behaviour differs by
+// engine or that only one engine can support. `mapEngineRegistry` answers the
+// same question, but only to code that can import it: a request travels as a
+// string, so it still reaches a plugin behind a sandbox boundary. Null until
+// the mission has built an engine — Layers_.fina() is where it becomes
+// readable, so a caller asking at load time gets null rather than an answer.
 mmgisAPI.provide('map:getEngineType', () => L_.Map_?.engine?.engineType ?? null)
 mmgisAPI.provide('map:getScreenshot', () => mmgisAPI_.getMapScreenshot())
 mmgisAPI.provide('app:copyText', (text) =>
