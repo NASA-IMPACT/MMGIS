@@ -352,3 +352,78 @@ describe('TimelineAdapter open-ended layer time', () => {
         })
     })
 })
+
+describe('TimelineAdapter config changes', () => {
+    let container: HTMLElement
+    let root: Root
+    let listeners: Map<string, Set<(payload?: unknown) => void>>
+    let configReads: number
+    let originalResizeObserver: unknown
+
+    beforeEach(async () => {
+        listeners = new Map()
+        configReads = 0
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+        ;(window as unknown as { mmgisAPI: unknown }).mmgisAPI = {
+            request: async (name: string) => {
+                if (name === 'time:isEnabled') return true
+                if (name === 'time:getStart') return START
+                if (name === 'time:getEnd') return END
+                if (name === 'time:getCurrent') return CURRENT
+                if (name === 'tool:getVars') return {}
+                if (name === 'layers:getAllConfigs') {
+                    configReads++
+                    return LAYER_CONFIGS
+                }
+                if (name === 'layers:getVisible')
+                    return { sparse: true, basemap: true }
+                return null
+            },
+            hasHandler: () => true,
+            on: (event: string, handler: (payload?: unknown) => void) => {
+                if (!listeners.has(event)) listeners.set(event, new Set())
+                listeners.get(event)!.add(handler)
+                return () => listeners.get(event)?.delete(handler)
+            },
+            emit: () => {},
+        }
+
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+        await act(async () => {
+            root.render(<TimelineAdapter />)
+        })
+        await act(async () => {})
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        delete (window as { mmgisAPI?: unknown }).mmgisAPI
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver
+    })
+
+    const fire = (event: string) =>
+        act(async () => {
+            for (const handler of [...(listeners.get(event) ?? [])]) handler({})
+        })
+
+    test('rebuilds its rows when a layer config changes', async () => {
+        const before = configReads
+        await fire('layers:configChanged')
+        expect(configReads).toBe(before + 1)
+    })
+
+    test('drops the config subscription on unmount', async () => {
+        expect(listeners.get('layers:configChanged')?.size).toBe(1)
+        act(() => root.unmount())
+        expect(listeners.get('layers:configChanged')?.size ?? 0).toBe(0)
+        // afterEach unmounts again; a second unmount on a fresh root is safe.
+        root = createRoot(document.createElement('div'))
+    })
+})

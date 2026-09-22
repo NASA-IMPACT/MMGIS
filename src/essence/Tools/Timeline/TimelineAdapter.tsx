@@ -202,11 +202,16 @@ export const TimelineAdapter: React.FC = () => {
         if (!allowPlayback && isPlaying) setIsPlaying(false)
     }, [allowPlayback, isPlaying])
 
-    // Subscribe to layer visibility changes
+    // Rows are rebuilt on a visibility change and on a config change, since
+    // either can move a layer's band (a plugin may rewrite its data times).
     useEffect(() => {
-        return mmgisOn('layer:visibilityChange', () => {
-            setLayerVisibilityVersion((v) => v + 1)
-        })
+        const bump = () => setLayerVisibilityVersion((v) => v + 1)
+        const offVisibility = mmgisOn('layer:visibilityChange', bump)
+        const offConfig = mmgisOn('layers:configChanged', bump)
+        return () => {
+            offVisibility()
+            offConfig()
+        }
     }, [])
 
     const markLayersApiReady = useCallback(() => setLayersApiReady(true), [])

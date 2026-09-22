@@ -457,8 +457,12 @@ const L_ = {
                 window.mmgisAPI.provide('layers:updateConfig', ({ layerUUID, updates }) => {
                     const uuid = L_.asLayerUUID(layerUUID)
                     const layerConfig = L_.layers.data[uuid]
-                    if (layerConfig) {
+                    if (layerConfig && updates && typeof updates === 'object') {
                         Object.assign(layerConfig, updates)
+                        window.mmgisAPI.emit('layers:configChanged', {
+                            layerName: uuid,
+                            keys: Object.keys(updates),
+                        })
                         return true
                     }
                     return false
