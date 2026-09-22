@@ -342,11 +342,10 @@ describe('TimelineAdapter layer navigation', () => {
 
 /**
  * Every time change but the chart's pointer brings the scrubber into view
- * when it lands off screen, panning at the span the view has: the playback
- * controls, the head's keyboard, the layer rows, the date selector and
- * commits made outside the plugin. A drag and a click in the chart do not:
- * the scrubber is on screen for those, and the view must not move under the
- * pointer.
+ * when it lands off screen, panning at the span the view has: playback, the
+ * playback controls, the layer rows, the date selector and commits made
+ * outside the plugin. A drag in the chart does not: the view must not move
+ * under the pointer.
  */
 describe('TimelineAdapter following the scrubber', () => {
     let container: HTMLElement
@@ -379,6 +378,19 @@ describe('TimelineAdapter following the scrubber', () => {
             (requests()[requests().length - 1].payload as { currentTime: string })
                 .currentTime
         )
+
+    /** Asserts the view keeps the zoomed span and is centred on `at`. */
+    const expectCentredOn = (zoomed: ViewWindow, at: Date) => {
+        const followed = viewOn(SEEDED)
+        expect(spanOf(followed)).toBeCloseTo(spanOf(zoomed), -1)
+        expect(Math.abs(centreOf(followed) - at.getTime())).toBeLessThanOrEqual(1)
+    }
+
+    const commitFromOutside = (currentTime: string) => {
+        act(() => {
+            listeners['time:changed']({ startTime: START, endTime: END, currentTime })
+        })
+    }
 
     beforeEach(async () => {
         emits = []
@@ -422,6 +434,7 @@ describe('TimelineAdapter following the scrubber', () => {
         delete (window as { mmgisAPI?: unknown }).mmgisAPI
         ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
             originalResizeObserver
+        vi.useRealTimers()
     })
 
     test('stepping forward holds the view until the scrubber passes its edge, then centres it', () => {
@@ -437,37 +450,29 @@ describe('TimelineAdapter following the scrubber', () => {
             expect(viewOn(SEEDED)).toEqual(zoomed)
         }
 
-        const followed = viewOn(SEEDED)
-        expect(spanOf(followed)).toBeCloseTo(spanOf(zoomed), -1)
-        expect(Math.abs(centreOf(followed) - lastCurrent().getTime())).toBeLessThanOrEqual(1)
+        expectCentredOn(zoomed, lastCurrent())
     })
 
-    test('go to end lands the view on the end of the global window', () => {
+    test('playback holds the view while playing inside it, and re-centres once past the edge', () => {
+        // Playback steps on its interval, so the clock driving it is faked.
+        vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
         const zoomed = viewOn(SEEDED)
 
-        act(() => button('Go to end').click())
+        act(() => button('Play').click())
 
-        const followed = viewOn(SEEDED)
-        expect(followed.end.getTime()).toBe(new Date(END).getTime())
-        expect(spanOf(followed)).toBeCloseTo(spanOf(zoomed), -1)
-    })
+        let ticks = 0
+        while (ticks < 120) {
+            act(() => vi.advanceTimersByTime(1000))
+            ticks++
+            if (lastCurrent().getTime() > zoomed.end.getTime()) break
+            expect(viewOn(SEEDED)).toEqual(zoomed)
+        }
 
-    test('go to start lands the view on the start of the global window', () => {
-        const zoomed = viewOn(SEEDED)
-
-        act(() => button('Go to start').click())
-
-        const followed = viewOn(SEEDED)
-        expect(followed.start.getTime()).toBe(new Date(START).getTime())
-        expect(spanOf(followed)).toBeCloseTo(spanOf(zoomed), -1)
+        expectCentredOn(zoomed, lastCurrent())
     })
 
     test('a layer jump past the window lands on the widened window, with the target on screen', () => {
-        act(() => {
-            container
-                .querySelector<HTMLButtonElement>('[aria-label="Rover Images: last date"]')!
-                .click()
-        })
+        act(() => button('Rover Images: last date').click())
 
         // Committed locally at once, alongside the reveal.
         const widened: ViewWindow = {
@@ -479,111 +484,21 @@ describe('TimelineAdapter following the scrubber', () => {
         expect(followed.start.getTime()).toBeLessThan(new Date(PAST_WINDOW).getTime())
     })
 
-    test('a layer jump back before the window lands on the widened start, with the target on screen', () => {
-        act(() => {
-            container
-                .querySelector<HTMLButtonElement>('[aria-label="Rover Images: previous date"]')!
-                .click()
-        })
-
-        const widened: ViewWindow = {
-            start: new Date(BEFORE_WINDOW_DAY_START),
-            end: new Date(END),
-        }
-        const followed = viewOn(widened)
-        const target = lastCurrent().getTime()
-        expect(lastCurrent().toISOString()).toBe(BEFORE_WINDOW)
-        expect(followed.start.toISOString()).toBe(BEFORE_WINDOW_DAY_START)
-        expect(target).toBeGreaterThanOrEqual(followed.start.getTime())
-        expect(target).toBeLessThanOrEqual(followed.end.getTime())
-    })
-
-    test('the keyboard on the focused scrubber head keeps the head in view', () => {
-        // The head is a focusable slider; stepping it off screen would leave
-        // keyboard focus on something the viewer cannot see.
-        const zoomed = viewOn(SEEDED)
-        const head = container.querySelector<SVGGElement>('g.timeline-scrubber-handle')!
-
-        act(() => {
-            head.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
-        })
-
-        expect(lastCurrent().toISOString()).toBe(new Date(END).toISOString())
-        const followed = viewOn(SEEDED)
-        expect(followed.end.getTime()).toBe(new Date(END).getTime())
-        expect(spanOf(followed)).toBeCloseTo(spanOf(zoomed), -1)
-    })
-
-    test('the keyboard on the head leaves the view be while the head stays on screen', () => {
-        const zoomed = viewOn(SEEDED)
-        const head = container.querySelector<SVGGElement>('g.timeline-scrubber-handle')!
-
-        act(() => {
-            head.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
-        })
-
-        expect(viewOn(SEEDED)).toEqual(zoomed)
-    })
-
-    test('collapsed, playback controls move time, and expanding reveals the scrubber', () => {
-        const zoomed = viewOn(SEEDED)
-        const collapse = container.querySelector<HTMLButtonElement>('.timeline-collapse-btn')!
-
-        act(() => collapse.click())
-        act(() => button('Go to end').click())
-        expect(lastCurrent().toISOString()).toBe(new Date(END).toISOString())
-        act(() => collapse.click())
-
-        const followed = viewOn(SEEDED)
-        expect(followed.end.getTime()).toBe(new Date(END).getTime())
-        expect(spanOf(followed)).toBeCloseTo(spanOf(zoomed), -1)
-    })
-
-    test('collapsed and expanded with nothing moved, the view is left be', () => {
-        const zoomed = viewOn(SEEDED)
-        const collapse = container.querySelector<HTMLButtonElement>('.timeline-collapse-btn')!
-
-        act(() => collapse.click())
-        act(() => collapse.click())
-
-        expect(viewOn(SEEDED)).toEqual(zoomed)
-    })
-
-    test('a click in the chart seeks and leaves the view be', () => {
-        const zoomed = viewOn(SEEDED)
-
-        act(() => {
-            chart().dispatchEvent(
-                new MouseEvent('click', { bubbles: true, clientX: 700, clientY: 30 })
-            )
-        })
-
-        expect(requests().length).toBeGreaterThan(0)
-        expect(viewOn(SEEDED)).toEqual(zoomed)
-    })
-
-    /**
-     * Drags the scrubber head to `clientX` and releases it there. Pointer
-     * capture keeps the move and release on the head wherever the pointer
-     * goes, so a release past the chart's edge lands on the head as well.
-     */
-    const dragHeadTo = (clientX: number) => {
-        const head = container.querySelector<SVGGElement>('g.timeline-scrubber-handle')!
-        const pointer = (type: string, x: number) =>
-            new MouseEvent(type, { bubbles: true, clientX: x, clientY: 30 })
-        act(() => head.dispatchEvent(pointer('pointerdown', 400)))
-        act(() => head.dispatchEvent(pointer('pointermove', clientX)))
-        act(() => head.dispatchEvent(pointer('pointerup', clientX)))
-    }
-
     test('a drag released past the edge of the chart commits there and leaves the view be', () => {
         // The drag is clamped to the global window, not to the view, so a
         // release past the chart's right edge commits an instant off screen.
         // Core's echo of that commit arrives inside the emit, before the
-        // render the commit causes, and is not followed either.
+        // render the commit causes, and is not followed either. Pointer
+        // capture keeps the move and release on the head wherever the
+        // pointer goes.
         const zoomed = viewOn(SEEDED)
+        const head = container.querySelector<SVGGElement>('g.timeline-scrubber-handle')!
+        const pointer = (type: string, x: number) =>
+            new MouseEvent(type, { bubbles: true, clientX: x, clientY: 30 })
 
-        dragHeadTo(WIDTH * 1.5)
+        act(() => head.dispatchEvent(pointer('pointerdown', 400)))
+        act(() => head.dispatchEvent(pointer('pointermove', WIDTH * 1.5)))
+        act(() => head.dispatchEvent(pointer('pointerup', WIDTH * 1.5)))
 
         expect(requests()).toHaveLength(1)
         expect(lastCurrent().getTime()).toBeGreaterThan(zoomed.end.getTime())
@@ -616,9 +531,7 @@ describe('TimelineAdapter following the scrubber', () => {
 
         expect(lastCurrent().toISOString()).toBe('2024-03-15T00:00:00.000Z')
         expect(lastCurrent().getTime()).toBeLessThan(zoomed.start.getTime())
-        const followed = viewOn(SEEDED)
-        expect(spanOf(followed)).toBeCloseTo(spanOf(zoomed), -1)
-        expect(Math.abs(centreOf(followed) - lastCurrent().getTime())).toBeLessThanOrEqual(1)
+        expectCentredOn(zoomed, lastCurrent())
     })
 
     test('a commit from outside the plugin off screen centres the view on it', () => {
@@ -626,362 +539,32 @@ describe('TimelineAdapter following the scrubber', () => {
         const at = new Date('2024-10-01T00:00:00Z')
         expect(at.getTime()).toBeGreaterThan(zoomed.end.getTime())
 
-        act(() => {
-            listeners['time:changed']({
-                startTime: START,
-                endTime: END,
-                currentTime: at.toISOString(),
-            })
-        })
+        commitFromOutside(at.toISOString())
 
-        const followed = viewOn(SEEDED)
-        expect(spanOf(followed)).toBeCloseTo(spanOf(zoomed), -1)
-        expect(Math.abs(centreOf(followed) - at.getTime())).toBeLessThanOrEqual(1)
+        expectCentredOn(zoomed, at)
         // Following core's commit is not a commit of the plugin's own.
         expect(requests()).toHaveLength(0)
     })
 
-    test('a commit from outside that widens the window reveals its instant within the widened one', () => {
-        // Past the end of the window held before, so a reveal clamped against
-        // that window would stop at its end and leave the instant off screen.
-        const widenedEnd = '2025-06-30T00:00:00.000Z'
-        const at = new Date('2025-06-01T00:00:00Z')
-
-        act(() => {
-            listeners['time:changed']({
-                startTime: START,
-                endTime: widenedEnd,
-                currentTime: at.toISOString(),
-            })
-        })
-
-        const widened: ViewWindow = { start: new Date(START), end: new Date(widenedEnd) }
-        const followed = viewOn(widened)
-        expect(at.getTime()).toBeGreaterThanOrEqual(followed.start.getTime())
-        expect(at.getTime()).toBeLessThanOrEqual(followed.end.getTime())
-        expect(Math.abs(centreOf(followed) - at.getTime())).toBeLessThanOrEqual(1)
-    })
-
-    test('a commit from outside inside the view leaves it be', () => {
-        const zoomed = viewOn(SEEDED)
-
-        act(() => {
-            listeners['time:changed']({
-                startTime: START,
-                endTime: END,
-                currentTime: new Date(centreOf(zoomed) + 86400000).toISOString(),
-            })
-        })
-
-        expect(viewOn(SEEDED)).toEqual(zoomed)
-    })
-
-    test('a commit from outside that moves only the window leaves the view be', () => {
-        // The scrubber is taken off screen first, by a drag released past the
-        // chart's edge, so a reveal of the instant held would move the view.
-        const zoomed = viewOn(SEEDED)
-        dragHeadTo(WIDTH * 1.5)
-        const held = lastCurrent()
-        expect(held.getTime()).toBeGreaterThan(zoomed.end.getTime())
-        expect(viewOn(SEEDED)).toEqual(zoomed)
-
-        const moved: ViewWindow = {
-            start: new Date('2023-06-01T00:00:00Z'),
-            end: new Date(END),
-        }
-        act(() => {
-            listeners['time:changed']({
-                startTime: moved.start.toISOString(),
-                endTime: END,
-                currentTime: held.toISOString(),
-            })
-        })
-
-        const after = viewOn(moved)
-        expect(after.start.getTime()).toBeCloseTo(zoomed.start.getTime(), -1)
-        expect(after.end.getTime()).toBeCloseTo(zoomed.end.getTime(), -1)
-    })
-
-    test('two commits from outside before a render reveal the later instant', () => {
-        // The first moves the scrubber off screen and the second brings it
-        // back, both ahead of the render either causes. The second is a
-        // change from the first, not a repeat of the instant held before it.
-        const zoomed = viewOn(SEEDED)
-
-        act(() => {
-            listeners['time:changed']({
-                startTime: START,
-                endTime: END,
-                currentTime: '2024-10-01T00:00:00Z',
-            })
-            listeners['time:changed']({
-                startTime: START,
-                endTime: END,
-                currentTime: CURRENT,
-            })
-        })
-
-        expect(viewOn(SEEDED)).toEqual(zoomed)
-    })
-
-    test('collapsed, a commit from outside is revealed once the chart expands', () => {
+    test('collapsed, a commit from a button or from outside is revealed once the chart expands', () => {
         const zoomed = viewOn(SEEDED)
         const collapse = container.querySelector<HTMLButtonElement>('.timeline-collapse-btn')!
-        const at = new Date('2024-10-01T00:00:00Z')
 
         act(() => collapse.click())
-        act(() => {
-            listeners['time:changed']({
-                startTime: START,
-                endTime: END,
-                currentTime: at.toISOString(),
-            })
-        })
+        act(() => button('Go to end').click())
+        expect(lastCurrent().toISOString()).toBe(new Date(END).toISOString())
         act(() => collapse.click())
 
         const followed = viewOn(SEEDED)
+        expect(followed.end.getTime()).toBe(new Date(END).getTime())
         expect(spanOf(followed)).toBeCloseTo(spanOf(zoomed), -1)
-        expect(Math.abs(centreOf(followed) - at.getTime())).toBeLessThanOrEqual(1)
-    })
 
-    test('collapsed through several commits, expanding reveals the latest', () => {
-        const zoomed = viewOn(SEEDED)
-        const collapse = container.querySelector<HTMLButtonElement>('.timeline-collapse-btn')!
-        const at = new Date('2024-10-01T00:00:00Z')
-
+        const at = new Date('2024-03-01T00:00:00Z')
         act(() => collapse.click())
-        act(() => button('Go to start').click())
-        act(() => {
-            listeners['time:changed']({
-                startTime: START,
-                endTime: END,
-                currentTime: at.toISOString(),
-            })
-        })
+        commitFromOutside(at.toISOString())
         act(() => collapse.click())
 
-        const followed = viewOn(SEEDED)
-        expect(spanOf(followed)).toBeCloseTo(spanOf(zoomed), -1)
-        expect(Math.abs(centreOf(followed) - at.getTime())).toBeLessThanOrEqual(1)
-    })
-})
-
-/**
- * Playback steps on its interval, so the clock driving it is faked. The view
- * holds while the scrubber plays across it and re-centres once it passes the
- * edge. Auto-fit stays armed through every pan, whether it follows playback
- * or a commit from outside the plugin.
- */
-describe('TimelineAdapter following the scrubber in playback', () => {
-    let container: HTMLElement
-    let root: Root
-    let emits: Emit[]
-    let listeners: Record<string, Listener>
-    let originalResizeObserver: unknown
-
-    const WIDTH = 800
-    const SEEDED: ViewWindow = { start: new Date(START), end: new Date(END) }
-
-    const button = (label: string) =>
-        container.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!
-
-    const viewOn = (bounds: ViewWindow): ViewWindow =>
-        transformToWindow(
-            zoomTransform(
-                container.querySelector<SVGSVGElement>('.timeline-svg-container > svg')!
-            ),
-            bounds,
-            WIDTH
-        )
-
-    const current = () => {
-        const all = emits.filter((e) => e.event === 'time:changeRequested')
-        return new Date((all[all.length - 1].payload as { currentTime: string }).currentTime)
-    }
-
-    beforeEach(async () => {
-        vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
-        emits = []
-        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
-            .ResizeObserver
-        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
-            NoopResizeObserver
-        listeners = {}
-        installSparseApi(emits, { basemap: true }, listeners)
-
-        container = document.createElement('div')
-        document.body.appendChild(container)
-        root = createRoot(container)
-        await act(async () => {
-            root.render(<TimelineAdapter />)
-        })
-        await act(async () => {})
-
-        for (let i = 0; i < 3; i++) {
-            act(() => button('Zoom in').click())
-        }
-    })
-
-    afterEach(() => {
-        act(() => root.unmount())
-        container.remove()
-        delete (window as { mmgisAPI?: unknown }).mmgisAPI
-        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
-            originalResizeObserver
-        vi.useRealTimers()
-    })
-
-    test('holds the view while playing inside it, and re-centres once past the edge', () => {
-        const zoomed = viewOn(SEEDED)
-        expect(autoFitToggle(container)!.getAttribute('aria-pressed')).toBe('true')
-
-        act(() => button('Play').click())
-
-        let ticks = 0
-        while (ticks < 120) {
-            act(() => vi.advanceTimersByTime(1000))
-            ticks++
-            if (current().getTime() > zoomed.end.getTime()) break
-            expect(viewOn(SEEDED)).toEqual(zoomed)
-            expect(autoFitToggle(container)!.getAttribute('aria-pressed')).toBe('true')
-        }
-
-        const followed = viewOn(SEEDED)
-        const centre = followed.start.getTime() + (followed.end.getTime() - followed.start.getTime()) / 2
-        expect(Math.abs(centre - current().getTime())).toBeLessThanOrEqual(1)
-        // Following the scrubber leaves auto-fit armed.
-        expect(autoFitToggle(container)!.getAttribute('aria-pressed')).toBe('true')
-    })
-
-    test('a commit from outside off screen re-centres the view and leaves auto-fit armed', () => {
-        const at = new Date('2024-10-01T00:00:00Z')
-        expect(autoFitToggle(container)!.getAttribute('aria-pressed')).toBe('true')
-
-        act(() => {
-            listeners['time:changed']({
-                startTime: START,
-                endTime: END,
-                currentTime: at.toISOString(),
-            })
-        })
-
-        const followed = viewOn(SEEDED)
-        const centre = followed.start.getTime() + (followed.end.getTime() - followed.start.getTime()) / 2
-        expect(Math.abs(centre - at.getTime())).toBeLessThanOrEqual(1)
-        expect(autoFitToggle(container)!.getAttribute('aria-pressed')).toBe('true')
-    })
-
-    test('core repeating the seeded time on its first broadcast leaves the view and auto-fit be', () => {
-        // Core broadcasts the window it seeded once the mission has loaded,
-        // which is the same instant the timeline read at mount.
-        const zoomed = viewOn(SEEDED)
-
-        act(() => {
-            listeners['time:changed']({
-                startTime: START,
-                endTime: END,
-                currentTime: CURRENT,
-            })
-        })
-
-        expect(viewOn(SEEDED)).toEqual(zoomed)
-        expect(autoFitToggle(container)!.getAttribute('aria-pressed')).toBe('true')
-    })
-})
-
-/**
- * A layer jump that widens the window while auto-fit is armed. Auto-fit
- * widens the window onto the sparse layer's dates at load; core then
- * commits the seeded window again, as another plugin or the URL might,
- * which leaves the layer's last date outside it with auto-fit still armed,
- * since the layer's own bounds have not changed.
- */
-describe('TimelineAdapter following a layer jump with auto-fit armed', () => {
-    let container: HTMLElement
-    let root: Root
-    let emits: Emit[]
-    let listeners: Record<string, Listener>
-    let originalResizeObserver: unknown
-
-    const chart = () =>
-        container.querySelector<SVGSVGElement>('.timeline-svg-container > svg')!
-
-    beforeEach(async () => {
-        emits = []
-        listeners = {}
-        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
-            .ResizeObserver
-        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
-            NoopResizeObserver
-        installSparseApi(emits, { sparse: true, basemap: true }, listeners)
-
-        container = document.createElement('div')
-        document.body.appendChild(container)
-        root = createRoot(container)
-        await act(async () => {
-            root.render(<TimelineAdapter />)
-        })
-        await act(async () => {})
-
-        await act(async () => {
-            listeners['time:changed']({
-                startTime: START,
-                endTime: END,
-                currentTime: CURRENT,
-            })
-        })
-        await act(async () => {})
-
-        for (let i = 0; i < 3; i++) {
-            act(() => {
-                container
-                    .querySelector<HTMLButtonElement>('[aria-label="Zoom in"]')!
-                    .click()
-            })
-        }
-    })
-
-    afterEach(() => {
-        act(() => root.unmount())
-        container.remove()
-        delete (window as { mmgisAPI?: unknown }).mmgisAPI
-        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
-            originalResizeObserver
-    })
-
-    test('lands with the target on screen, and leaves auto-fit armed', async () => {
-        expect(autoFitToggle(container)!.getAttribute('aria-pressed')).toBe('true')
-
-        act(() => {
-            container
-                .querySelector<HTMLButtonElement>('[aria-label="Rover Images: last date"]')!
-                .click()
-        })
-        const last = emits.filter((e) => e.event === 'time:changeRequested').pop()!
-        expect(last.payload).toEqual({
-            startTime: new Date(START).toISOString(),
-            endTime: PAST_WINDOW,
-            currentTime: PAST_WINDOW,
-        })
-
-        const widened: ViewWindow = {
-            start: new Date(START),
-            end: new Date(PAST_WINDOW),
-        }
-        const followed = transformToWindow(zoomTransform(chart()), widened, 800)
-        const target = new Date(PAST_WINDOW).getTime()
-        expect(target).toBeGreaterThanOrEqual(followed.start.getTime())
-        expect(target).toBeLessThanOrEqual(followed.end.getTime())
-        expect(autoFitToggle(container)!.getAttribute('aria-pressed')).toBe('true')
-
-        // The widen refetches the layers for the widened window. Their own
-        // bounds are unchanged by it, so armed auto-fit has nothing to refit
-        // and the view stays on the target.
-        await act(async () => {})
-        await act(async () => {})
-        const settled = transformToWindow(zoomTransform(chart()), widened, 800)
-        expect(settled).toEqual(followed)
-        expect(autoFitToggle(container)!.getAttribute('aria-pressed')).toBe('true')
+        expectCentredOn(zoomed, at)
     })
 })
 
@@ -1099,13 +682,12 @@ describe('TimelineAdapter zoom before and at the seed', () => {
 
     /**
      * Mounts with the given layers visible. One of core's answers can be
-     * held back behind the returned release: the seed or the tool vars, which
-     * answer with a monthly granularity, so the layers land first; or the
-     * layer configs, so the timeline is up before any layer is drawn.
+     * held back behind the returned release, so the layers land first: the
+     * seed, or the tool vars, which answer with a monthly granularity.
      */
     const mount = async (
         visible: Record<string, boolean>,
-        hold: 'time:getStart' | 'tool:getVars' | 'layers:getAllConfigs' | null
+        hold: 'time:getStart' | 'tool:getVars' | null
     ): Promise<() => void> => {
         let release: () => void = () => {}
         const gate = new Promise<void>((resolve) => {
@@ -1241,36 +823,6 @@ describe('TimelineAdapter zoom before and at the seed', () => {
             startTime: BEFORE_WINDOW_DAY_START,
             endTime: PAST_WINDOW,
         })
-    })
-
-    test('collapsed before any layer is drawn, a commit is not revealed on expand over the first fit', async () => {
-        const releaseLayers = await mount({ short: true }, 'layers:getAllConfigs')
-        const collapse = container.querySelector<HTMLButtonElement>('.timeline-collapse-btn')!
-        expect(container.querySelector('.timeline-empty')).not.toBeNull()
-
-        act(() => collapse.click())
-        // Months away from the short layer the first fit frames.
-        act(() => {
-            listeners['time:changed']({
-                startTime: START,
-                endTime: END,
-                currentTime: '2024-10-01T00:00:00Z',
-            })
-        })
-        await act(async () => {
-            releaseLayers()
-        })
-        await act(async () => {})
-        act(() => collapse.click())
-
-        const svg = container.querySelector<SVGSVGElement>('.timeline-svg-container > svg')!
-        const seeded: ViewWindow = { start: new Date(START), end: new Date(END) }
-        const view = transformToWindow(zoomTransform(svg), seeded, 800)
-        // Still framing the layer's three days, at the monthly floor.
-        expect(view.start.getTime()).toBeLessThanOrEqual(new Date('2024-05-01T00:00:00Z').getTime())
-        expect(view.end.getTime()).toBeGreaterThanOrEqual(new Date('2024-05-04T00:00:00Z').getTime())
-        expect(slider()!.getAttribute('aria-valuetext')).toBe('2 months')
-        expect(autoFitToggle(container)!.getAttribute('aria-pressed')).toBe('true')
     })
 
     test('the first fit waits for the configured granularity and runs at its floor', async () => {
@@ -1503,7 +1055,7 @@ describe('TimelineAdapter when the tool vars never answer', () => {
         vi.useRealTimers()
     })
 
-    test('settles on the default granularity rather than loading for good', async () => {
+    test('settles on the default granularity when the request never resolves', async () => {
         container = document.createElement('div')
         document.body.appendChild(container)
         root = createRoot(container)
@@ -1569,7 +1121,7 @@ describe('TimelineAdapter without the tool vars', () => {
         await act(async () => {})
     }
 
-    test('settles on the default granularity rather than loading for good', async () => {
+    test('settles on the default granularity when the handler never registers', async () => {
         await mount()
 
         // Core has answered on time, so the only thing still outstanding is

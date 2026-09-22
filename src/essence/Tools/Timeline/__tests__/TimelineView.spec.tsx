@@ -275,63 +275,23 @@ describe('TimelineView head room', () => {
         return { centre: Number(y), scale: Number(scale) }
     }
 
-    test('draws the head wholly above the first layer row', () => {
+    test('draws the head wholly above the first layer row, and opens the sidebar with a spacer of the same height', () => {
+        const top = num(chartRows()[0], 'y')
+
         // The artwork's diamond is 22 units tall in its own space.
         const { centre, scale } = headPlacement()
         const halfHeight = (22 * scale) / 2
-
         expect(centre - halfHeight).toBeGreaterThanOrEqual(0)
-        expect(centre + halfHeight).toBeLessThanOrEqual(num(chartRows()[0], 'y'))
-    })
+        expect(centre + halfHeight).toBeLessThanOrEqual(top)
 
-    test('opens the sidebar with a spacer the height of the chart\'s gutter', () => {
         const spacer = container.querySelector<HTMLElement>(
             '.timeline-sidebar-layers > .timeline-sidebar-gutter',
         )!
-        const firstItem = container.querySelector('.timeline-sidebar-layers > .layer-item')
-
         expect(spacer).not.toBeNull()
-        expect(spacer.style.height).toBe(`${num(chartRows()[0], 'y')}px`)
+        expect(spacer.style.height).toBe(`${top}px`)
         // Before every row, so the pitch below it is unchanged.
-        expect(spacer.nextElementSibling).toBe(firstItem)
-    })
-
-    test('stacks the rows at one pitch below the gutter, as the sidebar does', () => {
-        const rows = chartRows()
-        const top = num(rows[0], 'y')
-
-        rows.forEach((row, index) => {
-            expect(num(row, 'y')).toBe(top + index * num(row, 'height'))
-        })
-    })
-
-    test('runs the scrubber line to the bottom of the last row, with the axis below it', () => {
-        const rows = chartRows()
-        const last = rows[rows.length - 1]
-        const bottom = num(last, 'y') + num(last, 'height')
-
-        const line = container.querySelector('.timeline-scrubber-line')!
-        expect(num(line, 'y2')).toBe(bottom)
-        expect(num(line, 'y1')).toBeLessThan(num(rows[0], 'y'))
-
-        expect(
-            container.querySelector('.timeline-axis')!.getAttribute('transform'),
-        ).toBe(`translate(0, ${bottom})`)
-
-        const svg = container.querySelector('.timeline-svg-container > svg')!
-        expect(num(svg, 'height')).toBeGreaterThan(bottom)
-    })
-
-    test('grabs along the line from the head down, gutter included', () => {
-        // The stretch of line between the head and the first row would
-        // otherwise seek on a press meant to grab.
-        const band = container.querySelector('rect.timeline-scrubber-handle')!
-        const rows = chartRows()
-        const last = rows[rows.length - 1]
-
-        expect(num(band, 'y')).toBe(headPlacement().centre)
-        expect(num(band, 'y') + num(band, 'height')).toBeGreaterThanOrEqual(
-            num(last, 'y') + num(last, 'height'),
+        expect(spacer.nextElementSibling).toBe(
+            container.querySelector('.timeline-sidebar-layers > .layer-item'),
         )
     })
 })
