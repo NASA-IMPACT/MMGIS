@@ -45,7 +45,15 @@ export const ENGINE_HIDDEN_FIELDS = {
 // Fields that only make sense for deck.gl missions and must be ABSENT
 // (not just disabled) when the mission engine is leaflet.
 export const DECK_ONLY_FIELDS = {
-    _all: ['cogRendererMode'],
+    _all: [
+        'cogRendererMode',
+        // The feature popup plugin reads these, and it runs on deck.gl alone:
+        // Leaflet opens a clicked feature through its own per-feature path.
+        'variables.featurePopup.enabled',
+        'variables.featurePopup.title',
+        'variables.featurePopup.properties',
+        'variables.featurePopup.actions',
+    ],
 }
 
 function unionForType(map, layerType) {
