@@ -127,6 +127,57 @@ describe('LayerManagerPanel without a host', () => {
         await unmount()
     })
 
+    test('omits the hide-filtered button without a handler or with nothing to hide', async () => {
+        const noHandler = await mount(
+            <LayerManagerPanel layers={[GRADIENT_LAYER]} filteredOutLayers={['Quakes', 'Faults']} />,
+        )
+        expect(noHandler.container.querySelector('.blocks-layer-manager__hide-filtered')).toBeNull()
+        await noHandler.unmount()
+
+        const nothingToHide = await mount(
+            <LayerManagerPanel
+                layers={[GRADIENT_LAYER]}
+                onHideFilteredLayers={vi.fn()}
+                filteredOutLayers={[]}
+            />,
+        )
+        expect(nothingToHide.container.querySelector('.blocks-layer-manager__hide-filtered')).toBeNull()
+        await nothingToHide.unmount()
+    })
+
+    test('shows the hide-filtered button with its count, names the layers on hover, and reports clicks', async () => {
+        const onHideFilteredLayers = vi.fn()
+        const { container, unmount } = await mount(
+            <LayerManagerPanel
+                layers={[GRADIENT_LAYER]}
+                onHideFilteredLayers={onHideFilteredLayers}
+                filteredOutLayers={['Quakes', 'Faults', 'Aftershocks']}
+            />,
+        )
+
+        const button = container.querySelector('.blocks-layer-manager__hide-filtered')!
+        expect(button.textContent).toBe('Hide 3 filtered-out layers')
+        expect(button.getAttribute('title')).toBe('Switch off: Quakes, Faults, Aftershocks')
+        await click(button)
+
+        expect(onHideFilteredLayers).toHaveBeenCalledTimes(1)
+        await unmount()
+    })
+
+    test('singularises the hide-filtered label for one layer', async () => {
+        const { container, unmount } = await mount(
+            <LayerManagerPanel
+                layers={[GRADIENT_LAYER]}
+                onHideFilteredLayers={vi.fn()}
+                filteredOutLayers={['Quakes']}
+            />,
+        )
+        expect(
+            container.querySelector('.blocks-layer-manager__hide-filtered')!.textContent,
+        ).toBe('Hide 1 filtered-out layer')
+        await unmount()
+    })
+
     test('reports visibility changes through its callback', async () => {
         const onVisibilityChange = vi.fn()
         const { container, unmount } = await mount(
@@ -210,6 +261,33 @@ describe('LayerManagerPanel without a host', () => {
         expect(item.getAttribute('title')).toBe('Turn this layer on to compare it')
         await click(item)
         expect(onCompareLayer).not.toHaveBeenCalled()
+        await unmount()
+    })
+
+    // A capability, not a state: a layer carries the mark whether or not it is
+    // currently drawn.
+    test('marks only the layers that support area analysis', async () => {
+        const { container, unmount } = await mount(
+            <LayerManagerPanel
+                layers={[
+                    { ...GRADIENT_LAYER, analysisSupported: true, visible: false },
+                    {
+                        ...GRADIENT_LAYER,
+                        id: 'Plain_0123456789abcdef',
+                        title: 'Plain',
+                    },
+                ]}
+            />,
+        )
+
+        const marked = container.querySelectorAll(
+            '.blocks-layer-legend__analysis-marker',
+        )
+        expect(marked).toHaveLength(1)
+        expect(
+            marked[0].closest('[data-legend-id]')?.getAttribute('data-legend-id'),
+        ).toBe(GRADIENT_LAYER.id)
+        expect(marked[0].getAttribute('aria-label')).toBe('Supports area analysis')
         await unmount()
     })
 

@@ -1,6 +1,7 @@
 import {
     mmgisRequest,
     mmgisGetCogCapabilities,
+    mmgisGetDataCoverage,
     mmgisGetListedLayers,
     mmgisGetLayerOrder,
     mmgisGetLayerLegends,
@@ -13,7 +14,20 @@ import type { CogData, Layer } from '../lib/types'
 
 export type FetchOptions = { showOnlyVisible?: boolean }
 
-type LayerConfig = { display_name?: string; description?: string; type?: string }
+type LayerConfig = {
+    display_name?: string
+    description?: string
+    type?: string
+    variables?: { analysis?: { is_analysis_supported?: boolean } }
+}
+
+/**
+ * Whether a layer offers area analysis, read from the same mission-config flag
+ * the analysis plugins gate on. Nothing about a layer's data or type implies
+ * it — the layer opts in through its configuration.
+ */
+const supportsAnalysis = (cfg: LayerConfig): boolean =>
+    cfg.variables?.analysis?.is_analysis_supported === true
 
 /**
  * The colormap controls for one layer, or null when it has no ramp to control.
@@ -42,7 +56,10 @@ export const getVisibleLayersWithLegends = async ({
     const layerConfigs = await mmgisRequest<Record<string, LayerConfig>>('layers:getAllConfigs')
     if (!layerConfigs) return []
 
-    const [visibleLayers, opacities, listed, cogCapabilities, legends, titilerUrls, order] =
+    // Coverage is read with the rest, so a layer core is already holding back
+    // for lack of data is flagged on the first render rather than at the next
+    // change core announces.
+    const [visibleLayers, opacities, listed, cogCapabilities, legends, titilerUrls, coverage, order] =
         await Promise.all([
             mmgisRequest<Record<string, boolean>>('layers:getVisible'),
             mmgisRequest<Record<string, number>>('layers:getAllOpacities'),
@@ -50,6 +67,7 @@ export const getVisibleLayersWithLegends = async ({
             mmgisGetCogCapabilities(),
             mmgisGetLayerLegends(),
             mmgisGetTiTilerUrls(),
+            mmgisGetDataCoverage(),
             mmgisGetLayerOrder(),
         ])
 
@@ -82,6 +100,8 @@ export const getVisibleLayersWithLegends = async ({
                 legend,
                 titilerUrls?.[layerName] ?? null,
             ),
+            outOfDataRange: coverage?.[layerName]?.outOfDataRange === true,
+            analysisSupported: supportsAnalysis(cfg),
         })
     }
     // Top first as the map draws; config order against a core with no order.

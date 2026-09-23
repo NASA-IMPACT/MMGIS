@@ -2,6 +2,8 @@
 .blocks-categorical-graphic {
     display: flex;
     flex-direction: column;
+    /* Sets the expand toggle off from the swatch line above it. */
+    gap: var(--theme-spacing-05, 0.25rem);
     width: 100%;
 
     &__bar-row {
@@ -11,20 +13,14 @@
         width: 100%;
     }
 
-    /* Collapsed swatch line */
+    /* Collapsed swatch line. Sized and squared off like the gradient bar, so
+       the two read at the same weight in a list that mixes them. */
     &__swatch-line {
         display: flex;
         flex: 1;
-        height: 14px;
-        border-radius: 3px;
+        height: 8px;
         overflow: hidden;
         position: relative;
-    }
-
-    /* Spacer to match gradient colorbar width */
-    &__spacer {
-        width: 28px;
-        flex-shrink: 0;
     }
 
     &__swatch-segment {
@@ -102,11 +98,12 @@
         word-break: break-word;
     }
 
-    /* Chevron toggle for categorical expand */
+    /* Chevron toggle, aligned left with the swatch line and the labels it
+       opens onto. */
     &__toggle {
         display: flex;
         align-items: center;
-        justify-content: center;
+        justify-content: flex-start;
         padding: var(--theme-spacing-05, 0.25rem) 0;
         cursor: pointer;
         color: var(--theme-color-base-dark, #565c65);

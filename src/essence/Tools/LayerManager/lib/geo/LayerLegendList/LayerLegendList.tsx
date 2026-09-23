@@ -29,6 +29,7 @@ export type LayerLegendListProps = {
     onRescaleChange?: LayerLegendProps['onRescaleChange']
     onZoomToLayer?: LayerLegendProps['onZoomToLayer']
     canZoomToLayer?: LayerLegendProps['canZoomToLayer']
+    selectedTime?: LayerLegendProps['selectedTime']
     onCompareLayer?: LayerLegendProps['onCompareLayer']
     /** A layer was dropped at `toIndex` of this list. Rows drag only with it. */
     onReorder?: (layerId: string, toIndex: number) => void
@@ -70,6 +71,7 @@ export function LayerLegendList({
     onRescaleChange,
     onZoomToLayer,
     canZoomToLayer,
+    selectedTime,
     onCompareLayer,
     onReorder,
 }: LayerLegendListProps) {
@@ -98,6 +100,7 @@ export function LayerLegendList({
         onRescaleChange,
         onZoomToLayer,
         canZoomToLayer,
+        selectedTime,
         onCompareLayer,
     })
 
