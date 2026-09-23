@@ -52,13 +52,17 @@ describe('vectorTileHighlightOptions highlight colour', () => {
         expect(o.highlightColor).toEqual([255, 0, 0, 255])
     })
 
-    test('takes the opacity as a separate setting, like a fill does', () => {
+    test('takes the opacity from the colour itself, as the picker writes it', () => {
         const o = vectorTileHighlightOptions({
             hoverHighlight: true,
-            hoverHighlightColor: '#ff0000',
-            hoverHighlightOpacity: 0.5,
+            hoverHighlightColor: 'rgba(255, 0, 0, 0.5)',
         })
         expect(o.highlightColor).toEqual([255, 0, 0, 128])
+    })
+
+    test('reads a plain hex as fully opaque', () => {
+        const o = vectorTileHighlightOptions({ hoverHighlightColor: '#00ff00' })
+        expect(o.highlightColor).toEqual([0, 255, 0, 255])
     })
 
     test('leaves the colour to deck when the mission chose none', () => {
@@ -74,12 +78,12 @@ describe('vectorTileHighlightOptions highlight colour', () => {
         expect('highlightColor' in o).toBe(false)
     })
 
-    test('honours an opacity of zero, which is a choice like any other', () => {
+    test('leaves a fully transparent colour to deck, which the color helper cannot tell from garbage', () => {
+        // A highlight nobody can see is what the switch above it is for.
         const o = vectorTileHighlightOptions({
-            hoverHighlightColor: '#ff0000',
-            hoverHighlightOpacity: 0,
+            hoverHighlightColor: 'rgba(255, 0, 0, 0)',
         })
-        expect(o.highlightColor).toEqual([255, 0, 0, 0])
+        expect('highlightColor' in o).toBe(false)
     })
 })
 

@@ -40,27 +40,22 @@ export function vectorTileHighlightOptions(style) {
  * The highlight colour as deck's four channels, or nothing when the mission
  * configured none — in which case deck's own default stands.
  *
- * Opacity is a setting of its own, as it is for a fill: a colour picker gives
- * a solid colour, and a highlight usually wants to sit over the feature rather
- * than replace it.
+ * Opacity rides along in the colour: the picker writes `rgba(...)` as soon as
+ * a colour is less than fully opaque, and the colour helper reads the alpha
+ * back out. A fill keeps opacity in a field of its own because Leaflet styles
+ * take the two apart; nothing here does.
  */
 function highlightColor(style) {
     const configured = style?.hoverHighlightColor
     if (typeof configured !== 'string' || configured.trim() === '') return null
-
-    const opacity = style?.hoverHighlightOpacity
-    const alpha =
-        typeof opacity === 'number' && Number.isFinite(opacity)
-            ? opacity
-            : undefined
 
     // Read twice against opposite fallbacks. The helper answers its fallback
     // for a colour it cannot parse, and gives no other sign of having done so;
     // two readings that disagree were both fallbacks, which is the one case
     // where a mission is better served by deck's default than by a colour
     // nobody chose.
-    const asBlack = hexToRgba(configured.trim(), alpha, [0, 0, 0, 255])
-    const asWhite = hexToRgba(configured.trim(), alpha, [255, 255, 255, 255])
+    const asBlack = hexToRgba(configured.trim(), undefined, [0, 0, 0, 255])
+    const asWhite = hexToRgba(configured.trim(), undefined, [255, 255, 255, 255])
     const unreadable =
         asBlack[0] !== asWhite[0] ||
         asBlack[1] !== asWhite[1] ||
