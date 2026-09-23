@@ -4,6 +4,7 @@
   "output": "mission-profiles/generated/full-demo-mission.json",
   "tools": "all",
   "exclude": [
+    "AddTempLayer",
     "Animation",
     "Chemistry",
     "Curtain",
@@ -13,9 +14,11 @@
     "Isochrone",
     "Layers",
     "Legend",
+    "MapControl",
     "Measure",
     "Shade",
     "Sites",
+    "Timeline",
     "Viewshed"
   ],
   "on": [

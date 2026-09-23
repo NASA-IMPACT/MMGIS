@@ -1,0 +1,1412 @@
+{
+  "name": "disasters",
+  "description": "NASA Disasters learning portal: the two GAIA gridded building-exposure collections from the VEDA disasters STAC, browsable by Hazard and by Event activation.",
+  "output": "mission-profiles/generated/disasters-mission.json",
+  "tools": "all",
+  "exclude": [],
+  "on": [
+    "Title",
+    "LayerManager",
+    "AOI",
+    "Card",
+    "Chart",
+    "FetchStats",
+    "ShareExport",
+    "LayerFilterThemes",
+    "LayerFilter",
+    "Timeline",
+    "MapControl",
+    "AddTempLayer"
+  ],
+  "overrides": {
+    "Title": {
+      "variables": {
+        "showTitleText": false,
+        "actionButtonLink": "core:loadPlugin:AOITool",
+        "actionButtonText": "Analyze Area"
+      }
+    },
+    "LayerFilterThemes": {
+      "variables": {
+        "togglePanelId": "left-tools-panel",
+        "themes": [
+          {
+            "id": "hazard",
+            "label": "Hazard",
+            "icon": "flash-outline"
+          },
+          {
+            "id": "event",
+            "label": "Event",
+            "icon": "calendar-outline"
+          }
+        ],
+        "defaultThemeId": "hazard"
+      }
+    },
+    "LayerFilter": {
+      "variables": {
+        "themes": [
+          {
+            "id": "hazard",
+            "title": "Hazard",
+            "description": "Explore datasets by hazard type to understand conditions, impacts, and response context.",
+            "filters": [
+              {
+                "id": "hazard",
+                "label": "Hazard",
+                "property": "hazard",
+                "allLabel": "All Hazards"
+              }
+            ]
+          },
+          {
+            "id": "event",
+            "title": "Event",
+            "description": "Filter the activation catalogue by hazard, location and year.",
+            "catalog": "activations",
+            "filters": [
+              {
+                "id": "hazardType",
+                "label": "Hazard Type",
+                "property": "hazards",
+                "from": "catalog",
+                "allLabel": "All Hazards"
+              },
+              {
+                "id": "location",
+                "label": "Location",
+                "from": "catalog",
+                "type": "geocode",
+                "allLabel": "Search places…"
+              },
+              {
+                "id": "year",
+                "label": "Year",
+                "from": "catalog",
+                "derived": "datetimes",
+                "allLabel": "All Years"
+              },
+              {
+                "id": "activation",
+                "label": "Activation",
+                "from": "catalog",
+                "isEntry": true,
+                "allLabel": "Select an activation",
+                "countLabel": "activations"
+              }
+            ]
+          }
+        ],
+        "catalog": {
+          "type": "FeatureCollection",
+          "features": [
+            {
+              "type": "Feature",
+              "id": "202501_Fire_CA",
+              "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                  [
+                    [
+                      -118.95,
+                      33.7
+                    ],
+                    [
+                      -117.65,
+                      33.7
+                    ],
+                    [
+                      -117.65,
+                      34.55
+                    ],
+                    [
+                      -118.95,
+                      34.55
+                    ],
+                    [
+                      -118.95,
+                      33.7
+                    ]
+                  ]
+                ]
+              },
+              "properties": {
+                "title": "California Wildfires January 2025",
+                "hazards": [
+                  "Fire"
+                ],
+                "start_datetime": "2025-01-10T00:00:00Z",
+                "end_datetime": "2025-01-31T00:00:00Z",
+                "layers": [
+                  {
+                    "key": "opera-dist-s1",
+                    "defaultOn": true
+                  },
+                  {
+                    "key": "s2-swir",
+                    "defaultOn": false
+                  },
+                  {
+                    "key": "s1-dmg",
+                    "defaultOn": true
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Feature",
+              "id": "202606_Earthquake_Venezuela",
+              "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                  [
+                    [
+                      -68.45,
+                      9.85
+                    ],
+                    [
+                      -66.45,
+                      9.85
+                    ],
+                    [
+                      -66.45,
+                      10.95
+                    ],
+                    [
+                      -68.45,
+                      10.95
+                    ],
+                    [
+                      -68.45,
+                      9.85
+                    ]
+                  ]
+                ]
+              },
+              "properties": {
+                "title": "Venezuela Earthquake June 2026",
+                "hazards": [
+                  "Earthquake"
+                ],
+                "start_datetime": "2026-06-26T00:00:00Z",
+                "end_datetime": "2026-07-14T00:00:00Z",
+                "layers": [
+                  {
+                    "key": "nisar-gunw-d54",
+                    "defaultOn": true
+                  },
+                  {
+                    "key": "nisar-gunw-jun13",
+                    "defaultOn": true
+                  },
+                  {
+                    "key": "nisar-gunw-a61",
+                    "defaultOn": true
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Feature",
+              "id": "202604_Typhoon_Sinlaku",
+              "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                  [
+                    [
+                      144.55,
+                      13.15
+                    ],
+                    [
+                      146.15,
+                      13.15
+                    ],
+                    [
+                      146.15,
+                      15.45
+                    ],
+                    [
+                      144.55,
+                      15.45
+                    ],
+                    [
+                      144.55,
+                      13.15
+                    ]
+                  ]
+                ]
+              },
+              "properties": {
+                "title": "Typhoon Sinlaku April 2026",
+                "hazards": [
+                  "Tropical Cyclone",
+                  "Flood"
+                ],
+                "start_datetime": "2026-04-14T00:00:00Z",
+                "end_datetime": "2026-04-29T00:00:00Z",
+                "layers": []
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "scaffold": {
+    "msv": {
+      "mission": "disasters_learning_portal",
+      "missionFolderName": "disasters_learning_portal",
+      "site": "",
+      "masterdb": false,
+      "view": [
+        39,
+        -98,
+        4
+      ],
+      "radius": {
+        "major": 6371008,
+        "minor": 6371008
+      },
+      "mapscale": "",
+      "mapEngine": "deckgl",
+      "mode": "modern",
+      "basemap": {
+        "provider": "maplibre",
+        "style": "https://tiles.openfreemap.org/styles/positron",
+        "accessToken": "",
+        "styles": [
+          {
+            "name": "Light",
+            "style": "https://tiles.openfreemap.org/styles/positron"
+          },
+          {
+            "name": "Streets",
+            "style": "https://tiles.openfreemap.org/styles/liberty"
+          },
+          {
+            "name": "Voyager",
+            "style": "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
+          },
+          {
+            "name": "Dark",
+            "style": "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
+          }
+        ]
+      },
+      "theme": "disasters"
+    },
+    "projection": {
+      "custom": false,
+      "epsg": "",
+      "proj": "",
+      "globeproj": "webmercator",
+      "xmlpath": "",
+      "bounds": [
+        "",
+        "",
+        "",
+        ""
+      ],
+      "origin": [
+        "",
+        ""
+      ],
+      "reszoomlevel": "",
+      "resunitsperpixel": ""
+    },
+    "look": {
+      "pagename": "Disasters",
+      "minimalist": false,
+      "topbar": true,
+      "toolbar": true,
+      "scalebar": true,
+      "coordinates": true,
+      "zoomcontrol": false,
+      "graticule": false,
+      "miscellaneous": true,
+      "bodycolor": "",
+      "topbarcolor": "",
+      "toolbarcolor": "",
+      "mapcolor": "",
+      "swap": true,
+      "copylink": true,
+      "screenshot": true,
+      "fullscreen": true,
+      "help": true,
+      "logourl": "https://visualization-tool-prototype.netlify.app/nasa-disasters-logo.svg",
+      "helpurl": "",
+      "mapLogoUrl": "",
+      "mapLogoLink": ""
+    },
+    "panelSettings": {
+      "panels": [
+        {
+          "id": "left-themes",
+          "position": "left",
+          "priority": 0,
+          "layoutType": "stacked",
+          "hasHeader": false,
+          "stateConstraints": {
+            "allowedStates": [
+              "expanded"
+            ],
+            "defaultState": "expanded"
+          },
+          "capabilities": {
+            "resizable": false
+          },
+          "panelTools": [
+            "LayerFilterThemes"
+          ],
+          "dimensions": {
+            "iconifiedSize": 66,
+            "expandedSize": "66"
+          }
+        },
+        {
+          "position": "left",
+          "priority": 1,
+          "layoutType": "stacked",
+          "hasHeader": false,
+          "stateConstraints": {
+            "allowedStates": [
+              "expanded",
+              "collapsed"
+            ],
+            "defaultState": "expanded"
+          },
+          "capabilities": {
+            "resizable": false
+          },
+          "panelTools": [
+            "Title",
+            "LayerFilter",
+            "Card",
+            "LayerManager"
+          ],
+          "id": "left-tools-panel",
+          "dimensions": {
+            "iconifiedSize": 40,
+            "expandedSize": 368
+          },
+          "pinnedTools": [
+            "Title",
+            "Card",
+            "AddTempLayer"
+          ]
+        },
+        {
+          "position": "bottom",
+          "priority": 3,
+          "layoutType": "stacked",
+          "hasHeader": false,
+          "stateConstraints": {
+            "allowedStates": [
+              "expanded"
+            ],
+            "defaultState": "expanded"
+          },
+          "capabilities": {
+            "resizable": false
+          },
+          "panelTools": [
+            "TimelineTool"
+          ],
+          "id": "bottom"
+        }
+      ],
+      "floatingPanels": [
+        {
+          "position": "float-top-right",
+          "hasHeader": false,
+          "stateConstraints": {
+            "allowedStates": [
+              "collapsed",
+              "expanded"
+            ],
+            "defaultState": "expanded"
+          },
+          "panelTools": [
+            "MapControlTool",
+            "AddTempLayerTool",
+            "AOITool",
+            "ChartTool"
+          ],
+          "id": "float-top-right",
+          "dimensions": {
+            "maxWidth": "",
+            "defaultWidth": "320px",
+            "minWidth": "325px"
+          },
+          "transparent": true
+        }
+      ],
+      "layoutStyle": "compact"
+    },
+    "panels": {
+      "viewer": true,
+      "map": true,
+      "globe": true
+    },
+    "time": {
+      "enabled": true,
+      "visible": true,
+      "format": "YYYY-MM-DDTHH:mm:ss[Z]",
+      "initiallyOpen": false,
+      "liveByDefault": false,
+      "initialstart": "2012-01-19T00:00:00Z",
+      "initialend": "2026-08-12T00:00:00Z",
+      "initialwindowstart": null,
+      "initialwindowend": null
+    },
+    "layers": [
+      {
+        "name": "GAIA Building Exposure (Total)",
+        "uuid": "30f57de9-d010-4e76-b87c-097420646fc4",
+        "sublayers": [],
+        "type": "TileLayer",
+        "visibility": false,
+        "sourceType": "url",
+        "url": "https://dev.disasters.openveda.cloud/api/raster/collections/gaia-total-composite/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=total&bidx=1&colormap=%5B%5B%5B0%2C25000%5D%2C%5B63%2C42%2C107%2C255%5D%5D%2C%5B%5B25000%2C50000%5D%2C%5B62%2C134%2C158%2C255%5D%5D%2C%5B%5B50000%2C75000%5D%2C%5B115%2C192%2C195%2C255%5D%5D%2C%5B%5B75000%2C100000%5D%2C%5B195%2C224%2C156%2C255%5D%5D%2C%5B%5B100000%2C150000%5D%2C%5B247%2C233%2C156%2C255%5D%5D%2C%5B%5B150000%2C300000%5D%2C%5B243%2C197%2C86%2C255%5D%5D%2C%5B%5B300000%2C450000%5D%2C%5B231%2C142%2C65%2C255%5D%5D%2C%5B%5B450000%2C10000000%5D%2C%5B207%2C73%2C49%2C255%5D%5D%5D&resampling=nearest&nodata=0",
+        "tileformat": "wmts",
+        "controlled": false,
+        "initialOpacity": 1,
+        "minZoom": 0,
+        "maxNativeZoom": 20,
+        "maxZoom": 20,
+        "boundingBox": [
+          -180,
+          -85.05,
+          180,
+          85.05
+        ],
+        "throughTileServer": false,
+        "cogResampling": "nearest",
+        "cogExpressionEditable": false,
+        "cogTransform": false,
+        "description": "**GAIA Gridded Building Exposure [Total]** — gridded total building exposure, global, January 2025 composite.",
+        "style": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "blend": "none"
+        },
+        "time": {
+          "enabled": false,
+          "type": "global",
+          "format": "%Y-%m-%dT%H:%M:%SZ",
+          "start": "2025-01-01T00:00:00Z",
+          "end": "2025-01-31T00:00:00Z"
+        },
+        "variables": {
+          "legendOrientation": "vertical",
+          "analysis": {
+            "is_analysis_supported": true,
+            "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/gaia-total-composite/items/gaia-total-composite-gaia_total_day_2025-01_monthly",
+            "assets": [
+              "total"
+            ],
+            "bidx": [
+              1
+            ],
+            "nodata": 0
+          },
+          "legend": [
+            {
+              "shape": "discreet",
+              "color": "#3f2a6b",
+              "value": "0 m²"
+            },
+            {
+              "shape": "discreet",
+              "color": "#3e869e",
+              "value": "25000 m²"
+            },
+            {
+              "shape": "discreet",
+              "color": "#73c0c3",
+              "value": "50000 m²"
+            },
+            {
+              "shape": "discreet",
+              "color": "#c3e09c",
+              "value": "75000 m²"
+            },
+            {
+              "shape": "discreet",
+              "color": "#f7e99c",
+              "value": "100000 m²"
+            },
+            {
+              "shape": "discreet",
+              "color": "#f3c556",
+              "value": "150000 m²"
+            },
+            {
+              "shape": "discreet",
+              "color": "#e78e41",
+              "value": "300000 m²"
+            },
+            {
+              "shape": "discreet",
+              "color": "#cf4931",
+              "value": "450000 m²"
+            }
+          ]
+        },
+        "properties": {
+          "key": "gaia-total",
+          "sector": [
+            "Public Safety"
+          ],
+          "hazard": [
+            "Wildfire",
+            "Storm",
+            "Flood",
+            "Landslide",
+            "Earthquake"
+          ]
+        }
+      },
+      {
+        "name": "GAIA Building Exposure (Wood)",
+        "uuid": "54099f0c-188c-4635-a09a-ef044a0ce44a",
+        "sublayers": [],
+        "type": "TileLayer",
+        "visibility": false,
+        "sourceType": "url",
+        "url": "https://dev.disasters.openveda.cloud/api/raster/collections/gaia-wood-composite/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=wood&bidx=1&colormap=%5B%5B%5B0%2C25000%5D%2C%5B63%2C42%2C107%2C255%5D%5D%2C%5B%5B25000%2C50000%5D%2C%5B62%2C134%2C158%2C255%5D%5D%2C%5B%5B50000%2C75000%5D%2C%5B115%2C192%2C195%2C255%5D%5D%2C%5B%5B75000%2C100000%5D%2C%5B195%2C224%2C156%2C255%5D%5D%2C%5B%5B100000%2C150000%5D%2C%5B247%2C233%2C156%2C255%5D%5D%2C%5B%5B150000%2C300000%5D%2C%5B243%2C197%2C86%2C255%5D%5D%2C%5B%5B300000%2C450000%5D%2C%5B231%2C142%2C65%2C255%5D%5D%2C%5B%5B450000%2C10000000%5D%2C%5B207%2C73%2C49%2C255%5D%5D%5D&resampling=nearest&nodata=0",
+        "tileformat": "wmts",
+        "controlled": false,
+        "initialOpacity": 1,
+        "minZoom": 0,
+        "maxNativeZoom": 20,
+        "maxZoom": 20,
+        "boundingBox": [
+          -140.14,
+          24.52,
+          -56.57,
+          49.38
+        ],
+        "throughTileServer": false,
+        "cogResampling": "nearest",
+        "cogExpressionEditable": false,
+        "cogTransform": false,
+        "description": "**GAIA Gridded Building Exposure [Wood]** — gridded wood-construction building exposure, CONUS, January 2025 composite.",
+        "style": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "blend": "none"
+        },
+        "time": {
+          "enabled": false,
+          "type": "global",
+          "format": "%Y-%m-%dT%H:%M:%SZ",
+          "start": "2025-01-01T00:00:00Z",
+          "end": "2025-01-31T00:00:00Z"
+        },
+        "variables": {
+          "legendOrientation": "vertical",
+          "analysis": {
+            "is_analysis_supported": true,
+            "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/gaia-wood-composite/items/gaia-wood-composite-gaia_low-durability-wood-framed-1_2025-01_monthly",
+            "assets": [
+              "wood"
+            ],
+            "bidx": [
+              1
+            ],
+            "nodata": 0
+          },
+          "legend": [
+            {
+              "shape": "discreet",
+              "color": "#3f2a6b",
+              "value": "0 m²"
+            },
+            {
+              "shape": "discreet",
+              "color": "#3e869e",
+              "value": "25000 m²"
+            },
+            {
+              "shape": "discreet",
+              "color": "#73c0c3",
+              "value": "50000 m²"
+            },
+            {
+              "shape": "discreet",
+              "color": "#c3e09c",
+              "value": "75000 m²"
+            },
+            {
+              "shape": "discreet",
+              "color": "#f7e99c",
+              "value": "100000 m²"
+            },
+            {
+              "shape": "discreet",
+              "color": "#f3c556",
+              "value": "150000 m²"
+            },
+            {
+              "shape": "discreet",
+              "color": "#e78e41",
+              "value": "300000 m²"
+            },
+            {
+              "shape": "discreet",
+              "color": "#cf4931",
+              "value": "450000 m²"
+            }
+          ]
+        },
+        "properties": {
+          "key": "gaia-wood",
+          "sector": [
+            "Public Safety"
+          ],
+          "hazard": [
+            "Wildfire",
+            "Storm",
+            "Flood",
+            "Landslide",
+            "Earthquake"
+          ]
+        }
+      },
+      {
+        "sublayers": [],
+        "type": "TileLayer",
+        "visibility": false,
+        "sourceType": "url",
+        "tileformat": "wmts",
+        "controlled": false,
+        "initialOpacity": 1,
+        "minZoom": 0,
+        "maxNativeZoom": 20,
+        "maxZoom": 20,
+        "throughTileServer": false,
+        "cogTransform": false,
+        "style": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "blend": "none"
+        },
+        "variables": {
+          "legendOrientation": "vertical",
+          "analysis": {
+            "is_analysis_supported": true,
+            "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/opera-distalert-s1-daily/items/opera-distalert-s1-daily-disturbance_track71_2025-01-09_day",
+            "assets": [
+              "dist-s1"
+            ],
+            "bidx": [
+              1
+            ],
+            "nodata": 255
+          },
+          "legend": [
+            {
+              "shape": "square",
+              "color": "#ffffff",
+              "value": "No disturbance"
+            },
+            {
+              "shape": "square",
+              "color": "#ff9999",
+              "value": "Moderate disturbance"
+            },
+            {
+              "shape": "square",
+              "color": "#e31a1c",
+              "value": "High disturbance"
+            }
+          ]
+        },
+        "name": "OPERA Surface Disturbance (DIST-S1)",
+        "uuid": "f154c768-c8e7-4b23-a783-1ec458bdbb20",
+        "url": "https://dev.disasters.openveda.cloud/api/raster/collections/opera-distalert-s1-daily/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=dist-s1&bidx=1&nodata=255&colormap=%7B%220%22%3A%5B255%2C255%2C255%2C255%5D%2C%221%22%3A%5B255%2C153%2C153%2C255%5D%2C%222%22%3A%5B227%2C26%2C28%2C255%5D%7D&datetime={starttime}/{endtime}",
+        "boundingBox": [
+          -118.828125,
+          33.94336,
+          -117.94921875,
+          34.379713
+        ],
+        "description": "**OPERA Surface Disturbance (DIST-S1)** — 30 m surface-disturbance classification from Sentinel-1 C-band SAR. Radar penetrates smoke and images at night, so it maps disturbance while optical sensors are still blind.",
+        "time": {
+          "enabled": true,
+          "type": "global",
+          "format": "%Y-%m-%dT%H:%M:%SZ",
+          "start": "2025-01-09T00:00:00Z",
+          "end": "2025-01-09T23:59:59Z",
+          "dataStartTime": "2025-01-09T00:00:00Z",
+          "dataEndTime": "2025-01-09T23:59:59Z"
+        },
+        "properties": {
+          "key": "opera-dist-s1",
+          "sector": [
+            "Public Safety"
+          ],
+          "hazard": [
+            "Wildfire"
+          ]
+        }
+      },
+      {
+        "sublayers": [],
+        "type": "TileLayer",
+        "visibility": false,
+        "sourceType": "url",
+        "tileformat": "wmts",
+        "controlled": false,
+        "initialOpacity": 1,
+        "minZoom": 0,
+        "maxNativeZoom": 20,
+        "maxZoom": 20,
+        "throughTileServer": false,
+        "cogTransform": false,
+        "style": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "blend": "none"
+        },
+        "variables": {
+          "legendOrientation": "vertical",
+          "analysis": {
+            "is_analysis_supported": true,
+            "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/sentinel2-swir-daily/items/sentinel2-swir-daily-S2B_MSIL2A_shortwaveInfrared_164439_T16SDF_2026-01-29_day",
+            "assets": [
+              "swir"
+            ],
+            "bidx": [
+              1,
+              2,
+              3
+            ]
+          }
+        },
+        "name": "Sentinel-2 SWIR",
+        "uuid": "107a6a84-7738-4060-a900-c2514a11dce5",
+        "url": "https://dev.disasters.openveda.cloud/api/raster/collections/sentinel2-swir-daily/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=swir&bidx=1&bidx=2&bidx=3&resampling=nearest&datetime={starttime}/{endtime}",
+        "boundingBox": [
+          -118.95,
+          33.7,
+          -117.65,
+          34.55
+        ],
+        "description": "**Sentinel-2 SWIR** — shortwave-infrared composite. Burn scars read brown against unburned vegetation, separating burned ground from smoke and cloud.",
+        "time": {
+          "enabled": true,
+          "type": "global",
+          "format": "%Y-%m-%dT%H:%M:%SZ",
+          "start": "2023-07-20T00:00:00Z",
+          "end": "2026-01-29T00:00:00Z",
+          "dataStartTime": "2023-07-20T00:00:00Z",
+          "dataEndTime": "2026-01-29T00:00:00Z"
+        },
+        "properties": {
+          "key": "s2-swir",
+          "sector": [
+            "Public Health"
+          ],
+          "hazard": [
+            "Wildfire"
+          ]
+        }
+      },
+      {
+        "sublayers": [],
+        "type": "TileLayer",
+        "visibility": false,
+        "sourceType": "url",
+        "tileformat": "wmts",
+        "controlled": false,
+        "initialOpacity": 1,
+        "minZoom": 0,
+        "maxNativeZoom": 20,
+        "maxZoom": 20,
+        "throughTileServer": false,
+        "cogTransform": false,
+        "style": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "blend": "none"
+        },
+        "variables": {
+          "legendOrientation": "vertical",
+          "analysis": {
+            "is_analysis_supported": true,
+            "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/sentinel1-dmgassessment-daily/items/sentinel1-dmgassessment-daily-s1_dmgassessment_Jan16_Delivery_LA_damage_v0_2025-01-21_day",
+            "assets": [
+              "damage"
+            ],
+            "bidx": [
+              1
+            ],
+            "nodata": 0
+          },
+          "legend": [
+            {
+              "shape": "square",
+              "color": "#ff0000",
+              "value": "Likely damaged"
+            }
+          ]
+        },
+        "name": "Sentinel-1 Likely Damaged Areas",
+        "uuid": "2db3fe61-f031-4a6e-89a2-33bfe1ca4389",
+        "url": "https://dev.disasters.openveda.cloud/api/raster/collections/sentinel1-dmgassessment-daily/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=damage&bidx=1&nodata=0&colormap=%7B%221%22%3A%5B255%2C0%2C0%2C255%5D%7D&resampling=nearest&datetime={starttime}/{endtime}",
+        "boundingBox": [
+          -119.276147,
+          33.556388,
+          -117.564677,
+          34.769113
+        ],
+        "description": "**Sentinel-1 Likely Damaged Areas** — damage proxy map derived from Sentinel-1 C-band SAR coherence loss. Flags built structures likely damaged or destroyed, mapped through smoke and cloud in the days after the fire front passes.",
+        "time": {
+          "enabled": true,
+          "type": "global",
+          "format": "%Y-%m-%dT%H:%M:%SZ",
+          "start": "2025-01-09T00:00:00Z",
+          "end": "2025-01-21T23:59:59Z",
+          "dataStartTime": "2025-01-09T00:00:00Z",
+          "dataEndTime": "2025-01-21T23:59:59Z"
+        },
+        "properties": {
+          "key": "s1-dmg",
+          "sector": [
+            "Public Safety"
+          ],
+          "hazard": [
+            "Wildfire"
+          ]
+        }
+      },
+      {
+        "sublayers": [],
+        "type": "TileLayer",
+        "visibility": false,
+        "sourceType": "url",
+        "tileformat": "wmts",
+        "controlled": false,
+        "initialOpacity": 1,
+        "minZoom": 0,
+        "maxNativeZoom": 20,
+        "maxZoom": 20,
+        "throughTileServer": false,
+        "cogTransform": false,
+        "style": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "blend": "none"
+        },
+        "variables": {
+          "legendOrientation": "vertical",
+          "analysis": {
+            "is_analysis_supported": true,
+            "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/nisar-gunw-composite/items/nisar-gunw-composite-NISAR_D54_GUNW_unw_deIon_deRamp_maskWater_cm_2026-06-17_2026-06-29_day",
+            "assets": [
+              "gunw"
+            ],
+            "bidx": [
+              1
+            ],
+            "nodata": -9999
+          },
+          "legend": [
+            {
+              "shape": "continuous",
+              "color": "#313695",
+              "value": "-25 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#4575b4",
+              "value": "-20 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#74add1",
+              "value": "-15 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#abd9e9",
+              "value": "-10 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#e0f3f8",
+              "value": "-5 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#ffffbf",
+              "value": "0 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#fee090",
+              "value": "5 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#fdae61",
+              "value": "10 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#f46d43",
+              "value": "15 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#d73027",
+              "value": "20 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#a50026",
+              "value": "25 cm"
+            }
+          ]
+        },
+        "name": "NISAR Displacement — Track D54 (descending)",
+        "uuid": "5a1c9f02-7d64-4f18-9b3e-6c0a2e4d7b81",
+        "url": "https://dev.disasters.openveda.cloud/api/raster/collections/nisar-gunw-composite/items/nisar-gunw-composite-NISAR_D54_GUNW_unw_deIon_deRamp_maskWater_cm_2026-06-17_2026-06-29_day/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=gunw&bidx=1&nodata=-9999&rescale=-25,25&resampling=bilinear&colormap_name=rdylbu_r",
+        "boundingBox": [
+          -70.050557,
+          9.013243,
+          -67.481667,
+          11.531936
+        ],
+        "description": "**NISAR Displacement — Track D54 (descending)** — line-of-sight ground displacement in cm from a single NISAR GUNW interferogram (2026-06-17 to 2026-06-29). Descending track 54, covering the western half of the activation area. Colour ramp spans ±25 cm; stronger motion saturates.",
+        "time": {
+          "enabled": true,
+          "type": "global",
+          "format": "%Y-%m-%dT%H:%M:%SZ",
+          "start": "2026-06-17T00:00:00Z",
+          "end": "2026-06-29T00:00:00Z",
+          "dataStartTime": "2026-06-17T00:00:00Z",
+          "dataEndTime": "2026-06-29T00:00:00Z"
+        },
+        "properties": {
+          "key": "nisar-gunw-d54",
+          "sector": [
+            "Public Safety"
+          ],
+          "hazard": [
+            "Earthquake"
+          ]
+        }
+      },
+      {
+        "sublayers": [],
+        "type": "TileLayer",
+        "visibility": false,
+        "sourceType": "url",
+        "tileformat": "wmts",
+        "controlled": false,
+        "initialOpacity": 1,
+        "minZoom": 0,
+        "maxNativeZoom": 20,
+        "maxZoom": 20,
+        "throughTileServer": false,
+        "cogTransform": false,
+        "style": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "blend": "none"
+        },
+        "variables": {
+          "legendOrientation": "vertical",
+          "analysis": {
+            "is_analysis_supported": true,
+            "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/nisar-gunw-composite/items/nisar-gunw-composite-NISAR_GUNW_unw_deIon_deRamp_maskWater_cm_2026-06-13_2026-06-25_day",
+            "assets": [
+              "gunw"
+            ],
+            "bidx": [
+              1
+            ],
+            "nodata": -9999
+          },
+          "legend": [
+            {
+              "shape": "continuous",
+              "color": "#313695",
+              "value": "-25 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#4575b4",
+              "value": "-20 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#74add1",
+              "value": "-15 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#abd9e9",
+              "value": "-10 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#e0f3f8",
+              "value": "-5 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#ffffbf",
+              "value": "0 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#fee090",
+              "value": "5 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#fdae61",
+              "value": "10 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#f46d43",
+              "value": "15 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#d73027",
+              "value": "20 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#a50026",
+              "value": "25 cm"
+            }
+          ]
+        },
+        "name": "NISAR Displacement — Jun 13–25",
+        "uuid": "b47e8d35-2a90-4c6f-8e51-19d3f7c0a624",
+        "url": "https://dev.disasters.openveda.cloud/api/raster/collections/nisar-gunw-composite/items/nisar-gunw-composite-NISAR_GUNW_unw_deIon_deRamp_maskWater_cm_2026-06-13_2026-06-25_day/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=gunw&bidx=1&nodata=-9999&rescale=-25,25&resampling=bilinear&colormap_name=rdylbu_r",
+        "boundingBox": [
+          -69.528283,
+          8.987945,
+          -66.599966,
+          11.555504
+        ],
+        "description": "**NISAR Displacement — Jun 13–25** — line-of-sight ground displacement in cm from a single NISAR GUNW interferogram (2026-06-13 to 2026-06-25). Central swath spanning the epicentral region, earliest of the three pairs. Colour ramp spans ±25 cm; stronger motion saturates.",
+        "time": {
+          "enabled": true,
+          "type": "global",
+          "format": "%Y-%m-%dT%H:%M:%SZ",
+          "start": "2026-06-13T00:00:00Z",
+          "end": "2026-06-25T00:00:00Z",
+          "dataStartTime": "2026-06-13T00:00:00Z",
+          "dataEndTime": "2026-06-25T00:00:00Z"
+        },
+        "properties": {
+          "key": "nisar-gunw-jun13",
+          "sector": [
+            "Public Safety"
+          ],
+          "hazard": [
+            "Earthquake"
+          ]
+        }
+      },
+      {
+        "sublayers": [],
+        "type": "TileLayer",
+        "visibility": false,
+        "sourceType": "url",
+        "tileformat": "wmts",
+        "controlled": false,
+        "initialOpacity": 1,
+        "minZoom": 0,
+        "maxNativeZoom": 20,
+        "maxZoom": 20,
+        "throughTileServer": false,
+        "cogTransform": false,
+        "style": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "blend": "none"
+        },
+        "variables": {
+          "legendOrientation": "vertical",
+          "analysis": {
+            "is_analysis_supported": true,
+            "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/nisar-gunw-composite/items/nisar-gunw-composite-NISAR_GUNW_A61_unw_deIon_deRamp_maskWater_cm_clipped_2026-06-18_2026-06-30_day",
+            "assets": [
+              "gunw"
+            ],
+            "bidx": [
+              1
+            ],
+            "nodata": -9999
+          },
+          "legend": [
+            {
+              "shape": "continuous",
+              "color": "#313695",
+              "value": "-25 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#4575b4",
+              "value": "-20 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#74add1",
+              "value": "-15 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#abd9e9",
+              "value": "-10 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#e0f3f8",
+              "value": "-5 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#ffffbf",
+              "value": "0 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#fee090",
+              "value": "5 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#fdae61",
+              "value": "10 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#f46d43",
+              "value": "15 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#d73027",
+              "value": "20 cm"
+            },
+            {
+              "shape": "continuous",
+              "color": "#a50026",
+              "value": "25 cm"
+            }
+          ]
+        },
+        "name": "NISAR Displacement — Track A61 (ascending)",
+        "uuid": "c9f3b6a1-4e28-4d70-b5c2-8f61d0e394a7",
+        "url": "https://dev.disasters.openveda.cloud/api/raster/collections/nisar-gunw-composite/items/nisar-gunw-composite-NISAR_GUNW_A61_unw_deIon_deRamp_maskWater_cm_clipped_2026-06-18_2026-06-30_day/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=gunw&bidx=1&nodata=-9999&rescale=-25,25&resampling=bilinear&colormap_name=rdylbu_r",
+        "boundingBox": [
+          -67.182364,
+          9.499985,
+          -64.722905,
+          10.759496
+        ],
+        "description": "**NISAR Displacement — Track A61 (ascending)** — line-of-sight ground displacement in cm from a single NISAR GUNW interferogram (2026-06-18 to 2026-06-30). Ascending track 61, covering the eastern edge of the activation area. Colour ramp spans ±25 cm; stronger motion saturates.",
+        "time": {
+          "enabled": true,
+          "type": "global",
+          "format": "%Y-%m-%dT%H:%M:%SZ",
+          "start": "2026-06-18T00:00:00Z",
+          "end": "2026-06-30T00:00:00Z",
+          "dataStartTime": "2026-06-18T00:00:00Z",
+          "dataEndTime": "2026-06-30T00:00:00Z"
+        },
+        "properties": {
+          "key": "nisar-gunw-a61",
+          "sector": [
+            "Public Safety"
+          ],
+          "hazard": [
+            "Earthquake"
+          ]
+        }
+      },
+      {
+        "sublayers": [],
+        "type": "TileLayer",
+        "visibility": false,
+        "sourceType": "url",
+        "tileformat": "wmts",
+        "controlled": false,
+        "initialOpacity": 1,
+        "minZoom": 0,
+        "maxNativeZoom": 20,
+        "maxZoom": 20,
+        "throughTileServer": false,
+        "cogTransform": false,
+        "style": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "blend": "none"
+        },
+        "variables": {
+          "legendOrientation": "vertical",
+          "legend": [
+            {
+              "shape": "square",
+              "color": "#015ce6",
+              "value": "Open water"
+            },
+            {
+              "shape": "square",
+              "color": "#ff0000",
+              "value": "Flooded developed"
+            },
+            {
+              "shape": "square",
+              "color": "#38a801",
+              "value": "Flooded vegetation"
+            },
+            {
+              "shape": "square",
+              "color": "#e69702",
+              "value": "Flooded cropland"
+            }
+          ],
+          "analysis": {
+            "is_analysis_supported": true,
+            "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/sentinel1-hydrosar-wm-iw-dvr-subdaily/items/sentinel1-hydrosar-wm-iw-dvr-subdaily-S1A_IW_DVR_RTC20_G_gpufed_0C2F_WM_2024-11-23T23:49:03Z",
+            "assets": [
+              "dvr"
+            ],
+            "bidx": [
+              1
+            ],
+            "nodata": 0
+          }
+        },
+        "name": "HydroSAR Water Extents",
+        "uuid": "7c2e40b8-93d1-4f6a-a05e-2b814c7d6e39",
+        "url": "https://dev.disasters.openveda.cloud/api/raster/collections/sentinel1-hydrosar-wm-iw-dvr-subdaily/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=dvr&bidx=1&nodata=0&colormap=%7B%221%22%3A%5B1%2C92%2C230%2C255%5D%2C%222%22%3A%5B255%2C0%2C0%2C255%5D%2C%223%22%3A%5B56%2C168%2C1%2C255%5D%2C%224%22%3A%5B230%2C151%2C2%2C255%5D%7D&resampling=nearest&datetime={starttime}/{endtime}",
+        "boundingBox": [
+          -125.15625,
+          -37.160317,
+          41.132813,
+          41.508577
+        ],
+        "description": "**HydroSAR Water Extents** — post-incident surface water mapped from Sentinel-1 SAR by the Alaska Satellite Facility. Radar sees through cloud, so flood extent is mapped during the storm rather than after it clears.",
+        "time": {
+          "enabled": true,
+          "type": "global",
+          "format": "%Y-%m-%dT%H:%M:%SZ",
+          "start": "2023-01-01T00:00:00Z",
+          "end": "2024-11-23T23:59:59Z",
+          "dataStartTime": "2023-01-01T00:00:00Z",
+          "dataEndTime": "2024-11-23T23:59:59Z"
+        },
+        "properties": {
+          "key": "hydrosar-dvr",
+          "sector": [
+            "Public Safety"
+          ],
+          "hazard": [
+            "Flood",
+            "Tropical Cyclone"
+          ]
+        }
+      },
+      {
+        "sublayers": [],
+        "type": "TileLayer",
+        "visibility": false,
+        "sourceType": "url",
+        "tileformat": "wmts",
+        "controlled": false,
+        "initialOpacity": 1,
+        "minZoom": 0,
+        "maxNativeZoom": 8,
+        "maxZoom": 20,
+        "throughTileServer": false,
+        "cogTransform": false,
+        "style": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "blend": "none"
+        },
+        "variables": {
+          "legendOrientation": "vertical",
+          "legend": [
+            {
+              "shape": "square",
+              "color": "#0a0952",
+              "value": "Unlit"
+            },
+            {
+              "shape": "square",
+              "color": "#4d4b82",
+              "value": "Low"
+            },
+            {
+              "shape": "square",
+              "color": "#8181d9",
+              "value": "Moderate"
+            },
+            {
+              "shape": "square",
+              "color": "#e6e9cd",
+              "value": "Bright"
+            }
+          ]
+        },
+        "name": "Black Marble Nighttime Lights",
+        "uuid": "e83b1d47-06fa-4c25-9d8b-51a7f2c04b96",
+        "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_SNPP_DayNightBand_AtSensor_M15/default/{endtime}/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpg",
+        "boundingBox": [
+          -180,
+          -85.05,
+          180,
+          85.05
+        ],
+        "description": "**Black Marble Nighttime Lights (Blue/Yellow)** — VIIRS Day/Night Band composite from Suomi NPP, served by NASA GIBS. Measures at-sensor radiance in W/cm²/sr. Power outages read as darkened areas against normally lit ones, which makes it a fast proxy for infrastructure disruption after an event. Imagery is available from 2021-04-30 onward; GIBS publishes no numeric colour scale for this composite, so the key is relative.",
+        "time": {
+          "enabled": true,
+          "type": "global",
+          "format": "%Y-%m-%d",
+          "start": "2021-04-30T00:00:00Z",
+          "end": "2026-08-12T00:00:00Z",
+          "dataStartTime": "2021-04-30T00:00:00Z",
+          "dataEndTime": "2026-08-12T00:00:00Z"
+        },
+        "properties": {
+          "key": "blackmarble-gibs",
+          "sector": [
+            "Public Safety"
+          ],
+          "hazard": [
+            "Wildfire",
+            "Storm",
+            "Flood",
+            "Earthquake",
+            "Tropical Cyclone"
+          ]
+        }
+      }
+    ]
+  }
+}

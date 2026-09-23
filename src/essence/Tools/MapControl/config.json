@@ -23,6 +23,15 @@
         "preferredPosition": "float-top-right",
         "modernLayoutSupport": true
     },
+    "defaults": {
+        "variables": {
+            "showBasemapSwitcher": true,
+            "showSearch": true,
+            "showMeasure": true,
+            "showZoom": true,
+            "showShare": true
+        }
+    },
     "config": {
         "rows": [
             {
