@@ -1,0 +1,77 @@
+/*
+ * Map-anchored popup card. Only the card is styled here: the frame around it,
+ * the pointer tip and the close control belong to the map library. Colors and
+ * type come from the tokens in src/styles/_theme-export.scss, with fallbacks
+ * for the classic UI, which loads no theme stylesheet.
+ */
+
+/* The map libraries measure this element to size their own popup frame, so
+   the card takes the width its content wants — a card that can shrink below
+   its buttons is measured, and framed, too narrow to read. The cap never
+   exceeds the frame the library settled on. */
+.mmgis-popup-card {
+    width: max-content;
+    max-width: min(320px, 100%);
+    /* Its own surface: the card's ink is its to pick, and a frame the app has
+       themed dark would otherwise decide the contrast. */
+    background: var(--theme-color-white, #ffffff);
+    color: var(--theme-color-ink, #1b1b1b);
+    font-family: var(--theme-font-ui, system-ui, sans-serif);
+    font-size: var(--theme-font-size-sm, 0.875rem);
+}
+
+/* An unbreakable token — a URL, a long feature id — breaks rather than
+   painting outside the card. */
+.mmgis-popup-title,
+.mmgis-popup-body {
+    overflow-wrap: anywhere;
+}
+
+.mmgis-popup-title {
+    font-size: var(--theme-font-size-md, 1rem);
+    font-weight: var(--theme-font-weight-bold, 700);
+}
+
+.mmgis-popup-title + .mmgis-popup-body {
+    margin-top: var(--theme-spacing-1, 0.5rem);
+}
+
+/* Side by side at the end of the row, each sized to its own label. */
+.mmgis-popup-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--theme-spacing-1, 0.5rem);
+    margin-top: var(--theme-spacing-105, 0.75rem);
+}
+
+/* A label reads as one line. */
+.mmgis-popup-button {
+    white-space: nowrap;
+    padding: var(--theme-spacing-05, 0.25rem) var(--theme-spacing-105, 0.75rem);
+    border-radius: var(--theme-radius-0, 0);
+    font-family: inherit;
+    font-size: var(--theme-font-size-sm, 0.875rem);
+    font-weight: var(--theme-font-weight-normal, 400);
+    cursor: pointer;
+}
+
+.mmgis-popup-button--primary {
+    border: 1px solid transparent;
+    background: var(--theme-color-primary, #005ea2);
+    color: var(--theme-color-white, #ffffff);
+}
+
+.mmgis-popup-button--primary:hover {
+    background: var(--theme-color-primary-dark, #1a4480);
+}
+
+.mmgis-popup-button--secondary {
+    border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    background: var(--theme-color-white, #ffffff);
+    color: var(--theme-color-ink, #1b1b1b);
+    box-shadow: 0 1px 2px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
+}
+
+.mmgis-popup-button--secondary:hover {
+    background: var(--theme-color-base-lightest, #f0f0f0);
+}

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { mmgisHasHandler } from './mmgisAPI'
+import { whenMMGISHandlerReady } from './whenMMGISHandlerReady'
 
 /**
  * Polls mmgisAPI.hasHandler(name) until it returns true, then invokes onReady once.
@@ -17,6 +17,9 @@ import { mmgisHasHandler } from './mmgisAPI'
  * Both callbacks are effect dependencies, so both must keep a stable identity
  * across renders. A fresh one each render restarts the poll, and with it the
  * deadline `timeoutMs` is measured from, so `onTimeout` would never fire.
+ *
+ * The waiting itself lives in {@link whenMMGISHandlerReady}, which a plugin
+ * with no React component of its own can call directly.
  */
 export const useMMGISHandlerReady = (
     handlerName: string,
@@ -28,24 +31,13 @@ export const useMMGISHandlerReady = (
     } = {},
 ): void => {
     const { intervalMs = 200, timeoutMs = 10000, onTimeout } = options
-    useEffect(() => {
-        if (mmgisHasHandler(handlerName)) {
-            onReady()
-            return
-        }
-        const start = Date.now()
-        const id = window.setInterval(() => {
-            if (mmgisHasHandler(handlerName)) {
-                window.clearInterval(id)
-                onReady()
-            } else if (Date.now() - start > timeoutMs) {
-                window.clearInterval(id)
-                console.warn(
-                    `[useMMGISHandlerReady] '${handlerName}' not registered after ${timeoutMs}ms`,
-                )
-                onTimeout?.()
-            }
-        }, intervalMs)
-        return () => window.clearInterval(id)
-    }, [handlerName, onReady, intervalMs, timeoutMs, onTimeout])
+    useEffect(
+        () =>
+            whenMMGISHandlerReady(handlerName, onReady, {
+                intervalMs,
+                timeoutMs,
+                onTimeout,
+            }),
+        [handlerName, onReady, intervalMs, timeoutMs, onTimeout],
+    )
 }
