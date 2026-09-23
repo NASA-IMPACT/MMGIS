@@ -28,6 +28,13 @@ import type { LayerNavigation } from '../../utils/layerNavigation'
 /** Room a top-axis label takes, in pixels, the widest being "Mar 30, 2020". */
 const CONTEXT_LABEL_WIDTH = 96
 
+/**
+ * Pixels left clear at each end of the chart, outside the span the view
+ * plots, so the scrubber's head stays whole at the first date or at now.
+ * Wider than half the head, with room for its shadow.
+ */
+export const EDGE_INSET = 12
+
 export interface TimelineViewProps {
     startTime: Date
     endTime: Date
@@ -131,7 +138,10 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     // the window or the width actually change; rebuilt every render they would
     // tear down and redraw both axes on every pointermove of a scrubber drag.
     const transformedXScale = useMemo(
-        () => scaleTime().domain([view.start, view.end]).range([0, dimensions.width]),
+        () =>
+            scaleTime()
+                .domain([view.start, view.end])
+                .range([EDGE_INSET, Math.max(EDGE_INSET, dimensions.width - EDGE_INSET)]),
         [view, dimensions.width]
     )
 
@@ -178,7 +188,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         const [visibleStart, visibleEnd] = transformedXScale.domain() as [Date, Date]
         const msPerPx =
             (visibleEnd.getTime() - visibleStart.getTime()) /
-            Math.max(1, dimensions.width)
+            Math.max(1, dimensions.width - 2 * EDGE_INSET)
         const { mode, ticks } = contextTicks(
             visibleStart,
             visibleEnd,
@@ -241,17 +251,17 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
             // The lower bound stays 1: zooming out past the global window
             // shows empty space either side and is not useful.
             .scaleExtent([1, maxScale])
-            // The viewport is the chart's own box. Given explicitly rather
-            // than left to d3 to read off the element: the SVG is sized from
-            // these same numbers, and reading them back needs the SVG
-            // geometry API, which jsdom does not implement.
+            // The viewport is the chart's plot, inside the edge insets. Given
+            // explicitly rather than left to d3 to read off the element: the
+            // SVG is sized from these same numbers, and reading them back
+            // needs the SVG geometry API, which jsdom does not implement.
             .extent([
-                [0, 0],
-                [dimensions.width, dimensions.height],
+                [EDGE_INSET, 0],
+                [dimensions.width - EDGE_INSET, dimensions.height],
             ])
             .translateExtent([
-                [0, 0],
-                [dimensions.width, dimensions.height],
+                [EDGE_INSET, 0],
+                [dimensions.width - EDGE_INSET, dimensions.height],
             ])
             // Grabbing the scrubber drags it instead of panning the view.
             .filter((event: any) => {
@@ -262,7 +272,8 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                 const next = transformToWindow(
                     event.transform,
                     bounds,
-                    dimensions.width
+                    dimensions.width,
+                    EDGE_INSET
                 )
                 // Pushing a transform in re-fires this handler with the window
                 // it was just given. Compared by value rather than flagged:
@@ -282,7 +293,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         // window to wherever it lands.
         svg.call(
             zoomBehavior.transform as any,
-            windowToTransform(viewRef.current, bounds, dimensions.width)
+            windowToTransform(viewRef.current, bounds, dimensions.width, EDGE_INSET)
         )
 
         return () => {
@@ -320,7 +331,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
         select(svgRef.current).call(
             zoomBehavior.transform as any,
-            windowToTransform(view, bounds, dimensions.width)
+            windowToTransform(view, bounds, dimensions.width, EDGE_INSET)
         )
     }, [view, bounds, dimensions])
 

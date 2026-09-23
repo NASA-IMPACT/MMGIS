@@ -15,7 +15,7 @@ vi.hoisted(() => {
     process.env.TZ = 'America/New_York'
 })
 
-import { TimelineView } from '../lib/geo/TimelineView/TimelineView'
+import { EDGE_INSET, TimelineView } from '../lib/geo/TimelineView/TimelineView'
 import type { LayerNavigation } from '../lib/utils/layerNavigation'
 import { transformToWindow, type ViewWindow } from '../lib/utils/zoomWindow'
 import type { LayerTimeData, TimeMode } from '../lib/types'
@@ -483,14 +483,14 @@ describe('TimelineView visible window', () => {
     test('reports the window a wheel gesture arrives at, anchored under the pointer', () => {
         // The one positive path from a gesture to the parent: d3's own event
         // pipeline, through the filter and the handler, to onViewChange. The
-        // pointer sits a quarter of the way across the chart, so the instant
+        // pointer sits a quarter of the way across the plot, so the instant
         // there is what the zoom has to hold still.
         render(FULL)
         act(() => {
             chart().dispatchEvent(
                 new WheelEvent('wheel', {
                     deltaY: -100,
-                    clientX: 200,
+                    clientX: EDGE_INSET + (800 - 2 * EDGE_INSET) / 4,
                     clientY: 10,
                     bubbles: true,
                     cancelable: true,
@@ -567,7 +567,7 @@ describe('TimelineView visible window', () => {
         })
 
         // 800 is the width the view starts at, which the stub leaves alone.
-        const held = transformToWindow(zoomTransform(chart()), wider, 800)
+        const held = transformToWindow(zoomTransform(chart()), wider, 800, EDGE_INSET)
         expect(held.start.toISOString()).toBe(WEEK.start.toISOString())
         expect(held.end.toISOString()).toBe(WEEK.end.toISOString())
     })
