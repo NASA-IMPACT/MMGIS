@@ -29,6 +29,7 @@ export type LayerManagerPanelProps = {
     onHideFilteredLayers?: () => void
     /** Titles of those layers. No handler or none to hide, no button. */
     filteredOutLayers?: string[]
+    onRunChange?: LayerLegendListProps['onRunChange']
 }
 
 export function LayerManagerPanel({
@@ -48,6 +49,7 @@ export function LayerManagerPanel({
     onAddLayer,
     onHideFilteredLayers,
     filteredOutLayers = [],
+    onRunChange,
 }: LayerManagerPanelProps) {
     const filteredOutCount = filteredOutLayers.length
     return (
@@ -103,6 +105,7 @@ export function LayerManagerPanel({
                         selectedTime={selectedTime}
                         onCompareLayer={onCompareLayer}
                         onReorder={onReorder}
+                        onRunChange={onRunChange}
                     />
                 )}
             </div>

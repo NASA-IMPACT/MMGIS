@@ -20,6 +20,22 @@ export type CogData = {
   titilerUrl: string | null
 }
 
+export type ForecastRun = {
+  /** When the model ran, ISO datetime as the service lists it (naive = UTC). */
+  datetime: string
+}
+
+export type ForecastData = {
+  /** Model runs core offers, newest first. */
+  runs: ForecastRun[]
+  /** The run core has pinned the layer to. */
+  selectedRun: string | null
+  /** One lead unit as an ISO 8601 duration: PT1H, P1D, P1M, ... */
+  step: string
+  /** Whole steps from the pinned run to the timeline's current time. */
+  lead: number | null
+}
+
 export type Layer = {
   id: string
   title: string
@@ -40,4 +56,6 @@ export type Layer = {
   outOfDataRange?: boolean
   // true when the layer opts into area analysis, as the analysis plugins read it
   analysisSupported?: boolean
+  // present when core reports model runs for the layer
+  forecast?: ForecastData | null
 }

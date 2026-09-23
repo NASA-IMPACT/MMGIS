@@ -88,7 +88,7 @@ export const mmgisHasHandler = (name: string): boolean => {
 // register the handler; errors thrown by a registered handler still
 // propagate (they are real failures, not version skew).
 
-const mmgisRequestIfProvided = async <T = unknown>(
+export const mmgisRequestIfProvided = async <T = unknown>(
     name: string,
     params?: unknown,
 ): Promise<T | null> => {

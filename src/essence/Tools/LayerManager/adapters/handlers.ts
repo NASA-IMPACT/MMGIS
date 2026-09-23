@@ -58,6 +58,11 @@ export const hideFilteredOutLayers = async (): Promise<void> => {
     }
 }
 
+// A pick is one request; core pins the run, redraws, and moves the clock.
+export const selectRun = async (layerId: string, run: string): Promise<void> => {
+    await mmgisRequest('layers:setRun', { layerUUID: layerId, run })
+}
+
 export const setOpacity = async (layerId: string, opacity: number): Promise<void> => {
     const success = await mmgisRequest<boolean>('layers:setOpacity', { layerUUID: layerId, opacity })
     if (success) {

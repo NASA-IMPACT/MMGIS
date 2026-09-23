@@ -303,6 +303,54 @@ $legend-hover-surface: var(--theme-color-base-lightest, #f1f3f6);
         }
     }
 
+    /* Model run row of a forecast layer: label over a full-width select,
+       with the lead readout beside it. */
+    &__run {
+        display: flex;
+        align-items: flex-end;
+        gap: var(--theme-spacing-1, 0.5rem);
+        padding-left: $legend-content-indent;
+        padding-top: var(--theme-spacing-1, 0.5rem);
+        border-top: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    }
+
+    &__run-field {
+        display: flex;
+        flex: 1 1 auto;
+        min-width: 0;
+        flex-direction: column;
+        gap: var(--theme-spacing-05, 0.25rem);
+        font-size: var(--theme-font-size-3xs, 0.75rem);
+        color: var(--theme-color-base-dark, #565c65);
+    }
+
+    &__run-select {
+        width: 100%;
+        min-width: 0;
+        font: inherit;
+        font-weight: var(--theme-font-weight-semibold, 600);
+        color: var(--theme-color-base-darkest, #1b1b1b);
+        background: var(--theme-color-white, #ffffff);
+        border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+        border-radius: var(--theme-radius-md, 4px);
+        padding: var(--theme-spacing-1, 0.5rem) var(--theme-spacing-105, 0.75rem);
+        cursor: pointer;
+
+        &:focus-visible {
+            outline: 2px solid var(--theme-color-primary, #005ea2);
+            outline-offset: 0;
+        }
+    }
+
+    &__run-lead {
+        flex: 0 0 auto;
+        padding-bottom: var(--theme-spacing-1, 0.5rem);
+        font-size: var(--theme-font-size-3xs, 0.75rem);
+        font-weight: var(--theme-font-weight-semibold, 600);
+        color: var(--theme-color-base-dark, #565c65);
+        white-space: nowrap;
+    }
+
     /* Unit label shown above the legend graphic */
     &__unit-label {
         padding-left: $legend-content-indent;
