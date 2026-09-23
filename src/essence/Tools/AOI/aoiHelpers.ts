@@ -347,7 +347,7 @@ export function selectionFitBounds(
 }
 
 /**
- * Pick where to anchor the selection tooltip. The tooltip holds the only
+ * Pick where to anchor the selection's popup card. The card holds the only
  * Analyze and Cancel buttons a selection has, so mounting it off-screen
  * strands the selection.
  *
@@ -360,7 +360,7 @@ export function selectionFitBounds(
  * Pass no view once the camera has been fitted to the selection — the centroid
  * is on-screen by then.
  */
-export function selectionTooltipAnchor(
+export function selectionPopupAnchor(
     centroid: { lat: number; lng: number },
     view?: ViewBounds | null
 ): { lat: number; lng: number } {
