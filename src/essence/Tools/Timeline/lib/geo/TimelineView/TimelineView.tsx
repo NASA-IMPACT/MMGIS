@@ -7,6 +7,7 @@ import type { TimeMode, LayerTimeData } from '../../types'
 import { generateTimeTicks, formatDateByMode, clampDate, stepTime } from '../../utils/timeUtils'
 import {
     minViewDuration,
+    sameWindow,
     transformToWindow,
     windowToTransform,
     type ViewWindow,
@@ -219,12 +220,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                 // partway — by a wheel event arriving mid-animation, which is
                 // ordinary use — leaves it set. The comparison is exact to the
                 // millisecond because the two conversions round-trip exactly.
-                const held = viewRef.current
-                if (
-                    next.start.getTime() === held.start.getTime() &&
-                    next.end.getTime() === held.end.getTime()
-                )
-                    return
+                if (sameWindow(next, viewRef.current)) return
                 onViewChangeRef.current(next)
             })
 

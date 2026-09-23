@@ -41,9 +41,11 @@
 }
 
 /* Below this width the header stacks to a column. The group refuses to
-   compress, keeping every control reachable; wrapping happens one level up,
-   in the header row that holds it, so the group moves as a whole rather than
-   splitting between rows with the divider spanning both. */
+   compress, keeping every control reachable. Wrapping belongs to
+   `.timeline-header-right`, two levels up: it wraps between the mode buttons
+   and the toolbar, so the whole toolbar, this group inside it, drops to the
+   next line as one item. Neither the toolbar nor this group wraps itself;
+   either would split the slider from its buttons across two rows. */
 @media (max-width: 768px) {
     .timeline-zoom-controls {
         flex-shrink: 0;

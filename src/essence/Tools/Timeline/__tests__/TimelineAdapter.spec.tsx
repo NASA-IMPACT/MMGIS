@@ -1,7 +1,8 @@
 import React, { act } from 'react'
-import { describe, test, expect, beforeEach, afterEach } from 'vitest'
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 import { TimelineAdapter } from '../TimelineAdapter'
+import { stubReducedMotion } from './support/motion'
 
 /**
  * The "Compare date" action is a hand-off, not a call: the timeline knows the
@@ -12,6 +13,17 @@ import { TimelineAdapter } from '../TimelineAdapter'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean })
     .IS_REACT_ACT_ENVIRONMENT = true
+
+// The zoom state applies a fit at once under reduced motion, and every
+// assertion here that reads the view or the slider after a fit relies on
+// that.
+beforeEach(() => {
+    stubReducedMotion(true)
+})
+
+afterEach(() => {
+    vi.unstubAllGlobals()
+})
 
 const START = '2024-01-01T00:00:00Z'
 const END = '2024-12-31T00:00:00Z'
@@ -125,6 +137,17 @@ const LAYER_CONFIGS = {
         display_name: 'Basemap',
         time: { enabled: false },
     },
+    // Three days inside the window: shorter than every zoom floor but the
+    // hourly one, so a fit to it lands on whichever floor is in force.
+    short: {
+        name: 'short',
+        display_name: 'Short Campaign',
+        time: {
+            enabled: true,
+            dataStartTime: '2024-05-01T00:00:00Z',
+            dataEndTime: '2024-05-04T00:00:00Z',
+        },
+    },
 }
 
 type Listener = (payload?: unknown) => void
@@ -202,8 +225,9 @@ describe('TimelineAdapter layer navigation', () => {
             autoFitToggle(container)!.click()
         })
         visible.sparse = true
+        expect(listeners['layer:visibilityChange']).toBeDefined()
         await act(async () => {
-            listeners['layer:visibilityChange']?.()
+            listeners['layer:visibilityChange']()
         })
         await act(async () => {})
     })
@@ -357,10 +381,14 @@ describe('TimelineAdapter zoom wiring', () => {
         )
     })
 
-    test('a fit reaching outside the global window widens it once, leaving the scrubber be', () => {
+    test('a fit reaching outside the global window widens it once, onto the whole of its first day, leaving the scrubber be', () => {
+        // The widen opens on the first instant of the earliest day, the
+        // same instant a row's backwards control opens the window to, so
+        // the box drawn over that day is inside the chart. The end needs no
+        // such allowance: a box ends on the instant its day does.
         expect(requests()).toHaveLength(1)
         expect(requests()[0].payload).toEqual({
-            startTime: BEFORE_WINDOW,
+            startTime: BEFORE_WINDOW_DAY_START,
             endTime: PAST_WINDOW,
             currentTime: new Date(CURRENT).toISOString(),
         })
@@ -390,6 +418,7 @@ describe('TimelineAdapter zoom before and at the seed', () => {
     let container: HTMLElement
     let root: Root
     let emits: Emit[]
+    let listeners: Record<string, Listener>
     let originalResizeObserver: unknown
 
     const slider = () =>
@@ -398,24 +427,27 @@ describe('TimelineAdapter zoom before and at the seed', () => {
     const requests = () => emits.filter((e) => e.event === 'time:changeRequested')
 
     /**
-     * Mounts with the given layers visible. The seed can be held back behind
-     * `releaseSeed` so the layers land first.
+     * Mounts with the given layers visible. One of core's answers can be
+     * held back behind the returned release, so the layers land first: the
+     * seed, or the tool vars, which answer with a monthly granularity.
      */
     const mount = async (
         visible: Record<string, boolean>,
-        holdSeed: boolean
+        hold: 'time:getStart' | 'tool:getVars' | null
     ): Promise<() => void> => {
-        let releaseSeed: () => void = () => {}
-        const seedGate = new Promise<void>((resolve) => {
-            releaseSeed = resolve
+        let release: () => void = () => {}
+        const gate = new Promise<void>((resolve) => {
+            release = resolve
         })
-        installSparseApi(emits, visible, {})
+        listeners = {}
+        installSparseApi(emits, visible, listeners)
         const api = (window as unknown as {
             mmgisAPI: { request: (name: string) => Promise<unknown> }
         }).mmgisAPI
         const request = api.request
         api.request = async (name: string) => {
-            if (holdSeed && name === 'time:getStart') await seedGate
+            if (name === hold) await gate
+            if (name === 'tool:getVars') return { defaultTimeMode: 'MONTH' }
             return request(name)
         }
 
@@ -426,7 +458,7 @@ describe('TimelineAdapter zoom before and at the seed', () => {
             root.render(<TimelineAdapter />)
         })
         await act(async () => {})
-        return releaseSeed
+        return release
     }
 
     beforeEach(() => {
@@ -446,14 +478,17 @@ describe('TimelineAdapter zoom before and at the seed', () => {
     })
 
     test('with nothing to fit, the view opens on the whole seeded window', async () => {
-        await mount({ basemap: true }, false)
+        await mount({ basemap: true }, null)
 
         expect(slider()!.value).toBe('0')
         expect(requests()).toHaveLength(0)
     })
 
     test('layers arriving ahead of the seed commit nothing until it lands', async () => {
-        const releaseSeed = await mount({ sparse: true, basemap: true }, true)
+        const releaseSeed = await mount(
+            { sparse: true, basemap: true },
+            'time:getStart'
+        )
 
         expect(container.querySelector('.timeline-loading')).not.toBeNull()
         expect(requests()).toHaveLength(0)
@@ -464,13 +499,67 @@ describe('TimelineAdapter zoom before and at the seed', () => {
         await act(async () => {})
 
         // The one widen frames the layer against the seeded window, never
-        // the placeholder.
+        // the placeholder, and opens on the whole of the layer's first day.
         expect(requests()).toHaveLength(1)
         expect(requests()[0].payload).toEqual({
-            startTime: BEFORE_WINDOW,
+            startTime: BEFORE_WINDOW_DAY_START,
             endTime: PAST_WINDOW,
             currentTime: new Date(CURRENT).toISOString(),
         })
+    })
+
+    test('layers load once core answers, even when its window reached the bus first', async () => {
+        const releaseSeed = await mount(
+            { sparse: true, basemap: true },
+            'time:getStart'
+        )
+
+        // Core broadcasts every commit, and one can carry the very instants
+        // the seed will answer with. The adapter keeps its Date identities
+        // when an instant is unchanged, so from here the seed changes
+        // nothing but readiness; the layer fetch has to follow readiness
+        // itself, not the window's identity.
+        expect(listeners['time:changed']).toBeDefined()
+        act(() => {
+            listeners['time:changed']({
+                startTime: START,
+                endTime: END,
+                currentTime: CURRENT,
+            })
+        })
+        expect(container.querySelector('.timeline-loading')).not.toBeNull()
+
+        await act(async () => {
+            releaseSeed()
+        })
+        await act(async () => {})
+
+        expect(container.querySelector('.timeline-loading')).toBeNull()
+        expect(
+            container.querySelector('[aria-label="Rover Images: next date"]')
+        ).not.toBeNull()
+        expect(requests()).toHaveLength(1)
+    })
+
+    test('the first fit waits for the configured granularity and runs at its floor', async () => {
+        // The seed and the layer configs answer at once; the tool vars,
+        // carrying the monthly granularity, are held back. A fit before they
+        // answer would be made at a provisional floor and redone at the real
+        // one: on this three-day layer, a three-day view jumping to two
+        // months. So there is nothing to fit against until they do.
+        const releaseVars = await mount({ short: true }, 'tool:getVars')
+
+        expect(container.querySelector('.timeline-loading')).not.toBeNull()
+        expect(slider()).toBeNull()
+
+        await act(async () => {
+            releaseVars()
+        })
+        await act(async () => {})
+
+        expect(container.querySelector('.timeline-loading')).toBeNull()
+        expect(slider()!.getAttribute('aria-valuetext')).toBe('2 months')
+        expect(requests()).toHaveLength(0)
     })
 })
 

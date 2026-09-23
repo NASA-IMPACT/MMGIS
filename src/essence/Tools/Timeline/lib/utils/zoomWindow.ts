@@ -27,6 +27,14 @@ const windowOf = (start: number, span: number): ViewWindow => {
 }
 
 /**
+ * Whether two windows name the same span, to the millisecond. Windows are
+ * compared by value throughout: the same span is routinely rebuilt as a fresh
+ * object, by a parent's render or by a transform round-tripped through d3.
+ */
+export const sameWindow = (a: ViewWindow, b: ViewWindow): boolean =>
+    a.start.getTime() === b.start.getTime() && a.end.getTime() === b.end.getTime()
+
+/**
  * How far in the view may go, by the granularity the dashboard is configured
  * to display. Each floor leaves enough tick marks for the axis to read as an
  * axis rather than as a pair of endpoints: 24 hourly, 3 daily, 2 monthly,
@@ -215,6 +223,98 @@ export function fitWindow(
         bounds,
         minMs
     )
+}
+
+/**
+ * Van Wijk and Nuij's smoothness parameter, the value d3's `interpolateZoom`
+ * uses: it trades the length of the path against how far it zooms out to
+ * travel.
+ */
+const RHO = Math.SQRT2
+const RHO2 = RHO * RHO
+const RHO4 = RHO2 * RHO2
+
+/**
+ * Below this fraction of the wider span, a shift of the centre is treated as
+ * none at all: it is under a pixel on any chart narrower than a million
+ * pixels, and a path that is a pure zoom is what the shift rounds to.
+ */
+const PURE_ZOOM_SHIFT = 1e-6
+
+/**
+ * The path from one window to another, as a function of progress `t` in
+ * [0, 1]: `from` at 0 and `to` at 1, exactly, with the span changing
+ * geometrically in between.
+ *
+ * Geometric, not linear, for the reason the slider is logarithmic: a linear
+ * span visibly decelerates as it tightens, since each equal step is a larger
+ * fraction of what remains. A pure zoom about a fixed centre therefore passes
+ * through the geometric mean of the two spans at `t = 0.5`, not the
+ * arithmetic mean.
+ *
+ * The path is Van Wijk and Nuij's ("Smooth and efficient zooming and panning",
+ * 2003), the one behind d3's `interpolateZoom`, in one dimension: a change of
+ * centre that is long relative to the spans zooms out first, so the content
+ * between the two windows crosses the chart at a readable rate, and zooms
+ * back in on arrival. d3's implementation is not used directly because it
+ * evaluates `log(sqrt(b² + 1) − b)`, which cancels catastrophically once `b`
+ * passes about 1e8; `b` grows with the span over the centre shift, so a
+ * zoom-out about a centre that moves by a rounding millisecond — reachable
+ * from any zoom about the scrubber — puts NaN into every frame. The ratio is
+ * scale-invariant, so no change of units mends it. That expression is
+ * `−asinh(b)`, which `Math.asinh` evaluates stably at any magnitude.
+ *
+ * A span the path passes through can exceed both endpoints' spans and, with
+ * it, the bounds; callers clamp each frame as they would any window. A window
+ * without a span has no geometric path, and is interpolated linearly.
+ */
+export function interpolateWindow(
+    from: ViewWindow,
+    to: ViewWindow
+): (t: number) => ViewWindow {
+    const start0 = from.start.getTime()
+    const start1 = to.start.getTime()
+    const w0 = from.end.getTime() - start0
+    const w1 = to.end.getTime() - start1
+
+    let at: (t: number) => ViewWindow
+
+    if (!(w0 > 0) || !(w1 > 0)) {
+        at = (t) => windowOf(start0 + t * (start1 - start0), w0 + t * (w1 - w0))
+    } else {
+        const centre0 = start0 + w0 / 2
+        const dx = start1 + w1 / 2 - centre0
+        const d = Math.abs(dx)
+
+        if (d <= PURE_ZOOM_SHIFT * Math.max(w0, w1)) {
+            const growth = Math.log(w1 / w0)
+            at = (t) => {
+                const span = w0 * Math.exp(t * growth)
+                return windowOf(centre0 + t * dx - span / 2, span)
+            }
+        } else {
+            const b0 = (w1 * w1 - w0 * w0 + RHO4 * d * d) / (2 * w0 * RHO2 * d)
+            const b1 = (w1 * w1 - w0 * w0 - RHO4 * d * d) / (2 * w1 * RHO2 * d)
+            const r0 = -Math.asinh(b0)
+            const r1 = -Math.asinh(b1)
+            const S = (r1 - r0) / RHO
+            const coshr0 = Math.cosh(r0)
+            const sinhr0 = Math.sinh(r0)
+            at = (t) => {
+                const x = RHO * t * S + r0
+                const travelled =
+                    (w0 / (RHO2 * d)) * (coshr0 * Math.tanh(x) - sinhr0)
+                const span = (w0 * coshr0) / Math.cosh(x)
+                return windowOf(centre0 + travelled * dx - span / 2, span)
+            }
+        }
+    }
+
+    return (t) => {
+        if (t <= 0) return from
+        if (t >= 1) return to
+        return at(t)
+    }
 }
 
 /**

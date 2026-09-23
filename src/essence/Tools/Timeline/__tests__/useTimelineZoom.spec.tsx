@@ -19,8 +19,12 @@ import {
     type UseTimelineZoomOptions,
 } from '../lib/hooks/useTimelineZoom'
 import type { LayerTimeData, TimeMode } from '../lib/types'
-import type { LayerNavigation } from '../lib/utils/layerNavigation'
+import {
+    resolveLayerNavigation,
+    type LayerNavigation,
+} from '../lib/utils/layerNavigation'
 import { windowToSlider, type ViewWindow } from '../lib/utils/zoomWindow'
+import { fakeFrameClock, frames, settle, stubReducedMotion } from './support/motion'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean })
     .IS_REACT_ACT_ENVIRONMENT = true
@@ -102,6 +106,10 @@ describe('useTimelineZoom', () => {
         )
 
     beforeEach(() => {
+        // Reduced motion means a zoom or fit applies at once. Every
+        // assertion outside 'in transition' reads the view straight after
+        // an action, and relies on that.
+        stubReducedMotion(true)
         container = document.createElement('div')
         document.body.appendChild(container)
         root = createRoot(container)
@@ -112,6 +120,7 @@ describe('useTimelineZoom', () => {
     afterEach(() => {
         act(() => root.unmount())
         container.remove()
+        vi.unstubAllGlobals()
     })
 
     test('starts on the full global window', () => {
@@ -328,6 +337,68 @@ describe('useTimelineZoom', () => {
         })
     })
 
+    describe('framing a sparse layer', () => {
+        // Built the way the adapter builds it, so the stops land where
+        // `resolveListedInstants` puts them: at each listed day's last instant.
+        const sparse = (name: string, dates: string[]) =>
+            layer(
+                name,
+                resolveLayerNavigation(
+                    { enabled: true, dataDates: dates },
+                    BOUNDS.start,
+                    BOUNDS.end,
+                    name
+                )
+            )
+
+        test('opens the view to the first instant of the first listed day', () => {
+            // The chart draws each listed day as a whole-day box from the
+            // day's first instant, while the stop is its last. A view opening
+            // at the stop meets the box's trailing edge and leaves the whole
+            // first day off the left of the chart.
+            const listed = sparse('MODIS', ['2019-03-05', '2019-03-12'])
+            expect(listed.navigation?.start.toISOString()).toBe(
+                '2019-03-05T23:59:59.999Z'
+            )
+
+            render(defaults({ layers: [layer('Basemap')] }))
+            act(() => api.fitToLayer(listed))
+
+            expect(api.view.start.getTime()).toBeLessThanOrEqual(
+                new Date('2019-03-05T00:00:00Z').getTime()
+            )
+            expect(api.view.end.getTime()).toBeGreaterThanOrEqual(
+                new Date('2019-03-12T23:59:59.999Z').getTime()
+            )
+        })
+
+        test('widens to the first listed day, not to its last instant, and settles', () => {
+            // Reaching a sparse layer outside the window widens the window.
+            // Widened only to the stop, the window edge would sit at the end
+            // of the first day's box and hide it at every zoom level, since
+            // the view can never open past the window.
+            const listed = sparse('MODIS', ['2018-11-05', '2018-11-20'])
+
+            render(defaults({ layers: [listed] }))
+
+            expect(widened).toHaveLength(1)
+            expect(widened[0].start.toISOString()).toBe(
+                '2018-11-05T00:00:00.000Z'
+            )
+            expect(api.view.start.getTime()).toBeLessThanOrEqual(
+                new Date('2018-11-05T00:00:00Z').getTime()
+            )
+
+            // The revealed start is a fixed function of the layer's own list,
+            // so the refetch the widen causes finds the same union and has
+            // nothing further to widen to.
+            const fitted = iso(api.view)
+            render(defaults({ bounds: widened[0], layers: [listed] }))
+            expect(widened).toHaveLength(1)
+            expect(iso(api.view)).toEqual(fitted)
+        })
+    })
+
     describe("loop 2 — 'now' drift", () => {
         const openEnded = (end: string) =>
             layer(
@@ -497,5 +568,216 @@ describe('useTimelineZoom', () => {
         // the view is unmoved.
         render(defaults({ granularity: 'MONTH' }))
         expect(iso(api.view)).toEqual(floored)
+    })
+
+    describe('in transition', () => {
+        const within = (w: ViewWindow, of: ViewWindow) =>
+            w.start.getTime() >= of.start.getTime() &&
+            w.end.getTime() <= of.end.getTime()
+
+        beforeEach(() => {
+            stubReducedMotion(false)
+            fakeFrameClock()
+        })
+
+        afterEach(() => {
+            vi.useRealTimers()
+        })
+
+        test('a zoom moves the view over frames and lands where an instant one would', () => {
+            render(defaults())
+
+            act(() => api.zoomIn())
+            // Nothing has moved until a frame is drawn.
+            expect(iso(api.view)).toEqual(iso(BOUNDS))
+
+            const spans: number[] = []
+            for (let i = 0; i < 8; i++) {
+                frames(1)
+                spans.push(span(api.view))
+            }
+            expect(spans.every((s, k) => k === 0 || s <= spans[k - 1])).toBe(true)
+            expect(spans[spans.length - 1]).toBeLessThan(span(BOUNDS))
+            expect(spans[spans.length - 1]).toBeGreaterThan(span(BOUNDS) / 2)
+
+            settle()
+
+            expect(span(api.view)).toBe(span(BOUNDS) / 2)
+            const before =
+                (CURRENT.getTime() - BOUNDS.start.getTime()) / span(BOUNDS)
+            const after =
+                (CURRENT.getTime() - api.view.start.getTime()) / span(api.view)
+            expect(after).toBeCloseTo(before, 6)
+        })
+
+        test('the slider follows the view frame by frame', () => {
+            render(defaults())
+            act(() => api.zoomIn())
+            frames(6)
+
+            expect(api.sliderValue).toBeGreaterThan(0)
+            expect(api.sliderValue).toBeLessThan(
+                windowToSlider(
+                    { start: BOUNDS.start, end: new Date(BOUNDS.start.getTime() + span(BOUNDS) / 2) },
+                    BOUNDS,
+                    3 * DAY
+                )
+            )
+        })
+
+        test('a wheel or drag landing mid-flight drops the transition and wins', () => {
+            render(defaults())
+            act(() => api.zoomIn())
+            frames(6)
+
+            const dragged = win('2019-03-01T00:00:00Z', '2019-05-01T00:00:00Z')
+            act(() => api.setView(dragged))
+            expect(iso(api.view)).toEqual(iso(dragged))
+
+            settle()
+            expect(iso(api.view)).toEqual(iso(dragged))
+        })
+
+        test('the slider landing mid-flight drops the transition and wins', () => {
+            render(defaults())
+            act(() => api.zoomIn())
+            frames(6)
+
+            act(() => api.setSliderValue(0.75))
+            const slid = iso(api.view)
+            expect(api.sliderValue).toBeCloseTo(0.75, 6)
+
+            settle()
+            expect(iso(api.view)).toEqual(slid)
+        })
+
+        test('a second press mid-flight restarts from the view as it stands and steps from the destination', () => {
+            render(defaults())
+            act(() => api.zoomIn())
+            frames(6)
+            const midway = iso(api.view)
+            expect(midway).not.toEqual(iso(BOUNDS))
+
+            act(() => api.zoomIn())
+            // The first frame of the replacement is the view as it stood, so
+            // nothing jumps back to where the first flight began.
+            frames(1)
+            expect(iso(api.view)).toEqual(midway)
+
+            settle()
+            expect(span(api.view)).toBe(span(BOUNDS) / 4)
+        })
+
+        test('two presses landing in one batch are two whole steps in one flight', () => {
+            render(defaults())
+
+            act(() => {
+                api.zoomIn()
+                api.zoomIn()
+            })
+            expect(iso(api.view)).toEqual(iso(BOUNDS))
+
+            settle()
+            expect(span(api.view)).toBe(span(BOUNDS) / 4)
+        })
+
+        test('unmounting mid-flight leaves the view where it stood', () => {
+            render(defaults())
+            act(() => api.zoomIn())
+            frames(3)
+            const held = iso(api.view)
+
+            act(() => root.unmount())
+
+            expect(() => settle()).not.toThrow()
+            expect(iso(api.view)).toEqual(held)
+        })
+
+        test('a window narrowed by core mid-flight holds every later frame inside it', () => {
+            render(defaults())
+            act(() => api.zoomIn())
+            frames(6)
+
+            const narrower = win('2019-05-01T00:00:00Z', '2019-09-01T00:00:00Z')
+            render(defaults({ bounds: narrower }))
+            expect(within(api.view, narrower)).toBe(true)
+
+            for (let i = 0; i < 8; i++) {
+                frames(1)
+                expect(within(api.view, narrower)).toBe(true)
+            }
+
+            settle()
+            expect(within(api.view, narrower)).toBe(true)
+            expect(span(api.view)).toBeLessThanOrEqual(span(narrower))
+        })
+
+        test('an auto-fit that widens flies to its fit while core commits the widen', () => {
+            // The widen goes out with the fit, and the pending span is held
+            // until core echoes it. Core's commit lands mid-flight: the render
+            // that clears the pending widen must leave the view where the
+            // flight has it, and the flight must reach the fit.
+            render(defaults({ layers: [reaching()] }))
+            expect(widened).toHaveLength(1)
+            expect(iso(api.view)).toEqual(iso(BOUNDS))
+
+            frames(6)
+            const midway = iso(api.view)
+            expect(midway).not.toEqual(iso(BOUNDS))
+
+            render(defaults({ bounds: widened[0], layers: [reaching()] }))
+            expect(iso(api.view)).toEqual(midway)
+            expect(widened).toHaveLength(1)
+
+            settle()
+            expect(iso(api.view)).toEqual([
+                '2018-06-01T00:00:00.000Z',
+                '2018-06-04T00:00:00.000Z',
+            ])
+            expect(widened).toHaveLength(1)
+        })
+
+        test('a fit made on mount survives a development-mode effect replay', () => {
+            act(() => {
+                root.render(
+                    <React.StrictMode>
+                        <Harness options={defaults({ layers: [reaching()] })} />
+                    </React.StrictMode>
+                )
+            })
+            expect(widened).toHaveLength(1)
+
+            settle()
+
+            expect(iso(api.view)).toEqual([
+                '2018-06-01T00:00:00.000Z',
+                '2018-06-04T00:00:00.000Z',
+            ])
+        })
+
+        test('a fit on demand animates too', () => {
+            const outside = layer(
+                'Sea Ice',
+                nav({
+                    start: new Date('2019-03-01T00:00:00Z'),
+                    end: new Date('2019-04-01T00:00:00Z'),
+                    hasOwnStart: true,
+                    hasOwnEnd: true,
+                })
+            )
+            render(defaults({ layers: [layer('Basemap')] }))
+
+            act(() => api.fitToLayer(outside))
+            expect(iso(api.view)).toEqual(iso(BOUNDS))
+
+            settle()
+            expect(api.view.start.getTime()).toBeLessThan(
+                new Date('2019-03-01T00:00:00Z').getTime()
+            )
+            expect(api.view.end.getTime()).toBeGreaterThan(
+                new Date('2019-04-01T00:00:00Z').getTime()
+            )
+            expect(span(api.view)).toBeLessThan(span(BOUNDS) / 4)
+        })
     })
 })

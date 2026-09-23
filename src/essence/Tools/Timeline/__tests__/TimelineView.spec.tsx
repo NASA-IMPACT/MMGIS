@@ -382,6 +382,37 @@ describe('TimelineView visible window', () => {
         expect(reported).toEqual([])
     })
 
+    test('reports the window a wheel gesture arrives at, anchored under the pointer', () => {
+        // The one positive path from a gesture to the parent: d3's own event
+        // pipeline, through the filter and the handler, to onViewChange. The
+        // pointer sits a quarter of the way across the chart, so the instant
+        // there is what the zoom has to hold still.
+        render(FULL)
+        act(() => {
+            chart().dispatchEvent(
+                new WheelEvent('wheel', {
+                    deltaY: -100,
+                    clientX: 200,
+                    clientY: 10,
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            )
+        })
+
+        expect(reported).toHaveLength(1)
+        const [next] = reported
+        expect(spanOf(next)).toBeLessThan(spanOf(FULL))
+        expect(next.start.getTime()).toBeGreaterThanOrEqual(START.getTime())
+        expect(next.end.getTime()).toBeLessThanOrEqual(END.getTime())
+
+        // Each endpoint is rounded to the millisecond on its own, so the
+        // anchored instant can drift by up to half of one.
+        const quarterIn = (win: ViewWindow) =>
+            win.start.getTime() + spanOf(win) / 4
+        expect(Math.abs(quarterIn(next) - quarterIn(FULL))).toBeLessThanOrEqual(1)
+    })
+
     test('leaves d3 holding the window after a drag open across a rebuild', () => {
         // d3 writes the transform before it notifies, so a silenced drag
         // walks it somewhere the window never went.

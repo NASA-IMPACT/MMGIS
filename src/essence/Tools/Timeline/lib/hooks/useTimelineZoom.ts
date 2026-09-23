@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import moment from 'moment'
 import type { LayerTimeData, TimeMode } from '../types'
+import { revealStart, type LayerNavigation } from '../utils/layerNavigation'
 import {
     clampWindow,
     fitWindow,
     minViewDuration,
+    sameWindow,
     sliderToWindow,
     windowToSlider,
     zoomAround,
     type ViewWindow,
 } from '../utils/zoomWindow'
+import { useWindowTransition } from './useWindowTransition'
 
 /** How much of the union's span a fit leaves clear at each edge. */
 const PAD_FRACTION = 0.04
@@ -48,7 +51,11 @@ export interface UseTimelineZoomOptions {
 }
 
 export interface TimelineZoom {
-    /** The visible window — the source of truth the d3 transform derives from. */
+    /**
+     * The visible window — the source of truth the d3 transform derives
+     * from. While a zoom or fit is in transition it is the window on screen
+     * on that frame, so the slider and the chart move together.
+     */
     view: ViewWindow
     autoFit: boolean
     /** Where the view sits on the logarithmic slider, 0 (full) to 1 (floor). */
@@ -57,14 +64,34 @@ export interface TimelineZoom {
     canZoom: boolean
     /** False when no visible layer carries bounds of its own to frame. */
     canFit: boolean
+    /** Halves the span, in transition. Instant under reduced motion. */
     zoomIn(): void
+    /** Doubles the span, in transition. Instant under reduced motion. */
     zoomOut(): void
+    /** Direct manipulation: takes effect at once and drops any transition. */
     setSliderValue(v: number): void
+    /** Direct manipulation: takes effect at once and drops any transition. */
     setView(win: ViewWindow): void
     toggleAutoFit(): void
+    /** Frames the visible layers' own bounds, in transition. */
     fitToLayers(): void
+    /** Frames one layer's span, in transition. */
     fitToLayer(layer: LayerTimeData): void
 }
+
+/**
+ * The instant a fit must open the view at to show a layer's first data. A
+ * sparse layer's start is a stop at its first listed day's last instant, but
+ * the chart draws that day as a whole-day box from the day's first instant,
+ * so a view opening at the stop meets the box's trailing edge and leaves the
+ * whole first day off the left of the chart. The end needs no allowance: a
+ * box ends on the instant its day does. A periodic start is returned as is.
+ *
+ * The revealed start is a fixed function of the layer's own listed days and
+ * never of the global window, so a widen to it is a fixed point: the refetch
+ * that follows finds the same instant, not one moved outward again.
+ */
+const framedStart = (nav: LayerNavigation): Date => revealStart(nav, nav.start)
 
 /**
  * The span a layer contributes to an automatic fit: only the bounds it named
@@ -87,9 +114,10 @@ const ownExtent = (layer: LayerTimeData): ViewWindow | null => {
     const nav = layer.navigation
     if (!nav) return null
     if (!nav.hasOwnStart && !nav.hasOwnEnd) return null
+    const start = framedStart(nav)
     return {
-        start: nav.hasOwnStart ? nav.start : nav.end,
-        end: nav.hasOwnEnd ? nav.end : nav.start,
+        start: nav.hasOwnStart ? start : nav.end,
+        end: nav.hasOwnEnd ? nav.end : start,
     }
 }
 
@@ -123,9 +151,6 @@ const layersSignature = (
         .sort()
         .join('|')
 }
-
-const sameWindow = (a: ViewWindow, b: ViewWindow): boolean =>
-    a.start.getTime() === b.start.getTime() && a.end.getTime() === b.end.getTime()
 
 /** The scrubber when it is on screen, or the view's centre when it is not. */
 const anchorIn = (win: ViewWindow, at: Date): Date => {
@@ -216,33 +241,56 @@ export function useTimelineZoom({
         widenRef.current = onBoundsWiden
     }, [onBoundsWiden])
 
+    // The view as the actions see it. Written by every commit as well as
+    // synced from state, so two presses landing in one batch each act on the
+    // other's result instead of both on the view as it stood before either,
+    // and `commit` compares against it to skip a frame that changes nothing.
+    const viewRef = useRef(view)
+    useEffect(() => {
+        viewRef.current = view
+    }, [view])
+
+    // Every action that moves the view ends here; the reconciliation above
+    // is the one other writer, and the ref catches up with it in the effect
+    // above. Not clamped: a fit's window can lie in a span the render has
+    // yet to see, since the widen it made lands in the same render as the
+    // window, and the reconciliation brings any window into range as part
+    // of the render that sees it.
+    const commit = useCallback((next: ViewWindow) => {
+        if (sameWindow(viewRef.current, next)) return
+        viewRef.current = next
+        setViewState(next)
+    }, [])
+
+    const transition = useWindowTransition(commit)
+
+    // A gesture is the user's own hand on the view: it takes effect at once,
+    // and a transition still running would only fight it.
     const setView = useCallback(
         (next: ViewWindow) => {
-            setViewState((prev) => {
-                const clamped = clampWindow(next, boundsRef.current, minMs)
-                return sameWindow(prev, clamped) ? prev : clamped
-            })
+            transition.cancel()
+            commit(clampWindow(next, boundsRef.current, minMs))
         },
-        [minMs]
+        [transition, commit, minMs]
     )
 
-    // The zoom actions read the view through the updater rather than from a
-    // copy taken earlier, so two presses landing in one batch each act on the
-    // other's result instead of both on the view as it stood before either.
+    // A press landing mid-flight steps from the flight's destination, not
+    // from wherever that frame happens to be, so a run of quick presses is a
+    // run of whole steps; the flight restarts from the view as it stands, so
+    // nothing on screen jumps.
     const zoomBy = useCallback(
         (factor: number) => {
-            setViewState((prev) => {
-                const next = zoomAround(
-                    prev,
-                    factor,
-                    anchorIn(prev, currentTimeRef.current),
-                    boundsRef.current,
-                    minMs
-                )
-                return sameWindow(prev, next) ? prev : next
-            })
+            const origin = transition.target() ?? viewRef.current
+            const next = zoomAround(
+                origin,
+                factor,
+                anchorIn(origin, currentTimeRef.current),
+                boundsRef.current,
+                minMs
+            )
+            transition.animateTo(viewRef.current, next)
         },
-        [minMs]
+        [transition, minMs]
     )
 
     const zoomIn = useCallback(() => zoomBy(ZOOM_IN_FACTOR), [zoomBy])
@@ -250,17 +298,18 @@ export function useTimelineZoom({
 
     const setSliderValue = useCallback(
         (v: number) => {
-            setViewState((prev) => {
-                const next = sliderToWindow(
+            transition.cancel()
+            const held = viewRef.current
+            commit(
+                sliderToWindow(
                     v,
-                    anchorIn(prev, currentTimeRef.current),
+                    anchorIn(held, currentTimeRef.current),
                     boundsRef.current,
                     minMs
                 )
-                return sameWindow(prev, next) ? prev : next
-            })
+            )
         },
-        [minMs]
+        [transition, commit, minMs]
     )
 
     /**
@@ -303,9 +352,9 @@ export function useTimelineZoom({
 
             const fitted = fitWindow(extents, target, minMs, PAD_FRACTION)
             if (!fitted) return
-            setViewState((prev) => (sameWindow(prev, fitted) ? prev : fitted))
+            transition.animateTo(viewRef.current, fitted)
         },
-        [minMs]
+        [transition, minMs]
     )
 
     const ownExtents = useMemo(
@@ -347,7 +396,7 @@ export function useTimelineZoom({
         (layer: LayerTimeData) => {
             const nav = layer.navigation
             if (!nav) return
-            applyFit([{ start: nav.start, end: nav.end }])
+            applyFit([{ start: framedStart(nav), end: nav.end }])
         },
         [applyFit]
     )
