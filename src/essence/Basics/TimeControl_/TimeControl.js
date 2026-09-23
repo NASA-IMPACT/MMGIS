@@ -5,6 +5,7 @@ import $ from 'jquery'
 import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
 import Map_ from '../Map_/Map_'
+import TimeUI from './TimeUI'
 import { parseTimeWithOffset, parseTimeToSeconds } from './timeUtils'
 import { evaluateLayerDataCoverage } from './layerDataCoverage'
 import { formatLayerTime, buildTileUrlOptions } from '../Layers_/tileUrlUtils'
@@ -159,6 +160,19 @@ var TimeControl = {
                 // all, which moment would otherwise read as now.
                 window.mmgisAPI.provide('time:formatTime', (time) =>
                     time != null ? formatMissionTime(time) : null
+                ),
+                // Which mode the bottom Time UI bar is in: 'range' or 'point'.
+                // In point mode the window start is pinned to the epoch, so
+                // this is how a caller tells that apart from a real 1970
+                // start. null until time is enabled and seeded (as above),
+                // and null whenever the bar isn't mounted — mobile and the
+                // modern layout drive time without it, so it has no mode.
+                window.mmgisAPI.provide('time:getMode', () =>
+                    TimeControl.enabled &&
+                    TimeControl.currentTime != null &&
+                    TimeUI.startTempus != null
+                        ? TimeUI.modes[TimeUI.modeIndex].toLowerCase()
+                        : null
                 ),
                 window.mmgisAPI.provide('time:getStart', () => TimeControl.getStartTime()),
                 window.mmgisAPI.provide('time:getEnd', () => TimeControl.getEndTime()),

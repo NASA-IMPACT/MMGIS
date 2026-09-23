@@ -138,3 +138,58 @@ describe('TimeControl time formatting providers', () => {
         }
     )
 })
+
+/**
+ * time:getMode says which mode the bottom Time UI bar is in, so a plugin
+ * never has to guess Point mode from an epoch window start. The bar's
+ * widgets are only mounted in the desktop default layout; a stand-in
+ * startTempus marks it as mounted here without building the DOM.
+ */
+describe('TimeControl time:getMode provider', () => {
+    let originalMmgisAPI
+
+    beforeEach(() => {
+        originalMmgisAPI = window.mmgisAPI
+        vi.resetModules()
+    })
+
+    afterEach(() => {
+        window.mmgisAPI = originalMmgisAPI
+    })
+
+    // Loaded after initTimeControl, so it is the same instance TimeControl
+    // imported.
+    const mountTimeUI = async (mode) => {
+        const TimeUI = (
+            await import('../../src/essence/Basics/TimeControl_/TimeUI')
+        ).default
+        TimeUI.startTempus = {}
+        TimeUI.modeIndex = TimeUI.modes.indexOf(mode)
+        return TimeUI
+    }
+
+    test.each([
+        ['Range', 'range'],
+        ['Point', 'point'],
+    ])('answers %p mode as %p', async (mode, answer) => {
+        const handlers = await initTimeControl(enabledTimeConfig())
+        await mountTimeUI(mode)
+
+        expect(handlers['time:getMode']()).toBe(answer)
+    })
+
+    test('answers null with mission time disabled', async () => {
+        const handlers = await initTimeControl({})
+        await mountTimeUI('Range')
+
+        expect(handlers['time:getMode']()).toBeNull()
+    })
+
+    // Mobile and the modern layout never mount the bar, so there is no mode
+    // to report even with time on.
+    test('answers null when the Time UI bar is not mounted', async () => {
+        const handlers = await initTimeControl(enabledTimeConfig())
+
+        expect(handlers['time:getMode']()).toBeNull()
+    })
+})
