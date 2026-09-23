@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { mmgisHasHandler } from './mmgisAPI'
+import { whenMMGISHandlerReady } from './whenMMGISHandlerReady'
 
 /**
  * Polls mmgisAPI.hasHandler(name) until it returns true, then invokes onReady once.
@@ -10,6 +10,9 @@ import { mmgisHasHandler } from './mmgisAPI'
  * handler at mount silently get null/empty results.
  *
  * Stops after `timeoutMs` if the handler never appears (with a console warning).
+ *
+ * The waiting itself lives in {@link whenMMGISHandlerReady}, which a plugin
+ * with no React component of its own can call directly.
  */
 export const useMMGISHandlerReady = (
     handlerName: string,
@@ -17,23 +20,8 @@ export const useMMGISHandlerReady = (
     options: { intervalMs?: number; timeoutMs?: number } = {},
 ): void => {
     const { intervalMs = 200, timeoutMs = 10000 } = options
-    useEffect(() => {
-        if (mmgisHasHandler(handlerName)) {
-            onReady()
-            return
-        }
-        const start = Date.now()
-        const id = window.setInterval(() => {
-            if (mmgisHasHandler(handlerName)) {
-                window.clearInterval(id)
-                onReady()
-            } else if (Date.now() - start > timeoutMs) {
-                window.clearInterval(id)
-                console.warn(
-                    `[useMMGISHandlerReady] '${handlerName}' not registered after ${timeoutMs}ms`,
-                )
-            }
-        }, intervalMs)
-        return () => window.clearInterval(id)
-    }, [handlerName, onReady, intervalMs, timeoutMs])
+    useEffect(
+        () => whenMMGISHandlerReady(handlerName, onReady, { intervalMs, timeoutMs }),
+        [handlerName, onReady, intervalMs, timeoutMs],
+    )
 }
