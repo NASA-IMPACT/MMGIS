@@ -5,8 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 /**
  * One sidebar row: which controls it carries, and where a press is delivered.
  *
- * The process timezone is pinned behind UTC, matching the rest of the plugin's
- * specs, so a row resolving a target locally surfaces as a wrong instant here.
+ * The process timezone is pinned behind UTC, as in every spec in this plugin.
  */
 vi.hoisted(() => {
     process.env.TZ = 'America/New_York'
@@ -41,6 +40,9 @@ const layer = (
     color: '#00b3c8',
     navigation,
 })
+
+/** A layer that declares bounds of its own, and so gets the full set of controls. */
+const SEA_ICE = layer('Sea Ice', periodicNav())
 
 describe('LayerSidebarItem', () => {
     let container: HTMLElement
@@ -78,7 +80,7 @@ describe('LayerSidebarItem', () => {
         container.querySelector<HTMLButtonElement>('.layer-fit-btn')
 
     test('gives a layer that declares its own bounds a magnifier', () => {
-        render(layer('Sea Ice', periodicNav()))
+        render(SEA_ICE)
 
         expect(magnifier()).not.toBeNull()
         expect(magnifier()!.getAttribute('aria-label')).toBe(
@@ -97,17 +99,23 @@ describe('LayerSidebarItem', () => {
     })
 
     test('reaches the keyboard as a real button', () => {
-        render(layer('Sea Ice', periodicNav()))
+        render(SEA_ICE)
 
         const button = magnifier()!
         expect(button.tagName).toBe('BUTTON')
         expect(button.getAttribute('type')).toBe('button')
         expect(button.hasAttribute('disabled')).toBe(false)
+
+        // Exercised rather than inferred from the tag: a button with a
+        // negative tabIndex is still a real, enabled button, yet Tab skips it,
+        // which is exactly what a control revealed on focus must never be.
+        expect(button.tabIndex).toBe(0)
+        button.focus()
+        expect(document.activeElement).toBe(button)
     })
 
     test('hands its own layer to the fit callback', () => {
-        const target = layer('Sea Ice', periodicNav())
-        render(target)
+        render(SEA_ICE)
 
         act(() => {
             magnifier()!.dispatchEvent(
@@ -115,18 +123,18 @@ describe('LayerSidebarItem', () => {
             )
         })
 
-        expect(fitted).toEqual([target])
+        expect(fitted).toEqual([SEA_ICE])
     })
 
     test('keeps the row the height it is given', () => {
-        render(layer('Sea Ice', periodicNav()))
+        render(SEA_ICE)
 
         const row = container.querySelector<HTMLElement>('.layer-item')!
         expect(row.style.height).toBe('20px')
     })
 
-    test('still carries the four navigation controls', () => {
-        render(layer('Sea Ice', periodicNav()))
+    test('carries the four navigation controls for a layer with bounds', () => {
+        render(SEA_ICE)
 
         const labels = Array.from(
             container.querySelectorAll<HTMLButtonElement>('.layer-nav-btn')
