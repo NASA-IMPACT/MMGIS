@@ -9,6 +9,9 @@ vi.mock('../../src/essence/Basics/Map_/Map_', () => ({ default: {} }))
 const { default: L_ } = await import(
     '../../src/essence/Basics/Layers_/Layers_.js'
 )
+const { resolveColormapColors } = await import(
+    '../../src/essence/Basics/Colormaps/resolveColormapColors'
+)
 
 /**
  * `layers:getLegend` is core's answer to "what is this layer's legend".
@@ -145,6 +148,79 @@ describe('layers:getLegend', () => {
         expect(legend.colormap).toBe('viridis')
         expect(legend.min).toBe(0)
         expect(legend.max).toBe(2)
+    })
+
+    // A classified raster may draw its classes as circles or rects; any shape
+    // outside a scale marks the entries as classes, which stay swatches.
+    test('keeps non-scale shaped classes on a raster as swatches', async () => {
+        withLayers({
+            [RASTER]: cogLayer({
+                cogMin: 0,
+                cogMax: 2,
+                _legend: [
+                    { shape: 'circle', color: '#a00000', label: 'Water' },
+                    { shape: 'rect', color: '#00a000', label: 'Forest' },
+                ],
+            }),
+        })
+
+        const legend = await providers['layers:getLegend'](RASTER)
+
+        expect(legend.type).toBe('categorical')
+        expect(legend.swatches).toEqual([
+            { color: '#a00000', label: 'Water' },
+            { color: '#00a000', label: 'Forest' },
+        ])
+        expect(legend.stops).toBeNull()
+    })
+
+    // Scale-shaped entries labelled with words describe a ramp, not classes.
+    // Drawing them as 'Low'/'High' swatches would stop the bar following the
+    // live colormap and its rescale.
+    test('draws the live ramp for a raster whose scale is labelled with words', async () => {
+        withLayers({
+            [RASTER]: cogLayer({
+                cogMin: 3,
+                cogMax: 7,
+                _legend: [
+                    { shape: 'continuous', color: '#123456', value: 'Low' },
+                    { shape: 'continuous', color: '#654321', value: 'High' },
+                ],
+            }),
+        })
+
+        const legend = await providers['layers:getLegend'](RASTER)
+
+        expect(legend.type).toBe('gradient')
+        expect(legend.swatches).toBeNull()
+        expect(legend.stops).toEqual(await resolveColormapColors('viridis', null))
+        expect(legend.stops).not.toContain('#123456')
+        expect(legend.min).toBe(3)
+        expect(legend.max).toBe(7)
+    })
+
+    // The legend LayersTool derives before any rescale is set carries 'NaN'
+    // and blank labels. It is still a ramp, and with no bounds configured the
+    // bar goes unlabelled rather than turning into swatches.
+    test('draws the live ramp for a derived legend with NaN labels and no bounds', async () => {
+        withLayers({
+            [RASTER]: cogLayer({
+                currentCogColormap: 'plasma',
+                _legend: [
+                    { shape: 'continuous', color: '#123456', value: 'NaN' },
+                    { shape: 'continuous', color: '#345678', value: '' },
+                    { shape: 'continuous', color: '#654321', value: 'NaN' },
+                ],
+            }),
+        })
+
+        const legend = await providers['layers:getLegend'](RASTER)
+
+        expect(legend.type).toBe('gradient')
+        expect(legend.swatches).toBeNull()
+        expect(legend.stops).toEqual(await resolveColormapColors('plasma', null))
+        expect(legend.min).toBeNull()
+        expect(legend.max).toBeNull()
     })
 
     // Hiding every entry leaves nothing to draw, which is not the same as a

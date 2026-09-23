@@ -11,7 +11,9 @@
 //
 // What live state replaces is the ramp, never a set of classes. A classified
 // raster paints through a colormap and still declares what its classes mean;
-// no colormap can stand in for those, so its swatches survive.
+// no colormap can stand in for those, so its swatches survive. A raster whose
+// declared entries are all scale-shaped is describing a ramp, whether or not
+// its labels read as numbers, so the live colormap draws it.
 
 import { hasCogColormap } from '../tileUrlUtils'
 import { resolveColormapColors } from '../../Colormaps/resolveColormapColors'
@@ -91,6 +93,15 @@ const readScaleValues = (
 }
 
 /**
+ * Whether every entry is part of a scale — a ramp, whatever its labels say.
+ * An empty run is not one: `every` answers true for it, and a gradient read
+ * off it would span Infinity.
+ */
+const isScale = (entries: LegendEntry[]): boolean =>
+    entries.length > 0 &&
+    entries.every((entry) => SCALE_SHAPES.includes(entry.shape ?? ''))
+
+/**
  * A gradient bar can only stand in for a legend that is one uninterrupted
  * numeric scale. A legend that mixes scale runs with individually shaped
  * entries — the form the Legend tool renders as a mix of bars and swatches —
@@ -98,11 +109,7 @@ const readScaleValues = (
  * instead of a ramp whose bounds would be read off non-numeric text.
  */
 const readGradient = (entries: LegendEntry[]) => {
-    // `every` and `Math.min` both answer for an empty run, and between them
-    // they would report a gradient spanning Infinity.
-    if (entries.length === 0) return null
-    if (!entries.every((entry) => SCALE_SHAPES.includes(entry.shape ?? '')))
-        return null
+    if (!isScale(entries)) return null
     const values = readScaleValues(entries)
     if (!values) return null
     const stops = entries.map((entry) => entry.color || '')
@@ -186,8 +193,12 @@ export const buildLayerLegend = async (
                 : declaredGradient?.unit ?? null,
         }
         // Classes the colormap cannot stand in for. The ramp and its bounds
-        // still come along, so the controls over them survive.
-        const swatches = declaredGradient ? null : readSwatches(entries)
+        // still come along, so the controls over them survive. Entries that
+        // are all scale-shaped describe a ramp rather than classes, even when
+        // their values are words ('Low'/'High') or the blank and 'NaN' labels
+        // LayersTool derives before a rescale is set, so the live colormap
+        // draws them.
+        const swatches = isScale(entries) ? null : readSwatches(entries)
         if (swatches)
             return {
                 type: 'categorical',
