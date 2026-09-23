@@ -135,9 +135,20 @@ const FeaturePopupTool = {
     },
 
     _onFeatureClick(info) {
-        if (!info?.feature) return
+        // A click that opens no card still ends the one showing: empty space,
+        // or a feature of a layer that wants no popup. The map library closes
+        // its own popup on any map click, which covers this today, but the
+        // rule that a card never outlives its feature belongs to the plugin
+        // rather than to a library default nothing here pins.
+        if (!info?.feature) {
+            this._hideOwnCard()
+            return
+        }
         const config = this._configs.get(info.layerId)
-        if (!config) return
+        if (!config) {
+            this._hideOwnCard()
+            return
+        }
 
         const properties = info.feature.properties || {}
         const title = cardTitle(properties, config)

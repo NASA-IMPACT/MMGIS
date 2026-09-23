@@ -592,3 +592,42 @@ test('keeps a bare event name under this plugin, which is whose event it is', as
 
     expect(api.emitsOf('plugin:feature-popup:analyzeFeature')).toHaveLength(1)
 })
+
+test('takes its card down on a click that lands on nothing', async () => {
+    await start()
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+    expect(api.hasOpenPopup()).toBe(true)
+    api.reset()
+
+    // Empty space: core reports the click with no feature picked.
+    api.emit('map:featureClick', { feature: null, latlng: CLICK })
+    await flushBus()
+
+    expect(api.namesOf('map:hidePopup')).toHaveLength(1)
+    expect(api.hasOpenPopup()).toBe(false)
+})
+
+test('takes its card down on a click on a layer that did not opt in', async () => {
+    await start()
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+    api.reset()
+
+    api.emit('map:featureClick', clickOn('basemapLabels'))
+    await flushBus()
+
+    expect(api.namesOf('map:showPopup')).toHaveLength(0)
+    expect(api.namesOf('map:hidePopup')).toHaveLength(1)
+    expect(api.hasOpenPopup()).toBe(false)
+})
+
+test('asks for no hide when it has no card of its own up', async () => {
+    await start()
+
+    api.emit('map:featureClick', { feature: null, latlng: CLICK })
+    api.emit('map:featureClick', clickOn('basemapLabels'))
+    await flushBus()
+
+    expect(api.namesOf('map:hidePopup')).toHaveLength(0)
+})
