@@ -283,6 +283,23 @@
               "type": "checkbox",
               "width": 4,
               "defaultChecked": false
+            },
+            {
+              "field": "style.hoverHighlightColor",
+              "name": "Hover Highlight Color",
+              "description": "The color a feature takes under the cursor. Leave empty for DeckGL's own default, a translucent navy.",
+              "type": "colorpicker",
+              "width": 2
+            },
+            {
+              "field": "style.hoverHighlightOpacity",
+              "name": "Hover Highlight Opacity",
+              "description": "How much of the feature beneath shows through the highlight color.",
+              "type": "slider",
+              "min": 0,
+              "max": 1,
+              "step": 0.01,
+              "width": 2
             }
           ]
         },

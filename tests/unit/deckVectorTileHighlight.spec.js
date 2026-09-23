@@ -41,3 +41,54 @@ describe('vectorTileHighlightOptions', () => {
         })
     })
 })
+
+describe('vectorTileHighlightOptions highlight colour', () => {
+    test('turns a configured colour into the channels deck wants', () => {
+        const o = vectorTileHighlightOptions({
+            hoverHighlight: true,
+            vtId: 'fid',
+            hoverHighlightColor: '#ff0000',
+        })
+        expect(o.highlightColor).toEqual([255, 0, 0, 255])
+    })
+
+    test('takes the opacity as a separate setting, like a fill does', () => {
+        const o = vectorTileHighlightOptions({
+            hoverHighlight: true,
+            hoverHighlightColor: '#ff0000',
+            hoverHighlightOpacity: 0.5,
+        })
+        expect(o.highlightColor).toEqual([255, 0, 0, 128])
+    })
+
+    test('leaves the colour to deck when the mission chose none', () => {
+        const o = vectorTileHighlightOptions({ hoverHighlight: true, vtId: 'fid' })
+        expect('highlightColor' in o).toBe(false)
+    })
+
+    test('leaves the colour to deck when the field holds nothing usable', () => {
+        const o = vectorTileHighlightOptions({
+            hoverHighlight: true,
+            hoverHighlightColor: '   ',
+        })
+        expect('highlightColor' in o).toBe(false)
+    })
+
+    test('honours an opacity of zero, which is a choice like any other', () => {
+        const o = vectorTileHighlightOptions({
+            hoverHighlightColor: '#ff0000',
+            hoverHighlightOpacity: 0,
+        })
+        expect(o.highlightColor).toEqual([255, 0, 0, 0])
+    })
+})
+
+test('leaves the colour to deck when the configured one cannot be read', () => {
+    // The helper answers a white fallback for an unreadable colour, and an
+    // opaque white nobody chose is worse than deck's own default.
+    const o = vectorTileHighlightOptions({
+        hoverHighlight: true,
+        hoverHighlightColor: 'not a colour',
+    })
+    expect('highlightColor' in o).toBe(false)
+})
