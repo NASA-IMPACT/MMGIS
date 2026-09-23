@@ -94,9 +94,8 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     const didDragRef = useRef(false)
     const [dimensions, setDimensions] = useState({ width: 800, height: 200 })
 
-    const axisHeight = 24 // Space for the bottom axis
     const layerBarHeight = 22 // Row pitch, shared by the sidebar item and the SVG row
-    const topBarHeight = 24 // Space for top axis
+    const barHeight = 24 // Height of the top and bottom date bars
     const markerSize = 18 // Rendered size of the scrubber marker
     // A strip between the date bar and the first layer row that the
     // scrubber's head sits in, so the head never covers a row's bars at the
@@ -106,11 +105,12 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
     // Calculate total height needed for layers
     const totalLayersHeight = layers.length * layerBarHeight
-    // Where the layer rows end and the bottom axis begins
+    // Where the layer rows end, and with them the chart
     const layersBottom = headGutter + totalLayersHeight
 
-    // Calculate required SVG height
-    const requiredHeight = headGutter + axisHeight + totalLayersHeight
+    // Calculate required SVG height. The bottom axis sits in its own bar
+    // below the scrolling panes, so the chart holds only the gutter and rows.
+    const requiredHeight = layersBottom
 
     // Update dimensions on resize
     useEffect(() => {
@@ -154,29 +154,34 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         [view, maxTicks]
     )
 
+    // Shared by the bottom axis and the grid lines the chart draws at the
+    // same instants.
+    const bottomTicks = useMemo(() => {
+        const [visibleStart, visibleEnd] = transformedXScale.domain() as [Date, Date]
+        return generateTimeTicks(visibleStart, visibleEnd, tickMode, maxTicks)
+    }, [transformedXScale, tickMode, maxTicks])
+
     // Render bottom axis
     useEffect(() => {
         if (!axisRef.current) return
 
-        const [visibleStart, visibleEnd] = transformedXScale.domain() as [Date, Date]
-        const tickValues = generateTimeTicks(visibleStart, visibleEnd, tickMode, maxTicks)
         const axis = axisBottom(transformedXScale)
-            .tickValues(tickValues)
+            .tickValues(bottomTicks)
             .tickFormat((d) => formatDateByMode(d as Date, tickMode))
-            .tickSize(6)
-            .tickPadding(8)
+            .tickSize(0)
+            .tickPadding(6)
 
         const axisGroup = select(axisRef.current)
         axisGroup.selectAll('*').remove() // Clear existing axis
         axisGroup.call(axis as any)
 
-        // Grid lines shooting up through the layers, stopping at the gutter
-        axisGroup.selectAll('.tick line').attr('y2', -totalLayersHeight)
+        // Labels only: the chart draws the grid lines through the rows.
+        axisGroup.selectAll('.tick line').remove()
 
         // Sizing only — fill and family come from .timeline-axis .tick text
         axisGroup.selectAll('.tick text')
             .style('font-size', '11px')
-    }, [transformedXScale, tickMode, maxTicks, totalLayersHeight])
+    }, [transformedXScale, tickMode, bottomTicks])
 
     // Render top axis: the day, month or year each stretch of the bottom
     // axis falls in, so the two read together as a whole date. Each label
@@ -470,10 +475,10 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         <>
             <div className="timeline-view-container">
                 {/* Header row, outside the scrolling body so it stays put */}
-                <div className="timeline-view-header" style={{ height: topBarHeight }}>
-                    <div className="timeline-sidebar-header" style={{ height: topBarHeight }}></div>
-                    <div className="timeline-top-bar" style={{ height: topBarHeight }}>
-                        <svg width={dimensions.width} height={topBarHeight} style={{ display: 'block' }}>
+                <div className="timeline-view-header" style={{ height: barHeight }}>
+                    <div className="timeline-sidebar-header" style={{ height: barHeight }}></div>
+                    <div className="timeline-top-bar" style={{ height: barHeight }}>
+                        <svg width={dimensions.width} height={barHeight} style={{ display: 'block' }}>
                             <g ref={topAxisRef} transform={`translate(0, 4)`} className="timeline-top-axis" />
                         </svg>
                     </div>
@@ -504,9 +509,6 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                     onFit={onFitLayer}
                                 />
                             ))}
-                            {/* Matches the bottom axis, so both panes scroll the
-                                same distance */}
-                            <div style={{ height: axisHeight, flexShrink: 0 }} aria-hidden="true" />
                         </div>
                     </div>
 
@@ -564,12 +566,22 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                 ))}
                             </g>
 
-                            {/* Bottom Time axis */}
-                            <g
-                                ref={axisRef}
-                                transform={`translate(0, ${layersBottom})`}
-                                className="timeline-axis"
-                            />
+                            {/* Grid lines at the bottom axis's ticks, through
+                                the rows and stopping at the gutter */}
+                            <g className="timeline-grid" aria-hidden="true">
+                                {bottomTicks.map((tick) => {
+                                    const x = transformedXScale(tick)
+                                    return (
+                                        <line
+                                            key={tick.getTime()}
+                                            x1={x}
+                                            y1={headGutter}
+                                            x2={x}
+                                            y2={layersBottom}
+                                        />
+                                    )
+                                })}
+                            </g>
 
                             {/* Current time scrubber */}
                             <g className="timeline-scrubber">
@@ -630,6 +642,18 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                     {...scrubberPointerHandlers}
                                 />
                             </g>
+                        </svg>
+                    </div>
+                </div>
+
+                {/* Bottom date bar, outside the scrolling body like the header */}
+                <div className="timeline-view-footer" style={{ height: barHeight }}>
+                    <div className="timeline-sidebar-footer" />
+                    <div className="timeline-bottom-bar">
+                        <svg width={dimensions.width} height={barHeight} style={{ display: 'block' }}>
+                            {/* Offset and padding match the top axis, so both
+                                bars set their labels at the same height */}
+                            <g ref={axisRef} transform={`translate(0, 4)`} className="timeline-axis" />
                         </svg>
                     </div>
                 </div>

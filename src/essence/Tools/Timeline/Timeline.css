@@ -125,7 +125,6 @@
     position: relative;
     display: flex;
     flex-direction: column;
-    padding-bottom: 8px;
 }
 
 /* Empty state shown when no layers are on the timeline */
@@ -248,9 +247,15 @@
 /* Heights of the header bars and layer rows live in TimelineView, which needs
    them to lay the SVG out; they arrive as inline styles rather than being
    restated here. */
-.timeline-view-header {
+.timeline-view-header,
+.timeline-view-footer {
     display: flex;
     flex-shrink: 0;
+}
+
+.timeline-view-footer {
+    border-top: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    box-sizing: border-box;
 }
 
 .timeline-view-body {
@@ -260,7 +265,8 @@
 }
 
 .timeline-sidebar,
-.timeline-sidebar-header {
+.timeline-sidebar-header,
+.timeline-sidebar-footer {
     width: 240px;
     flex-shrink: 0;
     border-right: 1px solid var(--theme-color-base-lighter, #dfe1e2);
@@ -339,6 +345,12 @@
     overflow: hidden;
 }
 
+.timeline-bottom-bar {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
 .timeline-top-axis .domain,
 .timeline-top-axis .tick line {
     display: none;
@@ -355,7 +367,7 @@
     display: none;
 }
 
-.timeline-axis .tick line {
+.timeline-grid line {
     stroke: var(--theme-color-base-lighter, #dfe1e2);
     stroke-dasharray: 2 2;
 }
