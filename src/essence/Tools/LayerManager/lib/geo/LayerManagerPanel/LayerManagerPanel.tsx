@@ -17,10 +17,18 @@ export type LayerManagerPanelProps = {
     onRescaleChange?: (layerId: string, min: number, max: number) => void
     onZoomToLayer?: LayerLegendListProps['onZoomToLayer']
     canZoomToLayer?: LayerLegendListProps['canZoomToLayer']
+    selectedTime?: LayerLegendListProps['selectedTime']
     onCompareLayer?: LayerLegendListProps['onCompareLayer']
     onReorder?: LayerLegendListProps['onReorder']
     /** Opens the host's "add layer" surface. No handler, no button. */
     onAddLayer?: () => void
+    /**
+     * Switches off every layer a filter has taken out of the list. Filtering
+     * narrows the list only; the layers it leaves out stay on the map.
+     */
+    onHideFilteredLayers?: () => void
+    /** Titles of those layers. No handler or none to hide, no button. */
+    filteredOutLayers?: string[]
 }
 
 export function LayerManagerPanel({
@@ -34,14 +42,18 @@ export function LayerManagerPanel({
     onRescaleChange,
     onZoomToLayer,
     canZoomToLayer,
+    selectedTime,
     onCompareLayer,
     onReorder,
     onAddLayer,
+    onHideFilteredLayers,
+    filteredOutLayers = [],
 }: LayerManagerPanelProps) {
+    const filteredOutCount = filteredOutLayers.length
     return (
         <div className="blocks-layer-manager">
-            {onAddLayer && (
-                <div className="blocks-layer-manager__header">
+            <div className="blocks-layer-manager__header">
+                {onAddLayer && (
                     <button
                         type="button"
                         className="blocks-layer-manager__add-layer"
@@ -53,8 +65,25 @@ export function LayerManagerPanel({
                         />
                         <span>Add layer from URL</span>
                     </button>
-                </div>
-            )}
+                )}
+                {onHideFilteredLayers && filteredOutCount > 0 && (
+                    <button
+                        type="button"
+                        className="blocks-layer-manager__hide-filtered"
+                        onClick={onHideFilteredLayers}
+                        title={`Switch off: ${filteredOutLayers.join(', ')}`}
+                    >
+                        <i
+                            className="mdi mdi-eye-off-outline blocks-layer-manager__hide-filtered-icon"
+                            aria-hidden="true"
+                        />
+                        <span>
+                            Hide {filteredOutCount} filtered-out{' '}
+                            {filteredOutCount === 1 ? 'layer' : 'layers'}
+                        </span>
+                    </button>
+                )}
+            </div>
             <div className="blocks-layer-manager__content">
                 {loading ? (
                     <div className="blocks-layer-manager__loading">
@@ -71,6 +100,7 @@ export function LayerManagerPanel({
                         onRescaleChange={onRescaleChange}
                         onZoomToLayer={onZoomToLayer}
                         canZoomToLayer={canZoomToLayer}
+                        selectedTime={selectedTime}
                         onCompareLayer={onCompareLayer}
                         onReorder={onReorder}
                     />

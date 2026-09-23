@@ -48,7 +48,14 @@ vi.mock('maplibre-gl', () => {
             return { toDataURL: () => 'data:image/png;base64,MOCK' }
         }
     }
-    return { Map: MockMap, default: { Map: MockMap } }
+    // Overlay init reads the basemap's Popup class alongside its Map. These
+    // tests never open one.
+    class MockPopup {}
+    return {
+        Map: MockMap,
+        Popup: MockPopup,
+        default: { Map: MockMap, Popup: MockPopup },
+    }
 })
 
 // Imported after the mocks are declared (vi.mock is hoisted regardless).

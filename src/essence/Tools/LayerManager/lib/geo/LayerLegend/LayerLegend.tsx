@@ -13,6 +13,7 @@ import { CategoricalGraphic } from '../CategoricalGraphic/CategoricalGraphic'
 import { ColorRampPicker } from '../ColorRampPicker/ColorRampPicker'
 import { FloatingPopover } from '../../FloatingPopover'
 import { PopoverMenu, type PopoverMenuItem } from '../PopoverMenu'
+import { DataCoverageWarning } from '../DataCoverageWarning/DataCoverageWarning'
 import type { Layer } from '../../types'
 
 /**
@@ -45,6 +46,8 @@ export type LayerLegendProps = {
     onZoomToLayer?: (layerId: string) => void
     canZoomToLayer?: (layerId: string) => Promise<boolean>
     onCompareLayer?: (layerId: string) => void
+    /** The timeline's current time as ISO 8601, named by the no-data warning. */
+    selectedTime?: string | null
     /** Wires the grip button to a sortable list; no handle without it. */
     dragHandle?: DragHandleProps
 }
@@ -66,6 +69,7 @@ export function LayerLegend({
     onZoomToLayer,
     canZoomToLayer,
     onCompareLayer,
+    selectedTime,
     dragHandle,
 }: LayerLegendProps) {
     const {
@@ -81,6 +85,8 @@ export function LayerLegend({
         visible,
         cog,
         categoricalStops,
+        outOfDataRange,
+        analysisSupported,
     } = layer
 
     const [isVisible, setIsVisible] = useState(visible)
@@ -108,6 +114,10 @@ export function LayerLegend({
     const hasColorRamp = cog?.editable === true
 
     const hasDescription = hasText(description)
+
+    // A layer that is switched off draws nothing either way, so missing data
+    // is only flagged while the layer is on.
+    const showsCoverageWarning = isVisible && outOfDataRange === true
 
     useEffect(() => {
         setIsVisible(visible)
@@ -284,11 +294,9 @@ export function LayerLegend({
                         onChange={handleVisibilityToggle}
                     />
                 </div>
-                <div className="blocks-layer-legend__title-group">
-                    <span className="blocks-layer-legend__title" title={title}>
-                        {title}
-                    </span>
-                </div>
+                <span className="blocks-layer-legend__title" title={title}>
+                    {title}
+                </span>
                 <div className="blocks-layer-legend__actions">
                     <button
                         ref={opacityBtnRef}
@@ -371,6 +379,34 @@ export function LayerLegend({
                     </button>
                 </div>
             </div>
+            {/* On a line of their own, so the name keeps the full width of the
+                header above. A held-back layer keeps its checkbox and controls
+                as they are — it draws again once the time moves back into its
+                data. */}
+            {(analysisSupported || showsCoverageWarning) && (
+                <div className="blocks-layer-legend__marks">
+                    {analysisSupported && (
+                        <span
+                            className="blocks-layer-legend__analysis-marker"
+                            role="img"
+                            aria-label="Supports area analysis"
+                            title="Supports area analysis"
+                        >
+                            <i
+                                className="mdi mdi-chart-bar blocks-layer-legend__mark-icon"
+                                aria-hidden="true"
+                            />
+                            Analyzable
+                        </span>
+                    )}
+                    {showsCoverageWarning && (
+                        <DataCoverageWarning
+                            layerTitle={title}
+                            selectedTime={selectedTime}
+                        />
+                    )}
+                </div>
+            )}
             {unit?.label && (
                 <div className="blocks-layer-legend__unit-label">{unit.label}</div>
             )}
