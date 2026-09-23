@@ -393,6 +393,8 @@ has already delivered — the request can resolve after a later event lands.
 | `map:setView` | `{ center, zoom }` | `true` | Set map view |
 | `map:fitBounds` | `bounds` | `true` | Fit map to bounds |
 | `map:panTo` | `{ lat, lng }` | `true` | Pan map to coordinates |
+| `map:showPopup` | `MapPopupRequest` | `MapPopupResult` | Show a map-anchored card, replacing any current one. Answers only once it closes. `latlng` is required, and so is one of `title` (text) and `html` (sanitized); each action carries a `label`, and focus lands on the first one when the card opens |
+| `map:hidePopup` | none | `true` | Take the current card down, resolving its request with `{ action: 'closed' }` |
 
 ```javascript
 // Get current map state
@@ -412,7 +414,23 @@ await window.mmgisAPI.request('map:fitBounds', [
 ])
 
 await window.mmgisAPI.request('map:panTo', { lat: 45, lng: -120 })
+
+// Pending until the card closes — hold onto it rather than awaiting inline.
+window.mmgisAPI.request('map:showPopup', {
+    latlng: { lat: 45, lng: -120 },
+    title: 'Crater A',
+    html: '<p>Diameter: 12 km</p>',
+    primaryAction: { label: 'Analyze' }
+}).then(({ action }) => { if (action === 'primary') analyze() })
 ```
+
+`map:showPopup` resolves `{ action }` once the card closes:
+
+| `action` | Meaning |
+|----------|---------|
+| `'primary'` / `'secondary'` | That action's button was pressed |
+| `'dismiss'` | The map library took the card down: its own close control, or a click on the map |
+| `'closed'` | Code took it down: another `map:showPopup` replaced it, `map:hidePopup` retracted it, or the map was re-initialized |
 
 ### Layer Providers
 

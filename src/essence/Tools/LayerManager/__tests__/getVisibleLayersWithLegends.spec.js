@@ -18,8 +18,15 @@ const DISPLACEMENT = 'Displacement_0123456789abcdef'
 const BASEMAP = 'Basemap_fedcba9876543210'
 
 const CONFIGS = {
-    [DISPLACEMENT]: { display_name: 'Displacement' },
-    [BASEMAP]: { display_name: 'Basemap' },
+    [DISPLACEMENT]: {
+        display_name: 'Displacement',
+        variables: { analysis: { is_analysis_supported: true } },
+    },
+    [BASEMAP]: {
+        display_name: 'Basemap',
+        // An analysis block without the flag: configured, but not opted in.
+        variables: { analysis: { itemUrl: 'https://raster.test/items/basemap' } },
+    },
 }
 
 const GRADIENT = {
@@ -46,7 +53,7 @@ const EDITABLE = { hasColormap: true, canChangeColormap: true }
 const READ_ONLY = { hasColormap: true, canChangeColormap: false }
 const NONE = { hasColormap: false, canChangeColormap: false }
 
-const setupMock = ({ legends, listed, capabilities, titilerUrls, order } = {}) => {
+const setupMock = ({ legends, listed, capabilities, titilerUrls, coverage, order } = {}) => {
     const responses = {
         'layers:getAllConfigs': CONFIGS,
         'layers:getVisible': { [DISPLACEMENT]: true, [BASEMAP]: true },
@@ -56,6 +63,7 @@ const setupMock = ({ legends, listed, capabilities, titilerUrls, order } = {}) =
     if (legends) responses['layers:getLegend'] = legends
     if (capabilities) responses['layers:getCogCapabilities'] = capabilities
     if (titilerUrls) responses['layers:getTiTilerUrl'] = titilerUrls
+    if (coverage) responses['layers:getDataCoverage'] = coverage
     if (order) responses['layers:getOrder'] = order
 
     global.window = global.window || {}
@@ -148,6 +156,45 @@ describe('getVisibleLayersWithLegends', () => {
 
         expect(layers).toHaveLength(2)
         expect(layers.every((l) => l.type === 'none' && l.cog === null)).toBe(true)
+    })
+
+    test("flags each layer core reports out of range, keyed by UUID", async () => {
+        setupMock({
+            coverage: {
+                [DISPLACEMENT]: { outOfDataRange: true },
+                // A display-name-keyed lookup would find this instead.
+                Basemap: { outOfDataRange: true },
+            },
+        })
+        const layers = await getVisibleLayersWithLegends()
+
+        expect(byId(layers, DISPLACEMENT).outOfDataRange).toBe(true)
+        expect(byId(layers, BASEMAP).outOfDataRange).toBe(false)
+    })
+
+    // The same flag the analysis plugins gate on, so the mark and the layers
+    // those plugins act on cannot disagree.
+    test('flags a layer whose config opts into area analysis', async () => {
+        setupMock()
+        const layers = await getVisibleLayersWithLegends()
+
+        expect(byId(layers, DISPLACEMENT).analysisSupported).toBe(true)
+        expect(byId(layers, BASEMAP).analysisSupported).toBe(false)
+    })
+
+    // The analysis mark and the row assembly both read the configs; the
+    // panel hands its copy on, so core is asked for them once.
+    test('asks core for the layer configs once', async () => {
+        setupMock()
+        const request = global.window.mmgisAPI.request
+        const asked = []
+        global.window.mmgisAPI.request = (name) => {
+            asked.push(name)
+            return request(name)
+        }
+        await getVisibleLayersWithLegends()
+
+        expect(asked.filter((name) => name === 'layers:getAllConfigs')).toHaveLength(1)
     })
 
     // A layer the LayerFilter plugin has filtered out of the lists is not in
