@@ -287,9 +287,10 @@
             {
               "field": "style.hoverHighlightColor",
               "name": "Hover Highlight Color",
-              "description": "The color a feature takes under the cursor, opacity included — the picker writes it into the color. Leave empty for DeckGL's own default, a translucent navy.",
+              "description": "The color a feature takes under the cursor, opacity included — the picker writes it into the color. Leave empty for a light black wash, which darkens a feature of any hue without recoloring it.",
               "type": "colorpicker",
-              "width": 4
+              "width": 4,
+              "default": "rgba(0, 0, 0, 0.1)"
             }
           ]
         },

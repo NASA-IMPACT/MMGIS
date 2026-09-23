@@ -1,6 +1,14 @@
 import { hexToRgba } from '../MapEngines/Adapters/DeckGLHelpers'
 
 /**
+ * The highlight a layer gets when its mission chose no colour: black at a
+ * tenth, which darkens a feature of any hue without recolouring it. deck's own
+ * default is a half-opaque navy, which reads as a bruise over a warm palette
+ * and vanishes into a cool one.
+ */
+const DEFAULT_HIGHLIGHT = [0, 0, 0, 26]
+
+/**
  * The deck.gl props that decide whether, and how, a vector tile feature
  * highlights under the cursor, read from the layer's configured style.
  *
@@ -16,29 +24,23 @@ import { hexToRgba } from '../MapEngines/Adapters/DeckGLHelpers'
  *
  * @param {object} [style] - The layer's configured `style` block.
  * @returns {{autoHighlight: boolean, uniqueIdProperty: string|undefined,
- *            highlightColor?: [number, number, number, number]}}
+ *            highlightColor: [number, number, number, number]}}
  */
 export function vectorTileHighlightOptions(style) {
     const vtId = typeof style?.vtId === 'string' ? style.vtId.trim() : ''
 
-    const options = {
+    return {
         autoHighlight: style?.hoverHighlight === true,
         // Undefined rather than '': deck reads an empty key as "no key", and
         // passing the empty string through would only restate its own default.
         uniqueIdProperty: vtId === '' ? undefined : vtId,
+        highlightColor: highlightColor(style) ?? DEFAULT_HIGHLIGHT,
     }
-
-    // Omitted rather than undefined when unset: deck fills a missing prop from
-    // its own defaults, but an explicit undefined overrides one.
-    const color = highlightColor(style)
-    if (color) options.highlightColor = color
-
-    return options
 }
 
 /**
- * The highlight colour as deck's four channels, or nothing when the mission
- * configured none — in which case deck's own default stands.
+ * The configured highlight colour as deck's four channels, or null when the
+ * mission configured none it could read.
  *
  * Opacity rides along in the colour: the picker writes `rgba(...)` as soon as
  * a colour is less than fully opaque, and the colour helper reads the alpha
