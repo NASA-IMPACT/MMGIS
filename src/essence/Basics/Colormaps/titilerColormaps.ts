@@ -20,6 +20,14 @@ const cache = new Map<string, CachedRamp>()
  */
 const FAILURE_TTL_MS = 60000
 
+/**
+ * How long a lookup may take before it counts as failed. While one is pending
+ * its entry never expires, and every bulk legend request awaits it, so a
+ * service that accepts the connection and never answers would otherwise hold
+ * all of them indefinitely.
+ */
+const COLORMAP_FETCH_TIMEOUT_MS = 5000
+
 /** Trailing-slash-normalized base, or null when no service was supplied. */
 const resolveBase = (titilerUrl?: string | null): string | null =>
     titilerUrl ? titilerUrl.replace(/\/$/, '') : null
@@ -72,7 +80,8 @@ export const fetchColormapColors = (
     const pending = (async (): Promise<string[] | null> => {
         try {
             const response = await fetch(
-                `${baseUrl}/colorMaps/${encodeURIComponent(rampName)}`
+                `${baseUrl}/colorMaps/${encodeURIComponent(rampName)}`,
+                { signal: AbortSignal.timeout(COLORMAP_FETCH_TIMEOUT_MS) }
             )
             if (!response.ok)
                 throw new Error(
