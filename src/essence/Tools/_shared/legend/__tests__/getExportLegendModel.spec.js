@@ -10,6 +10,7 @@ vi.mock('../../adapters/mmgisAPI', () => ({
     mmgisGetLayerConfigs: vi.fn(),
     mmgisGetTimeStart: vi.fn(),
     mmgisGetTimeCurrent: vi.fn(),
+    mmgisGetTimeMode: vi.fn(),
     mmgisGetTimeCurrentFormatted: vi.fn(),
     mmgisGetTemporalExtents: vi.fn(),
     mmgisGetDataCoverage: vi.fn(),
@@ -22,6 +23,7 @@ import {
     mmgisGetLayerConfigs,
     mmgisGetTimeStart,
     mmgisGetTimeCurrent,
+    mmgisGetTimeMode,
     mmgisGetTimeCurrentFormatted,
     mmgisGetTemporalExtents,
     mmgisGetDataCoverage,
@@ -57,6 +59,7 @@ beforeEach(() => {
     vi.mocked(mmgisGetLayerConfigs).mockResolvedValue(null)
     vi.mocked(mmgisGetTimeStart).mockResolvedValue(WINDOW_START)
     vi.mocked(mmgisGetTimeCurrent).mockResolvedValue(CURSOR)
+    vi.mocked(mmgisGetTimeMode).mockResolvedValue('range')
     vi.mocked(mmgisGetTimeCurrentFormatted).mockResolvedValue(null)
     vi.mocked(mmgisGetTemporalExtents).mockResolvedValue(null)
     vi.mocked(mmgisGetDataCoverage).mockResolvedValue(null)
@@ -158,14 +161,42 @@ describe('getExportLegendModel', () => {
             expect(rows[0].dateLine).toBe('Requested 2015-03-13 → 2026-08-25')
         })
 
-        // Point mode sets the window start to the epoch. "Requested 1970 →"
+        // Point mode pins the window start to the epoch. "Requested 1970 →"
         // describes a span nobody asked for.
-        test('an epoch window start prints an open-ended request', async () => {
+        test('point mode prints an open-ended request', async () => {
+            vi.mocked(mmgisGetTimeMode).mockResolvedValue('point')
             vi.mocked(mmgisGetTimeStart).mockResolvedValue(
                 '1970-01-01T00:00:00Z',
             )
             const rows = await rowsFor({ live: timeEnabled() })
             expect(rows[0].dateLine).toBe('Requested up to 2026-08-25')
+        })
+
+        // Only the mode says a start is a placeholder: a window that really
+        // opens in 1970 is a bound the request ran from.
+        test('a 1970 window start in range mode prints as a real start', async () => {
+            vi.mocked(mmgisGetTimeStart).mockResolvedValue(
+                '1970-01-01T05:00:00Z',
+            )
+            const rows = await rowsFor({ live: timeEnabled() })
+            expect(rows[0].dateLine).toBe('Requested 1970-01-01 → 2026-08-25')
+        })
+
+        // With no Time UI bar mounted there is no mode, and the window start
+        // is taken as given.
+        test('no mode reads the window start as given', async () => {
+            vi.mocked(mmgisGetTimeMode).mockResolvedValue(null)
+            const rows = await rowsFor({ live: timeEnabled() })
+            expect(rows[0].dateLine).toBe('Requested 2015-03-13 → 2026-08-25')
+        })
+
+        // A mode request that fails costs the row nothing but the mode.
+        test('a failed mode request reads the window start as given', async () => {
+            vi.mocked(mmgisGetTimeMode).mockRejectedValue(new Error('no mode'))
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+            const rows = await rowsFor({ live: timeEnabled() })
+            expect(rows[0].dateLine).toBe('Requested 2015-03-13 → 2026-08-25')
+            warn.mockRestore()
         })
 
         // The cursor's period is inside the layer's coverage, so the data on
@@ -320,6 +351,24 @@ describe('getExportLegendModel', () => {
                 },
             })
             expect(rows[0].dateLine).toBe('Collected 2015 → 2016')
+        })
+
+        // A local layer's stamped window came from the same Time Control, so
+        // in Point mode its start is the same placeholder.
+        test('a local layer stamped in point mode prints an open-ended request', async () => {
+            vi.mocked(mmgisGetTimeMode).mockResolvedValue('point')
+            const rows = await rowsFor({
+                vectors: {
+                    url: 'vectors.geojson',
+                    time: {
+                        enabled: true,
+                        type: 'local',
+                        start: '1970-01-01T00:00:00Z',
+                        end: '2020-06-01T00:00:00Z',
+                    },
+                },
+            })
+            expect(rows[0].dateLine).toBe('Requested up to 2020-06-01')
         })
 
         // A layer that ignores the time cursor prints the extent it holds, and

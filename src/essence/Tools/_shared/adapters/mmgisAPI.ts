@@ -565,6 +565,17 @@ export const mmgisGetTimeStart = (): Promise<string | null> => {
     return mmgisRequestIfProvided<string>('time:getStart')
 }
 
+/**
+ * Which mode the Time UI bar is in: 'range', or 'point', where core pins the
+ * window start to the epoch, so the window has no meaningful start. Null when
+ * time is disabled or not yet seeded, when the bar is not mounted (mobile and
+ * the modern layout drive time without it), and against a core that predates
+ * the handler.
+ */
+export const mmgisGetTimeMode = (): Promise<'range' | 'point' | null> => {
+    return mmgisRequestIfProvided<'range' | 'point'>('time:getMode')
+}
+
 /** The time window's closing instant; same null cases as mmgisGetTimeStart. */
 export const mmgisGetTimeEnd = (): Promise<string | null> => {
     return mmgisRequestIfProvided<string>('time:getEnd')

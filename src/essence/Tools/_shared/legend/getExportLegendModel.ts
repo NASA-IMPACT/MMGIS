@@ -20,6 +20,7 @@ import {
     mmgisGetLayerConfigs,
     mmgisGetTimeStart,
     mmgisGetTimeCurrent,
+    mmgisGetTimeMode,
     mmgisGetTimeCurrentFormatted,
     mmgisGetTemporalExtents,
     mmgisGetDataCoverage,
@@ -62,20 +63,39 @@ export type ExportLegendModel = {
     rows: ExportLegendRow[]
 }
 
-/** The cursor a layer's tiles were requested at, and the window start that
- *  request ran from. */
-type TimeCursor = { cursor: string | null; windowStart: string | null }
+type TimeMode = 'range' | 'point' | null
+
+/** The cursor a layer's tiles were requested at, the window start that
+ *  request ran from, and the Time Control mode both were set in. In Point
+ *  mode core pins the window start to the epoch, so the request had no start
+ *  at all. A null mode (the Time UI bar is not mounted) leaves the window
+ *  start to speak for itself. */
+type TimeCursor = {
+    cursor: string | null
+    windowStart: string | null
+    mode: TimeMode
+}
+
+const timeMode = async (): Promise<TimeMode> => {
+    try {
+        return await mmgisGetTimeMode()
+    } catch (err) {
+        console.warn('[export legend] core reported no time mode', err)
+        return null
+    }
+}
 
 const globalTimeCursor = async (): Promise<TimeCursor> => {
+    const modeRequest = timeMode()
     try {
         const [cursor, windowStart] = await Promise.all([
             mmgisGetTimeCurrent(),
             mmgisGetTimeStart(),
         ])
-        return { cursor, windowStart }
+        return { cursor, windowStart, mode: await modeRequest }
     } catch (err) {
         console.warn('[export legend] core reported no time cursor', err)
-        return { cursor: null, windowStart: null }
+        return { cursor: null, windowStart: null, mode: await modeRequest }
     }
 }
 
@@ -109,18 +129,6 @@ const dataCoverage = async (): Promise<Record<
  * nothing, and any `Collected` range would name pixels that are not there.
  */
 const NO_DATA_AT_CURSOR = 'No data at cursor'
-
-// Point mode on the Time Control sets the window start to the epoch, rebuilt
-// from local date components — so it arrives shifted by the browser's UTC
-// offset, at most ±14 hours either side of 1970-01-01. Nothing on the bus says
-// which mode is active, so only a start within a day of the epoch is read as
-// "no start was asked for"; a genuine window start decades ago must survive
-// and be printed.
-const isOpenEndedStart = (windowStart: string | null): boolean => {
-    if (!windowStart) return true
-    const ms = Date.parse(windowStart)
-    return Number.isNaN(ms) ? false : Math.abs(ms) < 86_400_000
-}
 
 /**
  * A dated span, worded. Both ends of a span print at the same precision, so
@@ -193,15 +201,17 @@ const collectedDateLine = (
  */
 const cursorDateLine = (
     interval: string | null,
-    { cursor, windowStart }: TimeCursor,
+    { cursor, windowStart, mode }: TimeCursor,
     extent: TemporalExtent | undefined,
     precision: Duration | null,
 ): string | null => {
     // A window with no cursor in it has no truthful wording: nothing says
     // where in the window the map was asked to stop.
     if (!cursor) return null
+    // Point mode's window start is a placeholder, not a bound the request
+    // ran from; in every other case the start is printed as given.
     const request: RequestSpan = {
-        start: isOpenEndedStart(windowStart) ? null : windowStart,
+        start: mode === 'point' ? null : windowStart,
         end: cursor,
     }
     // A bound that will not parse is no coverage at all. The overlap reads an
@@ -276,10 +286,12 @@ const dateLineFor = (
         // time cursor moves; everything else follows the global cursor. A
         // local layer the dashboard has not stamped yet has no window of its
         // own to read, and the global one is what its features are filtered
-        // against until it does.
+        // against until it does. Its stamped window came from the same Time
+        // Control, so the global mode decides whether its start is real.
         const local: TimeCursor = {
             cursor: time.end ?? null,
             windowStart: time.start ?? null,
+            mode: globalCursor.mode,
         }
         const cursor: TimeCursor =
             time.type === 'local' && local.cursor ? local : globalCursor
