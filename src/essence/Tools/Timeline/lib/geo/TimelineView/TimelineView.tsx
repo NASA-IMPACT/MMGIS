@@ -28,6 +28,18 @@ import type { LayerNavigation } from '../../utils/layerNavigation'
 /** Room a top-axis label takes, in pixels, the widest being "Mar 30, 2020". */
 const CONTEXT_LABEL_WIDTH = 96
 
+/** Rendered size of the scrubber's diamond head, in pixels. */
+const MARKER_SIZE = 18
+
+/**
+ * The margin the chart keeps at each side, in pixels, past the track the
+ * visible window spans. A view held at the global window's edge puts the
+ * scrubber there, and the margin gives its head and shadow room to draw in
+ * full. It shows time beyond the view without widening what the scrubber can
+ * reach: every time set from the chart is still clamped to the global window.
+ */
+export const EDGE_MARGIN = MARKER_SIZE
+
 export interface TimelineViewProps {
     startTime: Date
     endTime: Date
@@ -89,7 +101,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     const axisHeight = 24 // Space for the bottom axis
     const layerBarHeight = 22 // Row pitch, shared by the sidebar item and the SVG row
     const topBarHeight = 24 // Space for top axis
-    const markerSize = 18 // Rendered size of the scrubber marker
+    const markerSize = MARKER_SIZE
     // A strip between the date bar and the first layer row that the
     // scrubber's head sits in, so the head never covers a row's bars at the
     // current time. The sidebar opens with a spacer of the same height to
@@ -125,14 +137,32 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         [startTime, endTime]
     )
 
-    // The visible window is the domain on screen, so the axes and the layer
-    // bars read it directly. Memoized so the axis effects below only fire when
-    // the window or the width actually change; rebuilt every render they would
-    // tear down and redraw both axes on every pointermove of a scrubber drag.
+    // Held under a quarter of the chart, so a narrow chart keeps a track.
+    const inset = Math.min(EDGE_MARGIN, dimensions.width / 4)
+
+    // The visible window is the domain of the track between the margins, so
+    // the axes and the layer bars read it directly. Memoized so the axis
+    // effects below only fire when the window or the width actually change;
+    // rebuilt every render they would tear down and redraw both axes on every
+    // pointermove of a scrubber drag.
     const transformedXScale = useMemo(
-        () => scaleTime().domain([view.start, view.end]).range([0, dimensions.width]),
-        [view, dimensions.width]
+        () =>
+            scaleTime()
+                .domain([view.start, view.end])
+                .range([inset, dimensions.width - inset]),
+        [view, dimensions.width, inset]
     )
+
+    // What the whole chart shows, margins included, cut to the global window:
+    // the axes mark time the scrubber can reach and none past it.
+    const shownSpan = useMemo(() => {
+        const left = transformedXScale.invert(0)
+        const right = transformedXScale.invert(dimensions.width)
+        return {
+            start: left < startTime ? startTime : left,
+            end: right > endTime ? endTime : right,
+        }
+    }, [transformedXScale, dimensions.width, startTime, endTime])
 
     // The bottom axis's unit follows the visible span, not the step mode, so
     // the axes relabel as the view zooms and hold still when the step
@@ -147,7 +177,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     useEffect(() => {
         if (!axisRef.current) return
 
-        const [visibleStart, visibleEnd] = transformedXScale.domain() as [Date, Date]
+        const { start: visibleStart, end: visibleEnd } = shownSpan
         const tickValues = generateTimeTicks(visibleStart, visibleEnd, tickMode, maxTicks)
         const axis = axisBottom(transformedXScale)
             .tickValues(tickValues)
@@ -165,7 +195,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         // Sizing only — fill and family come from .timeline-axis .tick text
         axisGroup.selectAll('.tick text')
             .style('font-size', '11px')
-    }, [transformedXScale, tickMode, maxTicks, totalLayersHeight])
+    }, [transformedXScale, shownSpan, tickMode, maxTicks, totalLayersHeight])
 
     // Render top axis: the day, month or year each stretch of the bottom
     // axis falls in, so the two read together as a whole date. Each label
@@ -174,10 +204,10 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     useEffect(() => {
         if (!topAxisRef.current) return
 
-        const [visibleStart, visibleEnd] = transformedXScale.domain() as [Date, Date]
+        const { start: visibleStart, end: visibleEnd } = shownSpan
         const msPerPx =
-            (visibleEnd.getTime() - visibleStart.getTime()) /
-            Math.max(1, dimensions.width)
+            (view.end.getTime() - view.start.getTime()) /
+            Math.max(1, dimensions.width - 2 * inset)
         const { mode, ticks } = contextTicks(
             visibleStart,
             visibleEnd,
@@ -200,7 +230,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
             .attr('x', 4)
             .style('font-size', '11px')
             .style('font-weight', '600')
-    }, [transformedXScale, tickMode, dimensions.width])
+    }, [transformedXScale, shownSpan, view, tickMode, dimensions.width, inset])
 
     // The zoom behaviour is held so the push effect below can hand it a
     // transform, keeping d3's own internal state in step with the window.
@@ -240,17 +270,18 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
             // The lower bound stays 1: zooming out past the global window
             // shows empty space either side and is not useful.
             .scaleExtent([1, maxScale])
-            // The viewport is the chart's own box. Given explicitly rather
-            // than left to d3 to read off the element: the SVG is sized from
-            // these same numbers, and reading them back needs the SVG
-            // geometry API, which jsdom does not implement.
+            // The viewport is the track between the margins, which the
+            // visible window spans. Given explicitly rather than left to d3
+            // to read off the element: the SVG is sized from these same
+            // numbers, and reading them back needs the SVG geometry API,
+            // which jsdom does not implement.
             .extent([
-                [0, 0],
-                [dimensions.width, dimensions.height],
+                [inset, 0],
+                [dimensions.width - inset, dimensions.height],
             ])
             .translateExtent([
-                [0, 0],
-                [dimensions.width, dimensions.height],
+                [inset, 0],
+                [dimensions.width - inset, dimensions.height],
             ])
             // Grabbing the scrubber drags it instead of panning the view.
             .filter((event: any) => {
@@ -261,7 +292,8 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                 const next = transformToWindow(
                     event.transform,
                     bounds,
-                    dimensions.width
+                    dimensions.width,
+                    inset
                 )
                 // Pushing a transform in re-fires this handler with the window
                 // it was just given. Compared by value rather than flagged:
@@ -281,7 +313,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         // window to wherever it lands.
         svg.call(
             zoomBehavior.transform as any,
-            windowToTransform(viewRef.current, bounds, dimensions.width)
+            windowToTransform(viewRef.current, bounds, dimensions.width, inset)
         )
 
         return () => {
@@ -309,7 +341,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
             zoomBehaviorRef.current = null
         }
-    }, [bounds, dimensions, configuredGranularity])
+    }, [bounds, dimensions, inset, configuredGranularity])
 
     // Push the window into d3 so wheel and drag gestures start from where the
     // view actually is, rather than from wherever the last gesture left it.
@@ -319,9 +351,9 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
         select(svgRef.current).call(
             zoomBehavior.transform as any,
-            windowToTransform(view, bounds, dimensions.width)
+            windowToTransform(view, bounds, dimensions.width, inset)
         )
-    }, [view, bounds, dimensions])
+    }, [view, bounds, dimensions, inset])
 
     // Update scrubber position — it follows the pointer while dragging
     const scrubberTime = dragTime ?? currentTime
@@ -514,6 +546,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                     <LayerTimeline
                                         layer={layer}
                                         xScale={transformedXScale}
+                                        bounds={bounds}
                                         y={headGutter + index * layerBarHeight}
                                         height={layerBarHeight}
                                     />
