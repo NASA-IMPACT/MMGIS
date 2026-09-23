@@ -1,0 +1,167 @@
+.series-chart {
+    display: flex;
+    flex-direction: column;
+    gap: var(--theme-spacing-2, 1rem);
+    padding: var(--theme-spacing-2, 1rem);
+    height: 100%;
+    overflow-y: auto;
+    box-sizing: border-box;
+}
+
+.series-chart__placeholder {
+    margin: 0;
+    padding: var(--theme-spacing-2, 1rem);
+    color: var(--theme-color-base-dark, #565c65);
+    font-size: var(--theme-font-size-sm, 0.875rem);
+    text-align: center;
+}
+
+.series-chart__card {
+    background: var(--theme-color-base-lightest, #f2f5f7);
+    border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    border-radius: var(--theme-border-radius-md, 4px);
+    padding: var(--theme-spacing-2, 1rem);
+}
+
+.series-chart__card-header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--theme-spacing-05, 0.25rem);
+    margin-bottom: var(--theme-spacing-1, 0.5rem);
+}
+
+.series-chart__card-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--theme-spacing-1, 0.5rem);
+}
+
+.series-chart__reset-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    padding: 0;
+    border: none;
+    border-radius: var(--theme-border-radius-md, 4px);
+    background: transparent;
+    color: var(--theme-color-primary, #005ea2);
+    cursor: pointer;
+    transition: background 0.12s ease;
+
+    &:hover {
+        background: var(--theme-color-base-lighter, #dfe1e2);
+    }
+}
+
+.series-chart__title {
+    margin: 0;
+    font-size: var(--theme-font-size-md, 1rem);
+    color: var(--theme-color-ink, #1b1b1b);
+}
+
+
+.series-chart__status {
+    display: flex;
+    align-items: center;
+    gap: var(--theme-spacing-1, 0.5rem);
+    color: var(--theme-color-base-dark, #565c65);
+    font-size: var(--theme-font-size-sm, 0.875rem);
+}
+
+.series-chart__spinner {
+    width: 1em;
+    height: 1em;
+    border: 2px solid var(--theme-color-base-lighter, #dfe1e2);
+    border-top-color: var(--theme-color-primary, #005ea2);
+    border-radius: 50%;
+    animation: series-chart-spin 0.9s linear infinite;
+}
+
+@keyframes series-chart-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.series-chart__error {
+    margin: 0;
+    color: var(--theme-color-error, #b50909);
+    font-size: var(--theme-font-size-sm, 0.875rem);
+}
+
+.series-chart__canvas-wrap {
+    position: relative;
+    height: 280px;
+}
+
+.series-chart__variable-list {
+    // ~1.5 variable cards tall, then scroll within the station card instead
+    // of the payload swallowing the whole panel.
+    max-height: 440px;
+    overflow-y: auto;
+}
+
+.series-chart__variable-card {
+    margin-top: var(--theme-spacing-1, 0.5rem);
+    background: var(--theme-color-white, #ffffff);
+    border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    border-radius: var(--theme-border-radius-md, 4px);
+    padding: var(--theme-spacing-1, 0.5rem);
+}
+
+.series-chart__variable-canvas {
+    position: relative;
+    height: 220px;
+}
+
+.series-chart__variable-footer {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--theme-spacing-1, 0.5rem);
+    margin-top: var(--theme-spacing-05, 0.25rem);
+}
+
+.series-chart__variable-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--theme-spacing-05, 0.25rem);
+    font-size: var(--theme-font-size-sm, 0.875rem);
+    color: var(--theme-color-ink, #1b1b1b);
+}
+
+.series-chart__variable-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.series-chart__variable-unit {
+    color: var(--theme-color-base-dark, #565c65);
+}
+
+.series-chart__variable-hint {
+    margin: var(--theme-spacing-05, 0.25rem) 0 0;
+    font-size: var(--theme-font-size-xs, 0.75rem);
+    color: var(--theme-color-base-dark, #565c65);
+}
+
+.series-chart__csv-link {
+    padding: 0;
+    border: none;
+    background: none;
+    font-size: var(--theme-font-size-sm, 0.875rem);
+    font-weight: var(--theme-font-weight-semibold, 600);
+    color: var(--theme-color-primary, #005ea2);
+    cursor: pointer;
+    white-space: nowrap;
+
+    &:hover {
+        text-decoration: underline;
+    }
+}
