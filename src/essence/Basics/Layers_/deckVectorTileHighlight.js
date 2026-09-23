@@ -34,13 +34,15 @@ export function vectorTileHighlightOptions(style) {
         // Undefined rather than '': deck reads an empty key as "no key", and
         // passing the empty string through would only restate its own default.
         uniqueIdProperty: vtId === '' ? undefined : vtId,
-        highlightColor: highlightColor(style) ?? DEFAULT_HIGHLIGHT,
+        highlightColor: highlightColor(style),
     }
 }
 
 /**
- * The configured highlight colour as deck's four channels, or null when the
- * mission configured none it could read.
+ * The configured highlight colour as deck's four channels, falling back to the
+ * default for a field left empty and for a colour that cannot be read — the
+ * helper answers its fallback for one it fails to parse, which is exactly the
+ * answer wanted here.
  *
  * Opacity rides along in the colour: the picker writes `rgba(...)` as soon as
  * a colour is less than fully opaque, and the colour helper reads the alpha
@@ -49,19 +51,8 @@ export function vectorTileHighlightOptions(style) {
  */
 function highlightColor(style) {
     const configured = style?.hoverHighlightColor
-    if (typeof configured !== 'string' || configured.trim() === '') return null
-
-    // Read twice against opposite fallbacks. The helper answers its fallback
-    // for a colour it cannot parse, and gives no other sign of having done so;
-    // two readings that disagree were both fallbacks, which is the one case
-    // where a mission is better served by deck's default than by a colour
-    // nobody chose.
-    const asBlack = hexToRgba(configured.trim(), undefined, [0, 0, 0, 255])
-    const asWhite = hexToRgba(configured.trim(), undefined, [255, 255, 255, 255])
-    const unreadable =
-        asBlack[0] !== asWhite[0] ||
-        asBlack[1] !== asWhite[1] ||
-        asBlack[2] !== asWhite[2]
-
-    return unreadable ? null : asBlack
+    if (typeof configured !== 'string' || configured.trim() === '') {
+        return DEFAULT_HIGHLIGHT
+    }
+    return hexToRgba(configured.trim(), undefined, DEFAULT_HIGHLIGHT)
 }
