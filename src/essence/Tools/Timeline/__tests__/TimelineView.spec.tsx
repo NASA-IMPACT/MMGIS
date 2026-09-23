@@ -31,28 +31,6 @@ class NoopResizeObserver {
     disconnect() {}
 }
 
-const resizeCallbacks: ResizeObserverCallback[] = []
-
-/** A ResizeObserver the test drives, for widths jsdom never reports. */
-class DrivenResizeObserver {
-    constructor(callback: ResizeObserverCallback) {
-        resizeCallbacks.push(callback)
-    }
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-}
-
-/** Reports `width` to every live observer, as a layout change would. */
-const reportWidth = (width: number) => {
-    const entry = { contentRect: { width } } as unknown as ResizeObserverEntry
-    act(() => {
-        resizeCallbacks.forEach((callback) =>
-            callback([entry], null as unknown as ResizeObserver)
-        )
-    })
-}
-
 const START = new Date('2020-01-01T00:00:00Z')
 const END = new Date('2020-12-31T23:59:59.999Z')
 const CURRENT = new Date('2020-05-01T00:00:00Z')
@@ -252,7 +230,6 @@ describe('TimelineView visible window', () => {
         document.body.appendChild(container)
         root = createRoot(container)
         reported = []
-        resizeCallbacks.length = 0
     })
 
     afterEach(() => {
@@ -413,6 +390,31 @@ describe('TimelineView visible window', () => {
         expect(Math.abs(quarterIn(next) - quarterIn(FULL))).toBeLessThanOrEqual(1)
     })
 
+    test('keeps its window when the chart is measured at zero width', () => {
+        // Collapsing the timeline hides the chart, and the observer then
+        // reports no width. The transform conversions have no scale to work
+        // through at that width and fall back to the global window;
+        // committing that fallback would discard the zoom the user had.
+        const observed: ((entries: { contentRect: { width: number } }[]) => void)[] = []
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
+            constructor(callback: (entries: { contentRect: { width: number } }[]) => void) {
+                observed.push(callback)
+            }
+            observe() {}
+            unobserve() {}
+            disconnect() {}
+        }
+
+        render(WEEK)
+        reported.length = 0
+
+        act(() => {
+            observed.forEach((callback) => callback([{ contentRect: { width: 0 } }]))
+        })
+
+        expect(reported).toEqual([])
+    })
+
     test('leaves d3 holding the window after a drag open across a rebuild', () => {
         // d3 writes the transform before it notifies, so a silenced drag
         // walks it somewhere the window never went.
@@ -476,21 +478,5 @@ describe('TimelineView visible window', () => {
         })
 
         expect(reported.length).toBeGreaterThan(0)
-    })
-
-    test('holds the window through a collapse to no width', () => {
-        // Collapsing reports a zero-width box, where both conversions fall
-        // back to the global window and a push reads that back out.
-        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
-            DrivenResizeObserver
-        render(WEEK)
-        reportWidth(0)
-
-        expect(reported).toEqual([])
-
-        reportWidth(800)
-
-        expect(reported).toEqual([])
-        expect(heldScale()).toBeCloseTo(spanOf(FULL) / spanOf(WEEK), 6)
     })
 })

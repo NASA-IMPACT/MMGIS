@@ -3,6 +3,8 @@ import { mmgisHasHandler } from './mmgisAPI'
 export interface HandlerReadyOptions {
     intervalMs?: number
     timeoutMs?: number
+    /** Called once when `timeoutMs` passes without the handler appearing. */
+    onTimeout?: () => void
 }
 
 /**
@@ -21,14 +23,15 @@ export interface HandlerReadyOptions {
  *
  * Gives up after `timeoutMs` with a warning: a handler that never arrives
  * means the capability is absent, not late, and a poll running for the life of
- * the page would hide that.
+ * the page would hide that. `onTimeout` lets a caller that holds work back
+ * until `onReady` act on that instead.
  */
 export const whenMMGISHandlerReady = (
     handlerName: string,
     onReady: () => void,
     options: HandlerReadyOptions = {}
 ): (() => void) => {
-    const { intervalMs = 200, timeoutMs = 10000 } = options
+    const { intervalMs = 200, timeoutMs = 10000, onTimeout } = options
 
     if (mmgisHasHandler(handlerName)) {
         onReady()
@@ -45,6 +48,7 @@ export const whenMMGISHandlerReady = (
             console.warn(
                 `[whenMMGISHandlerReady] '${handlerName}' not registered after ${timeoutMs}ms`
             )
+            onTimeout?.()
         }
     }, intervalMs)
 

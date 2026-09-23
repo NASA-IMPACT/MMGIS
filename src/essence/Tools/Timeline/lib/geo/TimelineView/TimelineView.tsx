@@ -172,11 +172,13 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     // Setup zoom behavior
     useEffect(() => {
         const node = svgRef.current
-        if (!node) return
-        // At zero width both conversions fall back to the global window, so a
-        // push here reads that back out and discards the view. A chart this
-        // wide is hidden anyway; the effect reruns once it has width.
-        if (!(dimensions.width > 0)) return
+        // A chart measured at zero width — collapsed, or behind any layout
+        // that reports no box — has no scale to convert a transform through.
+        // Both conversions fall back to the global window at that width, and
+        // a fallback reaching the handler below is committed as a real view
+        // change, discarding the window the user had. The behaviour stays
+        // detached until a width arrives.
+        if (!node || dimensions.width <= 0) return
 
         // The cap is the ratio of the global window to the tightest span the
         // displayed granularity allows, so the tightest reachable view carries
@@ -272,9 +274,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     // view actually is, rather than from wherever the last gesture left it.
     useEffect(() => {
         const zoomBehavior = zoomBehaviorRef.current
-        if (!svgRef.current || !zoomBehavior) return
-        // No behaviour is built at zero width; this guards the same fallback.
-        if (!(dimensions.width > 0)) return
+        if (!svgRef.current || !zoomBehavior || dimensions.width <= 0) return
 
         select(svgRef.current).call(
             zoomBehavior.transform as any,

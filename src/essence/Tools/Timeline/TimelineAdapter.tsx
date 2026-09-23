@@ -50,6 +50,14 @@ interface TimePayload {
  */
 type Readiness = 'loading' | 'ready' | 'unavailable'
 
+/**
+ * How long the tool vars are waited on before the configuration is treated as
+ * absent. Matches the deadline the handler poll gives 'tool:getVars' to
+ * register at all, so a configuration that never arrives costs the same
+ * whichever way it fails to.
+ */
+const VARS_TIMEOUT_MS = 10000
+
 const sameInstant = (a: Date, b: Date): boolean => a.getTime() === b.getTime()
 
 /** Keeps the previous Date when the instant is unchanged, so effects keyed on
@@ -216,17 +224,62 @@ export const TimelineAdapter: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [readiness])
 
+    /**
+     * Settles the granularity on the mode given, or on the fallback where the
+     * configuration named none. The first value written is the one kept, so
+     * whichever path out of the tool vars arrives first decides, and a later
+     * one cannot move a floor the view has already been fitted at.
+     */
+    const settleGranularity = useCallback((mode: TimeMode = 'DAY') => {
+        setConfiguredGranularity((held) => held ?? mode)
+    }, [])
+
+    /**
+     * The modes offered, which are those the configured granularity can
+     * actually be zoomed to. A finer mode relabels the axis to a detail the
+     * zoom floor keeps out of reach — HOUR on a mission configured for days
+     * gives hourly ticks across a window that can never be narrowed below
+     * three of them — so it is left out rather than shown and unreachable.
+     *
+     * Derived rather than trimmed where the modes are read, so every path
+     * that settles a granularity is covered, including the fallbacks that
+     * leave the configured list untouched. TIME_MODE_ORDER runs coarse to
+     * fine, so the granularity's own index is the cut.
+     */
+    const availableTimeModes = useMemo(() => {
+        if (configuredGranularity === null) return shownTimeModes
+        const floor = TIME_MODE_ORDER.indexOf(configuredGranularity)
+        return shownTimeModes.filter(
+            (mode) => TIME_MODE_ORDER.indexOf(mode) <= floor
+        )
+    }, [shownTimeModes, configuredGranularity])
+
     // Tool variables from the mission config. 'tool:getVars' is registered by
     // Layers_.fina() during mission load, after this tool mounts.
     const fetchVars = useCallback(async () => {
+        // Cleared once the race settles, so the answer arriving first doesn't
+        // leave the deadline's timer pending behind it.
+        let deadline: ReturnType<typeof setTimeout> | undefined
         try {
-            const vars = await mmgisRequest<{
-                allowPlayback?: boolean
-                defaultTimeMode?: string
-                shownTimeModes?: string[]
-            }>('tool:getVars', 'timeline')
+            // The request carries no deadline of its own, and a handler that
+            // is registered but never answers would hold the timeline on its
+            // loading state for good. Racing it puts a floor under that: past
+            // the deadline the configuration is treated as absent, which is
+            // the same fallback an unregistered handler takes. The answer is
+            // dropped whole rather than applied late, so the granularity and
+            // the modes shown alongside it always come from one source.
+            const vars = await Promise.race([
+                mmgisRequest<{
+                    allowPlayback?: boolean
+                    defaultTimeMode?: string
+                    shownTimeModes?: string[]
+                }>('tool:getVars', 'timeline'),
+                new Promise<null>((resolve) => {
+                    deadline = setTimeout(() => resolve(null), VARS_TIMEOUT_MS)
+                }),
+            ])
             if (!vars) {
-                setConfiguredGranularity((held) => held ?? 'DAY')
+                settleGranularity()
                 return
             }
 
@@ -256,18 +309,25 @@ export const TimelineAdapter: React.FC = () => {
             if (!effectiveModes.includes(mode)) mode = effectiveModes[0]
             setTimeMode(mode)
             // The same validated mode, held apart from the runtime control so
-            // a later press of that control cannot move the zoom floor. The
-            // first value written is the one kept, on every path out of
-            // here: the granularity is settled once and stays settled.
-            setConfiguredGranularity((held) => held ?? mode)
+            // a later press of that control cannot move the zoom floor.
+            settleGranularity(mode)
         } catch (err) {
             console.warn('[Timeline] Failed to fetch tool vars:', err)
             // Tool vars that cannot be read leave the default granularity,
             // rather than a timeline that never leaves its loading state.
-            setConfiguredGranularity((held) => held ?? 'DAY')
+            settleGranularity()
+        } finally {
+            clearTimeout(deadline)
         }
-    }, [])
-    useMMGISHandlerReady('tool:getVars', fetchVars)
+    }, [settleGranularity])
+    // The timeline renders nothing until the granularity settles, so the
+    // handler never appearing has to settle it too. 'tool:getVars' comes from
+    // Layers_.fina() and the time handlers from TimeControl, so a mission
+    // whose layers fail to load answers for the window and never for the
+    // configuration — which without this leaves the loading state up for good.
+    useMMGISHandlerReady('tool:getVars', fetchVars, {
+        onTimeout: settleGranularity,
+    })
 
     // Stop playback if it becomes disabled via config
     useEffect(() => {
@@ -566,21 +626,25 @@ export const TimelineAdapter: React.FC = () => {
                     <TimeModeControl
                         currentMode={timeMode}
                         onModeChange={setTimeMode}
-                        modes={shownTimeModes}
+                        modes={availableTimeModes}
                     />
                     <div className="timeline-toolbar">
-                        <ZoomControls
-                            sliderValue={zoom.sliderValue}
-                            spanMs={zoom.view.end.getTime() - zoom.view.start.getTime()}
-                            canZoom={zoom.canZoom}
-                            canFit={zoom.canFit}
-                            autoFit={zoom.autoFit}
-                            onZoomIn={zoom.zoomIn}
-                            onZoomOut={zoom.zoomOut}
-                            onSliderChange={zoom.setSliderValue}
-                            onToggleAutoFit={zoom.toggleAutoFit}
-                            onFitNow={zoom.fitToLayers}
-                        />
+                        {/* Collapsed, the chart these act on is off screen,
+                            so a zoom has nothing to show for itself. */}
+                        {!isCollapsed && (
+                            <ZoomControls
+                                sliderValue={zoom.sliderValue}
+                                spanMs={zoom.view.end.getTime() - zoom.view.start.getTime()}
+                                canZoom={zoom.canZoom}
+                                canFit={zoom.canFit}
+                                autoFit={zoom.autoFit}
+                                onZoomIn={zoom.zoomIn}
+                                onZoomOut={zoom.zoomOut}
+                                onSliderChange={zoom.setSliderValue}
+                                onToggleAutoFit={zoom.toggleAutoFit}
+                                onFitNow={zoom.fitToLayers}
+                            />
+                        )}
                         <button
                             type="button"
                             ref={infoButtonRef}

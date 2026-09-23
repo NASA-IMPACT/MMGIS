@@ -108,13 +108,49 @@ export function clampWindow(
 }
 
 /**
- * The window scaled by `factor` about `anchor`, which holds the same
+ * The window resized to `span` about `anchor`, which holds the same
  * fractional position across the window before and after — so the instant
- * under the pointer, or under the scrubber, stays where it is.
+ * under the scrubber stays where it is on screen and the view tightens or
+ * opens around it. Every control that names a target span goes through here,
+ * so the buttons and the slider place the view by one rule.
+ *
+ * The span is brought into `[minMs, bounds]` before the window is placed,
+ * not after. Placing first and clamping second would hand `clampWindow` a
+ * below-floor window, and it widens such a window about its own centre,
+ * which walks the anchor towards the middle of the view on every press once
+ * the floor is reached. With the span settled first, a press at the floor
+ * asks for the span the view already has and leaves it exactly where it is.
  *
  * The anchor is expected to lie inside the window; callers that cannot
- * guarantee that pass the window's centre instead. Clamping can move the
- * result, and with it the anchor, when the zoom runs into a bound.
+ * guarantee that pass the window's centre instead. Sliding into range can
+ * still move the result, and with it the anchor, when a wider span runs into
+ * a bound: the anchor then keeps the fraction nearest the one it had.
+ */
+export function windowAtSpan(
+    win: ViewWindow,
+    span: number,
+    anchor: Date,
+    bounds: ViewWindow,
+    minMs: number
+): ViewWindow {
+    const start = win.start.getTime()
+    const held = win.end.getTime() - start
+    const at = anchor.getTime()
+    const fraction = held > 0 ? (at - start) / held : 0.5
+
+    const boundsSpan = Math.max(
+        0,
+        bounds.end.getTime() - bounds.start.getTime()
+    )
+    const nextSpan = Math.min(Math.max(span, minMs), boundsSpan)
+    const nextStart = at - fraction * nextSpan
+
+    return clampWindow(windowOf(nextStart, nextSpan), bounds, minMs)
+}
+
+/**
+ * The window scaled by `factor` about `anchor`. The `±` buttons use factors
+ * of 0.5 and 2.
  */
 export function zoomAround(
     win: ViewWindow,
@@ -123,15 +159,8 @@ export function zoomAround(
     bounds: ViewWindow,
     minMs: number
 ): ViewWindow {
-    const start = win.start.getTime()
-    const span = win.end.getTime() - start
-    const at = anchor.getTime()
-    const fraction = span > 0 ? (at - start) / span : 0.5
-
-    const nextSpan = span * factor
-    const nextStart = at - fraction * nextSpan
-
-    return clampWindow(windowOf(nextStart, nextSpan), bounds, minMs)
+    const span = win.end.getTime() - win.start.getTime()
+    return windowAtSpan(win, span * factor, anchor, bounds, minMs)
 }
 
 /**
@@ -172,13 +201,16 @@ export function windowToSlider(
 }
 
 /**
- * The window a slider position names, centred on `anchor`.
+ * The window a slider position names, placed about `anchor` as it sits in
+ * `win`, the window on screen when the slider moved.
  *
  * The inverse of `windowToSlider`: `duration(v) = fullSpan · ratio ^ v`, where
- * `ratio` is the floor over the full span.
+ * `ratio` is the floor over the full span. The slider names only a span; where
+ * that span sits is `windowAtSpan`'s rule, the same one the buttons follow.
  */
 export function sliderToWindow(
     v: number,
+    win: ViewWindow,
     anchor: Date,
     bounds: ViewWindow,
     minMs: number
@@ -189,9 +221,8 @@ export function sliderToWindow(
     const fullSpan = bounds.end.getTime() - bounds.start.getTime()
     const position = Math.min(1, Math.max(0, v))
     const span = fullSpan * Math.pow(ratio, position)
-    const start = anchor.getTime() - span / 2
 
-    return clampWindow(windowOf(start, span), bounds, minMs)
+    return windowAtSpan(win, span, anchor, bounds, minMs)
 }
 
 /**
@@ -226,51 +257,34 @@ export function fitWindow(
 }
 
 /**
- * Van Wijk and Nuij's smoothness parameter, the value d3's `interpolateZoom`
- * uses: it trades the length of the path against how far it zooms out to
- * travel.
- */
-const RHO = Math.SQRT2
-const RHO2 = RHO * RHO
-const RHO4 = RHO2 * RHO2
-
-/**
- * Below this fraction of the wider span, a shift of the centre is treated as
- * none at all: it is under a pixel on any chart narrower than a million
- * pixels, and a path that is a pure zoom is what the shift rounds to.
- */
-const PURE_ZOOM_SHIFT = 1e-6
-
-/**
  * The path from one window to another, as a function of progress `t` in
  * [0, 1]: `from` at 0 and `to` at 1, exactly, with the span changing
  * geometrically in between.
  *
  * Geometric, not linear, for the reason the slider is logarithmic: a linear
  * span visibly decelerates as it tightens, since each equal step is a larger
- * fraction of what remains. A pure zoom about a fixed centre therefore passes
- * through the geometric mean of the two spans at `t = 0.5`, not the
- * arithmetic mean.
+ * fraction of what remains. A zoom therefore passes through the geometric
+ * mean of the two spans at `t = 0.5`, not the arithmetic mean.
  *
- * The path is Van Wijk and Nuij's ("Smooth and efficient zooming and panning",
- * 2003), the one behind d3's `interpolateZoom`, in one dimension: a change of
- * centre that is long relative to the spans zooms out first, so the content
- * between the two windows crosses the chart at a readable rate, and zooms
- * back in on arrival. d3's implementation is not used directly because it
- * evaluates `log(sqrt(b² + 1) − b)`, which cancels catastrophically once `b`
- * passes about 1e8; `b` grows with the span over the centre shift, so a
- * zoom-out about a centre that moves by a rounding millisecond — reachable
- * from any zoom about the scrubber — puts NaN into every frame. The ratio is
- * scale-invariant, so no change of units mends it. That expression is
- * `−asinh(b)`, which `Math.asinh` evaluates stably at any magnitude.
+ * Where each frame sits follows from the point the path holds. Given an
+ * `anchor` it pivots on that instant: the anchor keeps the fraction of the
+ * view it started with, travelling to the fraction it ends with only when a
+ * bound moved it, so the scrubber a zoom was made about holds its pixel from
+ * the first frame to the last. Without one the centre is held instead, and
+ * travels linearly from the one window's to the other's.
  *
- * A span the path passes through can exceed both endpoints' spans and, with
- * it, the bounds; callers clamp each frame as they would any window. A window
- * without a span has no geometric path, and is interpolated linearly.
+ * The span is monotone between the two endpoints' spans, so no frame opens
+ * wider than the wider of them. Placement is not bounded that tightly: an
+ * anchored path carries a fraction that travels linearly against a span that
+ * travels geometrically, and their product can put an edge further from the
+ * anchor than either endpoint does, so callers clamp each frame as they would
+ * any window. A window without a span has no geometric path, and is
+ * interpolated linearly.
  */
 export function interpolateWindow(
     from: ViewWindow,
-    to: ViewWindow
+    to: ViewWindow,
+    anchor?: Date
 ): (t: number) => ViewWindow {
     const start0 = from.start.getTime()
     const start1 = to.start.getTime()
@@ -281,32 +295,24 @@ export function interpolateWindow(
 
     if (!(w0 > 0) || !(w1 > 0)) {
         at = (t) => windowOf(start0 + t * (start1 - start0), w0 + t * (w1 - w0))
+    } else if (anchor) {
+        const at0 = anchor.getTime()
+        const fraction0 = (at0 - start0) / w0
+        const fraction1 = (at0 - start1) / w1
+        const growth = Math.log(w1 / w0)
+        at = (t) => {
+            const span = w0 * Math.exp(t * growth)
+            const fraction = fraction0 + t * (fraction1 - fraction0)
+            return windowOf(at0 - fraction * span, span)
+        }
     } else {
         const centre0 = start0 + w0 / 2
-        const dx = start1 + w1 / 2 - centre0
-        const d = Math.abs(dx)
-
-        if (d <= PURE_ZOOM_SHIFT * Math.max(w0, w1)) {
-            const growth = Math.log(w1 / w0)
-            at = (t) => {
-                const span = w0 * Math.exp(t * growth)
-                return windowOf(centre0 + t * dx - span / 2, span)
-            }
-        } else {
-            const b0 = (w1 * w1 - w0 * w0 + RHO4 * d * d) / (2 * w0 * RHO2 * d)
-            const b1 = (w1 * w1 - w0 * w0 - RHO4 * d * d) / (2 * w1 * RHO2 * d)
-            const r0 = -Math.asinh(b0)
-            const r1 = -Math.asinh(b1)
-            const S = (r1 - r0) / RHO
-            const coshr0 = Math.cosh(r0)
-            const sinhr0 = Math.sinh(r0)
-            at = (t) => {
-                const x = RHO * t * S + r0
-                const travelled =
-                    (w0 / (RHO2 * d)) * (coshr0 * Math.tanh(x) - sinhr0)
-                const span = (w0 * coshr0) / Math.cosh(x)
-                return windowOf(centre0 + travelled * dx - span / 2, span)
-            }
+        const centre1 = start1 + w1 / 2
+        const growth = Math.log(w1 / w0)
+        at = (t) => {
+            const span = w0 * Math.exp(t * growth)
+            const centre = centre0 + t * (centre1 - centre0)
+            return windowOf(centre - span / 2, span)
         }
     }
 

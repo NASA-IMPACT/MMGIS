@@ -277,18 +277,21 @@ export function useTimelineZoom({
     // A press landing mid-flight steps from the flight's destination, not
     // from wherever that frame happens to be, so a run of quick presses is a
     // run of whole steps; the flight restarts from the view as it stands, so
-    // nothing on screen jumps.
+    // nothing on screen jumps. The anchor the step was placed about is also
+    // what the flight pivots on, so the scrubber holds its pixel from the
+    // first frame to the last rather than only at the ends.
     const zoomBy = useCallback(
         (factor: number) => {
             const origin = transition.target() ?? viewRef.current
+            const anchor = anchorIn(origin, currentTimeRef.current)
             const next = zoomAround(
                 origin,
                 factor,
-                anchorIn(origin, currentTimeRef.current),
+                anchor,
                 boundsRef.current,
                 minMs
             )
-            transition.animateTo(viewRef.current, next)
+            transition.animateTo(viewRef.current, next, anchor)
         },
         [transition, minMs]
     )
@@ -303,6 +306,7 @@ export function useTimelineZoom({
             commit(
                 sliderToWindow(
                     v,
+                    held,
                     anchorIn(held, currentTimeRef.current),
                     boundsRef.current,
                     minMs

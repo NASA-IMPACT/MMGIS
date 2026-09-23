@@ -1,20 +1,71 @@
-/* The group carries the divider that separates it from whatever the toolbar
-   places to its right. */
 .timeline-zoom-controls {
     display: flex;
     align-items: center;
     gap: 4px;
     padding-right: 8px;
     margin-right: 4px;
-    border-right: 1px solid var(--theme-color-base-lighter, #dfe1e2);
 }
 
+/* Drawn from its parts because `accent-color` paints track, range and thumb in
+   one colour. --timeline-zoom-fill is set inline from the slider's value. */
 .timeline-zoom-slider {
     width: 96px;
     min-width: 64px;
     margin: 0 4px;
-    accent-color: var(--theme-color-primary, #0e7482);
     cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+}
+
+/* WebKit has no pseudo-element for the covered range, so it is a hard colour
+   stop at the fill point. */
+.timeline-zoom-slider::-webkit-slider-runnable-track {
+    height: 4px;
+    border: none;
+    border-radius: 2px;
+    background: linear-gradient(
+        to right,
+        var(--theme-color-primary-light, #87bac1) 0 var(--timeline-zoom-fill, 0%),
+        var(--theme-color-primary-lightest, #e6f4f6) var(--timeline-zoom-fill, 0%) 100%
+    );
+}
+
+/* Firefox paints the covered range itself, over a plain track. */
+.timeline-zoom-slider::-moz-range-track {
+    height: 4px;
+    border: none;
+    border-radius: 2px;
+    background: var(--theme-color-primary-lightest, #e6f4f6);
+}
+
+.timeline-zoom-slider::-moz-range-progress {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--theme-color-primary-light, #87bac1);
+}
+
+/* content-box puts the ring outside the 12px circle, so the thumb is 16px; the
+   margin centres that on the 4px track, which WebKit measures from its top. */
+.timeline-zoom-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    box-sizing: content-box;
+    width: 12px;
+    height: 12px;
+    margin-top: -6px;
+    border: 2px solid var(--theme-color-white, #ffffff);
+    border-radius: 50%;
+    background: var(--theme-color-primary, #0e7482);
+}
+
+.timeline-zoom-slider::-moz-range-thumb {
+    box-sizing: content-box;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--theme-color-white, #ffffff);
+    border-radius: 50%;
+    background: var(--theme-color-primary, #0e7482);
 }
 
 .timeline-zoom-slider:disabled {
@@ -22,17 +73,9 @@
     cursor: not-allowed;
 }
 
-/* Lit while auto-fit is armed, so the standing intent is visible at a glance
-   rather than only through aria-pressed. Inverted like .time-mode-button.active,
-   the toolbar's toggled-on idiom.
-
-   The selector names the base class on purpose. A lone
-   .timeline-zoom-autofit--on has the same specificity as .timeline-tool-btn,
-   whose transparent background then wins or loses on stylesheet order alone,
-   and this file is evaluated before Timeline.css. The hover variant is repeated
-   because .timeline-tool-btn:hover:not(:disabled) outranks the compound
-   selector and would otherwise repaint an armed button in the hover tint the
-   moment the pointer arrives. */
+/* Lit while auto-fit is armed, inverted like .time-mode-button.active. Both
+   selectors name the base class to outrank .timeline-tool-btn and its hover
+   rule, which are evaluated after this file. */
 .timeline-tool-btn.timeline-zoom-autofit--on,
 .timeline-tool-btn.timeline-zoom-autofit--on:hover:not(:disabled) {
     background: var(--theme-color-primary, #0e7482);
@@ -40,12 +83,8 @@
     opacity: 1;
 }
 
-/* Below this width the header stacks to a column. The group refuses to
-   compress, keeping every control reachable. Wrapping belongs to
-   `.timeline-header-right`, two levels up: it wraps between the mode buttons
-   and the toolbar, so the whole toolbar, this group inside it, drops to the
-   next line as one item. Neither the toolbar nor this group wraps itself;
-   either would split the slider from its buttons across two rows. */
+/* The group never wraps or compresses; `.timeline-header-right` wraps the
+   whole toolbar instead, keeping the slider with its buttons. */
 @media (max-width: 768px) {
     .timeline-zoom-controls {
         flex-shrink: 0;

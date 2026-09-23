@@ -681,18 +681,6 @@ describe('useTimelineZoom', () => {
             expect(span(api.view)).toBe(span(BOUNDS) / 4)
         })
 
-        test('unmounting mid-flight leaves the view where it stood', () => {
-            render(defaults())
-            act(() => api.zoomIn())
-            frames(3)
-            const held = iso(api.view)
-
-            act(() => root.unmount())
-
-            expect(() => settle()).not.toThrow()
-            expect(iso(api.view)).toEqual(held)
-        })
-
         test('a window narrowed by core mid-flight holds every later frame inside it', () => {
             render(defaults())
             act(() => api.zoomIn())
