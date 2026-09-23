@@ -100,6 +100,35 @@ describe('TimelineAdapter compare hand-off', () => {
             currentTime: new Date(CURRENT).toISOString(),
         })
     })
+
+    const timeRequests = () =>
+        emits.filter((e) => e.event === 'time:changeRequested')
+
+    // The window ends in 2024 while the clock reads 2026, as it does once the
+    // load-time end has been passed.
+    test('Today widens the window out to the current minute', () => {
+        vi.useFakeTimers({ toFake: ['Date'] })
+        vi.setSystemTime(new Date('2026-09-23T10:15:42Z'))
+        try {
+            const today = container.querySelector<HTMLButtonElement>(
+                '.today-button'
+            )!
+            expect(today.disabled).toBe(false)
+
+            act(() => {
+                today.click()
+            })
+
+            const requests = timeRequests()
+            expect(requests[requests.length - 1]?.payload).toEqual({
+                startTime: new Date(START).toISOString(),
+                endTime: '2026-09-23T10:15:00.000Z',
+                currentTime: '2026-09-23T10:15:00.000Z',
+            })
+        } finally {
+            vi.useRealTimers()
+        }
+    })
 })
 
 /**
