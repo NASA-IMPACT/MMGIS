@@ -116,7 +116,6 @@ describe('layers:refresh provider', () => {
             const [id, ctx] = refreshLayer.mock.calls[0]
             expect(id).toBe('Displacement')
             expect(ctx.url).toBe(RESOLVED_URL)
-            expect(ctx.force).toBe(false)
             expect(ctx.tileOptions.currentCogColormap).toBe('plasma')
             expect(ctx.tileOptions.cogMin).toBe(-0.1)
             expect(ctx.tileOptions.cogMax).toBe(0.2)

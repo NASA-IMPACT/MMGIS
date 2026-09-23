@@ -113,6 +113,12 @@ export interface VectorTileLayerOptions extends LayerOptions {
     vectorTileLayerStyles?: Record<string, unknown>
     maxNativeZoom?: number
     attribution?: string
+    /**
+     * The tile size the layer is built with, in pixels, which sets the zoom
+     * level deck.gl requests for a given view zoom. Vector tiles are cut at
+     * 512 unless the source says otherwise.
+     */
+    tileSize?: number
     nativeOptions?: Record<string, unknown>
 }
 
@@ -190,12 +196,18 @@ export interface OverlayOptions {
  * `url` is nullable, not merely optional: a source that resolves to nothing —
  * a `COG:` layer with no TiTiler service behind it — yields null, and callers
  * pass it through so the refresher, not the call site, decides what to do
- * with it. The domain-side refresher registered in `Map_.makeTileLayer` tests `ctx.url == null`.
+ * with it. The domain-side refreshers in `deckTileRefresher` compile their
+ * URL through one `compileSource`, and that is where `ctx.url == null` is
+ * tested.
+ *
+ * A requery that must refetch unchanged tiles arrives as a changed `url`:
+ * `TimeControl.performTimeUrlReplacements` appends a `nocache` param for one,
+ * and both engines reload on a URL they have not seen while keeping their
+ * tiles on one they have.
  */
 export type RefreshContext = {
     url?: string | null
     tileOptions?: Record<string, unknown>
-    force?: boolean
 }
 
 /**
