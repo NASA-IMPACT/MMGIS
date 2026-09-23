@@ -125,7 +125,6 @@
     position: relative;
     display: flex;
     flex-direction: column;
-    padding-bottom: 8px;
 }
 
 /* Empty state shown when no layers are on the timeline */
@@ -234,39 +233,67 @@
     background: var(--theme-color-primary-lightest, #e6f4f6);
 }
 
-/* Timeline View Layout */
+/* Timeline View Layout: a fixed header row over a body of two panes, the
+   layer list and the chart, that scroll together. The list shows the
+   scrollbar so it sits beside the layer names; the chart hides its own. */
 .timeline-view-container {
     display: flex;
+    flex-direction: column;
     width: 100%;
     height: 100%;
     background: var(--theme-color-white, #ffffff);
 }
 
-.timeline-sidebar {
-    width: 240px;
-    flex-shrink: 0;
-    border-right: 1px solid var(--theme-color-base-lighter, #dfe1e2);
-    display: flex;
-    flex-direction: column;
-}
-
 /* Heights of the header bars and layer rows live in TimelineView, which needs
    them to lay the SVG out; they arrive as inline styles rather than being
    restated here. */
+.timeline-view-header,
+.timeline-view-footer {
+    display: flex;
+    flex-shrink: 0;
+}
+
+.timeline-view-footer {
+    border-top: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    box-sizing: border-box;
+}
+
+.timeline-view-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+}
+
+.timeline-sidebar,
+.timeline-sidebar-header,
+.timeline-sidebar-footer {
+    width: 240px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    box-sizing: border-box;
+}
+
+.timeline-sidebar {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
 .timeline-sidebar-header {
     border-bottom: 1px solid var(--theme-color-base-lighter, #dfe1e2);
-    box-sizing: border-box;
-    /* Pinned so the layer list scrolls beneath it when the panel is short. */
-    position: sticky;
-    top: 0;
-    z-index: 3;
     background: var(--theme-color-white, #ffffff);
 }
 
 .timeline-sidebar-layers {
     display: flex;
     flex-direction: column;
+    flex: 1;
+    min-height: 0;
     padding: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    /* Keeps the rows' width constant whether or not the list overflows. */
+    scrollbar-gutter: stable;
 }
 
 .layer-item {
@@ -297,23 +324,31 @@
 }
 
 .timeline-svg-container {
-    flex-grow: 1;
-    /* Must stay visible (not hidden) so the sticky date bar below pins to the
-       outer scroll container rather than to this element. */
-    overflow: visible;
+    flex: 1;
+    min-width: 0;
     position: relative;
-    display: flex;
-    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: none;
+}
+
+.timeline-svg-container::-webkit-scrollbar {
+    display: none;
 }
 
 .timeline-top-bar {
+    flex: 1;
+    min-width: 0;
+    box-sizing: border-box;
     background-color: var(--theme-color-base-lightest, #f1f3f6);
     border-bottom: 1px solid var(--theme-color-base-lighter, #dfe1e2);
     overflow: hidden;
-    /* Pinned alongside the sidebar header so the date axis stays constant. */
-    position: sticky;
-    top: 0;
-    z-index: 3;
+}
+
+.timeline-bottom-bar {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .timeline-top-axis .domain,
@@ -332,7 +367,7 @@
     display: none;
 }
 
-.timeline-axis .tick line {
+.timeline-grid line {
     stroke: var(--theme-color-base-lighter, #dfe1e2);
     stroke-dasharray: 2 2;
 }

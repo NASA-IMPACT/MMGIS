@@ -330,8 +330,7 @@ describe('fitWindow', () => {
 
     test('frames a reversed extent forwards, padded by its own span', () => {
         // A layer configured with its start after its end arrives here
-        // inverted. The union then runs backwards and the pad comes out
-        // negative, and the result is the same forward window the extent
+        // inverted, and the result is the same forward window the extent
         // would have produced the right way round.
         const result = fitWindow(
             [win('2019-01-21T00:00:00Z', '2019-01-01T00:00:00Z')],
@@ -343,6 +342,40 @@ describe('fitWindow', () => {
         expect(iso(result)).toEqual([
             '2018-12-31T04:48:00.000Z',
             '2019-01-21T19:12:00.000Z',
+        ])
+    })
+
+    test('pads both sides alike when the union runs up to a bound', () => {
+        // Layers ending at the global window's end, as data running up to
+        // now does. Sliding a padded window back inside would leave no pad at
+        // the end and a double pad at the start; both sides get none instead.
+        const held = win('2019-01-01T00:00:00Z', '2019-02-01T00:00:00Z')
+        const result = fitWindow(
+            [win('2019-01-11T00:00:00Z', '2019-02-01T00:00:00Z')],
+            held,
+            3 * DAY,
+            0.04
+        )!
+
+        expect(iso(result)).toEqual([
+            '2019-01-11T00:00:00.000Z',
+            '2019-02-01T00:00:00.000Z',
+        ])
+    })
+
+    test('shrinks the pad on both sides to the room left on the nearer', () => {
+        // Union of 20 days wants 19h12m a side; the end has only 6h to give.
+        const held = win('2018-12-01T00:00:00Z', '2019-01-21T06:00:00Z')
+        const result = fitWindow(
+            [win('2019-01-01T00:00:00Z', '2019-01-21T00:00:00Z')],
+            held,
+            3 * DAY,
+            0.04
+        )!
+
+        expect(iso(result)).toEqual([
+            '2018-12-31T18:00:00.000Z',
+            '2019-01-21T06:00:00.000Z',
         ])
     })
 
@@ -393,6 +426,30 @@ describe('the d3 transform conversions', () => {
                 ).toEqual(iso(held))
             }
         }
+    })
+
+    test('round-trip a window to the millisecond with the plot inset', () => {
+        const twentyYears = win('2005-01-01T00:00:00Z', '2025-01-01T00:00:00Z')
+        const windows = [
+            win('2005-01-01T00:00:00Z', '2005-01-02T00:00:00Z'),
+            win('2024-12-31T00:00:00Z', '2025-01-01T00:00:00Z'),
+            twentyYears,
+            win('2019-03-07T13:41:07.123Z', '2019-08-22T04:02:59.999Z'),
+        ]
+
+        for (const width of [25, 960, 3840]) {
+            for (const held of windows) {
+                const transform = windowToTransform(held, twentyYears, width, 12)
+                expect(
+                    iso(transformToWindow(transform, twentyYears, width, 12))
+                ).toEqual(iso(held))
+            }
+        }
+    })
+
+    test('scale the full window to the identity transform, inset or not', () => {
+        expect(windowToTransform(bounds, bounds, 960, 12).k).toBe(1)
+        expect(windowToTransform(bounds, bounds, 960, 12).x).toBe(0)
     })
 
     test('scale the full window to the identity transform', () => {

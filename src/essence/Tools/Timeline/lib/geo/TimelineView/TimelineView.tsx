@@ -88,6 +88,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     onFitLayer,
 }) => {
     const containerRef = useRef<HTMLDivElement>(null)
+    const sidebarScrollRef = useRef<HTMLDivElement>(null)
     const svgRef = useRef<SVGSVGElement>(null)
     const axisRef = useRef<SVGGElement>(null)
     const topAxisRef = useRef<SVGGElement>(null)
@@ -98,9 +99,8 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     const didDragRef = useRef(false)
     const [dimensions, setDimensions] = useState({ width: 800, height: 200 })
 
-    const axisHeight = 24 // Space for the bottom axis
     const layerBarHeight = 22 // Row pitch, shared by the sidebar item and the SVG row
-    const topBarHeight = 24 // Space for top axis
+    const barHeight = 24 // Height of the top and bottom date bars
     const markerSize = MARKER_SIZE
     // A strip between the date bar and the first layer row that the
     // scrubber's head sits in, so the head never covers a row's bars at the
@@ -110,11 +110,12 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
     // Calculate total height needed for layers
     const totalLayersHeight = layers.length * layerBarHeight
-    // Where the layer rows end and the bottom axis begins
+    // Where the layer rows end, and with them the chart
     const layersBottom = headGutter + totalLayersHeight
 
-    // Calculate required SVG height
-    const requiredHeight = headGutter + axisHeight + totalLayersHeight
+    // Calculate required SVG height. The bottom axis sits in its own bar
+    // below the scrolling panes, so the chart holds only the gutter and rows.
+    const requiredHeight = layersBottom
 
     // Update dimensions on resize
     useEffect(() => {
@@ -173,24 +174,29 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         [view, maxTicks]
     )
 
+    // Shared by the bottom axis and the grid lines the chart draws at the
+    // same instants, across everything the chart shows.
+    const bottomTicks = useMemo(
+        () => generateTimeTicks(shownSpan.start, shownSpan.end, tickMode, maxTicks),
+        [shownSpan, tickMode, maxTicks]
+    )
+
     // Render bottom axis
     useEffect(() => {
         if (!axisRef.current) return
 
-        const { start: visibleStart, end: visibleEnd } = shownSpan
-        const tickValues = generateTimeTicks(visibleStart, visibleEnd, tickMode, maxTicks)
         const axis = axisBottom(transformedXScale)
-            .tickValues(tickValues)
+            .tickValues(bottomTicks)
             .tickFormat((d) => formatDateByMode(d as Date, tickMode))
-            .tickSize(6)
-            .tickPadding(8)
+            .tickSize(0)
+            .tickPadding(6)
 
         const axisGroup = select(axisRef.current)
         axisGroup.selectAll('*').remove() // Clear existing axis
         axisGroup.call(axis as any)
 
-        // Grid lines shooting up through the layers, stopping at the gutter
-        axisGroup.selectAll('.tick line').attr('y2', -totalLayersHeight)
+        // Labels only: the chart draws the grid lines through the rows.
+        axisGroup.selectAll('.tick line').remove()
 
         // Sizing only — fill and family come from .timeline-axis .tick text
         axisGroup.selectAll('.tick text')
@@ -472,155 +478,206 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         [isDragging, transformedXScale, startTime, endTime, onCurrentTimeChange]
     )
 
+    // The sidebar list and the chart scroll as two panes kept level with
+    // each other. Setting a pane to the offset it already has fires no scroll
+    // event, so each sync stops after one hop; the tolerance absorbs the
+    // sub-pixel rounding a fractional offset gets on assignment.
+    const syncScroll = (from: HTMLElement, to: HTMLElement | null) => {
+        if (to && Math.abs(to.scrollTop - from.scrollTop) >= 1) {
+            to.scrollTop = from.scrollTop
+        }
+    }
+    const handleSidebarScroll = (event: React.UIEvent<HTMLDivElement>) =>
+        syncScroll(event.currentTarget, containerRef.current)
+    const handleChartScroll = (event: React.UIEvent<HTMLDivElement>) =>
+        syncScroll(event.currentTarget, sidebarScrollRef.current)
+
     return (
         <>
-            <div className="timeline-view-container" style={{ overflowY: 'auto', overflowX: 'hidden' }}>
-                {/* Layers Sidebar */}
-                <div className="timeline-sidebar" style={{ flexShrink: 0 }}>
-                    <div className="timeline-sidebar-header" style={{ height: topBarHeight, flexShrink: 0, minHeight: topBarHeight }}></div>
-                    <div className="timeline-sidebar-layers">
-                        <div
-                            className="timeline-sidebar-gutter"
-                            style={{ height: headGutter, flexShrink: 0 }}
-                            aria-hidden="true"
-                        />
-                        {layers.map((layer) => (
-                            <LayerSidebarItem
-                                key={layer.name}
-                                layer={layer}
-                                height={layerBarHeight}
-                                currentTime={currentTime}
-                                timeMode={timeMode}
-                                onNavigate={onLayerNavigate}
-                                onFit={onFitLayer}
-                            />
-                        ))}
-                    </div>
-                </div>
-
-                {/* Timeline SVG Area */}
-                <div ref={containerRef} className="timeline-svg-container" style={{ minWidth: 0 }}>
-                    <div className="timeline-top-bar" style={{ height: topBarHeight, flexShrink: 0, minHeight: topBarHeight }}>
-                        <svg width={dimensions.width} height={topBarHeight} style={{ display: 'block' }}>
+            <div className="timeline-view-container">
+                {/* Header row, outside the scrolling body so it stays put */}
+                <div className="timeline-view-header" style={{ height: barHeight }}>
+                    <div className="timeline-sidebar-header" style={{ height: barHeight }}></div>
+                    <div className="timeline-top-bar" style={{ height: barHeight }}>
+                        <svg width={dimensions.width} height={barHeight} style={{ display: 'block' }}>
                             <g ref={topAxisRef} transform={`translate(0, 4)`} className="timeline-top-axis" />
                         </svg>
                     </div>
-                    <svg
-                        ref={svgRef}
-                        width={dimensions.width}
-                        height={dimensions.height}
-                        onClick={handleTimelineClick}
-                        style={{ cursor: isDragging ? 'grabbing' : 'crosshair', display: 'block', flexShrink: 0, minHeight: dimensions.height }}
-                    >
-                        <defs>
-                            {/* Region widened past the default 120% so the blur
-                                isn't clipped at the marker's edges. */}
-                            <filter
-                                id="timeline-scrubber-shadow"
-                                x="-100%"
-                                y="-100%"
-                                width="300%"
-                                height="300%"
-                            >
-                                <feDropShadow
-                                    dx="0"
-                                    dy="0"
-                                    stdDeviation="5"
-                                    floodOpacity="0.2"
-                                />
-                            </filter>
-                        </defs>
+                </div>
 
-                        {/* Layer timelines (rendered first so grid/scrubber goes on top) */}
-                        <g className="layer-timelines">
-                            {layers.map((layer, index) => (
-                                <g key={layer.name}>
-                                    <rect 
-                                        x={0} 
-                                        y={headGutter + index * layerBarHeight} 
-                                        width={dimensions.width} 
-                                        height={layerBarHeight} 
-                                        fill="transparent"
-                                        className="layer-row-bg"
-                                    />
-                                    <LayerTimeline
-                                        layer={layer}
-                                        xScale={transformedXScale}
-                                        bounds={bounds}
-                                        y={headGutter + index * layerBarHeight}
-                                        height={layerBarHeight}
-                                    />
-                                </g>
-                            ))}
-                        </g>
-
-                        {/* Bottom Time axis */}
-                        <g
-                            ref={axisRef}
-                            transform={`translate(0, ${layersBottom})`}
-                            className="timeline-axis"
-                        />
-
-                        {/* Current time scrubber */}
-                        <g className="timeline-scrubber">
-                            {/* Scrubber line from the head down through all layers */}
-                            <line
-                                x1={scrubberX}
-                                y1={headGutter / 2}
-                                x2={scrubberX}
-                                y2={layersBottom}
-                                strokeWidth="2"
-                                className="timeline-scrubber-line"
-                                style={{ pointerEvents: 'none' }}
+                <div className="timeline-view-body">
+                    {/* Layers Sidebar. Its list carries the visible scrollbar,
+                        beside the names; the chart scrolls with it, bar hidden. */}
+                    <div className="timeline-sidebar">
+                        <div
+                            ref={sidebarScrollRef}
+                            className="timeline-sidebar-layers"
+                            onScroll={handleSidebarScroll}
+                        >
+                            <div
+                                className="timeline-sidebar-gutter"
+                                style={{ height: headGutter, flexShrink: 0 }}
+                                aria-hidden="true"
                             />
+                            {layers.map((layer) => (
+                                <LayerSidebarItem
+                                    key={layer.name}
+                                    layer={layer}
+                                    height={layerBarHeight}
+                                    currentTime={currentTime}
+                                    timeMode={timeMode}
+                                    onNavigate={onLayerNavigate}
+                                    onFit={onFitLayer}
+                                />
+                            ))}
+                        </div>
+                    </div>
 
-                            {/* Scrubber diamond head, centred in the gutter above
-                                the layers. Drawn in the marker artwork's own 43x42
-                                space, then scaled to markerSize and centred on the
-                                scrubber. */}
-                            <g
-                                transform={`translate(${scrubberX}, ${headGutter / 2}) scale(${markerSize / 22}) translate(-21.3609, -21)`}
-                                filter="url(#timeline-scrubber-shadow)"
-                                className="timeline-scrubber-handle"
-                                style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
-                                tabIndex={0}
-                                role="slider"
-                                aria-label="Current time"
-                                aria-valuemin={startTime.getTime()}
-                                aria-valuemax={endTime.getTime()}
-                                aria-valuenow={scrubberTime.getTime()}
-                                aria-valuetext={moment.utc(scrubberTime).format('MMM D, YYYY HH:mm [UTC]')}
-                                onKeyDown={handleScrubberKeyDown}
-                                {...scrubberPointerHandlers}
-                            >
-                                <path
-                                    d="M21.3609 10L32.7219 21L21.3609 32L10 21L21.3609 10Z"
-                                    className="timeline-scrubber-marker"
-                                />
-                                <path
-                                    d="M31.2832 21L21.3604 30.6074L11.4375 21L21.3604 11.3916L31.2832 21Z"
-                                    strokeWidth="2"
-                                    fill="none"
-                                    className="timeline-scrubber-marker-inline"
-                                />
+                    {/* Timeline SVG Area */}
+                    <div
+                        ref={containerRef}
+                        className="timeline-svg-container"
+                        onScroll={handleChartScroll}
+                    >
+                        <svg
+                            ref={svgRef}
+                            width={dimensions.width}
+                            height={dimensions.height}
+                            onClick={handleTimelineClick}
+                            style={{ cursor: isDragging ? 'grabbing' : 'crosshair', display: 'block', flexShrink: 0, minHeight: dimensions.height }}
+                        >
+                            <defs>
+                                {/* Region widened past the default 120% so the blur
+                                    isn't clipped at the marker's edges. */}
+                                <filter
+                                    id="timeline-scrubber-shadow"
+                                    x="-100%"
+                                    y="-100%"
+                                    width="300%"
+                                    height="300%"
+                                >
+                                    <feDropShadow
+                                        dx="0"
+                                        dy="0"
+                                        stdDeviation="5"
+                                        floodOpacity="0.2"
+                                    />
+                                </filter>
+                            </defs>
+
+                            {/* Layer timelines (rendered first so grid/scrubber goes on top) */}
+                            <g className="layer-timelines">
+                                {layers.map((layer, index) => (
+                                    <g key={layer.name}>
+                                        <rect 
+                                            x={0} 
+                                            y={headGutter + index * layerBarHeight} 
+                                            width={dimensions.width} 
+                                            height={layerBarHeight} 
+                                            fill="transparent"
+                                            className="layer-row-bg"
+                                        />
+                                        <LayerTimeline
+                                            layer={layer}
+                                            xScale={transformedXScale}
+                                            bounds={bounds}
+                                            y={headGutter + index * layerBarHeight}
+                                            height={layerBarHeight}
+                                        />
+                                    </g>
+                                ))}
                             </g>
 
-                            {/* Invisible band widening the grab area along the
-                                line, from the head's centre down, so the stretch
-                                of line in the gutter below the head grabs too */}
-                            <rect
-                                x={scrubberX - 5}
-                                y={headGutter / 2}
-                                width={10}
-                                height={Math.max(totalLayersHeight, 16) + headGutter / 2}
-                                fill="transparent"
-                                className="timeline-scrubber-handle"
-                                style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
-                                aria-hidden="true"
-                                {...scrubberPointerHandlers}
-                            />
-                        </g>
-                    </svg>
+                            {/* Grid lines at the bottom axis's ticks, through
+                                the rows and stopping at the gutter */}
+                            <g className="timeline-grid" aria-hidden="true">
+                                {bottomTicks.map((tick) => {
+                                    const x = transformedXScale(tick)
+                                    return (
+                                        <line
+                                            key={tick.getTime()}
+                                            x1={x}
+                                            y1={headGutter}
+                                            x2={x}
+                                            y2={layersBottom}
+                                        />
+                                    )
+                                })}
+                            </g>
+
+                            {/* Current time scrubber */}
+                            <g className="timeline-scrubber">
+                                {/* Scrubber line from the head down through all layers */}
+                                <line
+                                    x1={scrubberX}
+                                    y1={headGutter / 2}
+                                    x2={scrubberX}
+                                    y2={layersBottom}
+                                    strokeWidth="2"
+                                    className="timeline-scrubber-line"
+                                    style={{ pointerEvents: 'none' }}
+                                />
+
+                                {/* Scrubber diamond head, centred in the gutter above
+                                    the layers. Drawn in the marker artwork's own 43x42
+                                    space, then scaled to markerSize and centred on the
+                                    scrubber. */}
+                                <g
+                                    transform={`translate(${scrubberX}, ${headGutter / 2}) scale(${markerSize / 22}) translate(-21.3609, -21)`}
+                                    filter="url(#timeline-scrubber-shadow)"
+                                    className="timeline-scrubber-handle"
+                                    style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+                                    tabIndex={0}
+                                    role="slider"
+                                    aria-label="Current time"
+                                    aria-valuemin={startTime.getTime()}
+                                    aria-valuemax={endTime.getTime()}
+                                    aria-valuenow={scrubberTime.getTime()}
+                                    aria-valuetext={moment.utc(scrubberTime).format('MMM D, YYYY HH:mm [UTC]')}
+                                    onKeyDown={handleScrubberKeyDown}
+                                    {...scrubberPointerHandlers}
+                                >
+                                    <path
+                                        d="M21.3609 10L32.7219 21L21.3609 32L10 21L21.3609 10Z"
+                                        className="timeline-scrubber-marker"
+                                    />
+                                    <path
+                                        d="M31.2832 21L21.3604 30.6074L11.4375 21L21.3604 11.3916L31.2832 21Z"
+                                        strokeWidth="2"
+                                        fill="none"
+                                        className="timeline-scrubber-marker-inline"
+                                    />
+                                </g>
+
+                                {/* Invisible band widening the grab area along the
+                                    line, from the head's centre down, so the stretch
+                                    of line in the gutter below the head grabs too */}
+                                <rect
+                                    x={scrubberX - 5}
+                                    y={headGutter / 2}
+                                    width={10}
+                                    height={Math.max(totalLayersHeight, 16) + headGutter / 2}
+                                    fill="transparent"
+                                    className="timeline-scrubber-handle"
+                                    style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+                                    aria-hidden="true"
+                                    {...scrubberPointerHandlers}
+                                />
+                            </g>
+                        </svg>
+                    </div>
+                </div>
+
+                {/* Bottom date bar, outside the scrolling body like the header */}
+                <div className="timeline-view-footer" style={{ height: barHeight }}>
+                    <div className="timeline-sidebar-footer" />
+                    <div className="timeline-bottom-bar">
+                        <svg width={dimensions.width} height={barHeight} style={{ display: 'block' }}>
+                            {/* Offset and padding match the top axis, so both
+                                bars set their labels at the same height */}
+                            <g ref={axisRef} transform={`translate(0, 4)`} className="timeline-axis" />
+                        </svg>
+                    </div>
                 </div>
             </div>
         </>

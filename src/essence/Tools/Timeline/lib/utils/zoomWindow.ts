@@ -253,6 +253,10 @@ export function sliderToWindow(
  * The window framing every extent given, padded by `padFraction` of the
  * union's span on each side so bars do not butt against the chart's edges.
  *
+ * Both sides get the same pad. Where the union runs close to a bound, the pad
+ * shrinks to the room left on that side, rather than the window sliding
+ * inwards and giving the far side the near side's share as well.
+ *
  * Null for an empty list, which is how callers tell "nothing to fit" from
  * "fit to everything".
  */
@@ -271,10 +275,14 @@ export function fitWindow(
         end = Math.max(end, extent.end.getTime())
     }
 
-    const pad = (end - start) * padFraction
+    // A reversed extent leaves start after end; framed forwards all the same.
+    const lo = Math.min(start, end)
+    const hi = Math.max(start, end)
+    const room = Math.min(lo - bounds.start.getTime(), bounds.end.getTime() - hi)
+    const pad = Math.max(0, Math.min((hi - lo) * padFraction, room))
 
     return clampWindow(
-        windowOf(start - pad, end - start + 2 * pad),
+        windowOf(lo - pad, hi - lo + 2 * pad),
         bounds,
         minMs
     )

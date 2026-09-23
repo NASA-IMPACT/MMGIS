@@ -616,6 +616,20 @@ export const TimelineAdapter: React.FC = () => {
         commitAndReveal(endTimeRef.current)
     }, [commitAndReveal])
 
+    /**
+     * Moves to the current minute, widening the window to reach it. The
+     * window's end is commonly the load time, which the clock soon passes.
+     */
+    const handleToday = useCallback(
+        (now: Date) => {
+            const start = now < startTimeRef.current ? now : startTimeRef.current
+            const end = now > endTimeRef.current ? now : endTimeRef.current
+            requestTime(start, end, now)
+            revealTime(now)
+        },
+        [requestTime, revealTime]
+    )
+
     /** Playing from the end restarts at the beginning rather than stalling. */
     const handlePlayToggle = useCallback(() => {
         if (isPlaying) {
@@ -687,7 +701,7 @@ export const TimelineAdapter: React.FC = () => {
                         timeMode="HOUR"
                         dateFormat="MMM D, YYYY · HH:mm [UTC]"
                         onDateChange={commitAndReveal}
-                        showToday
+                        onTodayClick={handleToday}
                         onCompareClick={handleCompareClick}
                     />
                 </div>
