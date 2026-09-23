@@ -89,6 +89,22 @@ describe('ZoomControls', () => {
         expect(byLabel('Auto-fit to visible layers').getAttribute('aria-pressed')).toBe('false')
     })
 
+    test('lights the toggle only while auto-fit is armed', () => {
+        render({ autoFit: true })
+        expect(
+            byLabel('Auto-fit to visible layers').classList.contains(
+                'timeline-zoom-autofit--on',
+            ),
+        ).toBe(true)
+
+        render({ autoFit: false })
+        expect(
+            byLabel('Auto-fit to visible layers').classList.contains(
+                'timeline-zoom-autofit--on',
+            ),
+        ).toBe(false)
+    })
+
     test('disables the one-shot fit when no layer carries its own bounds', () => {
         // The same condition that makes an automatic refit a no-op.
         render({ canFit: false })

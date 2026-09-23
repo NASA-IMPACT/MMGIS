@@ -18,6 +18,14 @@ const PAD_FRACTION = 0.04
 const ZOOM_IN_FACTOR = 0.5
 const ZOOM_OUT_FACTOR = 2
 
+/** The quantisation unit a signature floors each bound to, by granularity. */
+const SIGNATURE_UNIT: Record<TimeMode, moment.unitOfTime.StartOf> = {
+    HOUR: 'hour',
+    DAY: 'day',
+    MONTH: 'month',
+    YEAR: 'year',
+}
+
 export interface UseTimelineZoomOptions {
     /** The global window: mission time state, shared with core. */
     bounds: ViewWindow
@@ -58,21 +66,22 @@ export interface TimelineZoom {
     fitToLayer(layer: LayerTimeData): void
 }
 
-/** The quantisation unit a signature floors each bound to, by granularity. */
-const SIGNATURE_UNIT: Record<TimeMode, moment.unitOfTime.StartOf> = {
-    HOUR: 'hour',
-    DAY: 'day',
-    MONTH: 'month',
-    YEAR: 'year',
-}
-
 /**
  * The span a layer contributes to an automatic fit: only the bounds it named
  * itself, with a borrowed side left out entirely.
  *
- * This is what keeps a refit from chasing its own widening. A bound completed
- * from the global window grows every time that window grows, so a union
- * reading one would widen, be re-fetched wider, and widen again.
+ * A borrowed bound is the global window's own edge, so a union reading one
+ * reaches that edge, and the fit opens the view out to the whole window and
+ * hides the layer's real extent — the one thing a fit exists to show. Leaving
+ * borrowed sides out is what makes a fit frame data.
+ *
+ * It is not what makes a fit terminate. A borrowed bound can equal the window
+ * edge but never exceed it, and a widen goes only to the unpadded union on a
+ * strict excess, so even a union reading borrowed bounds would widen once and
+ * settle; the refetch a widen causes also leaves the signature unchanged, so
+ * nothing would refire it. Were a widen ever padded, a borrowed bound would
+ * follow the padding outward on each refetch, and this cut would then also be
+ * what stopped a fit chasing its own widening.
  */
 const ownExtent = (layer: LayerTimeData): ViewWindow | null => {
     const nav = layer.navigation
@@ -118,6 +127,13 @@ const layersSignature = (
 const sameWindow = (a: ViewWindow, b: ViewWindow): boolean =>
     a.start.getTime() === b.start.getTime() && a.end.getTime() === b.end.getTime()
 
+/** The scrubber when it is on screen, or the view's centre when it is not. */
+const anchorIn = (win: ViewWindow, at: Date): Date => {
+    const ms = at.getTime()
+    if (ms >= win.start.getTime() && ms <= win.end.getTime()) return at
+    return new Date(Math.round((win.start.getTime() + win.end.getTime()) / 2))
+}
+
 /**
  * The visible window, and everything that moves it.
  *
@@ -141,33 +157,64 @@ export function useTimelineZoom({
     }))
     const [autoFit, setAutoFit] = useState(true)
 
-    // Read by callbacks that must not be rebuilt on every scrubber frame or
-    // every echo of the window from core.
-    const viewRef = useRef(view)
-    const boundsRef = useRef(bounds)
+    /**
+     * A widen this hook has asked for and core has not yet committed. The span
+     * the view may occupy is the global window opened out to it, so a fit that
+     * reaches outside the window is in range from the render it lands in, and
+     * the slider and buttons read against the span the fit was made for rather
+     * than the one core still holds. Cleared once the window covers it, so a
+     * later narrowing by core is not masked.
+     */
+    const [widened, setWidened] = useState<ViewWindow | null>(null)
+
+    // The global window is tracked by value, not by the identity of the object
+    // carrying it: the parent may rebuild an unchanged window as a fresh
+    // object on any render, and that is not a change to the span.
+    const boundsStartMs = bounds.start.getTime()
+    const boundsEndMs = bounds.end.getTime()
+    const effectiveStartMs = widened
+        ? Math.min(boundsStartMs, widened.start.getTime())
+        : boundsStartMs
+    const effectiveEndMs = widened
+        ? Math.max(boundsEndMs, widened.end.getTime())
+        : boundsEndMs
+    const effectiveBounds = useMemo<ViewWindow>(
+        () => ({ start: new Date(effectiveStartMs), end: new Date(effectiveEndMs) }),
+        [effectiveStartMs, effectiveEndMs]
+    )
+
+    useEffect(() => {
+        if (!widened) return
+        const covered =
+            boundsStartMs <= widened.start.getTime() &&
+            boundsEndMs >= widened.end.getTime()
+        if (covered) setWidened(null)
+    }, [boundsStartMs, boundsEndMs, widened])
+
+    // The span can move under the view — core commits a window, or a fit opens
+    // one out — so the view is brought back into range as part of the render
+    // that sees the move, never painted out of range in between. Reconciling
+    // here rather than in an effect also keeps a development-mode effect
+    // replay from queueing a clamp against the span of the render before a
+    // fit, which would land after the fit and undo it. This settles in one
+    // pass because clamping an already-clamped window returns it unchanged.
+    const inRange = clampWindow(view, effectiveBounds, minMs)
+    if (!sameWindow(view, inRange)) setViewState(inRange)
+
+    // Read by callbacks and updaters that must not be rebuilt on every
+    // scrubber frame or every echo of the window from core.
+    const boundsRef = useRef(effectiveBounds)
     const currentTimeRef = useRef(currentTime)
     const widenRef = useRef(onBoundsWiden)
     useEffect(() => {
-        viewRef.current = view
-    }, [view])
+        boundsRef.current = effectiveBounds
+    }, [effectiveBounds])
     useEffect(() => {
         currentTimeRef.current = currentTime
     }, [currentTime])
     useEffect(() => {
         widenRef.current = onBoundsWiden
     }, [onBoundsWiden])
-
-    // The global window is tracked by value, not by the identity of the object
-    // carrying it. A fit that widens the window holds the widened span here
-    // until core commits it; in between, the parent may re-render with the old
-    // span rebuilt as a fresh object, and reacting to that identity would put
-    // the stale span back and clamp the fitted view inside it.
-    const boundsStartMs = bounds.start.getTime()
-    const boundsEndMs = bounds.end.getTime()
-    useEffect(() => {
-        boundsRef.current = bounds
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [boundsStartMs, boundsEndMs])
 
     const setView = useCallback(
         (next: ViewWindow) => {
@@ -179,32 +226,23 @@ export function useTimelineZoom({
         [minMs]
     )
 
-    // The global window can move under the view — core commits a window, or
-    // this plugin widens one — so the view is brought back into range.
-    useEffect(() => {
-        setViewState((prev) => {
-            const clamped = clampWindow(prev, bounds, minMs)
-            return sameWindow(prev, clamped) ? prev : clamped
-        })
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [boundsStartMs, boundsEndMs, minMs])
-
-    /** The scrubber, or the view's centre when the scrubber is off screen. */
-    const anchorIn = (win: ViewWindow): Date => {
-        const at = currentTimeRef.current.getTime()
-        if (at >= win.start.getTime() && at <= win.end.getTime())
-            return currentTimeRef.current
-        return new Date(Math.round((win.start.getTime() + win.end.getTime()) / 2))
-    }
-
+    // The zoom actions read the view through the updater rather than from a
+    // copy taken earlier, so two presses landing in one batch each act on the
+    // other's result instead of both on the view as it stood before either.
     const zoomBy = useCallback(
         (factor: number) => {
-            const held = viewRef.current
-            setView(
-                zoomAround(held, factor, anchorIn(held), boundsRef.current, minMs)
-            )
+            setViewState((prev) => {
+                const next = zoomAround(
+                    prev,
+                    factor,
+                    anchorIn(prev, currentTimeRef.current),
+                    boundsRef.current,
+                    minMs
+                )
+                return sameWindow(prev, next) ? prev : next
+            })
         },
-        [minMs, setView]
+        [minMs]
     )
 
     const zoomIn = useCallback(() => zoomBy(ZOOM_IN_FACTOR), [zoomBy])
@@ -212,10 +250,17 @@ export function useTimelineZoom({
 
     const setSliderValue = useCallback(
         (v: number) => {
-            const held = viewRef.current
-            setView(sliderToWindow(v, anchorIn(held), boundsRef.current, minMs))
+            setViewState((prev) => {
+                const next = sliderToWindow(
+                    v,
+                    anchorIn(prev, currentTimeRef.current),
+                    boundsRef.current,
+                    minMs
+                )
+                return sameWindow(prev, next) ? prev : next
+            })
         },
-        [minMs, setView]
+        [minMs]
     )
 
     /**
@@ -225,9 +270,12 @@ export function useTimelineZoom({
      * is that the window ratchets outward across a session, since hiding a
      * layer narrows the view without shrinking the window back.
      *
-     * A widen is emitted only on a strict excess, and never shrinks the
-     * window. That is defence in depth behind the union and signature cuts
-     * above, not the mechanism that makes this terminate.
+     * A widen goes to the unpadded union, only on a strict excess, and never
+     * shrinks the window. That is what makes a fit terminate: the refetch a
+     * widen causes completes each borrowed bound to the widened edge exactly,
+     * which is no excess, so a second pass has nothing left to widen to. What
+     * makes a fit meaningful is the union reading own bounds only, which is
+     * `ownExtent`'s concern.
      */
     const applyFit = useCallback(
         (extents: ViewWindow[]) => {
@@ -249,7 +297,7 @@ export function useTimelineZoom({
             }
 
             if (widenStart || widenEnd) {
-                boundsRef.current = target
+                setWidened(target)
                 widenRef.current(target.start, target.end)
             }
 
@@ -275,22 +323,20 @@ export function useTimelineZoom({
 
     // The signature the view was last fitted to. Null arms an immediate refit.
     const fittedSignatureRef = useRef<string | null>(null)
-    const extentsRef = useRef(ownExtents)
-    useEffect(() => {
-        extentsRef.current = ownExtents
-    }, [ownExtents])
 
+    // Re-runs whenever the layer array is rebuilt, which the fetch does on
+    // every window change; the signature check is what makes those no-ops.
     useEffect(() => {
         if (!autoFit) return
         if (fittedSignatureRef.current === signature) return
         fittedSignatureRef.current = signature
-        applyFit(extentsRef.current)
-    }, [autoFit, signature, applyFit])
+        applyFit(ownExtents)
+    }, [autoFit, signature, applyFit, ownExtents])
 
     const fitToLayers = useCallback(() => {
-        fittedSignatureRef.current = layersSignature(layers, granularity)
-        applyFit(extentsRef.current)
-    }, [applyFit, layers, granularity])
+        fittedSignatureRef.current = signature
+        applyFit(ownExtents)
+    }, [applyFit, ownExtents, signature])
 
     /**
      * Frames one layer, on demand. Unlike the automatic union this reads the
@@ -309,7 +355,8 @@ export function useTimelineZoom({
     /**
      * Records standing intent, not the last action: a manual zoom holds the
      * view and leaves the toggle lit, and the next change to the signature
-     * refits. Arming clears the fitted signature so the press itself refits.
+     * refits. Arming clears the fitted signature so the press itself refits,
+     * even when nothing has changed since the last fit.
      */
     const toggleAutoFit = useCallback(() => {
         if (autoFit) {
@@ -321,11 +368,11 @@ export function useTimelineZoom({
     }, [autoFit])
 
     const sliderValue = useMemo(
-        () => windowToSlider(view, bounds, minMs),
-        [view, bounds, minMs]
+        () => windowToSlider(view, effectiveBounds, minMs),
+        [view, effectiveBounds, minMs]
     )
 
-    const canZoom = bounds.end.getTime() - bounds.start.getTime() > minMs
+    const canZoom = effectiveEndMs - effectiveStartMs > minMs
 
     return {
         view,

@@ -2,12 +2,18 @@ import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import { scaleTime } from 'd3-scale'
 import { axisBottom } from 'd3-axis'
 import { select } from 'd3-selection'
-import { zoom, zoomIdentity, ZoomBehavior } from 'd3-zoom'
+import { zoom, ZoomBehavior } from 'd3-zoom'
 import type { TimeMode, LayerTimeData } from '../../types'
 import { generateTimeTicks, formatDateByMode, clampDate, stepTime } from '../../utils/timeUtils'
+import {
+    minViewDuration,
+    transformToWindow,
+    windowToTransform,
+    type ViewWindow,
+} from '../../utils/zoomWindow'
 import moment from 'moment'
 import { LayerTimeline } from '../LayerTimeline/LayerTimeline'
-import { LayerNavControls } from '../LayerNavControls/LayerNavControls'
+import { LayerSidebarItem } from '../LayerSidebarItem/LayerSidebarItem'
 import type { LayerNavigation } from '../../utils/layerNavigation'
 
 export interface TimelineViewProps {
@@ -26,7 +32,14 @@ export interface TimelineViewProps {
      * timeline's window: a layer's data may sit outside the window shown.
      */
     onLayerNavigate: (target: Date, navigation: LayerNavigation) => void
-    onResetZoomReady?: (resetZoomFn: () => void) => void
+    /** The visible window. The d3 transform is derived from it, never held. */
+    view: ViewWindow
+    /** A window a wheel or drag gesture arrived at. */
+    onViewChange: (win: ViewWindow) => void
+    /** The dashboard's display granularity, which sets how far in zoom may go. */
+    configuredGranularity: TimeMode
+    /** Frames one layer's own span, from the row's magnifier. */
+    onFitLayer: (layer: LayerTimeData) => void
 }
 
 export const TimelineView: React.FC<TimelineViewProps> = ({
@@ -38,7 +51,10 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     onCurrentTimeChange,
     onCurrentTimePreview,
     onLayerNavigate,
-    onResetZoomReady,
+    view,
+    onViewChange,
+    configuredGranularity,
+    onFitLayer,
 }) => {
     const containerRef = useRef<HTMLDivElement>(null)
     const svgRef = useRef<SVGSVGElement>(null)
@@ -50,7 +66,6 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     // True once a drag has actually moved, so the trailing click doesn't re-seek.
     const didDragRef = useRef(false)
     const [dimensions, setDimensions] = useState({ width: 800, height: 200 })
-    const [zoomTransform, setZoomTransform] = useState(zoomIdentity)
 
     const axisHeight = 24 // Space for the bottom axis
     const layerBarHeight = 20 // Row pitch, shared by the sidebar item and the SVG row
@@ -78,17 +93,19 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         return () => resizeObserver.disconnect()
     }, [requiredHeight])
 
-    // Scales are memoized so the axis effects below only fire when the domain,
-    // the width or the zoom actually change. Rebuilt every render they would
-    // tear down and redraw both axes on every pointermove of a scrubber drag.
-    const xScale = useMemo(
-        () => scaleTime().domain([startTime, endTime]).range([0, dimensions.width]),
-        [startTime, endTime, dimensions.width]
+    /** The global window, as the transform conversions take it. */
+    const bounds = useMemo(
+        () => ({ start: startTime, end: endTime }),
+        [startTime, endTime]
     )
 
+    // The visible window is the domain on screen, so the axes and the layer
+    // bars read it directly. Memoized so the axis effects below only fire when
+    // the window or the width actually change; rebuilt every render they would
+    // tear down and redraw both axes on every pointermove of a scrubber drag.
     const transformedXScale = useMemo(
-        () => zoomTransform.rescaleX(xScale),
-        [zoomTransform, xScale]
+        () => scaleTime().domain([view.start, view.end]).range([0, dimensions.width]),
+        [view, dimensions.width]
     )
 
     // Render bottom axis
@@ -137,12 +154,50 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
             .style('font-weight', '600')
     }, [transformedXScale, dimensions.width])
 
+    // The zoom behaviour is held so the push effect below can hand it a
+    // transform, keeping d3's own internal state in step with the window.
+    const zoomBehaviorRef = useRef<ZoomBehavior<SVGSVGElement, unknown> | null>(null)
+    // The zoom handler is built once per behaviour but must always read the
+    // window and the callback of the latest render, so both go through refs
+    // rather than into the behaviour's dependencies: rebuilding the behaviour
+    // on every parent render would tear its listeners down mid-gesture.
+    const viewRef = useRef(view)
+    const onViewChangeRef = useRef(onViewChange)
+    useEffect(() => {
+        viewRef.current = view
+        onViewChangeRef.current = onViewChange
+    }, [view, onViewChange])
+
     // Setup zoom behavior
     useEffect(() => {
-        if (!svgRef.current) return
+        const node = svgRef.current
+        if (!node) return
+        // At zero width both conversions fall back to the global window, so a
+        // push here reads that back out and discards the view. A chart this
+        // wide is hidden anyway; the effect reruns once it has width.
+        if (!(dimensions.width > 0)) return
+
+        // The cap is the ratio of the global window to the tightest span the
+        // displayed granularity allows, so the tightest reachable view carries
+        // the same tick density whatever the mission is configured for.
+        const boundsSpan = bounds.end.getTime() - bounds.start.getTime()
+        const maxScale = Math.max(
+            1,
+            boundsSpan / minViewDuration(configuredGranularity)
+        )
 
         const zoomBehavior: ZoomBehavior<SVGSVGElement, unknown> = zoom<SVGSVGElement, unknown>()
-            .scaleExtent([1, 50])
+            // The lower bound stays 1: zooming out past the global window
+            // shows empty space either side and is not useful.
+            .scaleExtent([1, maxScale])
+            // The viewport is the chart's own box. Given explicitly rather
+            // than left to d3 to read off the element: the SVG is sized from
+            // these same numbers, and reading them back needs the SVG
+            // geometry API, which jsdom does not implement.
+            .extent([
+                [0, 0],
+                [dimensions.width, dimensions.height],
+            ])
             .translateExtent([
                 [0, 0],
                 [dimensions.width, dimensions.height],
@@ -153,24 +208,83 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                 return !event.ctrlKey && !event.button
             })
             .on('zoom', (event) => {
-                setZoomTransform(event.transform)
+                const next = transformToWindow(
+                    event.transform,
+                    bounds,
+                    dimensions.width
+                )
+                // Pushing a transform in re-fires this handler with the window
+                // it was just given. Compared by value rather than flagged:
+                // a flag has to be cleared, and a transition interrupted
+                // partway — by a wheel event arriving mid-animation, which is
+                // ordinary use — leaves it set. The comparison is exact to the
+                // millisecond because the two conversions round-trip exactly.
+                const held = viewRef.current
+                if (
+                    next.start.getTime() === held.start.getTime() &&
+                    next.end.getTime() === held.end.getTime()
+                )
+                    return
+                onViewChangeRef.current(next)
             })
 
-        const svg = select(svgRef.current)
+        zoomBehaviorRef.current = zoomBehavior
+        const svg = select(node)
         svg.call(zoomBehavior as any)
-
-        // Expose reset zoom function to parent
-        if (onResetZoomReady) {
-            const resetZoom = () => {
-                svg.transition().duration(300).call(zoomBehavior.transform as any, zoomIdentity)
-            }
-            onResetZoomReady(resetZoom)
-        }
+        // A fresh behaviour starts from the window held, not from d3's
+        // identity: the first gesture would otherwise jump from the global
+        // window to wherever it lands.
+        svg.call(
+            zoomBehavior.transform as any,
+            windowToTransform(viewRef.current, bounds, dimensions.width)
+        )
 
         return () => {
+            // A gesture open across this teardown keeps dispatching through
+            // this behaviour. Detaching stops it reading the window through
+            // these bounds and this width.
+            zoomBehavior.on('zoom', null)
             svg.on('.zoom', null)
+
+            // d3 writes the node's transform before it notifies, so a
+            // silenced gesture still walks it away from the window. Only an
+            // open gesture needs releasing.
+            //
+            // Both names are d3-zoom internals, from 3.0.0's src/zoom.js: the
+            // open gesture lives on the node as `__zooming` (lines 178, 197,
+            // 212) and the drag's move listener on the window as
+            // `mousemove.zoom` (line 274). The drag-across-a-rebuild specs
+            // in TimelineView.spec.tsx exercise both.
+            const gestured = node as unknown as { __zooming?: unknown }
+            if (gestured.__zooming) {
+                // The move listener does the walking. Its mouseup stays: that
+                // re-enables text selection and ends the gesture.
+                const nodeWindow = node.ownerDocument?.defaultView
+                if (nodeWindow) select(nodeWindow).on('mousemove.zoom', null)
+
+                // A gesture is claimed by name from the node, so the
+                // replacement finds this one and dispatches through the
+                // listeners just detached, leaving the chart inert.
+                delete gestured.__zooming
+            }
+
+            zoomBehaviorRef.current = null
         }
-    }, [dimensions, onResetZoomReady])
+    }, [bounds, dimensions, configuredGranularity])
+
+    // Push the window into d3 so wheel and drag gestures start from where the
+    // view actually is, rather than from wherever the last gesture left it.
+    useEffect(() => {
+        const zoomBehavior = zoomBehaviorRef.current
+        if (!svgRef.current || !zoomBehavior) return
+        // No behaviour is built at zero width; this guards the same fallback.
+        if (!(dimensions.width > 0)) return
+
+        select(svgRef.current).call(
+            zoomBehavior.transform as any,
+            windowToTransform(view, bounds, dimensions.width)
+        )
+    }, [view, bounds, dimensions])
 
     // Update scrubber position — it follows the pointer while dragging
     const scrubberTime = dragTime ?? currentTime
@@ -289,19 +403,15 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                     <div className="timeline-sidebar-header" style={{ height: topBarHeight, flexShrink: 0, minHeight: topBarHeight }}></div>
                     <div className="timeline-sidebar-layers">
                         {layers.map((layer) => (
-                            <div className="layer-item" key={layer.name} style={{ height: layerBarHeight, flexShrink: 0 }}>
-                                <span className="layer-color-dot" style={{ backgroundColor: layer.color }}></span>
-                                <span className="layer-name">{layer.displayName}</span>
-                                {layer.navigation && (
-                                    <LayerNavControls
-                                        displayName={layer.displayName}
-                                        navigation={layer.navigation}
-                                        from={currentTime}
-                                        timeMode={timeMode}
-                                        onNavigate={onLayerNavigate}
-                                    />
-                                )}
-                            </div>
+                            <LayerSidebarItem
+                                key={layer.name}
+                                layer={layer}
+                                height={layerBarHeight}
+                                currentTime={currentTime}
+                                timeMode={timeMode}
+                                onNavigate={onLayerNavigate}
+                                onFit={onFitLayer}
+                            />
                         ))}
                     </div>
                 </div>
