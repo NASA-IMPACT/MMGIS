@@ -12,6 +12,7 @@ vi.mock('../../adapters/mmgisAPI', () => ({
     mmgisGetTimeCurrent: vi.fn(),
     mmgisGetTimeCurrentFormatted: vi.fn(),
     mmgisGetTemporalExtents: vi.fn(),
+    mmgisGetDataCoverage: vi.fn(),
     mmgisFormatTime: vi.fn(),
 }))
 
@@ -23,6 +24,7 @@ import {
     mmgisGetTimeCurrent,
     mmgisGetTimeCurrentFormatted,
     mmgisGetTemporalExtents,
+    mmgisGetDataCoverage,
     mmgisFormatTime,
 } from '../../adapters/mmgisAPI'
 import { getExportLegendModel } from '../getExportLegendModel'
@@ -57,6 +59,7 @@ beforeEach(() => {
     vi.mocked(mmgisGetTimeCurrent).mockResolvedValue(CURSOR)
     vi.mocked(mmgisGetTimeCurrentFormatted).mockResolvedValue(null)
     vi.mocked(mmgisGetTemporalExtents).mockResolvedValue(null)
+    vi.mocked(mmgisGetDataCoverage).mockResolvedValue(null)
     vi.mocked(mmgisFormatTime).mockImplementation(async (time) =>
         time == null ? null : formatted(time),
     )
@@ -124,7 +127,7 @@ describe('getExportLegendModel', () => {
         ])
     })
 
-    // Every date line names what kind of date it is, so a bare range can
+    // Every dated line names what kind of date it is, so a bare range can
     // never be read as a claim about when the pixels were collected.
     describe('date lines', () => {
         const rowsFor = async (configs) => {
@@ -194,10 +197,16 @@ describe('getExportLegendModel', () => {
             ])
         })
 
-        // A cursor parked past everything the layer holds is no collection
-        // date; what the request could have returned is the coverage, whether
-        // or not the layer serves periods.
-        test('a cursor past the coverage falls back to the covered part of the request', async () => {
+        // Core hides a layer whose coverage the cursor sits outside, so it
+        // paints nothing; a collection range beside it would name pixels that
+        // are not there. The row stays, because the layer is still toggled on.
+        const verdict = (outOfDataRange) => ({
+            outOfDataRange,
+            kind: 'continuous',
+            spans: null,
+            requestedWindow: null,
+        })
+        const parkPastCoverage = () => {
             vi.mocked(mmgisGetTimeStart).mockResolvedValue(
                 '2010-01-01T00:00:00Z',
             )
@@ -212,6 +221,32 @@ describe('getExportLegendModel', () => {
                 yearly: coverage,
                 plain: coverage,
             })
+        }
+
+        test('a cursor past the coverage says the layer has no data at the cursor', async () => {
+            parkPastCoverage()
+            vi.mocked(mmgisGetDataCoverage).mockResolvedValue({
+                yearly: verdict(true),
+                plain: verdict(true),
+            })
+            const rows = await rowsFor({
+                yearly: timeEnabled('P1Y'),
+                plain: timeEnabled(),
+            })
+            expect(rows.map((row) => row.title)).toEqual(['yearly', 'plain'])
+            expect(rows.map((row) => row.dateLine)).toEqual([
+                'No data at cursor',
+                'No data at cursor',
+            ])
+        })
+
+        // Only core's verdict hides a row's range: a layer core says has data,
+        // or one it has no verdict for, keeps the range the overlap gives.
+        test('a layer core says has data, or gave no verdict for, keeps its collected range', async () => {
+            parkPastCoverage()
+            vi.mocked(mmgisGetDataCoverage).mockResolvedValue({
+                yearly: verdict(false),
+            })
             const rows = await rowsFor({
                 yearly: timeEnabled('P1Y'),
                 plain: timeEnabled(),
@@ -220,6 +255,23 @@ describe('getExportLegendModel', () => {
                 'Collected 2015 → 2016',
                 'Collected 2015-01-01 → 2016-12-31',
             ])
+        })
+
+        test('a failed coverage request leaves the date lines to the ranges', async () => {
+            parkPastCoverage()
+            vi.mocked(mmgisGetDataCoverage).mockRejectedValue(
+                new Error('no handler'),
+            )
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+            const rows = await rowsFor({
+                yearly: timeEnabled('P1Y'),
+                plain: timeEnabled(),
+            })
+            expect(rows.map((row) => row.dateLine)).toEqual([
+                'Collected 2015 → 2016',
+                'Collected 2015-01-01 → 2016-12-31',
+            ])
+            warn.mockRestore()
         })
 
         // The overlap reads an unreadable bound as unbounded, which would make

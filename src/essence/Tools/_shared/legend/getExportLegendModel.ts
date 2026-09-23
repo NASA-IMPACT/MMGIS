@@ -22,8 +22,10 @@ import {
     mmgisGetTimeCurrent,
     mmgisGetTimeCurrentFormatted,
     mmgisGetTemporalExtents,
+    mmgisGetDataCoverage,
     mmgisFormatTime,
     type LayerConfig,
+    type LayerDataCoverage,
     type LegendSwatch,
     type TemporalExtent,
 } from '../adapters/mmgisAPI'
@@ -89,6 +91,25 @@ const temporalExtents = async (): Promise<Record<
     }
 }
 
+const dataCoverage = async (): Promise<Record<
+    string,
+    LayerDataCoverage
+> | null> => {
+    try {
+        return await mmgisGetDataCoverage()
+    } catch (err) {
+        console.warn('[export legend] core reported no data coverage', err)
+        return null
+    }
+}
+
+/**
+ * The date line for a time-enabled layer core found no data for at the
+ * cursor. Core hides such a layer and skips its request, so it paints
+ * nothing, and any `Collected` range would name pixels that are not there.
+ */
+const NO_DATA_AT_CURSOR = 'No data at cursor'
+
 // Point mode on the Time Control sets the window start to the epoch, rebuilt
 // from local date components — so it arrives shifted by the browser's UTC
 // offset, at most ±14 hours either side of 1970-01-01. Nothing on the bus says
@@ -132,7 +153,8 @@ const requestedDateLine = (
  * clipped to the coverage, when the layer serves whole periods and the
  * cursor's period holds data. Null when the request and the coverage never
  * meet: the server had nothing inside the span to draw, so the caller falls
- * back to naming the request alone.
+ * back to naming the request alone. Only reached for a layer core says has
+ * data at the cursor, or one core gave no verdict for.
  */
 const collectedDateLine = (
     interval: string | null,
@@ -223,15 +245,22 @@ const extentDateLine = (
 }
 
 /**
- * Every date line opens with `Collected` or `Requested`, so a bare `A → B` can
- * never be read as a claim about when the pixels were collected. How precisely
- * its dates print is the layer's own `time.interval`'s business, whichever
- * line it ends up on. Null when no date can be had, which is always safer than
- * a borrowed one.
+ * Every dated line opens with `Collected` or `Requested`, so a bare `A → B`
+ * can never be read as a claim about when the pixels were collected. How
+ * precisely its dates print is the layer's own `time.interval`'s business,
+ * whichever line it ends up on. Null when no date can be had, which is always
+ * safer than a borrowed one.
+ *
+ * Whether a time-enabled layer has data at the cursor is core's call, not
+ * this module's: core's coverage gate decides it on every time step and hides
+ * the layer when the answer is no. The band follows that verdict before any
+ * range is worked out, so it never claims a collection range beside a layer
+ * that is painting nothing. With no verdict for the layer, the ranges decide.
  */
 const dateLineFor = (
     cfg: LayerConfig | undefined,
     extent: TemporalExtent | undefined,
+    coverage: LayerDataCoverage | undefined,
     globalCursor: TimeCursor,
 ): string | null => {
     const time = cfg?.time
@@ -242,6 +271,7 @@ const dateLineFor = (
         if (time?.enabled !== true) {
             return extentDateLine(extent, precision)
         }
+        if (coverage?.outOfDataRange === true) return NO_DATA_AT_CURSOR
         // A 'local' layer keeps its own window and is not restamped when the
         // time cursor moves; everything else follows the global cursor. A
         // local layer the dashboard has not stamped yet has no window of its
@@ -332,13 +362,14 @@ export const getExportLegendModel = async (): Promise<ExportLegendModel> => {
     // The configs are asked for once and handed to the row assembly, which
     // would otherwise request them again for itself.
     const layerConfigs = await mmgisGetLayerConfigs()
-    const [viewState, layers, headerLines, globalCursor, extents] =
+    const [viewState, layers, headerLines, globalCursor, extents, coverages] =
         await Promise.all([
             mmgisGetViewState(),
             getLayersWithLegends({ showOnlyVisible: true, layerConfigs }),
             buildHeaderLines(),
             globalTimeCursor(),
             temporalExtents(),
+            dataCoverage(),
         ])
     return {
         missionName: viewState?.missionName ?? null,
@@ -351,6 +382,7 @@ export const getExportLegendModel = async (): Promise<ExportLegendModel> => {
                     dateLineFor(
                         layerConfigs?.[layer.id],
                         extents?.[layer.id],
+                        coverages?.[layer.id],
                         globalCursor,
                     ),
                 ),
