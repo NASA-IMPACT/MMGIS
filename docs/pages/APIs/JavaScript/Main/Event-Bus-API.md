@@ -469,6 +469,7 @@ const applied = await window.mmgisAPI.request('layers:setOrder', {
 | `time:getEnd` | none | `string` | Get end time |
 | `time:getCurrentFormatted` | none | `string` | Current time rendered through the mission's `time.format` (d3 when it contains a specifier such as `%Y`, otherwise moment tokens); `null` until time is enabled and seeded |
 | `time:formatTime` | `string \| number` | `string` | A caller-supplied time rendered through that same mission format; `null` for a missing or unparseable time |
+| `time:getMode` | none | `string` | Mode of the bottom Time UI bar: `'range'` or `'point'` (in point mode `time:getStart` is the epoch, not a real start); `null` until time is enabled and seeded, and when the bar isn't mounted (mobile and the modern layout) |
 | `time:set` | `{ startTime, endTime, currentTime, ... }` | `boolean` | Set time range |
 
 ```javascript
@@ -477,6 +478,7 @@ const timeEnabled = await window.mmgisAPI.request('time:isEnabled')
 const current = await window.mmgisAPI.request('time:getCurrent')
 const start = await window.mmgisAPI.request('time:getStart')
 const end = await window.mmgisAPI.request('time:getEnd')
+const mode = await window.mmgisAPI.request('time:getMode') // 'range' | 'point' | null
 
 // Set time range
 await window.mmgisAPI.request('time:set', {
