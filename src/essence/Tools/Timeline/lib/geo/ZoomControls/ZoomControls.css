@@ -1,0 +1,43 @@
+/* The zoom group sits inline in the toolbar, left of info and collapse, and
+   carries the divider that separates it from them. */
+.timeline-zoom-controls {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding-right: 8px;
+    margin-right: 4px;
+    border-right: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+}
+
+.timeline-zoom-slider {
+    width: 96px;
+    min-width: 64px;
+    margin: 0 4px;
+    accent-color: var(--theme-color-primary, #0e7482);
+    cursor: pointer;
+}
+
+.timeline-zoom-slider:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+/* Lit while auto-fit is armed, so the standing intent is visible at a glance
+   rather than only through aria-pressed. */
+.timeline-zoom-autofit--on {
+    background: var(--theme-color-primary-lightest, #e6f4f6);
+}
+
+/* Below this width the header stacks to a column. The group wraps as a unit
+   and the slider keeps a usable minimum, rather than compressing to a few
+   unreachable pixels. */
+@media (max-width: 768px) {
+    .timeline-zoom-controls {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    .timeline-zoom-slider {
+        width: 72px;
+    }
+}
