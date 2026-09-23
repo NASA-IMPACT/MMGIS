@@ -504,3 +504,52 @@ describe('TimeControl.performTimeUrlReplacements', () => {
         expect(warn).toHaveBeenCalledTimes(1)
     })
 })
+
+describe('TimeControl.performTimeUrlReplacements with a pinned run', () => {
+    let TimeControl
+
+    beforeEach(async () => {
+        vi.resetModules()
+        TimeControl = (await import('../../src/essence/Basics/TimeControl_/TimeControl'))
+            .default
+        vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('unexpected fetch') }))
+    })
+
+    afterEach(() => {
+        vi.restoreAllMocks()
+        vi.unstubAllGlobals()
+    })
+
+    const pinned = (end) => ({
+        name: 'NAQFC O3',
+        url: 'https://example.com/tiles/{z}/{x}/{y}?sel=reference_time=nearest::{reftime}&sel=lead=nearest::{lead}',
+        time: {
+            ...timeConfig,
+            end,
+            runs: { list: ['2026-09-21T06:00:00'], selected: '2026-09-21T06:00:00', step: 'PT1H' },
+        },
+    })
+
+    test('fills the run and the lead from the pin, with no urlReplacements at all', async () => {
+        const layer = pinned('2026-09-22T00:00:00Z')
+        const url = await TimeControl.performTimeUrlReplacements(layer.url, layer, false)
+        expect(url).toBe(
+            'https://example.com/tiles/{z}/{x}/{y}?sel=reference_time=nearest::2026-09-21T06%3A00%3A00&sel=lead=nearest::18'
+        )
+    })
+
+    test('counts the lead in the configured step', async () => {
+        const layer = pinned('2026-09-24T00:00:00Z')
+        layer.time.runs.step = 'P1D'
+        const url = await TimeControl.performTimeUrlReplacements(layer.url, layer, false)
+        expect(url).toContain('sel=lead=nearest::3')
+    })
+
+    test('leaves the placeholders alone for a layer with runs but no pin yet', async () => {
+        const layer = pinned('2026-09-22T00:00:00Z')
+        layer.time.runs.selected = null
+        const url = await TimeControl.performTimeUrlReplacements(layer.url, layer, false)
+        expect(url).toContain('{reftime}')
+        expect(url).toContain('{lead}')
+    })
+})

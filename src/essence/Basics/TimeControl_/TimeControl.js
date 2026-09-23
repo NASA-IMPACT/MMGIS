@@ -7,6 +7,7 @@ import L_ from '../Layers_/Layers_'
 import Map_ from '../Map_/Map_'
 import { parseTimeWithOffset, parseTimeToSeconds } from './timeUtils'
 import { evaluateLayerDataCoverage } from './layerDataCoverage'
+import { leadAt } from './layerRunSource'
 import { formatLayerTime, buildTileUrlOptions } from '../Layers_/tileUrlUtils'
 import { resolveTileLayerSource } from '../Layers_/tileLayerSource'
 import { isRasterTileLayerType } from '../MapEngines/types/engine'
@@ -641,6 +642,20 @@ var TimeControl = {
         const layerTimeFormat = formatLayerTime(layer.time?.format)
 
         let nextUrl = url
+        // A layer pinned to a model run fills its two placeholders from the
+        // pin: the run itself, and the whole lead steps from it to the
+        // layer's end time. Filled here so a refresh and a time step take the
+        // same path as every other placeholder.
+        const runs = layer.time?.runs
+        if (runs?.selected) {
+            nextUrl = nextUrl.replace(
+                /{reftime}/g,
+                encodeURIComponent(runs.selected)
+            )
+            const lead = leadAt(runs, layer.time?.end)
+            if (lead != null)
+                nextUrl = nextUrl.replace(/{lead}/g, String(lead))
+        }
         if (layer.variables?.urlReplacements) {
             const keys = Object.keys(layer.variables.urlReplacements)
             for (let i = 0; i < keys.length; i++) {
