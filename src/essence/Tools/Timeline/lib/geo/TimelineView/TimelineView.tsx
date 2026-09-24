@@ -101,6 +101,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
     const layerBarHeight = 22 // Row pitch, shared by the sidebar item and the SVG row
     const barHeight = 24 // Height of the top and bottom date bars
+    const footerPad = 6 // Space below the bottom date bar's labels
     const markerSize = MARKER_SIZE
     // A strip between the date bar and the first layer row that the
     // scrubber's head sits in, so the head never covers a row's bars at the
@@ -675,7 +676,10 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                 </div>
 
                 {/* Bottom date bar, outside the scrolling body like the header */}
-                <div className="timeline-view-footer" style={{ height: barHeight }}>
+                <div
+                    className="timeline-view-footer"
+                    style={{ height: barHeight + footerPad, paddingBottom: footerPad }}
+                >
                     <div className="timeline-sidebar-footer" />
                     <div className="timeline-bottom-bar">
                         <svg width={dimensions.width} height={barHeight} style={{ display: 'block' }}>

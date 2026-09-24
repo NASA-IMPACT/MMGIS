@@ -276,13 +276,16 @@ export function fitWindow(
     }
 
     // A reversed extent leaves start after end; framed forwards all the same.
-    const lo = Math.min(start, end)
-    const hi = Math.max(start, end)
-    const room = Math.min(lo - bounds.start.getTime(), bounds.end.getTime() - hi)
-    const pad = Math.max(0, Math.min((hi - lo) * padFraction, room))
+    const earliest = Math.min(start, end)
+    const latest = Math.max(start, end)
+    const room = Math.min(
+        earliest - bounds.start.getTime(),
+        bounds.end.getTime() - latest
+    )
+    const pad = Math.max(0, Math.min((latest - earliest) * padFraction, room))
 
     return clampWindow(
-        windowOf(lo - pad, hi - lo + 2 * pad),
+        windowOf(earliest - pad, latest - earliest + 2 * pad),
         bounds,
         minMs
     )
