@@ -33,6 +33,7 @@ import {
     mmgisOn,
     mmgisEmit,
     mmgisGetLayerConfig,
+    mmgisHidePlugin,
     mmgisGetTimeEnd,
     mmgisGetTimeStart,
     mmgisIsTimeEnabled,
@@ -54,7 +55,7 @@ import { RangeCard, type RangeStatus } from './lib/components/RangeCard'
 import './lib/styles/range-card.scss'
 
 const PLUGIN_ID = 'fetch-timeseries'
-/** The id the layout knows this tool by, for show. */
+/** The id the layout knows this tool by, for show and hide. */
 const TOOL_ID = 'FetchTimeseriesTool'
 const CHART_ID = 'vector-timeseries'
 const EVENTS = seriesEvents(PLUGIN_ID)
@@ -156,6 +157,7 @@ const FetchTimeseriesTool = {
                 end={range?.end ?? ''}
                 status={this._status}
                 onRangeChange={(start, end) => this._onRangeChange(start, end)}
+                onExit={() => this._onExit()}
             />,
         )
     },
@@ -187,6 +189,20 @@ const FetchTimeseriesTool = {
         }
         this._range = range
         return range
+    },
+
+    /** EXIT closes both surfaces: the chart hears `seriesCleared` and takes
+     *  itself down, this card hides. The bus subscription stays, so the next
+     *  Timeseries press opens everything again. */
+    _onExit() {
+        this._abort?.abort()
+        this._abort = null
+        this._selection = null
+        this._setStatus({ kind: 'idle' })
+        mmgisEmit(EVENTS.cleared, { chartId: CHART_ID })
+        mmgisHidePlugin(TOOL_ID).catch((err) =>
+            console.warn('[FetchTimeseries] hide failed:', err),
+        )
     },
 
     _onRangeChange(start: string, end: string) {

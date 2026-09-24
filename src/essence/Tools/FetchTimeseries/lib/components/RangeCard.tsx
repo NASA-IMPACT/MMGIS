@@ -11,15 +11,29 @@ export interface RangeCardProps {
     end: string
     status: RangeStatus
     onRangeChange: (start: string, end: string) => void
+    /** Closes this card and the chart it feeds. */
+    onExit: () => void
 }
 
 /** Start and End date inputs over a status line. Props only; the tool owns
  *  the state and the fetch. Each input is bounded by the other, so the range
  *  can never be reversed. The chart below names the feature; this card
  *  does not repeat it. */
-export function RangeCard({ start, end, status, onRangeChange }: RangeCardProps) {
+export function RangeCard({
+    start,
+    end,
+    status,
+    onRangeChange,
+    onExit,
+}: RangeCardProps) {
     return (
         <div className="range-card">
+            <header className="range-card__header">
+                <span className="range-card__heading">Timeseries</span>
+                <button type="button" className="range-card__exit" onClick={onExit}>
+                    EXIT
+                </button>
+            </header>
             <div className="range-card__fields">
                 <label className="range-card__field">
                     <span className="range-card__label">Start date</span>

@@ -28,6 +28,9 @@ Bus-only — no core imports.
 - A new request aborts any in-flight fetch and replaces the chart (single
   `chartId: 'vector-timeseries'`); charts persist until replaced. Fetches
   time out after 30 seconds.
+- EXIT on the card closes both surfaces: it emits `seriesCleared`, which
+  takes the chart down, and hides this card. The next Timeseries press opens
+  them again.
 - Tool teardown (`destroy`) aborts any in-flight fetch and emits
   `seriesCleared` so no chart is left behind.
 

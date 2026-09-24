@@ -98,6 +98,7 @@ describe('FetchTimeseriesTool', () => {
                 if (name === 'time:getStart') return '2018-01-01T00:00:00Z'
                 if (name === 'time:getEnd') return '2019-12-31T00:00:00Z'
                 if (name === 'plugins:show') return { ok: true, state: 'visible', changed: true }
+                if (name === 'plugins:hide') return { ok: true, state: 'hidden', changed: true }
                 return null
             },
         }
@@ -197,6 +198,25 @@ describe('FetchTimeseriesTool', () => {
         expect(input('End date').value).toBe('2026-12-01')
         await setDate('End date', '2026-02-01')
         expect(input('Start date').value).toBe('2026-02-01')
+    })
+
+    test('EXIT clears the chart, hides this card, and leaves the next request working', async () => {
+        await request()
+        expect(emittedFor(READY)).toHaveLength(1)
+        await act(async () => {
+            host.querySelector('.range-card__exit').click()
+        })
+        expect(emittedFor(CLEARED)).toEqual([{ chartId: 'vector-timeseries' }])
+        expect(requested('plugins:hide')).toEqual([
+            ['plugins:hide', { pluginId: 'FetchTimeseriesTool' }],
+        ])
+        // A date change now fetches nothing: the selection is gone.
+        await setDate('Start date', '2026-03-01')
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        // The next request reopens and fetches again.
+        await request()
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+        expect(requested('plugins:show')).toHaveLength(2)
     })
 
     test('a date change before any feature is picked fetches nothing', async () => {

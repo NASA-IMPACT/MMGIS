@@ -15,6 +15,42 @@
     color: var(--theme-color-ink, #1b1b1b);
 }
 
+.range-card__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--theme-spacing-1, 0.5rem);
+}
+
+.range-card__heading {
+    font-size: var(--theme-font-size-2xs, 0.875rem);
+    font-weight: var(--theme-font-weight-semibold, 600);
+}
+
+// The filled EXIT chip the AOI and Chart tools use. Its 10px type is below
+// the theme's smallest step, so it is stated here as it is there.
+.range-card__exit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--theme-spacing-05, 0.25rem) var(--theme-spacing-105, 0.75rem);
+    border: 0;
+    border-radius: 0;
+    background: var(--theme-color-primary, #005ea2);
+    color: var(--theme-color-white, #ffffff);
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: var(--theme-font-weight-semibold, 600);
+    line-height: 1.6;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: background-color 0.12s ease;
+
+    &:hover {
+        background: var(--theme-color-primary-dark, #1a4480);
+    }
+}
+
 .range-card__fields {
     display: flex;
     gap: var(--theme-spacing-1, 0.5rem);
