@@ -442,6 +442,7 @@ window.mmgisAPI.request('map:showPopup', {
 | `layers:toggle` | `layerUUID` | `boolean \| null` | Toggle layer visibility |
 | `layers:getOrder` | none | `string[]` | Draw order as layer UUIDs, top first, headers excluded |
 | `layers:setOrder` | `{ order }` | `boolean` | Apply a full permutation of the draw order (UUIDs, or display names where the name is unique). Returns `false` and changes nothing if `order` is not an array or a layer is missing, unknown, or repeated. On Leaflet, vectors always draw above rasters whatever the order says |
+| `layers:getTemporalExtent` | `layerUUID` (optional) | `{ start, end, interval } \| null`, or a UUID-keyed map of them | When the layer has data: `start`/`end` are ISO datetimes (or `null`) with `now`-style policies in `dataStartTime`/`dataEndTime` resolved at the moment of asking, and a periodic layer's `end` floored to its last step. `interval` is the layer's parsed `time.interval` as `{ years, months, weeks, days, hours, minutes, seconds }`, or `null` when it declares none or an unparseable one. Called without a layer, answers for every layer. A raster tile layer with an `interval` of an hour or more requests only the period holding the cursor, not the whole Time Control window: see `getLayerStartTime` in the Main JavaScript API |
 
 ```javascript
 // Get layer information

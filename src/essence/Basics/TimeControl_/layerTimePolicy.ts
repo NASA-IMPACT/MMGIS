@@ -15,6 +15,8 @@
  * duration ("P7D"): data exists only at start-anchored steps, so the
  * extent's end floors to the last step at or before the resolved end —
  * a 7-day cadence that began ten days ago ended three days ago, not now.
+ * The same interval decides what a raster tile layer requests at each time
+ * step: the one period holding the cursor (see `layerRequestWindow`).
  *
  * Core owns this vocabulary. Plugins never resolve it themselves: they ask
  * `layers:getTemporalExtent` and receive plain ISO datetimes.
@@ -179,4 +181,172 @@ export function resolveTemporalExtent(
         }
     }
     return { start, end }
+}
+
+/** The shape of `time` fields read to decide a layer's request window. */
+export interface RequestTimeConfig {
+    enabled?: boolean | null
+    type?: string | null
+    interval?: string | null
+    dataStartTime?: string | null
+}
+
+export interface RequestWindow {
+    start: string
+    end: string
+    periodic: boolean
+}
+
+const MS_PER_HOUR = 3600000
+
+// Cadences that line up with UTC calendar boundaries when a layer names no
+// anchor. Weeks are left out on purpose: without an anchor there is no
+// telling whether a week starts on Sunday or Monday.
+const CALENDAR_UNITS: Array<[keyof Duration, 'year' | 'month' | 'day' | 'hour']> = [
+    ['years', 'year'],
+    ['months', 'month'],
+    ['days', 'day'],
+    ['hours', 'hour'],
+]
+
+// A cadence of exactly one year, month, day or hour, named by its unit, or
+// null for anything else.
+function calendarUnitOf(
+    d: Duration
+): 'year' | 'month' | 'day' | 'hour' | null {
+    const nonZero = (Object.keys(d) as Array<keyof Duration>).filter(
+        (k) => d[k] !== 0
+    )
+    if (nonZero.length !== 1 || d[nonZero[0]] !== 1) return null
+    const match = CALENDAR_UNITS.find(([key]) => key === nonZero[0])
+    return match ? match[1] : null
+}
+
+// The UTC calendar year/month/day/hour holding `at`, as [start, next start).
+function calendarPeriod(
+    at: Date,
+    unit: 'year' | 'month' | 'day' | 'hour'
+): [Date, Date] {
+    const y = at.getUTCFullYear()
+    const mo = unit === 'year' ? 0 : at.getUTCMonth()
+    const day = unit === 'year' || unit === 'month' ? 1 : at.getUTCDate()
+    const h = unit === 'hour' ? at.getUTCHours() : 0
+    const start = new Date(Date.UTC(y, mo, day, h))
+    // Date.UTC treats years 0-99 as 1900-1999; setUTCFullYear does not.
+    start.setUTCFullYear(y)
+    const end = new Date(start)
+    if (unit === 'year') end.setUTCFullYear(y + 1)
+    else if (unit === 'month') end.setUTCMonth(mo + 1)
+    else if (unit === 'day') end.setUTCDate(day + 1)
+    else end.setUTCHours(h + 1)
+    return [start, end]
+}
+
+// A fixed anchor for period boundaries: a concrete dataStartTime only. A
+// policy string ("now", "now - P1Y") slides with the wall clock and would
+// drag the boundaries along with it, so it anchors nothing.
+function anchorOf(time: RequestTimeConfig): Date | null {
+    const raw = time.dataStartTime
+    if (raw == null || raw === '') return null
+    if (POLICY_RE.test(String(raw).trim())) return null
+    const anchor = new Date(raw)
+    return isNaN(anchor.getTime()) ? null : anchor
+}
+
+// The cadence a layer requests one period of at a time, or null when the
+// layer is not periodic: time off, a `local` layer, no or unparseable
+// interval, or a cadence shorter than an hour — that is a run of
+// individually timestamped scenes, not a period.
+function requestCadenceOf(
+    time: RequestTimeConfig | null | undefined
+): Duration | null {
+    if (time == null || time.enabled !== true) return null
+    if (time.type === 'local') return null
+    if (time.interval == null || time.interval === '') return null
+    const cadence = parseISODuration(String(time.interval).trim())
+    if (cadence == null || approximateMs(cadence) < MS_PER_HOUR) return null
+    return cadence
+}
+
+// The period [start, next start) holding `cursor`, or null when the layer
+// has no period there.
+function periodAt(
+    time: RequestTimeConfig,
+    cadence: Duration,
+    cursor: Date
+): [Date, Date] | null {
+    const anchor = anchorOf(time)
+    if (anchor != null) {
+        if (cursor.getTime() < anchor.getTime()) return null
+        const stepAt = (n: number) => addDuration(anchor, cadence, n)
+        let n = Math.max(
+            0,
+            Math.floor(
+                (cursor.getTime() - anchor.getTime()) / approximateMs(cadence)
+            )
+        )
+        while (stepAt(n + 1).getTime() <= cursor.getTime()) n++
+        while (n > 0 && stepAt(n).getTime() > cursor.getTime()) n--
+        // Both edges come from the anchor: a Jan 31 anchor stepped by P1M
+        // overflows through short months, so start + cadence could overlap
+        // the next period.
+        return [stepAt(n), stepAt(n + 1)]
+    }
+    const unit = calendarUnitOf(cadence)
+    return unit == null ? null : calendarPeriod(cursor, unit)
+}
+
+/**
+ * The window a layer requests at the cursor.
+ *
+ * A periodic layer (`time.interval` of an hour or more, not `local`)
+ * requests the one period holding the cursor. Periods step from a concrete
+ * `dataStartTime`; without one, a cadence of exactly P1Y, P1M, P1D or PT1H
+ * follows UTC calendar boundaries. `end` is the period's last inclusive
+ * second, because STAC `datetime=a/b` intervals are closed at both ends and
+ * an exclusive next-period end would pull in items stamped at its first
+ * instant.
+ *
+ * Every other layer — and a periodic one whose period cannot be placed
+ * (cursor before the anchor, no anchor for a non-calendar cadence, date
+ * math out of range) — requests `[windowStart, cursor]`, the Time Control
+ * window.
+ *
+ * @param time - The layer config's `time` block.
+ * @param windowStart - The Time Control window start.
+ * @param cursor - The Time Control current time.
+ */
+export function layerRequestWindow(
+    time: RequestTimeConfig | null | undefined,
+    windowStart: string,
+    cursor: string
+): RequestWindow {
+    const passthrough = { start: windowStart, end: cursor, periodic: false }
+    const cadence = requestCadenceOf(time)
+    if (cadence == null || time == null) return passthrough
+
+    const at = new Date(cursor)
+    if (isNaN(at.getTime())) return passthrough
+    const period = periodAt(time, cadence, at)
+    if (period == null) return passthrough
+
+    const start = toIso(period[0])
+    const end = toIso(new Date(period[1].getTime() - 1000))
+    if (start == null || end == null) return passthrough
+    return { start, end, periodic: true }
+}
+
+/**
+ * Whether `layerRequestWindow` requests one period for this layer at the
+ * cursor. Without a cursor, whether the layer is periodic at all.
+ */
+export function isPeriodicRequest(
+    time: RequestTimeConfig | null | undefined,
+    cursor?: string
+): boolean {
+    const cadence = requestCadenceOf(time)
+    if (cadence == null || time == null) return false
+    if (cursor == null)
+        return anchorOf(time) != null || calendarUnitOf(cadence) != null
+    return layerRequestWindow(time, cursor, cursor).periodic
 }

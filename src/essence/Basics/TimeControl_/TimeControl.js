@@ -8,6 +8,7 @@ import Map_ from '../Map_/Map_'
 import TimeUI from './TimeUI'
 import { parseTimeWithOffset, parseTimeToSeconds } from './timeUtils'
 import { evaluateLayerDataCoverage } from './layerDataCoverage'
+import { layerRequestWindow } from './layerTimePolicy'
 import { formatLayerTime, buildTileUrlOptions } from '../Layers_/tileUrlUtils'
 import { resolveTileLayerSource } from '../Layers_/tileLayerSource'
 import { isRasterTileLayerType } from '../MapEngines/types/engine'
@@ -868,8 +869,11 @@ var TimeControl = {
         for (let layerName in L_.layers.data) {
             const layer = L_.layers.data[layerName]
             if (layer.time && layer.time.enabled === true) {
-                layer.time.start = TimeControl.startTime
-                layer.time.end = TimeControl.currentTime
+                stampLayerWindow(
+                    layer,
+                    TimeControl.startTime,
+                    TimeControl.currentTime
+                )
                 layer.time.customTimes = TimeControl.customTimes
                 $('.starttime.' + F_.getSafeName(layer.name)).text(
                     layer.time.start
@@ -931,16 +935,37 @@ var TimeControl = {
     },
 }
 
+/**
+ * Writes the window a layer requests into `layer.time.start/end`, which the
+ * tile URL builders read. A raster tile layer with a periodic
+ * `time.interval` gets the one period holding the cursor
+ * (layerRequestWindow); every other layer gets `[windowStart, cursor]`.
+ */
+function stampLayerWindow(layer, windowStart, cursor) {
+    const requested = isRasterTileLayerType(layer)
+        ? layerRequestWindow(layer.time, windowStart, cursor)
+        : { start: windowStart, end: cursor }
+    layer.time.start = requested.start
+    layer.time.end = requested.end
+}
+
+// The window layers are first stamped with: a deep link's start/end when
+// present, else the Time Control's start/end.
+function initialLayerWindow() {
+    const start = L_.FUTURES.startTime
+        ? L_.FUTURES.startTime.toISOString().split('.')[0] + 'Z'
+        : TimeControl.startTime
+    const end = L_.FUTURES.endTime
+        ? L_.FUTURES.endTime.toISOString().split('.')[0] + 'Z'
+        : TimeControl.endTime
+    return [start, end]
+}
+
 function initLayerDataTimes() {
     for (let i in L_.layers.dataFlat) {
         const layer = L_.layers.dataFlat[i]
         if (layer.time && layer.time.enabled === true) {
-            layer.time.start = L_.FUTURES.startTime
-                ? L_.FUTURES.startTime.toISOString().split('.')[0] + 'Z'
-                : TimeControl.startTime
-            layer.time.end = L_.FUTURES.endTime
-                ? L_.FUTURES.endTime.toISOString().split('.')[0] + 'Z'
-                : TimeControl.endTime
+            stampLayerWindow(layer, ...initialLayerWindow())
             layer.time.customTimes = TimeControl.customTimes
         }
     }
@@ -950,12 +975,7 @@ function initLayerTimes() {
     for (let layerName in L_.layers.data) {
         const layer = L_.layers.data[layerName]
         if (layer.time && layer.time.enabled === true) {
-            layer.time.start = L_.FUTURES.startTime
-                ? L_.FUTURES.startTime.toISOString().split('.')[0] + 'Z'
-                : TimeControl.startTime
-            layer.time.end = L_.FUTURES.endTime
-                ? L_.FUTURES.endTime.toISOString().split('.')[0] + 'Z'
-                : TimeControl.endTime
+            stampLayerWindow(layer, ...initialLayerWindow())
             layer.time.customTimes = TimeControl.customTimes
             $('.starttime.' + F_.getSafeName(layer.name)).text(
                 layer.time.start
