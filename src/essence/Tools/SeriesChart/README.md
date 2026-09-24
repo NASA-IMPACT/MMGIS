@@ -21,15 +21,16 @@ One card per `chartId`; a new payload with the same `chartId` replaces the
 previous chart. Malformed payloads are dropped with a console warning
 (`isChartSeriesPayload` guard) — they never crash the panel. Series `id`s
 and `label`s must be unique within a payload; duplicates count as malformed
-(the label is what the legend picker, footer, and CSV key on).
+(the label is what the Variable dropdown, footer, and CSV key on).
 
-Payload capabilities: multiple series per chart, `time`/`linear`/`category`
-x-axes, `y: null` gaps (not interpolated), per-series `line`/`area`/`bar`
-style and color, and per-series `unit`, shown in the card footer chip. One
-variable renders at a time — mixed-unit payloads work by picking (single
-layout) or stacking (stacked layout), never a dual y-axis. The payload's
-`subtitle`, `yLabel`, and `meta` fields are reserved: accepted, not yet
-rendered.
+Payload capabilities: multiple series per chart, `y: null` gaps (not
+interpolated), per-series `line`/`area`/`bar` style and color, and per-series
+`unit`, shown in the card footer chip. One variable renders at a time: a
+payload with several series gets a variable picker above the chart (see
+`layout` below), and the chart, footer chip and CSV follow the pick. Mixed units therefore never need
+a dual y-axis. The payload's `subtitle` renders under the title as the
+section heading (FetchTimeseries sends the layer's display name); `meta` is
+carried but not rendered.
 
 Time axes render on a linear epoch-ms scale with UTC tick/tooltip
 formatting; timezone-less ISO datetimes are read as UTC.
@@ -44,14 +45,17 @@ config entry, not a code change:
 { "sources": ["fetch-timeseries", "fetch-raster-timeseries"] }
 ```
 
-`variables.layout` — `"single"` (default) or `"stacked"`. Both share one
-design: a clean symbol-less line, sparse unnamed y-axis, a preview zoom strip
-(the series ghosted inside the slider), and a footer chip naming the variable
-and unit with a hover hint and a Download CSV link. Single renders all of a
-card's variables in one chart — the single-select legend picks the visible
-one, and the strip, footer, and CSV follow the pick. Stacked renders one such
-card per variable (each zooming independently, mixed units without a dual
-axis), capped at ~1.5 cards tall with the rest scrolling inside the card.
+`variables.layout` — how the variable picker renders when a payload carries
+several variables. `"dropdown"` (default) puts a select above the chart, for
+a narrow side panel. `"list"` puts a wrapping row of buttons above the chart,
+for a wide bottom panel where every variable fits on one line. One variable
+shows at a time either way, and the chart, footer chip and CSV follow the
+pick.
+
+The card itself is one design: a clean symbol-less line, sparse unnamed
+y-axis, a preview zoom strip (the series ghosted inside the slider, dragging
+it is the zoom and the reset), and a footer chip naming the variable and unit
+with a hover hint and a Download CSV link.
 
 ## Smoke test (devtools console)
 

@@ -1,7 +1,13 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { SeriesChartPanel } from './lib'
 import type { CardState, ChartLayout } from './lib'
-import { mmgisOn, mmgisRequest } from '../_shared/adapters/mmgisAPI'
+import {
+    mmgisHidePlugin,
+    mmgisOn,
+    mmgisRequest,
+    mmgisShowPlugin,
+    type CommandResult,
+} from '../_shared/adapters/mmgisAPI'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 import {
     seriesEvents,
@@ -9,6 +15,8 @@ import {
 } from '../_shared/types/chartSeries'
 
 const PLUGIN_ID = 'serieschart'
+/** The id the layout knows this tool by, for show and hide. */
+const TOOL_ID = 'SeriesChartTool'
 
 /**
  * Fetcher plugin ids the chart listens to by default. Overridable via the
@@ -30,7 +38,7 @@ function chartIdOf(payload: unknown): string | null {
  */
 export function MMGISSeriesChartAdapter() {
     const [sources, setSources] = useState<string[]>(DEFAULT_SOURCES)
-    const [layout, setLayout] = useState<ChartLayout>('single')
+    const [layout, setLayout] = useState<ChartLayout>('dropdown')
     const [cards, setCards] = useState<Record<string, CardState>>({})
 
     const refresh = useCallback(async () => {
@@ -49,7 +57,7 @@ export function MMGISSeriesChartAdapter() {
                     ),
                 )
             }
-            if (vars?.layout === 'single' || vars?.layout === 'stacked')
+            if (vars?.layout === 'dropdown' || vars?.layout === 'list')
                 setLayout(vars.layout)
         } catch (err) {
             console.warn('[SeriesChart] tool:getVars unavailable:', err)
@@ -128,6 +136,31 @@ export function MMGISSeriesChartAdapter() {
         chartId,
         state,
     }))
+
+    // The tool starts hidden (config metadata) and is only on screen while
+    // it has something to show: the first card brings it up, the last card
+    // clearing takes it down again. The mount itself, with no cards yet,
+    // changes nothing.
+    const hasCards = cardList.length > 0
+    const shownRef = useRef(false)
+    useEffect(() => {
+        if (hasCards === shownRef.current) return
+        shownRef.current = hasCards
+        const command = hasCards ? mmgisShowPlugin : mmgisHidePlugin
+        command(TOOL_ID)
+            .then((result: CommandResult) => {
+                if (result.ok === true) return
+                // No layout means nothing to show or hide, not a failure.
+                if (result.reason === 'layout-inactive') return
+                console.warn(
+                    `[SeriesChart] ${hasCards ? 'show' : 'hide'} refused: ${result.reason}`,
+                )
+            })
+            .catch((err) =>
+                console.warn('[SeriesChart] show/hide failed:', err),
+            )
+    }, [hasCards])
+
     return <SeriesChartPanel cards={cardList} layout={layout} />
 }
 

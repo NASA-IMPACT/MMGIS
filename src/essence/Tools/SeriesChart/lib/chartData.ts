@@ -7,11 +7,7 @@
 // the viewer's local zone, and epoch-value with UTC formatters keeps every
 // viewer seeing the same timestamps.
 
-import type {
-    ChartPoint,
-    ChartSeries,
-    ChartSeriesPayload,
-} from '../../_shared/types/chartSeries'
+import type { ChartPoint, ChartSeries } from '../../_shared/types/chartSeries'
 import type { ChartTheme } from './types'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -102,7 +98,7 @@ function seriesBase(s: ChartSeries, i: number, theme: ChartTheme) {
     }
 }
 
-/** The preview zoom strip both layouts share: the series ghosted inside the
+/** The preview zoom strip under the chart: the series ghosted inside the
  *  slider in its own color, light default filler over it, dark end handles. */
 function previewSlider(
     theme: ChartTheme,
@@ -160,115 +156,15 @@ function timeTooltipFormatter(params: TooltipParam[] | TooltipParam): string {
 }
 
 /**
- * The complete ECharts option for a payload. Typed loosely on purpose:
- * echarts' own option generics add nothing here and the object is validated
- * by rendering it.
- *
- * One variable is visible at a time (`visibleLabel`, default: the first
- * series) and the single-select legend is the picker. Same visual grammar
- * as the stacked variable card — clean line, sparse unnamed y-axis, preview
- * zoom strip in the visible variable's color; the card footer, not the
- * chart, names the variable and unit.
+ * The ECharts option for one variable: a single-series chart over a preview
+ * zoom strip (the series redrawn inside the slider). Sparse unlabeled axes —
+ * the card's footer chip, not the chart, names the variable and unit.
+ * `index` is the variable's position in the payload, so it keeps its palette
+ * slot whichever variable is picked. Typed loosely on purpose: echarts' own
+ * option generics add nothing here and the object is validated by rendering.
  */
 export function buildChartOption(
-    payload: ChartSeriesPayload,
-    theme: ChartTheme,
-    visibleLabel?: string,
-): Record<string, any> {
-    const visible = visibleLabel ?? payload.series[0]?.label
-    const selected: Record<string, boolean> = {}
-    for (const s of payload.series) selected[s.label] = s.label === visible
-
-    const activeIndex = Math.max(
-        payload.series.findIndex((s) => s.label === visible),
-        0,
-    )
-    const activeSeries = payload.series[activeIndex]
-    const activeColor =
-        activeSeries?.color ||
-        theme.palette[activeIndex % theme.palette.length]
-
-    const yAxis = [
-        {
-            type: 'value' as const,
-            scale: true,
-            splitNumber: 2,
-            axisLabel: axisLabel(theme),
-            splitLine: { show: false },
-        },
-    ]
-
-    const series = payload.series.map((s, i) => ({
-        ...seriesBase(s, i, theme),
-        data: toTimePoints(s.points).map((p) => [p.x, p.y]),
-    }))
-    // The axis only ever shows the visible variable (the single-select
-    // legend filters the rest), so tick granularity comes from its extent —
-    // a two-day sensor series paired with a five-year climatology must not
-    // force month-year labels onto 48 hours of data. Union extent is the
-    // fallback for a visible series with no plottable points.
-    const xExtent =
-        extentOf(series[activeIndex]?.data.map((d) => d[0] as number) ?? []) ??
-        extentOf(series.flatMap((s) => s.data.map((d) => d[0] as number)))
-    // The slider's drag labels share this: real dates, not epoch ms.
-    const tickFormat = xExtent
-        ? makeTimeTickFormat(xExtent[0], xExtent[1])
-        : null
-
-    const common = {
-        legend: {
-            show: true,
-            type: 'scroll' as const,
-            selectedMode: 'single' as const,
-            top: 0,
-            left: 8,
-            right: 8,
-            textStyle: { color: theme.textColor, fontSize: 11 },
-            selected,
-        },
-        // Bottom band holds the x labels and the preview strip.
-        grid: { left: 44, right: 8, top: 28, bottom: 64 },
-        dataZoom: [
-            { type: 'inside' as const, xAxisIndex: 0 },
-            previewSlider(theme, activeColor, tickFormat),
-        ],
-        yAxis,
-    }
-
-    return {
-        ...common,
-        tooltip: {
-            trigger: 'axis' as const,
-            axisPointer: { type: 'cross' as const, label: { show: false } },
-            formatter: timeTooltipFormatter,
-        },
-        xAxis: {
-            type: 'value' as const,
-            min: 'dataMin' as const,
-            max: 'dataMax' as const,
-            axisLabel: {
-                ...axisLabel(theme),
-                hideOverlap: true,
-                ...(tickFormat
-                    ? { formatter: (v: number) => tickFormat(v) }
-                    : {}),
-            },
-            splitLine: { show: false },
-        },
-        series,
-    }
-}
-
-/**
- * One variable's card in the stacked layout: a single-series chart over a
- * preview zoom strip (the series redrawn inside the slider), per the design
- * reference. Sparse unlabeled axes — the card's footer chip, not the chart,
- * names the variable and unit. `index` fixes the palette slot so a variable
- * keeps its color no matter which subset of variables renders.
- */
-export function buildVariableCardOption(
     s: ChartSeries,
-    payload: ChartSeriesPayload,
     theme: ChartTheme,
     index: number,
 ): Record<string, any> {

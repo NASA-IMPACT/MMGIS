@@ -398,19 +398,20 @@
         "sources": [
           "fetch-timeseries"
         ],
-        "layout": "single"
+        "layout": "dropdown"
       },
       "metadata": {
         "icon": "chart-line",
-        "requiredOrientation": "vertical",
         "compatiblePositions": [
           "left",
-          "right"
+          "right",
+          "bottom"
         ],
         "preferredPosition": "right",
         "modernLayoutSupport": true,
         "width": 400,
-        "height": 0
+        "height": 0,
+        "startHidden": true
       }
     },
     {

@@ -4,7 +4,6 @@ import {
     makeTimeTickFormat,
     formatTooltipTime,
     buildChartOption,
-    buildVariableCardOption,
     seriesToCsv,
 } from '../../src/essence/Tools/SeriesChart/lib/chartData.ts'
 
@@ -15,10 +14,6 @@ const THEME = {
 }
 
 const DAY = 24 * 60 * 60 * 1000
-
-function payloadWith(series) {
-    return { chartId: 'c1', title: 'T', series }
-}
 
 describe('seriesChart chartData', () => {
     describe('toTimePoints', () => {
@@ -90,185 +85,7 @@ describe('seriesChart chartData', () => {
             ],
             ...over,
         })
-
-        test('time axis: value scale over epoch ms with a UTC tick formatter', () => {
-            const opt = buildChartOption(payloadWith([series()]), THEME)
-            expect(opt.xAxis.type).toBe('value')
-            expect(typeof opt.xAxis.axisLabel.formatter).toBe('function')
-            expect(opt.series[0].data[0]).toEqual([
-                Date.parse('2026-01-01T00:00:00Z'),
-                1,
-            ])
-        })
-
-        test('legend and zoom are always available', () => {
-            const opt = buildChartOption(payloadWith([series()]), THEME)
-            expect(opt.legend.show).toBe(true)
-            expect(opt.dataZoom.map((z) => z.type)).toEqual(['inside', 'slider'])
-        })
-
-        test('the zoom strip previews the visible variable in its color', () => {
-            const opt = buildChartOption(
-                payloadWith([series(), series({ id: 's2', label: 'S2' })]),
-                THEME,
-            )
-            const slider = opt.dataZoom.find((z) => z.type === 'slider')
-            expect(slider.showDataShadow).toBe(true)
-            expect(slider.dataBackground.lineStyle.color).toBe(THEME.palette[0])
-            expect(slider.moveHandleSize).toBe(0)
-
-            const picked = buildChartOption(
-                payloadWith([series(), series({ id: 's2', label: 'S2' })]),
-                THEME,
-                'S2',
-            )
-            const pickedSlider = picked.dataZoom.find((z) => z.type === 'slider')
-            expect(pickedSlider.dataBackground.lineStyle.color).toBe(
-                THEME.palette[1],
-            )
-        })
-
-        test('cycles the theme palette and honors explicit series color', () => {
-            const opt = buildChartOption(
-                payloadWith([
-                    series(),
-                    series({ id: 's2', label: 'S2' }),
-                    series({ id: 's3', label: 'S3', color: '#abcdef' }),
-                ]),
-                THEME,
-            )
-            const colors = opt.series.map((s) => s.itemStyle.color)
-            expect(colors).toEqual(['#111111', '#222222', '#abcdef'])
-        })
-
-        test('series style maps to type and area fill', () => {
-            const opt = buildChartOption(
-                payloadWith([
-                    series({ style: 'bar' }),
-                    series({ id: 's2', label: 'S2', style: 'area' }),
-                ]),
-                THEME,
-            )
-            expect(opt.series[0].type).toBe('bar')
-            expect(opt.series[1].type).toBe('line')
-            expect(opt.series[1].areaStyle).toBeDefined()
-        })
-
-        test('gaps are not connected', () => {
-            const opt = buildChartOption(payloadWith([series()]), THEME)
-            expect(opt.series[0].connectNulls).toBe(false)
-        })
-
-        test('time tooltip titles with UTC datetime, not raw epoch', () => {
-            const opt = buildChartOption(payloadWith([series()]), THEME)
-            const html = opt.tooltip.formatter([
-                {
-                    marker: '·',
-                    seriesName: 'S1',
-                    value: [Date.parse('2026-01-01T00:00:00Z'), 1],
-                },
-            ])
-            expect(html).toContain('Jan 1, 2026')
-            expect(html).toContain('S1: 1')
-        })
-
-        test('only the first variable starts visible; legend is single-select', () => {
-            const opt = buildChartOption(
-                payloadWith([
-                    series({ unit: 'µg/m³' }),
-                    series({ id: 's2', label: 'S2', unit: 'ppm' }),
-                    series({ id: 's3', label: 'S3', unit: 'ppm' }),
-                ]),
-                THEME,
-            )
-            expect(opt.legend.selectedMode).toBe('single')
-            expect(opt.legend.selected).toEqual({ S1: true, S2: false, S3: false })
-            expect(opt.yAxis).toHaveLength(1)
-        })
-
-        test('picking a variable moves the selection', () => {
-            const opt = buildChartOption(
-                payloadWith([
-                    series({ unit: 'µg/m³' }),
-                    series({ id: 's2', label: 'S2', unit: 'Knots' }),
-                ]),
-                THEME,
-                'S2',
-            )
-            expect(opt.legend.selected).toEqual({ S1: false, S2: true })
-        })
-
-        test('six-figure point counts build without arg-spread overflow', () => {
-            const points = Array.from({ length: 200000 }, (_, i) => ({
-                x: i * 60000,
-                y: i % 100,
-            }))
-            const opt = buildChartOption(
-                payloadWith([{ id: 'big', label: 'Big', points }]),
-                THEME,
-            )
-            expect(opt.series[0].data).toHaveLength(200000)
-            expect(typeof opt.xAxis.axisLabel.formatter).toBe('function')
-        })
-
-        test('tick granularity follows the visible variable, not the union', () => {
-            const hourly = series({
-                points: [
-                    { x: '2026-03-04T00:00:00Z', y: 1 },
-                    { x: '2026-03-05T00:00:00Z', y: 2 },
-                ],
-            })
-            const multiYear = series({
-                id: 's2',
-                label: 'S2',
-                points: [
-                    { x: '2020-01-01T00:00:00Z', y: 1 },
-                    { x: '2026-01-01T00:00:00Z', y: 2 },
-                ],
-            })
-            const t = Date.parse('2026-03-04T14:30:00Z')
-            const shortVisible = buildChartOption(
-                payloadWith([hourly, multiYear]),
-                THEME,
-            )
-            expect(shortVisible.xAxis.axisLabel.formatter(t)).toBe('14:30')
-            const longVisible = buildChartOption(
-                payloadWith([hourly, multiYear]),
-                THEME,
-                'S2',
-            )
-            expect(longVisible.xAxis.axisLabel.formatter(t)).toBe('Mar 2026')
-        })
-
-        test('no in-canvas toolbox: reset zoom lives in the card header', () => {
-            const opt = buildChartOption(payloadWith([series()]), THEME)
-            expect(opt.toolbox).toBeUndefined()
-        })
-
-        test('identity lives in the footer: unnamed sparse clean y-axis', () => {
-            const opt = buildChartOption(
-                { ...payloadWith([series({ unit: 'ppm' })]), yLabel: 'NO₂' },
-                THEME,
-            )
-            expect(opt.yAxis[0].name).toBeUndefined()
-            expect(opt.yAxis[0].splitNumber).toBe(2)
-            expect(opt.yAxis[0].splitLine.show).toBe(false)
-            expect(opt.series[0].showSymbol).toBe(false)
-        })
-    })
-
-    describe('buildVariableCardOption', () => {
-        const series = (over = {}) => ({
-            id: 's1',
-            label: 'S1',
-            points: [
-                { x: '2026-01-01T00:00:00Z', y: 1 },
-                { x: '2026-01-02T00:00:00Z', y: 2 },
-            ],
-            ...over,
-        })
-        const card = (s, index = 0) =>
-            buildVariableCardOption(s, payloadWith([s]), THEME, index)
+        const card = (s, index = 0) => buildChartOption(s, THEME, index)
 
         test('single clean series: no legend, no symbols, no gridlines', () => {
             const opt = card(series())
@@ -286,16 +103,11 @@ describe('seriesChart chartData', () => {
 
         test('the palette slot follows the variable index, explicit color wins', () => {
             const s = series()
-            const first = buildVariableCardOption(s, payloadWith([s]), THEME, 0)
-            const second = buildVariableCardOption(s, payloadWith([s]), THEME, 1)
+            const first = buildChartOption(s, THEME, 0)
+            const second = buildChartOption(s, THEME, 1)
             expect(first.series[0].itemStyle.color).toBe(THEME.palette[0])
             expect(second.series[0].itemStyle.color).toBe(THEME.palette[1])
-            const explicit = buildVariableCardOption(
-                series({ color: '#abcdef' }),
-                payloadWith([s]),
-                THEME,
-                1,
-            )
+            const explicit = buildChartOption(series({ color: '#abcdef' }), THEME, 1)
             expect(explicit.series[0].itemStyle.color).toBe('#abcdef')
         })
 
@@ -328,6 +140,35 @@ describe('seriesChart chartData', () => {
             const opt = card(series({ points }))
             expect(opt.series[0].data).toHaveLength(200000)
             expect(typeof opt.xAxis.axisLabel.formatter).toBe('function')
+        })
+
+        test('series style maps to type and area fill', () => {
+            expect(card(series({ style: 'bar' })).series[0].type).toBe('bar')
+            const area = card(series({ style: 'area' })).series[0]
+            expect(area.type).toBe('line')
+            expect(area.areaStyle).toBeDefined()
+        })
+
+        test('gaps are not connected', () => {
+            expect(card(series()).series[0].connectNulls).toBe(false)
+        })
+
+        test('the tooltip titles with the UTC datetime, not raw epoch', () => {
+            const html = card(series()).tooltip.formatter([
+                {
+                    marker: '·',
+                    seriesName: 'S1',
+                    value: [Date.parse('2026-01-01T00:00:00Z'), 1],
+                },
+            ])
+            expect(html).toContain('Jan 1, 2026')
+            expect(html).toContain('S1: 1')
+        })
+
+        test('no in-canvas toolbox or legend: the dropdown picks, the strip resets', () => {
+            const opt = card(series())
+            expect(opt.toolbox).toBeUndefined()
+            expect(opt.legend).toBeUndefined()
         })
     })
 
