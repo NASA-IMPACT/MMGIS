@@ -17,6 +17,7 @@ let listed: Record<string, boolean>
 let listeners: Map<string, Set<(payload?: unknown) => void>>
 let gate: Promise<void> | null
 let mounted: Mounted | null
+let sparseTitle: string
 
 beforeEach(() => {
     outOfRange = {}
@@ -24,11 +25,14 @@ beforeEach(() => {
     listeners = new Map()
     gate = null
     mounted = null
+    sparseTitle = 'Sparse'
     const handlers: Record<string, () => unknown> = {
         'layers:getAll': () => ({}),
         'tool:getVars': () => ({}),
+        // Reads sparseTitle synchronously at call time (not after any await),
+        // so a test can tell two overlapping refreshes' rows apart.
         'layers:getAllConfigs': () => ({
-            [SPARSE]: { display_name: 'Sparse' },
+            [SPARSE]: { display_name: sparseTitle },
             [CONTINUOUS]: { display_name: 'Continuous' },
         }),
         // Read after coverage, so a held gate stands for a refresh that has
@@ -94,6 +98,11 @@ const mountAdapter = async () => {
     await settle()
 }
 
+const titlesIn = () =>
+    Array.from(
+        mounted!.container.querySelectorAll('.blocks-layer-legend__title'),
+    ).map((el) => el.textContent)
+
 describe('MMGISLayerManagerAdapter data coverage', () => {
     test('flags layers on first render and follows announced changes', async () => {
         outOfRange = { [SPARSE]: true, [CONTINUOUS]: false }
@@ -151,5 +160,34 @@ describe('MMGISLayerManagerAdapter filtered-out layers', () => {
         await emit('layer:listedChange')
         await settle()
         expect(hideButton()).toBeNull()
+    })
+})
+
+describe('MMGISLayerManagerAdapter refresh sequencing', () => {
+    test('drops an older refresh that resolves after a newer one', async () => {
+        await mountAdapter()
+        expect(titlesIn()).toEqual(['Sparse', 'Continuous'])
+
+        // Start a refresh and stall it on 'layers:getVisible', as a slow
+        // custom colormap fetch would. Its configs answer is tagged 'First'
+        // so it is distinguishable from the refresh that follows it.
+        sparseTitle = 'First'
+        let releaseFirst!: () => void
+        gate = new Promise((resolve) => (releaseFirst = resolve))
+        await emit('layers:listChanged')
+
+        // A second, newer refresh runs to completion while the first is
+        // still stalled.
+        sparseTitle = 'Second'
+        gate = null
+        await emit('layers:listChanged')
+        await settle()
+        expect(titlesIn()).toEqual(['Second', 'Continuous'])
+
+        // The first refresh now lands, after the second already has. Its
+        // stale rows must not overwrite the newer ones.
+        releaseFirst()
+        await settle()
+        expect(titlesIn()).toEqual(['Second', 'Continuous'])
     })
 })
