@@ -356,6 +356,14 @@ export function interpolateWindow(
 }
 
 /**
+ * Pixels left clear at each end of the chart, outside the span the view
+ * plots, so the scrubber's head stays whole at the first date or at now.
+ * Wider than half the head, with room for its shadow. Passed as the `inset`
+ * of the transform helpers below.
+ */
+export const EDGE_INSET = 12
+
+/**
  * The d3 zoom transform that maps the global window onto the visible one,
  * across a chart `width` pixels wide whose plot runs from `inset` to
  * `width - inset`. The visible window is the source of truth; this is how

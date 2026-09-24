@@ -14,6 +14,7 @@ import {
     formatContext,
 } from '../../utils/timeUtils'
 import {
+    EDGE_INSET,
     minViewDuration,
     sameWindow,
     transformToWindow,
@@ -27,13 +28,6 @@ import type { LayerNavigation } from '../../utils/layerNavigation'
 
 /** Room a top-axis label takes, in pixels, the widest being "Mar 30, 2020". */
 const CONTEXT_LABEL_WIDTH = 96
-
-/**
- * Pixels left clear at each end of the chart, outside the span the view
- * plots, so the scrubber's head stays whole at the first date or at now.
- * Wider than half the head, with room for its shadow.
- */
-export const EDGE_INSET = 12
 
 export interface TimelineViewProps {
     startTime: Date
@@ -96,6 +90,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
     const layerBarHeight = 22 // Row pitch, shared by the sidebar item and the SVG row
     const barHeight = 24 // Height of the top and bottom date bars
+    const footerPad = 6 // Space below the bottom date bar's labels
     const markerSize = 18 // Rendered size of the scrubber marker
     // A strip between the date bar and the first layer row that the
     // scrubber's head sits in, so the head never covers a row's bars at the
@@ -653,7 +648,10 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                 </div>
 
                 {/* Bottom date bar, outside the scrolling body like the header */}
-                <div className="timeline-view-footer" style={{ height: barHeight }}>
+                <div
+                    className="timeline-view-footer"
+                    style={{ height: barHeight + footerPad, paddingBottom: footerPad }}
+                >
                     <div className="timeline-sidebar-footer" />
                     <div className="timeline-bottom-bar">
                         <svg width={dimensions.width} height={barHeight} style={{ display: 'block' }}>

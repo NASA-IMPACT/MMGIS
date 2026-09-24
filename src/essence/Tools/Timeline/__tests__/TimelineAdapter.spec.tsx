@@ -3,8 +3,11 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 import { zoomTransform } from 'd3-zoom'
 import { TimelineAdapter } from '../TimelineAdapter'
-import { EDGE_INSET } from '../lib/geo/TimelineView/TimelineView'
-import { transformToWindow, type ViewWindow } from '../lib/utils/zoomWindow'
+import {
+    EDGE_INSET,
+    transformToWindow,
+    type ViewWindow,
+} from '../lib/utils/zoomWindow'
 import { stubReducedMotion } from './support/motion'
 
 /**

@@ -15,9 +15,13 @@ vi.hoisted(() => {
     process.env.TZ = 'America/New_York'
 })
 
-import { EDGE_INSET, TimelineView } from '../lib/geo/TimelineView/TimelineView'
+import { TimelineView } from '../lib/geo/TimelineView/TimelineView'
 import type { LayerNavigation } from '../lib/utils/layerNavigation'
-import { transformToWindow, type ViewWindow } from '../lib/utils/zoomWindow'
+import {
+    EDGE_INSET,
+    transformToWindow,
+    type ViewWindow,
+} from '../lib/utils/zoomWindow'
 import type { LayerTimeData, TimeMode } from '../lib/types'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean })
