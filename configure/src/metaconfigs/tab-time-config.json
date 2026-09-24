@@ -51,7 +51,7 @@
         {
           "field": "time.format",
           "name": "Time Format",
-          "description": "Controls how dates and times are written wherever the dashboard prints the mission's time, such as an exported legend's header lines. Accepts either style: a D3 specifier such as %Y-%m-%d %H:%M (<a target='_blank' href='https://github.com/d3/d3-time-format'>https://github.com/d3/d3-time-format</a>) - any % specifier in the string selects D3 - or moment.js tokens such as YYYY-MM-DD HH:mm (<a target='_blank' href='https://momentjs.com/docs/#/displaying/format/'>https://momentjs.com/docs/#/displaying/format/</a>). Default: YYYY-MM-DDTHH:mm:ss[Z]. Times are written in UTC.",
+          "description": "Controls how dates and times are written wherever the dashboard prints the mission's time, such as an exported legend's header lines. Uses D3 time format specifiers (<a target='_blank' href='https://github.com/d3/d3-time-format'>https://github.com/d3/d3-time-format</a>), for example %Y-%m-%d %H:%M. Default: %Y-%m-%dT%H:%M:%SZ. Times are written in UTC.",
           "type": "text",
           "disableSwitch": "time.enabled",
           "width": 3
