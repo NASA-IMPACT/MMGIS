@@ -57,7 +57,7 @@ axis), capped at ~1.5 cards tall with the rest scrolling inside the card.
 
 ```js
 window.mmgisAPI.emit('plugin:fetch-timeseries:seriesReady', {
-    chartId: 'demo', title: 'Station 42', xType: 'time',
+    chartId: 'demo', title: 'Station 42',
     series: [{ id: 'no2', label: 'NO₂', points: [
         { x: '2026-01-01T00:00:00Z', y: 1.2 },
         { x: '2026-02-01T00:00:00Z', y: 2.4 },

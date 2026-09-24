@@ -4,7 +4,7 @@
 // nothing about where the data came from. Types only + pure helpers — no
 // MMGIS, no DOM.
 
-/** One data point. `x` is an ISO datetime string when xType is 'time';
+/** One data point. `x` is an ISO datetime string or epoch milliseconds;
  *  `y: null` marks a gap the chart must not interpolate across. */
 export interface ChartPoint {
     x: string | number
@@ -39,10 +39,6 @@ export interface ChartSeriesPayload {
     title: string
     /** Reserved: accepted but not yet rendered. */
     subtitle?: string
-    xType: 'time' | 'linear' | 'category'
-    /** Reserved: accepted but not yet rendered — the card footer chip, not a
-     *  y-axis label, names the visible variable and unit. */
-    yLabel?: string
     series: ChartSeries[]
     meta?: ChartSeriesMeta
 }
@@ -131,9 +127,6 @@ export function isChartSeriesPayload(value: unknown): value is ChartSeriesPayloa
         typeof value.chartId === 'string' &&
         value.chartId !== '' &&
         typeof value.title === 'string' &&
-        (value.xType === 'time' ||
-            value.xType === 'linear' ||
-            value.xType === 'category') &&
         Array.isArray(value.series) &&
         value.series.length > 0 &&
         value.series.every(isChartSeries)

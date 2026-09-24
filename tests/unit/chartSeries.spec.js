@@ -7,7 +7,6 @@ import {
 const validPayload = {
     chartId: 'vector-timeseries',
     title: 'Station 42',
-    xType: 'time',
     series: [
         {
             id: 'no2',
@@ -61,7 +60,6 @@ describe('chartSeries contract', () => {
             ['missing chartId', { ...validPayload, chartId: undefined }],
             ['empty chartId', { ...validPayload, chartId: '' }],
             ['missing title', { ...validPayload, title: undefined }],
-            ['bad xType', { ...validPayload, xType: 'datetime' }],
             ['empty series', { ...validPayload, series: [] }],
             ['series not array', { ...validPayload, series: {} }],
             [

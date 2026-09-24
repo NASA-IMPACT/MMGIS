@@ -1,8 +1,6 @@
 import { describe, test, expect } from 'vitest'
 import {
     toTimePoints,
-    toLinearPoints,
-    toCategoryData,
     makeTimeTickFormat,
     formatTooltipTime,
     buildChartOption,
@@ -18,8 +16,8 @@ const THEME = {
 
 const DAY = 24 * 60 * 60 * 1000
 
-function payloadWith(series, xType = 'time') {
-    return { chartId: 'c1', title: 'T', xType, series }
+function payloadWith(series) {
+    return { chartId: 'c1', title: 'T', series }
 }
 
 describe('seriesChart chartData', () => {
@@ -57,49 +55,6 @@ describe('seriesChart chartData', () => {
         test('reads space-separated timezone-less datetimes as UTC too', () => {
             expect(toTimePoints([{ x: '2017-12-31 06:30:00', y: 1 }])).toEqual([
                 { x: Date.parse('2017-12-31T06:30:00Z'), y: 1 },
-            ])
-        })
-    })
-
-    describe('toLinearPoints', () => {
-        test('coerces numeric strings and drops NaN', () => {
-            expect(
-                toLinearPoints([
-                    { x: '2', y: 1 },
-                    { x: 'nope', y: 5 },
-                    { x: 1, y: 0 },
-                ]),
-            ).toEqual([
-                { x: 1, y: 0 },
-                { x: 2, y: 1 },
-            ])
-        })
-    })
-
-    describe('toCategoryData', () => {
-        test('unions labels in first-appearance order and aligns rows', () => {
-            const { labels, rows } = toCategoryData([
-                {
-                    id: 'a',
-                    label: 'A',
-                    points: [
-                        { x: 'jan', y: 1 },
-                        { x: 'feb', y: 2 },
-                    ],
-                },
-                {
-                    id: 'b',
-                    label: 'B',
-                    points: [
-                        { x: 'feb', y: 20 },
-                        { x: 'mar', y: 30 },
-                    ],
-                },
-            ])
-            expect(labels).toEqual(['jan', 'feb', 'mar'])
-            expect(rows).toEqual([
-                [1, 2, null],
-                [null, 20, 30],
             ])
         })
     })
@@ -215,19 +170,6 @@ describe('seriesChart chartData', () => {
             ])
             expect(html).toContain('Jan 1, 2026')
             expect(html).toContain('S1: 1')
-        })
-
-        test('category axis uses aligned labels', () => {
-            const opt = buildChartOption(
-                payloadWith(
-                    [series({ points: [{ x: 'jan', y: 1 }] })],
-                    'category',
-                ),
-                THEME,
-            )
-            expect(opt.xAxis.type).toBe('category')
-            expect(opt.xAxis.data).toEqual(['jan'])
-            expect(opt.series[0].data).toEqual([1])
         })
 
         test('only the first variable starts visible; legend is single-select', () => {
@@ -386,24 +328,6 @@ describe('seriesChart chartData', () => {
             const opt = card(series({ points }))
             expect(opt.series[0].data).toHaveLength(200000)
             expect(typeof opt.xAxis.axisLabel.formatter).toBe('function')
-        })
-
-        test('category cards use the variable’s own labels', () => {
-            const s = series({
-                points: [
-                    { x: 'x1', y: 1 },
-                    { x: 'x2', y: null },
-                ],
-            })
-            const opt = buildVariableCardOption(
-                s,
-                payloadWith([s], 'category'),
-                THEME,
-                0,
-            )
-            expect(opt.xAxis.type).toBe('category')
-            expect(opt.xAxis.data).toEqual(['x1', 'x2'])
-            expect(opt.series[0].data).toEqual([1, null])
         })
     })
 

@@ -28,7 +28,6 @@ const CLEARED = 'plugin:fetch-timeseries:seriesCleared'
 const validPayload = () => ({
     chartId: 'c1',
     title: 'Station 42',
-    xType: 'time',
     series: [
         {
             id: 'no2',

@@ -49,46 +49,6 @@ export function toTimePoints(points: ChartPoint[]): XyPoint[] {
     return out.sort((a, b) => a.x - b.x)
 }
 
-export function toLinearPoints(points: ChartPoint[]): XyPoint[] {
-    const out: XyPoint[] = []
-    for (const p of points) {
-        const x = typeof p.x === 'number' ? p.x : Number(p.x)
-        if (Number.isNaN(x)) continue
-        out.push({ x, y: p.y })
-    }
-    return out.sort((a, b) => a.x - b.x)
-}
-
-/**
- * Category alignment: labels are the union of every series' x values in
- * first-appearance order; each dataset's data aligns to those labels with
- * null where a series has no value for a label.
- */
-export function toCategoryData(series: ChartSeries[]): {
-    labels: string[]
-    rows: Array<Array<number | null>>
-} {
-    const labels: string[] = []
-    const indexOf = new Map<string, number>()
-    for (const s of series) {
-        for (const p of s.points) {
-            const key = String(p.x)
-            if (!indexOf.has(key)) {
-                indexOf.set(key, labels.length)
-                labels.push(key)
-            }
-        }
-    }
-    const rows = series.map((s) => {
-        const row: Array<number | null> = labels.map(() => null)
-        for (const p of s.points) {
-            row[indexOf.get(String(p.x)) as number] = p.y
-        }
-        return row
-    })
-    return { labels, rows }
-}
-
 /**
  * Tick formatter for an epoch-ms axis, granularity picked from the span:
  * hours within ~2 days, month+day up to ~1.5 years, month+year beyond.
@@ -232,32 +192,22 @@ export function buildChartOption(
         },
     ]
 
-    const isCategory = payload.xType === 'category'
-    const isTime = payload.xType === 'time'
-    const series = isCategory
-        ? null
-        : payload.series.map((s, i) => {
-              const points = isTime
-                  ? toTimePoints(s.points)
-                  : toLinearPoints(s.points)
-              return {
-                  ...seriesBase(s, i, theme),
-                  data: points.map((p) => [p.x, p.y]),
-              }
-          })
+    const series = payload.series.map((s, i) => ({
+        ...seriesBase(s, i, theme),
+        data: toTimePoints(s.points).map((p) => [p.x, p.y]),
+    }))
     // The axis only ever shows the visible variable (the single-select
     // legend filters the rest), so tick granularity comes from its extent —
     // a two-day sensor series paired with a five-year climatology must not
     // force month-year labels onto 48 hours of data. Union extent is the
     // fallback for a visible series with no plottable points.
-    const xExtent = series
-        ? (extentOf(
-              series[activeIndex]?.data.map((d) => d[0] as number) ?? [],
-          ) ?? extentOf(series.flatMap((s) => s.data.map((d) => d[0] as number))))
-        : null
+    const xExtent =
+        extentOf(series[activeIndex]?.data.map((d) => d[0] as number) ?? []) ??
+        extentOf(series.flatMap((s) => s.data.map((d) => d[0] as number)))
     // The slider's drag labels share this: real dates, not epoch ms.
-    const tickFormat =
-        isTime && xExtent ? makeTimeTickFormat(xExtent[0], xExtent[1]) : null
+    const tickFormat = xExtent
+        ? makeTimeTickFormat(xExtent[0], xExtent[1])
+        : null
 
     const common = {
         legend: {
@@ -279,29 +229,12 @@ export function buildChartOption(
         yAxis,
     }
 
-    if (series === null) {
-        const { labels, rows } = toCategoryData(payload.series)
-        return {
-            ...common,
-            tooltip: { trigger: 'axis' as const },
-            xAxis: {
-                type: 'category' as const,
-                data: labels,
-                axisLabel: { color: theme.textColor },
-            },
-            series: payload.series.map((s, i) => ({
-                ...seriesBase(s, i, theme),
-                data: rows[i],
-            })),
-        }
-    }
-
     return {
         ...common,
         tooltip: {
             trigger: 'axis' as const,
             axisPointer: { type: 'cross' as const, label: { show: false } },
-            ...(isTime ? { formatter: timeTooltipFormatter } : {}),
+            formatter: timeTooltipFormatter,
         },
         xAxis: {
             type: 'value' as const,
@@ -333,40 +266,29 @@ export function buildVariableCardOption(
     theme: ChartTheme,
     index: number,
 ): Record<string, any> {
-    const isTime = payload.xType === 'time'
-    const isCategory = payload.xType === 'category'
     const color = s.color || theme.palette[index % theme.palette.length]
 
-    const category = isCategory ? toCategoryData([s]) : null
-    const data: Array<[number, number | null]> | Array<number | null> = category
-        ? category.rows[0]
-        : (isTime ? toTimePoints(s.points) : toLinearPoints(s.points)).map(
-              (p) => [p.x, p.y] as [number, number | null],
-          )
-    const xs = category
-        ? []
-        : (data as Array<[number, number | null]>).map((d) => d[0])
-    const xExtent = extentOf(xs)
-    const tickFormat =
-        isTime && xExtent ? makeTimeTickFormat(xExtent[0], xExtent[1]) : null
+    const data = toTimePoints(s.points).map(
+        (p) => [p.x, p.y] as [number, number | null],
+    )
+    const xExtent = extentOf(data.map((d) => d[0]))
+    const tickFormat = xExtent
+        ? makeTimeTickFormat(xExtent[0], xExtent[1])
+        : null
 
     return {
         tooltip: {
             trigger: 'axis' as const,
             axisPointer: { type: 'cross' as const, label: { show: false } },
-            ...(isTime ? { formatter: timeTooltipFormatter } : {}),
+            formatter: timeTooltipFormatter,
         },
         // Bottom band holds the x labels and the preview strip.
         grid: { left: 48, right: 12, top: 12, bottom: 84 },
         xAxis: {
-            ...(category
-                ? { type: 'category' as const, data: category.labels }
-                : {
-                      type: 'value' as const,
-                      min: 'dataMin' as const,
-                      max: 'dataMax' as const,
-                      splitLine: { show: false },
-                  }),
+            type: 'value' as const,
+            min: 'dataMin' as const,
+            max: 'dataMax' as const,
+            splitLine: { show: false },
             axisLabel: {
                 color: theme.textColor,
                 hideOverlap: true,
