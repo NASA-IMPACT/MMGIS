@@ -1,5 +1,6 @@
 import moment from 'moment'
-import { resolveTimePolicy } from './layerTimePolicy'
+import { resolveTimePolicy, isPeriodicRequest } from './layerTimePolicy'
+import { isRasterTileLayerType } from '../MapEngines/types/engine'
 
 /**
  * A layer's declared data coverage, read from its `time` config.
@@ -189,15 +190,43 @@ function spansContain(spans, instant) {
     return spans.some((span) => span.start <= instant && instant <= span.end)
 }
 
+/** Whether any span shares an instant with `[start, end]`. Inclusive. */
+function spansOverlap(spans, start, end) {
+    return spans.some((span) => span.start <= end && start <= span.end)
+}
+
+/**
+ * Whether the layer requests one period rather than the Time Control
+ * window: a raster tile layer whose `time.interval` places a period at the
+ * cursor. Decided by the rule TimeControl stamps with (layerRequestWindow),
+ * read at the stamped end — for a periodic stamp that end lies inside the
+ * period it closes, so the same period is found again.
+ */
+function requestsPeriod(layer) {
+    return (
+        isRasterTileLayerType(layer) &&
+        typeof layer?.time?.end === 'string' &&
+        isPeriodicRequest(layer.time, layer.time.end)
+    )
+}
+
 /**
  * The full coverage record for a layer: what it declares, what it would
  * request, and the verdict.
  *
- * The verdict tests the current time — the requested window's end — and
- * nothing else: a layer has data only where its listed times, or failing
- * those its extent, cover that instant. However much coverage the rest of
- * the window holds, a layer is out of range at an instant it has nothing
- * for, so the gate agrees with where the timeline draws the layer's data.
+ * For a layer requesting the Time Control window, the verdict tests the
+ * current time — the requested window's end — and nothing else: a layer has
+ * data only where its listed times, or failing those its extent, cover that
+ * instant. The window's start is the chart's left edge and says nothing
+ * about the layer, so however much coverage the rest of the window holds, a
+ * layer is out of range at an instant it has nothing for, and the gate
+ * agrees with where the timeline draws the layer's data.
+ *
+ * For a layer requesting one period (`periodic: true`), the whole period is
+ * the request: it is out of range only when `[start, end]` overlaps no
+ * span. Its end is the period's last second, which may lie past a
+ * `dataEndTime: 'now'` or between listed times finer than the period, and
+ * neither means the period is empty.
  *
  * `outOfDataRange` is false whenever the question cannot be answered — no
  * coverage declared, no readable window, no `time` at all. The gate may
@@ -207,17 +236,25 @@ function spansContain(spans, instant) {
 export function evaluateLayerDataCoverage(layer) {
     const coverage = resolveDataCoverage(layer?.time)
     const requestedWindow = parseRequestedWindow(layer?.time)
+    const periodic = requestedWindow != null && requestsPeriod(layer)
 
     const outOfDataRange =
         coverage != null &&
         requestedWindow != null &&
-        !spansContain(coverage.spans, requestedWindow.end)
+        !(periodic
+            ? spansOverlap(
+                  coverage.spans,
+                  requestedWindow.start,
+                  requestedWindow.end
+              )
+            : spansContain(coverage.spans, requestedWindow.end))
 
     return {
         outOfDataRange,
         kind: coverage?.kind ?? null,
         spans: coverage?.spans ?? null,
         requestedWindow,
+        periodic,
     }
 }
 
@@ -239,8 +276,9 @@ const toMinute = (ms) => (Number.isFinite(ms) ? Math.floor(ms / MINUTE_MS) : ms)
 /**
  * Whether two records say the same thing about a layer's coverage. The
  * requested window is not part of the comparison — it changes on every
- * time step — and span bounds are compared at minute granularity, so a
- * `dataEndTime: 'now'` layer does not read as changed on every tick. A
+ * time step — but which rule decided the verdict (`periodic`) is. Span
+ * bounds are compared at minute granularity, so a `dataEndTime: 'now'`
+ * layer does not read as changed on every tick. A
  * listed entry's timestamp and unit come straight from config and are
  * compared exactly: two times in one hour share their bounds, so only the
  * timestamp shows one moving.
@@ -249,6 +287,7 @@ export function isSameCoverage(a, b) {
     if (a == null || b == null) return false
     if (a.outOfDataRange !== b.outOfDataRange) return false
     if (a.kind !== b.kind) return false
+    if (Boolean(a.periodic) !== Boolean(b.periodic)) return false
     if ((a.spans == null) !== (b.spans == null)) return false
     if (a.spans == null) return true
     if (a.spans.length !== b.spans.length) return false

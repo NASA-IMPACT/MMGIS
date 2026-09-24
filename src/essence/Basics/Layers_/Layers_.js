@@ -9,7 +9,10 @@ import CursorInfo from '../../Ancillary/CursorInfo'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
-import { resolveTemporalExtent } from '../TimeControl_/layerTimePolicy'
+import {
+    resolveTemporalExtent,
+    parseISODuration,
+} from '../TimeControl_/layerTimePolicy'
 import { fetchLayerExtentSource } from '../TimeControl_/layerExtentSource'
 import {
     isRasterTileLayerType,
@@ -42,8 +45,17 @@ import $ from 'jquery'
 let _providerCleanups = []
 
 // Resolved at call time so an open-ended "now" is fresh on every ask.
-const temporalExtentFor = (uuid) =>
-    resolveTemporalExtent(L_.layers.data[uuid]?.time)
+// `interval` is the layer's parsed `time.interval` (a Duration), or null
+// when it declares none or an unparseable one — a plugin reads the cadence
+// without parsing ISO-8601 durations itself.
+const temporalExtentFor = (uuid) => {
+    const time = L_.layers.data[uuid]?.time
+    const interval =
+        time?.interval != null && time.interval !== ''
+            ? parseISODuration(String(time.interval).trim())
+            : null
+    return { ...resolveTemporalExtent(time), interval }
+}
 
 /**
  * Canonical layer types whose deck.gl builders read the legend as a style
@@ -526,8 +538,9 @@ const L_ = {
                     })
                     return legends
                 }),
-                // When each layer has data, as ISO datetimes or null. The
-                // config's dataStartTime/dataEndTime may be a policy ("now",
+                // When each layer has data, as ISO datetimes or null, and its
+                // parsed cadence (`interval`, or null). The config's
+                // dataStartTime/dataEndTime may be a policy ("now",
                 // "now - P1D"); this is where it is resolved, so a plugin
                 // never sees the policy string. Same call shapes as above.
                 window.mmgisAPI.provide('layers:getTemporalExtent', (layerUUID) => {
