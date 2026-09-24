@@ -51,7 +51,7 @@
         {
           "field": "time.format",
           "name": "Time Format",
-          "description": "The format core uses when a plugin asks it to print a time - on an exported legend, say - through the time:formatTime and time:getCurrentFormatted bus requests. Accepts either style: a D3 specifier such as %Y anywhere in the string selects D3 time format specifiers (<a target='_blank' href='https://github.com/d3/d3-time-format'>https://github.com/d3/d3-time-format</a>) - for instance %Y-%m-%dT%H:%M:%SZ - otherwise the string is read as moment.js time format tokens (<a target='_blank' href='https://momentjs.com/docs/#/displaying/format/'>https://momentjs.com/docs/#/displaying/format/</a>) - for instance YYYY-MM-DDTHH:mm:ss[Z]. Default: YYYY-MM-DDTHH:mm:ss[Z]",
+          "description": "Controls how dates and times are written wherever the dashboard prints the mission's time, such as an exported legend's header lines. Accepts either style: a D3 specifier such as %Y-%m-%d %H:%M (<a target='_blank' href='https://github.com/d3/d3-time-format'>https://github.com/d3/d3-time-format</a>) - any % specifier in the string selects D3 - or moment.js tokens such as YYYY-MM-DD HH:mm (<a target='_blank' href='https://momentjs.com/docs/#/displaying/format/'>https://momentjs.com/docs/#/displaying/format/</a>). Default: YYYY-MM-DDTHH:mm:ss[Z]. Times are written in UTC.",
           "type": "text",
           "disableSwitch": "time.enabled",
           "width": 3

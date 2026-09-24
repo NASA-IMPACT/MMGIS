@@ -24,9 +24,11 @@ If enabled and visible, the Time UI will be initially open on the bottom of the 
 
 ## Time Format
 
-The format core uses when a plugin asks it to print a time - on an exported legend, say - through the `time:formatTime` and `time:getCurrentFormatted` bus requests. Accepts either style: a D3 specifier such as `%Y` anywhere in the string selects [D3 time format specifiers](https://d3js.org/d3-time-format#locale_format) - for instance `%Y-%m-%dT%H:%M:%SZ` - otherwise the string is read as [moment.js time format tokens](https://momentjs.com/docs/#/displaying/format/) - for instance `YYYY-MM-DDTHH:mm:ss[Z]`.
+Controls how dates and times are written wherever the dashboard prints the mission's time, such as an exported legend's header lines. Accepts either style: a D3 specifier such as `%Y-%m-%d %H:%M` anywhere in the string selects [D3 time format specifiers](https://d3js.org/d3-time-format#locale_format) - for instance `%Y-%m-%dT%H:%M:%SZ` - otherwise the string is read as [moment.js time format tokens](https://momentjs.com/docs/#/displaying/format/) - for instance `YYYY-MM-DD HH:mm`. Times are written in UTC.
 
 Default: `YYYY-MM-DDTHH:mm:ss[Z]`
+
+For developers: this value is what plugins receive when they ask core to render a time, via the `time:formatTime` and `time:getCurrentFormatted` bus requests.
 
 ## Initial Start Time
 
