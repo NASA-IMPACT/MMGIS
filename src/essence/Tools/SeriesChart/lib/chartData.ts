@@ -83,6 +83,11 @@ export function formatTooltipTime(ms: number): string {
     return TOOLTIP_FMT.format(new Date(ms))
 }
 
+/** Axis tick labels, sized for a card a few hundred pixels wide. */
+function axisLabel(theme: ChartTheme) {
+    return { color: theme.textColor, fontSize: 10 }
+}
+
 function seriesBase(s: ChartSeries, i: number, theme: ChartTheme) {
     const color = s.color || theme.palette[i % theme.palette.length]
     return {
@@ -106,8 +111,9 @@ function previewSlider(
 ) {
     return {
         type: 'slider' as const,
-        height: 30,
-        bottom: 10,
+        height: 24,
+        bottom: 6,
+        textStyle: { fontSize: 10, color: theme.textColor },
         showDataShadow: true,
         brushSelect: false,
         borderColor: theme.gridColor,
@@ -187,7 +193,7 @@ export function buildChartOption(
             type: 'value' as const,
             scale: true,
             splitNumber: 2,
-            axisLabel: { color: theme.textColor },
+            axisLabel: axisLabel(theme),
             splitLine: { show: false },
         },
     ]
@@ -217,11 +223,11 @@ export function buildChartOption(
             top: 0,
             left: 8,
             right: 8,
-            textStyle: { color: theme.textColor },
+            textStyle: { color: theme.textColor, fontSize: 11 },
             selected,
         },
         // Bottom band holds the x labels and the preview strip.
-        grid: { left: 48, right: 12, top: 32, bottom: 84 },
+        grid: { left: 44, right: 8, top: 28, bottom: 64 },
         dataZoom: [
             { type: 'inside' as const, xAxisIndex: 0 },
             previewSlider(theme, activeColor, tickFormat),
@@ -241,7 +247,7 @@ export function buildChartOption(
             min: 'dataMin' as const,
             max: 'dataMax' as const,
             axisLabel: {
-                color: theme.textColor,
+                ...axisLabel(theme),
                 hideOverlap: true,
                 ...(tickFormat
                     ? { formatter: (v: number) => tickFormat(v) }
@@ -283,14 +289,14 @@ export function buildVariableCardOption(
             formatter: timeTooltipFormatter,
         },
         // Bottom band holds the x labels and the preview strip.
-        grid: { left: 48, right: 12, top: 12, bottom: 84 },
+        grid: { left: 44, right: 8, top: 8, bottom: 64 },
         xAxis: {
             type: 'value' as const,
             min: 'dataMin' as const,
             max: 'dataMax' as const,
             splitLine: { show: false },
             axisLabel: {
-                color: theme.textColor,
+                ...axisLabel(theme),
                 hideOverlap: true,
                 ...(tickFormat
                     ? { formatter: (v: number) => tickFormat(v) }
@@ -303,7 +309,7 @@ export function buildVariableCardOption(
             // A handful of unnamed ticks — identity and unit live in the
             // card footer, so the plot stays clean like the reference.
             splitNumber: 2,
-            axisLabel: { color: theme.textColor },
+            axisLabel: axisLabel(theme),
             splitLine: { show: false },
         },
         series: [

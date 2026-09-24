@@ -95,15 +95,19 @@ export class CardErrorBoundary extends React.Component<
 
 function CardHeader({
     title,
+    subtitle,
     onResetZoom,
 }: {
     title: string
+    subtitle?: string
     onResetZoom?: () => void
 }) {
     return (
         <header className="series-chart__card-header">
             <div className="series-chart__card-heading">
-                <h3 className="series-chart__title">{title}</h3>
+                <h3 className="series-chart__title" title={title}>
+                    {title}
+                </h3>
                 {onResetZoom && (
                     <button
                         type="button"
@@ -126,6 +130,7 @@ function CardHeader({
                     </button>
                 )}
             </div>
+            {subtitle && <p className="series-chart__section">{subtitle}</p>}
         </header>
     )
 }
@@ -152,7 +157,7 @@ function ReadyCard({
         // instead of swallowing the panel.
         return (
             <>
-                <CardHeader title={payload.title} />
+                <CardHeader title={payload.title} subtitle={payload.subtitle} />
                 <div className="series-chart__variable-list">
                     {payload.series.map((s, i) => (
                         <VariableCard
@@ -175,6 +180,7 @@ function ReadyCard({
         <>
             <CardHeader
                 title={payload.title}
+                subtitle={payload.subtitle}
                 onResetZoom={() =>
                     chartRef.current?.dispatchAction({
                         type: 'dataZoom',
@@ -183,17 +189,19 @@ function ReadyCard({
                     })
                 }
             />
-            <SeriesCanvas
-                payload={payload}
-                chartRef={chartRef}
-                onVisibleChange={setActiveLabel}
-            />
-            {payload.series[activeIndex] && (
-                <CardFooter
-                    series={payload.series[activeIndex]}
-                    index={activeIndex}
+            <div className="series-chart__plot">
+                <SeriesCanvas
+                    payload={payload}
+                    chartRef={chartRef}
+                    onVisibleChange={setActiveLabel}
                 />
-            )}
+                {payload.series[activeIndex] && (
+                    <CardFooter
+                        series={payload.series[activeIndex]}
+                        index={activeIndex}
+                    />
+                )}
+            </div>
         </>
     )
 }
@@ -301,35 +309,35 @@ function downloadCsv(s: ChartSeries) {
 function CardFooter({ series, index }: { series: ChartSeries; index: number }) {
     return (
         <footer className="series-chart__variable-footer">
-            <div>
-                <span className="series-chart__variable-chip">
-                    <span
-                        className="series-chart__variable-dot"
-                        style={{
-                            background:
-                                series.color ||
-                                PALETTE_VARS[index % PALETTE_VARS.length],
-                        }}
-                        aria-hidden="true"
-                    />
-                    {series.label}
-                    {series.unit && (
-                        <span className="series-chart__variable-unit">
-                            {series.unit}
-                        </span>
-                    )}
-                </span>
+            <span className="series-chart__variable-chip">
+                <span
+                    className="series-chart__variable-dot"
+                    style={{
+                        background:
+                            series.color ||
+                            PALETTE_VARS[index % PALETTE_VARS.length],
+                    }}
+                    aria-hidden="true"
+                />
+                <span>{series.label}</span>
+                {series.unit && (
+                    <span className="series-chart__variable-unit">
+                        {series.unit}
+                    </span>
+                )}
+            </span>
+            <div className="series-chart__variable-actions">
                 <p className="series-chart__variable-hint">
                     Hover to inspect · drag the strip to zoom
                 </p>
+                <button
+                    type="button"
+                    className="series-chart__csv-link"
+                    onClick={() => downloadCsv(series)}
+                >
+                    Download CSV
+                </button>
             </div>
-            <button
-                type="button"
-                className="series-chart__csv-link"
-                onClick={() => downloadCsv(series)}
-            >
-                Download CSV
-            </button>
         </footer>
     )
 }
@@ -362,7 +370,7 @@ function VariableCard({
     }, [series, payload, index])
 
     return (
-        <section className="series-chart__variable-card">
+        <section className="series-chart__plot">
             <div className="series-chart__variable-canvas" ref={hostRef} />
             <CardFooter series={series} index={index} />
         </section>
