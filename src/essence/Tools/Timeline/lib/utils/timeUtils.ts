@@ -20,6 +20,91 @@ export function getTimeStep(mode: TimeMode): {
     }
 }
 
+const MS_HOUR = 3600 * 1000
+const MS_DAY = 24 * MS_HOUR
+
+/**
+ * The unit an axis spanning `startTime`–`endTime` is labelled in: the finest
+ * one whose ticks still fit `maxTicks`, once generateTimeTicks has thinned
+ * them to its readable multiples. Each unit gives way to the next where
+ * thinning would stop reading as that unit: past 12-hour steps, hours read
+ * better as days; past fortnightly steps, days read better as months; past
+ * quarterly steps, months read better as years.
+ */
+export function tickModeForSpan(
+    startTime: Date,
+    endTime: Date,
+    maxTicks: number
+): TimeMode {
+    const span = endTime.getTime() - startTime.getTime()
+    if (span / MS_HOUR <= maxTicks * 12) return 'HOUR'
+    if (span / MS_DAY <= maxTicks * 14) return 'DAY'
+    if (span / (30.44 * MS_DAY) <= maxTicks * 3) return 'MONTH'
+    return 'YEAR'
+}
+
+/** A unit that names the period a tick falls in. */
+export type ContextMode = Exclude<TimeMode, 'HOUR'>
+
+/** The unit one coarser than each tick unit, which names the period it falls in. */
+const CONTEXT_MODE: Record<TimeMode, ContextMode | null> = {
+    HOUR: 'DAY',
+    DAY: 'MONTH',
+    MONTH: 'YEAR',
+    // A year label is already a whole date at that scale.
+    YEAR: null,
+}
+
+/**
+ * The labels that place ticks of `tickMode` in time, one unit coarser: an
+ * hourly axis is headed by its days, a daily one by its months. Each period
+ * that begins inside the view is labelled at its boundary, and the view's own
+ * start is labelled too, so a view inside a single period still names it.
+ * Labels are start-anchored, so a boundary within `minGapMs` of the view's
+ * end is left out rather than drawn past the edge, and the leading label is
+ * left out when the first boundary falls within `minGapMs` of it, where the
+ * two would overlap.
+ */
+export function contextTicks(
+    startTime: Date,
+    endTime: Date,
+    tickMode: TimeMode,
+    minGapMs: number
+): { mode: ContextMode | null; ticks: Date[] } {
+    const mode = CONTEXT_MODE[tickMode]
+    if (mode === null) return { mode, ticks: [] }
+
+    const { unit } = getTimeStep(mode)
+    const boundaries: Date[] = []
+    let current = moment
+        .utc(startTime)
+        .startOf(unit as moment.unitOfTime.StartOf)
+        .add(1, unit)
+    const lastFitMs = endTime.getTime() - minGapMs
+    while (current.valueOf() <= lastFitMs) {
+        boundaries.push(current.toDate())
+        current = current.clone().add(1, unit)
+    }
+
+    const first = boundaries[0]
+    const leadingFits =
+        !first || first.getTime() - startTime.getTime() >= minGapMs
+    return { mode, ticks: leadingFits ? [startTime, ...boundaries] : boundaries }
+}
+
+/** A period named in full, UTC, for the axis above the ticks. */
+export function formatContext(date: Date, mode: ContextMode): string {
+    const m = moment.utc(date)
+    switch (mode) {
+        case 'YEAR':
+            return m.format('YYYY')
+        case 'MONTH':
+            return m.format('MMM YYYY')
+        case 'DAY':
+            return m.format('MMM D, YYYY')
+    }
+}
+
 /**
  * Generate time ticks for the timeline axis
  */
@@ -76,12 +161,8 @@ export function generateTimeTicks(
         count++
     }
 
-    // Close the axis on the domain's end, unless a tick already sits there.
-    const last = ticks[ticks.length - 1]
-    if (!last || last.getTime() !== endTime.getTime()) {
-        ticks.push(endTime)
-    }
-
+    // Only unit boundaries are marked. The view's end is left unlabelled: it
+    // falls between boundaries, so a label there would crowd the last one.
     return ticks
 }
 

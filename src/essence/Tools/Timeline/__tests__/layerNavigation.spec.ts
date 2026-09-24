@@ -48,6 +48,8 @@ const sparseNav = (...days: string[]): LayerNavigation => {
         stops,
         start: stops[0],
         end: stops[stops.length - 1],
+        hasOwnStart: true,
+        hasOwnEnd: true,
     }
 }
 
@@ -55,6 +57,8 @@ const periodicNav = (start: string, end: string): LayerNavigation => ({
     kind: 'periodic',
     start: new Date(start),
     end: new Date(end),
+    hasOwnStart: true,
+    hasOwnEnd: true,
 })
 
 const goTo = (
@@ -767,5 +771,77 @@ describe('revealStart', () => {
         const nav = periodicNav('2020-01-01T00:00:00Z', '2021-01-01T00:00:00Z')
         const target = new Date('2020-01-01T00:00:00Z')
         expect(revealStart(nav, target)).toEqual(target)
+    })
+})
+
+describe('which bounds a layer named itself', () => {
+    test('credits a sparse layer with both of its own bounds', () => {
+        // Stops come from the layer's own list, so neither end was completed
+        // from the window.
+        const nav = resolve({
+            enabled: true,
+            dataDates: ['2019-04-02', '2019-04-09'],
+        })!
+
+        expect(nav.hasOwnStart).toBe(true)
+        expect(nav.hasOwnEnd).toBe(true)
+    })
+
+    test('credits a layer that configures both bounds with both', () => {
+        const nav = resolve({
+            enabled: true,
+            dataStartTime: '2019-01-01T00:00:00Z',
+            dataEndTime: '2019-06-01T00:00:00Z',
+        })!
+
+        expect(nav.hasOwnStart).toBe(true)
+        expect(nav.hasOwnEnd).toBe(true)
+    })
+
+    test('marks the end completed when only a start is configured', () => {
+        const nav = resolve({
+            enabled: true,
+            dataStartTime: '2019-01-01T00:00:00Z',
+        })!
+
+        expect(nav.hasOwnStart).toBe(true)
+        expect(nav.hasOwnEnd).toBe(false)
+        expect(nav.end.toISOString()).toBe(windowEnd.toISOString())
+    })
+
+    test('marks the start completed when only an end is configured', () => {
+        const nav = resolve({
+            enabled: true,
+            dataEndTime: '2019-01-01T00:00:00Z',
+        })!
+
+        expect(nav.hasOwnStart).toBe(false)
+        expect(nav.hasOwnEnd).toBe(true)
+        expect(nav.start.toISOString()).toBe(windowStart.toISOString())
+    })
+
+    test('keeps the start marked completed when the extent is closed on the named end', () => {
+        // The window lies wholly after the layer's only bound, so the open
+        // side is closed on that bound rather than run backwards through it.
+        const nav = resolve({
+            enabled: true,
+            dataEndTime: '2017-01-01T00:00:00Z',
+        })!
+
+        expect(nav.start.toISOString()).toBe('2017-01-01T00:00:00.000Z')
+        expect(nav.hasOwnStart).toBe(false)
+        expect(nav.hasOwnEnd).toBe(true)
+    })
+
+    test('keeps the end marked completed when the extent is closed on the named start', () => {
+        // The window lies wholly before the layer's only bound.
+        const nav = resolve({
+            enabled: true,
+            dataStartTime: '2023-01-01T00:00:00Z',
+        })!
+
+        expect(nav.end.toISOString()).toBe('2023-01-01T00:00:00.000Z')
+        expect(nav.hasOwnStart).toBe(true)
+        expect(nav.hasOwnEnd).toBe(false)
     })
 })

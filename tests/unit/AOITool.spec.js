@@ -8,6 +8,7 @@ vi.mock('react-dom/client', () => ({
 }))
 
 import AOITool from '../../src/essence/Tools/AOI/AOITool'
+import { makeFakeMmgisApi, flushBus } from './helpers/fakeMmgisApi'
 
 const polygon = (ring) => ({
     type: 'Feature',
@@ -29,108 +30,19 @@ const VIEW = {
 }
 
 /**
- * A stand-in for the global bus the plugin subscribes, requests and emits
- * through. Calls are recorded; the popup impls model core's one-slot contract,
- * every show being answered on its own promise with how its card closed.
+ * The shared fake bus, plus the AOI-specific pieces: the camera this file's
+ * selections overflow, and a reader for the selection the plugin provides.
  */
 function makeFakeApi() {
-    const listeners = new Map()
-    const requests = []
-    const emits = []
-    const provided = new Map()
-    const requestImpl = new Map()
-
-    let openPopup = null
-    const settleOpen = (action) => {
-        if (!openPopup) return
-        const { resolve } = openPopup
-        openPopup = null
-        resolve({ action })
-    }
-
-    const api = {
-        on(event, handler) {
-            if (!listeners.has(event)) listeners.set(event, new Set())
-            listeners.get(event).add(handler)
-            return () => api.off(event, handler)
-        },
-        off(event, handler) {
-            const set = listeners.get(event)
-            if (set) set.delete(handler)
-        },
-        emit(event, data) {
-            emits.push({ event, data })
-            // Snapshot: a handler may unsubscribe itself while dispatching.
-            Array.from(listeners.get(event) || []).forEach((h) => h(data))
-        },
-        // The provider runs inside the call, before the promise is handed back,
-        // as core's does.
-        request(name, payload) {
-            requests.push({ name, payload })
-            const impl = requestImpl.get(name)
-            try {
-                return Promise.resolve(impl ? impl(payload) : true)
-            } catch (err) {
-                return Promise.reject(err)
-            }
-        },
-        // The plugin-scoped handle the tool mints in make(): emits and provides
-        // are prefixed with the plugin's address. It has no `request` and no
-        // `on` — those go through this bus directly.
-        forPlugin(address) {
-            const prefix = `plugin:${address}:`
-            return {
-                emit: (event, data) => api.emit(prefix + event, data),
-                provide: (name, handler) => api.provide(prefix + name, handler),
-                getVars: () => ({}),
-            }
-        },
-        provide(name, handler) {
-            provided.set(name, handler)
-            return () => provided.delete(name)
-        },
-
-        // Test-only accessors.
-        requestImpl,
-        listenerCount: (event) => listeners.get(event)?.size || 0,
-        namesOf: (name) => requests.filter((r) => r.name === name),
-        emitsOf: (event) => emits.filter((e) => e.event === event),
-        getSelection: () => provided.get('plugin:aoi:getCurrentSelection')?.(),
-        /** Close the open card the way core would, answering its request. */
-        closePopup: (action) => settleOpen(action),
-        hasOpenPopup: () => openPopup !== null,
-        reset() {
-            requests.length = 0
-            emits.length = 0
-        },
-    }
-
-    requestImpl.set('map:getBounds', () => VIEW)
-    // Showing takes the one slot; whatever was in it answers 'closed'.
-    requestImpl.set('map:showPopup', (payload) => {
-        settleOpen('closed')
-        return new Promise((resolve) => {
-            openPopup = { payload, resolve }
-        })
-    })
-    requestImpl.set('map:hidePopup', () => {
-        settleOpen('closed')
-        return true
-    })
-
+    const api = makeFakeMmgisApi()
+    api.requestImpl.set('map:getBounds', () => VIEW)
+    api.getSelection = () => api.callProvider('plugin:aoi:getCurrentSelection')
     return api
 }
 
 let api
 
-/**
- * Let queued microtasks (bus request promises) run. A selection chains several
- * of them — reading the camera, then deciding the fit — so one tick is not
- * enough to reach the state a test is about to assert on.
- */
-const flush = async () => {
-    for (let i = 0; i < 5; i++) await vi.advanceTimersByTimeAsync(0)
-}
+const flush = flushBus
 
 /** Make a selection and let its deferred card open. */
 async function selectAndOpen(feature, label) {

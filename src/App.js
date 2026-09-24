@@ -8,11 +8,16 @@ import calls from './pre/calls'
 
 //Start MMGIS
 $(document).ready(function () {
+    // Firefox has no ::-webkit-scrollbar, so it gets the same colours as the
+    // webkit bar in mmgisUI.css through the standard properties. Its width
+    // takes only auto or thin, and auto is the nearer to the webkit bar's
+    // 14px. Set for Firefox alone: Chromium honours these properties too, and
+    // drops its ::-webkit-scrollbar styling wherever they are set.
     const browser = F_.getBrowser()
     if (browser === 'firefox') {
         $('body').css({
-            'scrollbar-color': 'var(--color-a2) transparent',
-            'scrollbar-width': 'thin',
+            'scrollbar-color': 'rgba(128, 134, 138, 0.35) transparent',
+            'scrollbar-width': 'auto',
         })
     }
 
