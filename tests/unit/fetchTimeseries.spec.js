@@ -2,6 +2,7 @@ import { describe, test, expect } from 'vitest'
 import {
     getTimeseriesConfig,
     templateUrl,
+    withDateRange,
     featureTitle,
     mapResponseSeries,
     buildPayload,
@@ -148,6 +149,26 @@ describe('fetchTimeseries lib', () => {
             expect(() => templateUrl('https://x/{bogus}', FEATURE)).toThrow(
                 /Unsupported placeholder/,
             )
+        })
+    })
+
+    describe('withDateRange', () => {
+        test('appends an inclusive CQL2 day range on the time column, percent-encoded', () => {
+            const url = withDateRange('https://api/items?limit=10', 'datetime', '2018-01-01', '2019-12-31')
+            expect(url).toBe(
+                'https://api/items?limit=10&filter=' +
+                    encodeURIComponent("datetime >= '2018-01-01T00:00:00' AND datetime <= '2019-12-31T23:59:59'") +
+                    '&filter-lang=cql2-text',
+            )
+            expect(decodeURIComponent(url)).toContain("datetime >= '2018-01-01T00:00:00' AND datetime <= '2019-12-31T23:59:59'")
+        })
+
+        test('starts the query when the URL has none', () => {
+            expect(withDateRange('https://api/items', 'datetime', '2018-01-01', '2018-01-02')).toMatch(/^https:\/\/api\/items\?filter=/)
+        })
+
+        test('filters on the configured time key, without the GeoJSON properties prefix', () => {
+            expect(decodeURIComponent(withDateRange('https://api/items', 'properties.obs_time', '2018-01-01', '2018-01-02'))).toContain("obs_time >= '2018-01-01T00:00:00'")
         })
     })
 

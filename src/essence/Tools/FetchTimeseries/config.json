@@ -2,9 +2,9 @@
     "defaults": {
         "variables": {}
     },
-    "description": "Background plugin that fetches a vector feature's time series on request (URL templated from the layer's variables.timeseries config) and publishes it as chart-series events for the SeriesChart plugin. No UI panel.",
+    "description": "Fetches a vector feature's time series on request over a viewer-picked date range (URL from the layer's variables.timeseries config, plus a CQL2 filter on its time property) and publishes it as a chart-series payload for the SeriesChart plugin. A small card holds the Start and End dates.",
     "descriptionFull": {
-        "title": "Listens to plugin:fetch-timeseries:fetch ({ feature, layerId, latlng }), which a Feature Popup card action emits when a layer's variables.featurePopup names it. When the feature's layer carries a variables.timeseries block, builds the fetch URL from the feature ({properties.<key>}, {lon}/{lat} — falling back to the request location — and {id} placeholders), fetches it, and emits plugin:fetch-timeseries:seriesLoading/seriesReady/seriesError, plus seriesCleared on tool teardown. Layers without the block are ignored. The block is authored on the layer's own page in Configure, under the Timeseries row in the Time tab of a vector or vector-tile layer; the example below is what that row writes.",
+        "title": "Listens to plugin:fetch-timeseries:fetch ({ feature, layerId, latlng }), which a Feature Popup card action emits when a layer's variables.featurePopup names it. When the feature's layer carries a variables.timeseries block, the tool's card appears with Start and End dates (seeded from the mission time window, else the past year), builds the fetch URL from the feature ({properties.<key>}, {lon}/{lat} — falling back to the request location — and {id} placeholders), appends filter=<time property> >= start AND <time property> <= end with filter-lang=cql2-text, fetches, and emits plugin:fetch-timeseries:seriesReady; changing a date refetches. Loading and errors show on the card. seriesCleared is emitted on tool teardown. Layers without the block are ignored. The block is authored on the layer's own page in Configure, under the Timeseries row in the Time tab of a vector or vector-tile layer; the example below is what that row writes.",
         "example": {
             "variables": {
                 "featurePopup": {
@@ -28,10 +28,12 @@
     },
     "hasVars": false,
     "name": "FetchTimeseries",
-    "separatedTool": false,
     "metadata": {
+        "icon": "calendar-range",
         "startHidden": true,
-        "modernLayoutSupport": true
+        "modernLayoutSupport": true,
+        "width": 400,
+        "height": 0
     },
     "paths": {
         "FetchTimeseriesTool": "essence/Tools/FetchTimeseries/FetchTimeseriesTool"

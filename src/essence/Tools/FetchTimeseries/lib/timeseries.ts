@@ -120,6 +120,23 @@ export function templateUrl(
     })
 }
 
+/** The URL with a CQL2 text filter bounding `timeKey` to the day range,
+ *  inclusive. The dev features API stores its date columns as text, so the
+ *  comparison is string against string; `datetime=start/end` is refused
+ *  there. Column names carry no `properties.` prefix: that is the GeoJSON
+ *  envelope, not the table. */
+export function withDateRange(
+    url: string,
+    timeKey: string,
+    start: string,
+    end: string,
+): string {
+    const column = timeKey.replace(/^properties\./, '')
+    const clause = `${column} >= '${start}T00:00:00' AND ${column} <= '${end}T23:59:59'`
+    const separator = url.includes('?') ? '&' : '?'
+    return `${url}${separator}filter=${encodeURIComponent(clause)}&filter-lang=cql2-text`
+}
+
 /** Feature-derived chart title: configured property → name → title → id. */
 export function featureTitle(
     feature: FeatureLike,
