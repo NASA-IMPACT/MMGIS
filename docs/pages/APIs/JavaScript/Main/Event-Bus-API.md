@@ -442,12 +442,14 @@ window.mmgisAPI.request('map:showPopup', {
 | `layers:toggle` | `layerUUID` | `boolean \| null` | Toggle layer visibility |
 | `layers:getOrder` | none | `string[]` | Draw order as layer UUIDs, top first, headers excluded |
 | `layers:setOrder` | `{ order }` | `boolean` | Apply a full permutation of the draw order (UUIDs, or display names where the name is unique). Returns `false` and changes nothing if `order` is not an array or a layer is missing, unknown, or repeated. On Leaflet, vectors always draw above rasters whatever the order says |
+| `layers:getLegend` | `layerUUID` (optional, UUID or display name) | `LayerLegend \| null` for one layer (`null` if unknown), or `Record<string, LayerLegend>` keyed by UUID when called with no argument | Get a layer's resolved legend: `type` (`'gradient' \| 'categorical' \| 'text' \| 'none'`), `stops` (resolved CSS colors or null), `min`/`max` (numbers or null when unset), `unit` (`{ label }` or null), `swatches` (`{ color, label }[]` or null), and `colormap` (name or null). A layer whose legend fails to build answers `type: 'none'` |
 
 ```javascript
 // Get layer information
 const allLayers = await window.mmgisAPI.request('layers:getAll')
 const visibleLayers = await window.mmgisAPI.request('layers:getVisible')
 const config = await window.mmgisAPI.request('layers:getConfig', 'myLayerName')
+const legends = await window.mmgisAPI.request('layers:getLegend') // keyed by UUID
 
 // Toggle a layer
 const newState = await window.mmgisAPI.request('layers:toggle', 'myLayerName')
