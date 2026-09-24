@@ -442,6 +442,7 @@ window.mmgisAPI.request('map:showPopup', {
 | `layers:toggle` | `layerUUID` | `boolean \| null` | Toggle layer visibility |
 | `layers:getOrder` | none | `string[]` | Draw order as layer UUIDs, top first, headers excluded |
 | `layers:setOrder` | `{ order }` | `boolean` | Apply a full permutation of the draw order (UUIDs, or display names where the name is unique). Returns `false` and changes nothing if `order` is not an array or a layer is missing, unknown, or repeated. On Leaflet, vectors always draw above rasters whatever the order says |
+| `layers:getLegend` | `layerUUID` (optional, UUID or display name) | `LayerLegend \| null` for one layer (`null` if unknown), or `Record<string, LayerLegend>` keyed by UUID when called with no argument | Get a layer's resolved legend: `type` (`'gradient' \| 'categorical' \| 'text' \| 'none'`), `stops` (resolved CSS colors or null), `min`/`max` (numbers or null when unset), `unit` (`{ label }` or null), `swatches` (`{ color, label }[]` or null), and `colormap` (name or null). A layer whose legend fails to build answers `type: 'none'` |
 | `layers:getTemporalExtent` | `layerUUID` (optional) | `{ start, end, interval } \| null`, or a UUID-keyed map of them | When the layer has data: `start`/`end` are ISO datetimes (or `null`) with `now`-style policies in `dataStartTime`/`dataEndTime` resolved at the moment of asking, and a periodic layer's `end` floored to its last step. `interval` is the layer's parsed `time.interval` as `{ years, months, weeks, days, hours, minutes, seconds }`, or `null` when it declares none or an unparseable one. Called without a layer, answers for every layer. A raster tile layer with an `interval` of an hour or more requests only the period holding the cursor, not the whole Time Control window: see `getLayerStartTime` in the Main JavaScript API |
 
 ```javascript
@@ -449,6 +450,7 @@ window.mmgisAPI.request('map:showPopup', {
 const allLayers = await window.mmgisAPI.request('layers:getAll')
 const visibleLayers = await window.mmgisAPI.request('layers:getVisible')
 const config = await window.mmgisAPI.request('layers:getConfig', 'myLayerName')
+const legends = await window.mmgisAPI.request('layers:getLegend') // keyed by UUID
 
 // Toggle a layer
 const newState = await window.mmgisAPI.request('layers:toggle', 'myLayerName')
