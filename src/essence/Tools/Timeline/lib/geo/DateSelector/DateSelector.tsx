@@ -20,7 +20,17 @@ export interface DateSelectorProps {
      * picked. The calendar still opens around `selectedDate` throughout.
      */
     placeholder?: string
+    /**
+     * A moment format for the date on the button, in place of the one the
+     * time mode picks. The popover still follows `timeMode`.
+     */
+    dateFormat?: string
     onDateChange: (date: Date) => void
+    /**
+     * Renders a "Today" action beside the date that moves to the current
+     * minute. It is disabled while that minute falls outside the range.
+     */
+    showToday?: boolean
     /**
      * Renders a "Compare date" action beside the date, wired to this handler.
      * When omitted, neither the action nor its divider is drawn.
@@ -44,7 +54,9 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
     timeMode = 'DAY',
     className,
     placeholder,
+    dateFormat,
     onDateChange,
+    showToday = false,
     onCompareClick,
 }) => {
     const [isOpen, setIsOpen] = useState(false)
@@ -71,6 +83,19 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
         formattedDate = moment.utc(selectedDate).format('MMMM YYYY')
     } else if (timeMode === 'HOUR') {
         formattedDate = moment.utc(selectedDate).format('MMM D, YYYY, HH:mm')
+    }
+    if (dateFormat) formattedDate = moment.utc(selectedDate).format(dateFormat)
+
+    // Read at render, so it is only as fresh as the last render. The timeline
+    // re-renders on every time change, which is when the range can move.
+    const now = moment.utc().startOf('minute').toDate()
+    const nowInRange = now >= startTime && now <= endTime
+
+    const handleTodayClick = () => {
+        if (!nowInRange) return
+        setHasPicked(true)
+        setIsOpen(false)
+        onDateChange(now)
     }
 
     const popoverTitle =
@@ -291,11 +316,30 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
                     </span>
                 </button>
 
+                {showToday && (
+                    <>
+                        <div className="date-selector-divider"></div>
+                        <button
+                            className="date-selector-action today-button"
+                            type="button"
+                            onClick={handleTodayClick}
+                            disabled={!nowInRange}
+                            title={
+                                nowInRange
+                                    ? 'Move to the current date and time'
+                                    : 'The current date is outside the timeline range'
+                            }
+                        >
+                            Today
+                        </button>
+                    </>
+                )}
+
                 {onCompareClick && (
                     <>
                         <div className="date-selector-divider"></div>
                         <button
-                            className="compare-date-button"
+                            className="date-selector-action compare-date-button"
                             type="button"
                             onClick={onCompareClick}
                         >

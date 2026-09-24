@@ -696,16 +696,26 @@ export const TimelineAdapter: React.FC = () => {
         <div className={`timeline${isCollapsed ? ' timeline--collapsed' : ''}`}>
             <div className="timeline-header">
                 <div className="timeline-header-left">
+                    {/* The date reads and picks to the minute whatever the
+                        granularity, so the exact instant on the map is always
+                        visible and reachable. */}
                     <DateSelector
                         selectedDate={currentTime}
                         startTime={startTime}
                         endTime={endTime}
-                        timeMode={timeMode}
+                        timeMode="HOUR"
+                        dateFormat="MMM D, YYYY · HH:mm [UTC]"
                         onDateChange={commitAndReveal}
+                        showToday
                         onCompareClick={handleCompareClick}
                     />
                 </div>
                 <div className="timeline-header-center">
+                    <TimeModeControl
+                        currentMode={timeMode}
+                        onModeChange={setTimeMode}
+                        modes={availableTimeModes}
+                    />
                     <PlaybackControls
                         isPlaying={isPlaying}
                         showPlayButton={allowPlayback}
@@ -725,27 +735,28 @@ export const TimelineAdapter: React.FC = () => {
                     )}
                 </div>
                 <div className="timeline-header-right">
-                    <TimeModeControl
-                        currentMode={timeMode}
-                        onModeChange={setTimeMode}
-                        modes={availableTimeModes}
-                    />
                     <div className="timeline-toolbar">
                         {/* Collapsed, the chart these act on is off screen,
                             so a zoom has nothing to show for itself. */}
                         {!isCollapsed && (
-                            <ZoomControls
-                                sliderValue={zoom.sliderValue}
-                                spanMs={zoom.view.end.getTime() - zoom.view.start.getTime()}
-                                canZoom={zoom.canZoom}
-                                canFit={zoom.canFit}
-                                autoFit={zoom.autoFit}
-                                onZoomIn={zoom.zoomIn}
-                                onZoomOut={zoom.zoomOut}
-                                onSliderChange={zoom.setSliderValue}
-                                onToggleAutoFit={zoom.toggleAutoFit}
-                                onFitNow={zoom.fitToLayers}
-                            />
+                            <>
+                                <ZoomControls
+                                    sliderValue={zoom.sliderValue}
+                                    spanMs={zoom.view.end.getTime() - zoom.view.start.getTime()}
+                                    canZoom={zoom.canZoom}
+                                    canFit={zoom.canFit}
+                                    autoFit={zoom.autoFit}
+                                    onZoomIn={zoom.zoomIn}
+                                    onZoomOut={zoom.zoomOut}
+                                    onSliderChange={zoom.setSliderValue}
+                                    onToggleAutoFit={zoom.toggleAutoFit}
+                                    onFitNow={zoom.fitToLayers}
+                                />
+                                <div
+                                    className="timeline-toolbar-divider"
+                                    aria-hidden="true"
+                                />
+                            </>
                         )}
                         <button
                             type="button"
@@ -763,6 +774,10 @@ export const TimelineAdapter: React.FC = () => {
                                 <path d="M11 7h2v2h-2V7zm0 4h2v6h-2v-6zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/>
                             </svg>
                         </button>
+                        <div
+                            className="timeline-toolbar-divider"
+                            aria-hidden="true"
+                        />
                         <button
                             type="button"
                             className="timeline-tool-btn timeline-collapse-btn"
