@@ -188,14 +188,6 @@ describe('fetchTimeseries lib', () => {
             ])
         })
 
-        test('finds the array under common container keys', () => {
-            const series = mapResponseSeries(
-                { data: [{ date: '2026-01-01', mean: 3 }] },
-                { url: 'x' },
-            )
-            expect(series[0].points).toEqual([{ x: '2026-01-01', y: 3 }])
-        })
-
         test('honors seriesPath and explicit dot-path xKey/yKey', () => {
             const series = mapResponseSeries(
                 { a: { b: [{ meta: { ts: 100 }, no2: 4 }] } },
@@ -204,23 +196,7 @@ describe('fetchTimeseries lib', () => {
             expect(series[0].points).toEqual([{ x: 100, y: 4 }])
         })
 
-        test('supports parallel arrays via xKey/yKey', () => {
-            const series = mapResponseSeries(
-                { data: { times: ['2026-01-01', '2026-01-02'], vals: [1, 2] } },
-                { url: 'x', seriesPath: 'data', xKey: 'times', yKey: 'vals' },
-            )
-            expect(series).toEqual([
-                {
-                    key: '',
-                    points: [
-                        { x: '2026-01-01', y: 1 },
-                        { x: '2026-01-02', y: 2 },
-                    ],
-                },
-            ])
-        })
-
-        test('OGC FeatureCollection works with zero key config: features container, properties.* auto keys', () => {
+        test('OGC FeatureCollection works with zero key config: features default, properties.* resolved', () => {
             const series = mapResponseSeries(AQS_RESPONSE, { url: 'x' })
             // No groupBy: all observations land in one series.
             expect(series).toHaveLength(1)
@@ -287,60 +263,25 @@ describe('fetchTimeseries lib', () => {
             ])
         })
 
-        test('parallel arrays at the response root need no seriesPath', () => {
-            const series = mapResponseSeries(
-                { times: ['2026-01-01', '2026-01-02'], vals: [1, 2] },
-                { url: 'x', xKey: 'times', yKey: 'vals' },
-            )
-            expect(series[0].points).toEqual([
-                { x: '2026-01-01', y: 1 },
-                { x: '2026-01-02', y: 2 },
-            ])
-        })
-
-        test('parallel arrays resolve dot-path keys', () => {
-            const series = mapResponseSeries(
-                { result: { t: ['2026-01-01'], v: [3] } },
-                { url: 'x', xKey: 'result.t', yKey: 'result.v' },
-            )
-            expect(series[0].points).toEqual([{ x: '2026-01-01', y: 3 }])
-        })
-
-        test('ragged parallel arrays name the length mismatch', () => {
-            expect(() =>
-                mapResponseSeries(
-                    { times: ['a', 'b'], vals: [1] },
-                    { url: 'x', xKey: 'times', yKey: 'vals' },
-                ),
-            ).toThrow(/different lengths/)
-        })
-
         test('a configured key matching nothing blames the config, not the API', () => {
             expect(() =>
                 mapResponseSeries(
                     [{ datetime: '2026-01-01', value: 1 }],
                     { url: 'x', xKey: 'timestamp_utc' },
                 ),
-            ).toThrow(/Configured xKey 'timestamp_utc'/)
+            ).toThrow(/xKey 'timestamp_utc'/)
         })
 
-        test('a populated container is preferred over an empty one', () => {
-            const series = mapResponseSeries(
-                {
-                    data: [],
-                    features: [{ properties: { datetime: 'a', value: 1 } }],
-                },
-                { url: 'x' },
-            )
-            expect(series[0].points).toEqual([{ x: 'a', y: 1 }])
-        })
-
-        test('key auto-detection skips past a leading metadata row', () => {
-            const series = mapResponseSeries(
-                [{ meta: true }, { datetime: 'a', value: 1 }],
-                { url: 'x' },
-            )
-            expect(series[0].points).toEqual([{ x: 'a', y: 1 }])
+        test('a response with no point array at seriesPath names the path', () => {
+            expect(() =>
+                mapResponseSeries({ items: [{ datetime: 'a', value: 1 }] }, { url: 'x' }),
+            ).toThrow(/No point array at 'features'/)
+            expect(() =>
+                mapResponseSeries(
+                    { features: [{ datetime: 'a', value: 1 }] },
+                    { url: 'x', seriesPath: 'data' },
+                ),
+            ).toThrow(/No point array at 'data'/)
         })
 
         test('all-null values point at yKey instead of an empty plot', () => {
@@ -372,7 +313,7 @@ describe('fetchTimeseries lib', () => {
             const payload = buildPayload({
                 chartId: 'vector-timeseries',
                 response: [{ datetime: '2026-01-01', value: 1 }],
-                config: { url: 'x', yLabel: 'NO₂', label: 'NO₂' },
+                config: { url: 'x', label: 'NO₂' },
                 title: 'Station 42',
                 layerDisplayName: 'Air Stations',
                 layerName: 'uuid-1',
@@ -382,8 +323,6 @@ describe('fetchTimeseries lib', () => {
                 chartId: 'vector-timeseries',
                 title: 'Station 42',
                 subtitle: 'Air Stations',
-                xType: 'time',
-                yLabel: 'NO₂',
                 series: [
                     {
                         id: 'timeseries',
@@ -418,29 +357,6 @@ describe('fetchTimeseries lib', () => {
                 },
                 { id: 'ozone', label: 'Ozone', unit: 'Parts per million' },
             ])
-        })
-
-        test('configured xType passes through; unknown values degrade to time', () => {
-            const base = {
-                chartId: 'c',
-                response: [{ datetime: '2017', value: 1 }],
-                title: 'T',
-                layerDisplayName: 'L',
-                layerName: 'uuid-1',
-            }
-            expect(
-                buildPayload({ ...base, config: { url: 'x', xType: 'linear' } })
-                    .xType,
-            ).toBe('linear')
-            expect(buildPayload({ ...base, config: { url: 'x' } }).xType).toBe(
-                'time',
-            )
-            expect(
-                buildPayload({
-                    ...base,
-                    config: { url: 'x', xType: 'datetime' },
-                }).xType,
-            ).toBe('time')
         })
 
         test('a paginated response marks the title as truncated', () => {

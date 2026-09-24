@@ -59,16 +59,10 @@ yourself; this plugin does not care who sent it.
 | `url` | yes | Fetch URL template. Placeholders: `{properties.<key>}` (dot-paths work), `{lon}`/`{lat}` (the feature's Point coordinates, falling back to the clicked location — so they work on vector-tile layers whose features carry no geometry), and `{id}` (only when the source data itself provides feature ids — MMGIS does not assign them, so prefer `{properties.<key>}`). Values are URL-encoded; a missing value surfaces as a visible error. Braces are placeholder syntax — a literal `{`/`}` (e.g. CQL2 filters) is not supported. |
 | `titleProp` | no | Feature property used as the chart title (default: `name` → `title` → feature id → layer name). |
 | `label` | no | Series label for ungrouped responses (default: layer display name). |
-| `yLabel` | no | Reserved: carried on the payload but not rendered by SeriesChart (the card footer names the variable and unit). |
-| `xType` | no | x-axis interpretation: `time` (default; x values must be ISO datetime strings or epoch milliseconds), `linear` (plain numbers, e.g. a year column), or `category` (discrete labels). |
-| `seriesPath` | no | Dot-path to the point array (default: the response itself if an array, else the first array under `data`/`values`/`timeseries`/`items`/`results`/`features`). |
-| `xKey` / `yKey` | no | Dot-paths to a point's time/value (default: `datetime`/`date`/`time`/… and `value`/`y`/`mean`/…, probed at the top level and under `properties.` — GeoJSON observation features work with zero config). |
+| `seriesPath` | no | Dot-path to the point array when the response is an object (default `features`, the GeoJSON FeatureCollection shape). Ignored when the response is itself an array. |
+| `xKey` / `yKey` | no | Dot-paths to a point's time and value (defaults `datetime` and `value`), resolved at the point's top level and under `properties.`, so GeoJSON observation features need nothing set. Time values are ISO datetime strings or epoch milliseconds. |
 | `groupBy` | no | Dot-path whose distinct values split the response into one series each (e.g. one line per measured parameter). |
 | `unitKey` | no | Dot-path to a point's unit, carried onto its series; SeriesChart shows it in the card footer next to the variable name. |
-
-Parallel-array responses (`{ times: [...], vals: [...] }`) are supported by
-pointing `xKey`/`yKey` at the two arrays — at the response root or under
-`seriesPath`.
 
 ## Working demo: EPA AQS stations (dev.openveda.cloud)
 
