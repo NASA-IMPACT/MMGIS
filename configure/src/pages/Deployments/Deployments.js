@@ -23,6 +23,8 @@ import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
 import Tooltip from "@mui/material/Tooltip";
 import TextField from "@mui/material/TextField";
+import Checkbox from "@mui/material/Checkbox";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import InputLabel from "@mui/material/InputLabel";
 import MenuItem from "@mui/material/MenuItem";
 import FormControl from "@mui/material/FormControl";
@@ -186,12 +188,16 @@ export default function Deployments() {
 
   const [publishMission, setPublishMission] = useState("");
   const [publishName, setPublishName] = useState("");
+  const [publishUsername, setPublishUsername] = useState("mmgis");
+  const [publishPassword, setPublishPassword] = useState("");
   // True while a publish request is in flight; disables the Publish button
   // so a double-click cannot send two.
   const [publishing, setPublishing] = useState(false);
   // The `exists` refusal from the publish route, while the admin is being
   // asked whether they really want a second dashboard for the mission.
   const [duplicatePrompt, setDuplicatePrompt] = useState(null);
+  // The row whose Update dialog is open, with the dialog's fields.
+  const [updatePrompt, setUpdatePrompt] = useState(null);
 
   const queryDeployments = useCallback(() => {
     queryDeploymentsCall(dispatch);
@@ -218,6 +224,9 @@ export default function Deployments() {
       {
         mission: publishMission,
         name: publishName || publishMission,
+        ...(publishPassword
+          ? { username: publishUsername, password: publishPassword }
+          : {}),
         ...(force ? { force: true } : {}),
       },
       () => {
@@ -229,6 +238,7 @@ export default function Deployments() {
           })
         );
         setPublishName("");
+        setPublishPassword("");
         queryDeployments();
       },
       (res) => {
@@ -263,10 +273,10 @@ export default function Deployments() {
     existingDeployment != null &&
     updateDisabledReason(existingDeployment) == null;
 
-  const update = (deployment) => {
+  const update = (deployment, body) => {
     calls.api(
       "updateDeployment",
-      { urlReplacements: { id: deployment.id } },
+      { urlReplacements: { id: deployment.id }, ...body },
       () => {
         dispatch(
           setSnackBarText({
@@ -289,6 +299,23 @@ export default function Deployments() {
         queryDeployments();
       }
     );
+  };
+
+  const updateOwn = updatePrompt?.deployment.settings?.auth;
+  const setUpdateField = (key, value) =>
+    setUpdatePrompt((prompt) => ({ ...prompt, [key]: value }));
+  // An untouched dialog sends no body (today's Update), so a row without its
+  // own credential keeps following the environment.
+  const confirmUpdate = () => {
+    const { deployment, username, password, remove } = updatePrompt;
+    setUpdatePrompt(null);
+    if (remove) update(deployment, { removePassword: true });
+    else if (
+      password !== "" ||
+      (updateOwn != null && username !== (updateOwn.username || "mmgis"))
+    )
+      update(deployment, { username, password });
+    else update(deployment);
   };
 
   // Deletion is destructive (tears down the dashboard's hosting), so it
@@ -350,6 +377,22 @@ export default function Deployments() {
             label="Dashboard Name (optional)"
             value={publishName}
             onChange={(e) => setPublishName(e.target.value)}
+          />
+          <TextField
+            size="small"
+            label="Username"
+            autoComplete="off"
+            value={publishUsername}
+            onChange={(e) => setPublishUsername(e.target.value)}
+          />
+          <TextField
+            size="small"
+            type="password"
+            label="Password"
+            autoComplete="new-password"
+            placeholder="leave blank for environment default"
+            value={publishPassword}
+            onChange={(e) => setPublishPassword(e.target.value)}
           />
           <Button
             className={c.publishButton}
@@ -423,7 +466,14 @@ export default function Deployments() {
                         <IconButton
                           size="small"
                           disabled={updateBlocked != null}
-                          onClick={() => update(d)}
+                          onClick={() =>
+                            setUpdatePrompt({
+                              deployment: d,
+                              username: d.settings?.auth?.username || "mmgis",
+                              password: "",
+                              remove: false,
+                            })
+                          }
                         >
                           <UpgradeIcon fontSize="small" />
                         </IconButton>
@@ -496,6 +546,50 @@ export default function Deployments() {
           <Button onClick={() => setDuplicatePrompt(null)}>Cancel</Button>
           <Button variant="contained" onClick={confirmDuplicatePublish}>
             Publish another
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={updatePrompt != null} onClose={() => setUpdatePrompt(null)}>
+        <DialogTitle>Update '{updatePrompt?.deployment.name}'?</DialogTitle>
+        <DialogContent>
+          <TextField
+            size="small"
+            margin="dense"
+            fullWidth
+            label="Username"
+            autoComplete="off"
+            value={updatePrompt?.username || ""}
+            onChange={(e) => setUpdateField("username", e.target.value)}
+          />
+          <TextField
+            size="small"
+            margin="dense"
+            fullWidth
+            type="password"
+            label="Password"
+            autoComplete="new-password"
+            placeholder={
+              updateOwn ? "unchanged" : "leave blank for environment default"
+            }
+            value={updatePrompt?.password || ""}
+            onChange={(e) => setUpdateField("password", e.target.value)}
+          />
+          {updateOwn ? (
+            <FormControlLabel
+              label="Remove password (use environment default)"
+              control={
+                <Checkbox
+                  checked={updatePrompt.remove}
+                  onChange={(e) => setUpdateField("remove", e.target.checked)}
+                />
+              }
+            />
+          ) : null}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setUpdatePrompt(null)}>Cancel</Button>
+          <Button variant="contained" onClick={confirmUpdate}>
+            Update
           </Button>
         </DialogActions>
       </Dialog>
