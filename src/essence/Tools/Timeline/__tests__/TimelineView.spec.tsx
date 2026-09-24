@@ -212,6 +212,90 @@ describe('TimelineView layer navigation', () => {
     })
 })
 
+/**
+ * The scrubber's head sits in a strip of its own above the first layer row,
+ * so it never covers a row's bars at the current time. The sidebar opens
+ * with a spacer of the same height, so each name stays level with its row.
+ */
+describe('TimelineView head room', () => {
+    let container: HTMLElement
+    let root: Root
+    let originalResizeObserver: unknown
+
+    beforeEach(() => {
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+        act(() => {
+            root.render(
+                <TimelineView
+                    startTime={START}
+                    endTime={END}
+                    currentTime={CURRENT}
+                    timeMode="DAY"
+                    configuredGranularity="DAY"
+                    layers={[
+                        layer('MODIS Daily', sparseNav('2020-05-01')),
+                        layer('Basemap'),
+                        layer('Hillshade'),
+                    ]}
+                    view={{ start: START, end: END }}
+                    onViewChange={() => {}}
+                    onCurrentTimeChange={() => {}}
+                    onLayerNavigate={() => {}}
+                    onFitLayer={() => {}}
+                />,
+            )
+        })
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver as typeof ResizeObserver
+    })
+
+    const chartRows = () =>
+        Array.from(container.querySelectorAll<SVGRectElement>('.layer-row-bg'))
+
+    const num = (el: Element, name: string) => Number(el.getAttribute(name))
+
+    /** The head's vertical centre and scale, read off its transform. */
+    const headPlacement = () => {
+        const transform = container
+            .querySelector('g.timeline-scrubber-handle')!
+            .getAttribute('transform')!
+        const [, y] = /translate\([^,]+,\s*([^)]+)\)/.exec(transform)!
+        const [, scale] = /scale\(([^)]+)\)/.exec(transform)!
+        return { centre: Number(y), scale: Number(scale) }
+    }
+
+    test('draws the head wholly above the first layer row, and opens the sidebar with a spacer of the same height', () => {
+        const top = num(chartRows()[0], 'y')
+
+        // The artwork's diamond is 22 units tall in its own space.
+        const { centre, scale } = headPlacement()
+        const halfHeight = (22 * scale) / 2
+        expect(centre - halfHeight).toBeGreaterThanOrEqual(0)
+        expect(centre + halfHeight).toBeLessThanOrEqual(top)
+
+        const spacer = container.querySelector<HTMLElement>(
+            '.timeline-sidebar-layers > .timeline-sidebar-gutter',
+        )!
+        expect(spacer).not.toBeNull()
+        expect(spacer.style.height).toBe(`${top}px`)
+        // Before every row, so the pitch below it is unchanged.
+        expect(spacer.nextElementSibling).toBe(
+            container.querySelector('.timeline-sidebar-layers > .layer-item'),
+        )
+    })
+})
+
 describe('TimelineView visible window', () => {
     let container: HTMLElement
     let root: Root

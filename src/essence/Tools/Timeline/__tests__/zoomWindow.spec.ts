@@ -17,6 +17,7 @@ import {
     fitWindow,
     interpolateWindow,
     minViewDuration,
+    revealWindow,
     sliderToWindow,
     transformToWindow,
     windowAtSpan,
@@ -133,6 +134,37 @@ describe('zoomAround', () => {
         expect(iso(zoomAround(point, 0.5, point.start, point, 3 * DAY))).toEqual(
             iso(point)
         )
+    })
+})
+
+/**
+ * What a playback or layer control does to the view when it moves the
+ * scrubber: nothing when the scrubber is on screen, a pan that centres it
+ * when it is not, and never a change of span.
+ */
+describe('revealWindow', () => {
+    const month = win('2019-06-01T00:00:00Z', '2019-07-01T00:00:00Z')
+
+    test('returns the window itself for an instant already inside it', () => {
+        const at = new Date('2019-06-20T00:00:00Z')
+        expect(revealWindow(month, at, bounds, 3 * DAY)).toBe(month)
+    })
+
+    test('centres an instant outside at the same span, stopping at the bound it would pass', () => {
+        const after = new Date('2019-09-15T12:00:00Z')
+        const centred = revealWindow(month, after, bounds, 3 * DAY)
+
+        expect(span(centred)).toBe(span(month))
+        expect(centred.start.getTime() + span(centred) / 2).toBe(after.getTime())
+
+        // Four days before the end of the bounds, in a thirty-day window:
+        // centring would hang eleven days past the end.
+        const nearEnd = new Date('2021-12-28T00:00:00Z')
+        const stopped = revealWindow(month, nearEnd, bounds, 3 * DAY)
+
+        expect(span(stopped)).toBe(span(month))
+        expect(stopped.end.toISOString()).toBe(bounds.end.toISOString())
+        expect(nearEnd.getTime()).toBeGreaterThan(stopped.start.getTime())
     })
 })
 

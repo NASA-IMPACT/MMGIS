@@ -570,6 +570,47 @@ describe('useTimelineZoom', () => {
         expect(iso(api.view)).toEqual(floored)
     })
 
+    describe('revealing the scrubber', () => {
+        const JUNE = win('2019-06-01T00:00:00Z', '2019-07-01T00:00:00Z')
+
+        const centre = (w: ViewWindow) => w.start.getTime() + span(w) / 2
+
+        /** Mounted on the full window, then zoomed by hand onto June. */
+        const onJune = (over: Partial<UseTimelineZoomOptions> = {}) => {
+            render(defaults(over))
+            act(() => api.setView(JUNE))
+            expect(iso(api.view)).toEqual(iso(JUNE))
+        }
+
+        test('pans an instant off screen to the centre, and leaves auto-fit armed', () => {
+            onJune()
+            const at = new Date('2019-09-15T00:00:00Z')
+
+            act(() => api.revealTime(at))
+
+            expect(span(api.view)).toBe(span(JUNE))
+            expect(centre(api.view)).toBe(at.getTime())
+            expect(api.autoFit).toBe(true)
+        })
+
+        test('clamps against a window widened in the same batch, not the one held before it', () => {
+            // A layer control opens the global window and asks for the
+            // reveal together. Against the window held at the press, the
+            // target past its end would be slid back out of view.
+            onJune()
+            const wider = win('2019-01-01T00:00:00Z', '2020-12-31T00:00:00Z')
+            const at = new Date('2020-05-01T00:00:00Z')
+
+            act(() => {
+                root.render(<Harness options={defaults({ bounds: wider })} />)
+                api.revealTime(at)
+            })
+
+            expect(span(api.view)).toBe(span(JUNE))
+            expect(centre(api.view)).toBe(at.getTime())
+        })
+    })
+
     describe('in transition', () => {
         const within = (w: ViewWindow, of: ViewWindow) =>
             w.start.getTime() >= of.start.getTime() &&

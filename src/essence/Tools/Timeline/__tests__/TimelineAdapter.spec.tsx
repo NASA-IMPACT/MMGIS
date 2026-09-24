@@ -1,7 +1,9 @@
 import React, { act } from 'react'
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
+import { zoomTransform } from 'd3-zoom'
 import { TimelineAdapter } from '../TimelineAdapter'
+import { transformToWindow, type ViewWindow } from '../lib/utils/zoomWindow'
 import { stubReducedMotion } from './support/motion'
 
 /**
@@ -157,6 +159,10 @@ type Listener = (payload?: unknown) => void
  * bus subscriptions are kept so a test can fire them. Visibility is read
  * afresh on every request, so flipping a flag and firing the change event is
  * what revealing a layer looks like from the plugin's side.
+ *
+ * A requested commit is broadcast straight back on 'time:changed' with the
+ * payload unchanged, inside the emit that asked for it, as TimeControl does:
+ * the plugin meets its own echo before the render its commit causes.
  */
 const installSparseApi = (
     emits: Emit[],
@@ -181,6 +187,9 @@ const installSparseApi = (
         },
         emit: (event: string, payload?: unknown) => {
             emits.push({ event, payload })
+            if (event === 'time:changeRequested') {
+                listeners['time:changed']?.(payload)
+            }
         },
     }
 }
@@ -328,6 +337,234 @@ describe('TimelineAdapter layer navigation', () => {
         expect(
             document.querySelector('.timeline-info-tooltip-content')?.textContent
         ).toMatch(/layer/i)
+    })
+})
+
+/**
+ * Every time change but the chart's pointer brings the scrubber into view
+ * when it lands off screen, panning at the span the view has: playback, the
+ * playback controls, the layer rows, the date selector and commits made
+ * outside the plugin. A drag in the chart does not: the view must not move
+ * under the pointer.
+ */
+describe('TimelineAdapter following the scrubber', () => {
+    let container: HTMLElement
+    let root: Root
+    let emits: Emit[]
+    let listeners: Record<string, Listener>
+    let originalResizeObserver: unknown
+
+    /** The width the chart starts at, which the stub observer leaves alone. */
+    const WIDTH = 800
+
+    const button = (label: string) =>
+        container.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!
+
+    const chart = () =>
+        container.querySelector<SVGSVGElement>('.timeline-svg-container > svg')!
+
+    /** The visible window, as d3 holds it for the chart. */
+    const viewOn = (bounds: ViewWindow): ViewWindow =>
+        transformToWindow(zoomTransform(chart()), bounds, WIDTH)
+
+    const SEEDED: ViewWindow = { start: new Date(START), end: new Date(END) }
+
+    const spanOf = (win: ViewWindow) => win.end.getTime() - win.start.getTime()
+    const centreOf = (win: ViewWindow) => win.start.getTime() + spanOf(win) / 2
+
+    const requests = () => emits.filter((e) => e.event === 'time:changeRequested')
+    const lastCurrent = () =>
+        new Date(
+            (requests()[requests().length - 1].payload as { currentTime: string })
+                .currentTime
+        )
+
+    /** Asserts the view keeps the zoomed span and is centred on `at`. */
+    const expectCentredOn = (zoomed: ViewWindow, at: Date) => {
+        const followed = viewOn(SEEDED)
+        expect(spanOf(followed)).toBeCloseTo(spanOf(zoomed), -1)
+        expect(Math.abs(centreOf(followed) - at.getTime())).toBeLessThanOrEqual(1)
+    }
+
+    const commitFromOutside = (currentTime: string) => {
+        act(() => {
+            listeners['time:changed']({ startTime: START, endTime: END, currentTime })
+        })
+    }
+
+    beforeEach(async () => {
+        emits = []
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+
+        // The sparse layer is revealed only once auto-fit is disarmed, as in
+        // the layer navigation cases, so the seeded window holds.
+        const visible = { sparse: false, basemap: true }
+        listeners = {}
+        installSparseApi(emits, visible, listeners)
+
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+        await act(async () => {
+            root.render(<TimelineAdapter />)
+        })
+        await act(async () => {})
+
+        act(() => {
+            autoFitToggle(container)!.click()
+        })
+        visible.sparse = true
+        await act(async () => {
+            listeners['layer:visibilityChange']()
+        })
+        await act(async () => {})
+
+        // Three halvings about the scrubber: about six weeks, around mid-June.
+        for (let i = 0; i < 3; i++) {
+            act(() => button('Zoom in').click())
+        }
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        delete (window as { mmgisAPI?: unknown }).mmgisAPI
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver
+        vi.useRealTimers()
+    })
+
+    test('stepping forward holds the view until the scrubber passes its edge, then centres it', () => {
+        const zoomed = viewOn(SEEDED)
+        expect(spanOf(zoomed)).toBeLessThan(spanOf(SEEDED) / 4)
+
+        let presses = 0
+        while (presses < 120) {
+            act(() => button('Step forward').click())
+            presses++
+            if (lastCurrent().getTime() > zoomed.end.getTime()) break
+            // Inside the view, a step never moves it.
+            expect(viewOn(SEEDED)).toEqual(zoomed)
+        }
+
+        expectCentredOn(zoomed, lastCurrent())
+    })
+
+    test('playback holds the view while playing inside it, and re-centres once past the edge', () => {
+        // Playback steps on its interval, so the clock driving it is faked.
+        vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+        const zoomed = viewOn(SEEDED)
+
+        act(() => button('Play').click())
+
+        let ticks = 0
+        while (ticks < 120) {
+            act(() => vi.advanceTimersByTime(1000))
+            ticks++
+            if (lastCurrent().getTime() > zoomed.end.getTime()) break
+            expect(viewOn(SEEDED)).toEqual(zoomed)
+        }
+
+        expectCentredOn(zoomed, lastCurrent())
+    })
+
+    test('a layer jump past the window lands on the widened window, with the target on screen', () => {
+        act(() => button('Rover Images: last date').click())
+
+        // Committed locally at once, alongside the reveal.
+        const widened: ViewWindow = {
+            start: new Date(START),
+            end: new Date(PAST_WINDOW),
+        }
+        const followed = viewOn(widened)
+        expect(followed.end.toISOString()).toBe(PAST_WINDOW)
+        expect(followed.start.getTime()).toBeLessThan(new Date(PAST_WINDOW).getTime())
+    })
+
+    test('a drag released past the edge of the chart commits there and leaves the view be', () => {
+        // The drag is clamped to the global window, not to the view, so a
+        // release past the chart's right edge commits an instant off screen.
+        // Core's echo of that commit arrives inside the emit, before the
+        // render the commit causes, and is not followed either. Pointer
+        // capture keeps the move and release on the head wherever the
+        // pointer goes.
+        const zoomed = viewOn(SEEDED)
+        const head = container.querySelector<SVGGElement>('g.timeline-scrubber-handle')!
+        const pointer = (type: string, x: number) =>
+            new MouseEvent(type, { bubbles: true, clientX: x, clientY: 30 })
+
+        act(() => head.dispatchEvent(pointer('pointerdown', 400)))
+        act(() => head.dispatchEvent(pointer('pointermove', WIDTH * 1.5)))
+        act(() => head.dispatchEvent(pointer('pointerup', WIDTH * 1.5)))
+
+        expect(requests()).toHaveLength(1)
+        expect(lastCurrent().getTime()).toBeGreaterThan(zoomed.end.getTime())
+        expect(lastCurrent().getTime()).toBeLessThan(new Date(END).getTime())
+        expect(viewOn(SEEDED)).toEqual(zoomed)
+    })
+
+    test('a day picked in the date selector off screen centres the view on it', () => {
+        const zoomed = viewOn(SEEDED)
+
+        act(() => {
+            container
+                .querySelector<HTMLButtonElement>('.date-selector-main-button')!
+                .click()
+        })
+        // The popover portals to document.body. Three months back from June.
+        for (let i = 0; i < 3; i++) {
+            act(() => {
+                document.body
+                    .querySelector<HTMLButtonElement>('[aria-label="Previous month"]')!
+                    .click()
+            })
+        }
+        const day = Array.from(
+            document.body.querySelectorAll<HTMLButtonElement>(
+                '.day-calendar-grid .day-calendar-cell'
+            )
+        ).find((cell) => cell.textContent === '15')!
+        act(() => day.click())
+
+        expect(lastCurrent().toISOString()).toBe('2024-03-15T00:00:00.000Z')
+        expect(lastCurrent().getTime()).toBeLessThan(zoomed.start.getTime())
+        expectCentredOn(zoomed, lastCurrent())
+    })
+
+    test('a commit from outside the plugin off screen centres the view on it', () => {
+        const zoomed = viewOn(SEEDED)
+        const at = new Date('2024-10-01T00:00:00Z')
+        expect(at.getTime()).toBeGreaterThan(zoomed.end.getTime())
+
+        commitFromOutside(at.toISOString())
+
+        expectCentredOn(zoomed, at)
+        // Following core's commit is not a commit of the plugin's own.
+        expect(requests()).toHaveLength(0)
+    })
+
+    test('collapsed, a commit from a button or from outside is revealed once the chart expands', () => {
+        const zoomed = viewOn(SEEDED)
+        const collapse = container.querySelector<HTMLButtonElement>('.timeline-collapse-btn')!
+
+        act(() => collapse.click())
+        act(() => button('Go to end').click())
+        expect(lastCurrent().toISOString()).toBe(new Date(END).toISOString())
+        act(() => collapse.click())
+
+        const followed = viewOn(SEEDED)
+        expect(followed.end.getTime()).toBe(new Date(END).getTime())
+        expect(spanOf(followed)).toBeCloseTo(spanOf(zoomed), -1)
+
+        const at = new Date('2024-03-01T00:00:00Z')
+        act(() => collapse.click())
+        commitFromOutside(at.toISOString())
+        act(() => collapse.click())
+
+        expectCentredOn(zoomed, at)
     })
 })
 
@@ -556,6 +793,36 @@ describe('TimelineAdapter zoom before and at the seed', () => {
             container.querySelector('[aria-label="Rover Images: next date"]')
         ).not.toBeNull()
         expect(requests()).toHaveLength(1)
+    })
+
+    test('a commit reaching the bus ahead of the seed leaves the first fit armed and in place', async () => {
+        const releaseSeed = await mount(
+            { sparse: true, basemap: true },
+            'time:getStart'
+        )
+
+        // An instant other than the one the seed will answer with, as a URL
+        // or another plugin might commit while the timeline is still loading.
+        act(() => {
+            listeners['time:changed']({
+                startTime: START,
+                endTime: END,
+                currentTime: '2024-09-01T00:00:00Z',
+            })
+        })
+
+        await act(async () => {
+            releaseSeed()
+        })
+        await act(async () => {})
+
+        expect(autoFitToggle(container)!.getAttribute('aria-pressed')).toBe('true')
+        // The fit's one widen, framing the layer, and nothing moved after it.
+        expect(requests()).toHaveLength(1)
+        expect(requests()[0].payload).toMatchObject({
+            startTime: BEFORE_WINDOW_DAY_START,
+            endTime: PAST_WINDOW,
+        })
     })
 
     test('the first fit waits for the configured granularity and runs at its floor', async () => {

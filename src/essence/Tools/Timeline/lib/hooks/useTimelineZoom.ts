@@ -6,6 +6,7 @@ import {
     clampWindow,
     fitWindow,
     minViewDuration,
+    revealWindow,
     sameWindow,
     sliderToWindow,
     windowToSlider,
@@ -77,6 +78,14 @@ export interface TimelineZoom {
     fitToLayers(): void
     /** Frames one layer's span, in transition. */
     fitToLayer(layer: LayerTimeData): void
+    /**
+     * Pans the view, at the span it has, to bring `at` on screen: centred on
+     * it, or stopped at the edge of the global window where centring would
+     * pass it. Nothing moves when `at` is already in view. Auto-fit is left
+     * as it stands: only its toggle disarms it. In transition; instant under
+     * reduced motion.
+     */
+    revealTime(at: Date): void
 }
 
 /**
@@ -405,6 +414,49 @@ export function useTimelineZoom({
         [applyFit]
     )
 
+    // An instant waiting to be revealed, and a count bumped with each request
+    // so the render that carries it runs the effect below even when nothing
+    // else in the hook changed.
+    const pendingRevealRef = useRef<Date | null>(null)
+    const [revealRequest, setRevealRequest] = useState(0)
+
+    const revealTime = useCallback((at: Date) => {
+        pendingRevealRef.current = at
+        setRevealRequest((count) => count + 1)
+    }, [])
+
+    // Applied once the request's render commits rather than when it is made.
+    // A layer control, or a commit from outside the plugin, moves the global
+    // window in the same batch as it asks for the reveal, so at the call the
+    // hook holds only the window from before; clamped against that, a
+    // target past the old edge would be slid straight back out of view. The
+    // render that carries the request also carries the moved window, and the
+    // effect clamps against that render's span. The request is consumed from
+    // the ref, so an effect re-run with nothing new to reveal does nothing.
+    //
+    // Measured from the destination of a transition in flight, as a zoom
+    // press is, so a reveal landing mid-flight whose instant the flight is
+    // already heading to show leaves the flight to finish. Declared after
+    // the auto-fit effect, so a refit started in the same render is the
+    // origin the reveal measures from and, when it has to pan, the flight
+    // the reveal replaces.
+    //
+    // Auto-fit stays armed through a pan. The refit it arms keys on the
+    // layers' own bounds, which a reveal does not touch, and the refetch a
+    // widen causes leaves them as they were, so the view stays on the
+    // revealed instant until the layer set itself changes.
+    useEffect(() => {
+        const at = pendingRevealRef.current
+        if (!at) return
+        pendingRevealRef.current = null
+
+        const origin = transition.target() ?? viewRef.current
+        const next = revealWindow(origin, at, effectiveBounds, minMs)
+        if (next === origin || sameWindow(next, origin)) return
+
+        transition.animateTo(viewRef.current, next)
+    }, [revealRequest, effectiveBounds, transition, minMs])
+
     /**
      * Records standing intent, not the last action: a manual zoom holds the
      * view and leaves the toggle lit, and the next change to the signature
@@ -440,5 +492,6 @@ export function useTimelineZoom({
         toggleAutoFit,
         fitToLayers,
         fitToLayer,
+        revealTime,
     }
 }
