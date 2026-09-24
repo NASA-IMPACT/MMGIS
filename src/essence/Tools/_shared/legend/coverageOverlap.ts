@@ -1,8 +1,8 @@
 /**
  * What part of a layer's coverage a request could have returned.
  *
- * The map asks a server for a span — the time window's start to its cursor —
- * and the layer says, through its Data Time Extent, where its data exists at
+ * The map asks a server for a span — the one core stamped on the layer — and
+ * the layer says, through its Data Time Extent, where its data exists at
  * all. Only where the two meet can the pixels on screen be from, whatever
  * scene the server picked inside it. Pure arithmetic on ISO instants: an
  * absent bound is unbounded rather than zero, and a bound that will not parse
@@ -15,7 +15,8 @@ import { parseInstant, type Instant } from './isoInstant'
 export type Coverage = { start: string | null; end: string | null }
 
 /** The span the map requested. Its start is absent in the Time Control's
- *  Point mode, where nothing says how far back the request reached. */
+ *  Point mode for a layer requesting the window rather than one period,
+ *  where nothing says how far back the request reached. */
 export type RequestSpan = { start: string | null; end: string }
 
 /** The covered part of a request. Its start is absent only when neither the
@@ -54,24 +55,4 @@ export const coverageOverlap = (
     if (end === null) return null
     if (start !== null && start.ms > end.ms) return null
     return { start: start?.text ?? null, end: end.text }
-}
-
-/**
- * Whether any of `coverage` falls inside `period` — the test for whether the
- * period holding the cursor is a range the data can be from. A period runs up
- * to but not including its end, so one ending on the coverage's first instant
- * holds none of it.
- */
-export const hasDataIn = (
-    coverage: Coverage,
-    period: { start: string; end: string },
-): boolean => {
-    const start = parseInstant(period.start)
-    const end = parseInstant(period.end)
-    if (start === null || end === null) return false
-    const coverageStart = parseInstant(coverage.start)
-    const coverageEnd = parseInstant(coverage.end)
-    if (coverageEnd !== null && start.ms > coverageEnd.ms) return false
-    if (coverageStart !== null && end.ms <= coverageStart.ms) return false
-    return true
 }

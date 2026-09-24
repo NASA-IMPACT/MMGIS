@@ -2,19 +2,13 @@ import {
     getLayersWithLegends,
     type LayerWithLegend,
 } from './getLayersWithLegends'
-import { layerPeriodFor } from './layerPeriod'
 import {
     coverageOverlap,
-    hasDataIn,
     type Coverage,
     type RequestSpan,
 } from './coverageOverlap'
-import { formatAtPrecision, formatPeriodEnd } from './datePrecision'
+import { formatAtPrecision } from './datePrecision'
 import { parseInstant } from './isoInstant'
-import {
-    parseISODuration,
-    type Duration,
-} from '../../../Basics/TimeControl_/layerTimePolicy'
 import {
     mmgisGetViewState,
     mmgisGetLayerConfigs,
@@ -25,6 +19,7 @@ import {
     mmgisGetTemporalExtents,
     mmgisGetDataCoverage,
     mmgisFormatTime,
+    type Duration,
     type LayerConfig,
     type LayerDataCoverage,
     type LegendSwatch,
@@ -65,15 +60,22 @@ export type ExportLegendModel = {
 
 type TimeMode = 'range' | 'point' | null
 
-/** The cursor a layer's tiles were requested at, the window start that
- *  request ran from, and the Time Control mode both were set in. In Point
- *  mode core pins the window start to the epoch, so the request had no start
- *  at all. A null mode (the Time UI bar is not mounted) leaves the window
- *  start to speak for itself. */
+/** The Time Control's window start, its cursor, and the mode both were set
+ *  in: what a layer's request falls back to when neither core's record nor
+ *  the layer's own config says what it requested. A null mode (the Time UI
+ *  bar is not mounted) leaves the window start to speak for itself. */
 type TimeCursor = {
     cursor: string | null
     windowStart: string | null
     mode: TimeMode
+}
+
+/** The span a layer's tiles were requested for, and whether core requested
+ *  one whole period for it rather than the Time Control window. */
+type LayerRequest = {
+    start: string | null
+    end: string | null
+    periodic: boolean
 }
 
 const timeMode = async (): Promise<TimeMode> => {
@@ -139,9 +141,8 @@ const spanLine = (verb: string, start: string, end: string): string =>
     start === end ? `${verb} ${start}` : `${verb} ${start} → ${end}`
 
 /**
- * The span the map asked the server for, which runs from the window start to
- * the cursor and never to the window's right edge. All the app can say about
- * a layer that never told it where its data exists.
+ * The span the map asked the server for. All the app can say about a layer
+ * that never told it where its data exists, or whose data the request missed.
  */
 const requestedDateLine = (
     { start, end }: RequestSpan,
@@ -156,40 +157,30 @@ const requestedDateLine = (
 }
 
 /**
- * The part of a layer's coverage the request could have returned — the only
- * range the pixels on screen can be from — narrowed to a single period, itself
- * clipped to the coverage, when the layer serves whole periods and the
- * cursor's period holds data. Null when the request and the coverage never
- * meet: the server had nothing inside the span to draw, so the caller falls
- * back to naming the request alone. Only reached for a layer core says has
- * data at the cursor, or one core gave no verdict for.
+ * Where the pixels on screen can be from, or null when the request and the
+ * coverage never meet: the server had nothing inside the span to draw, so the
+ * caller falls back to naming the request alone. Only reached for a layer
+ * core says has data at the cursor, or one core gave no verdict for.
+ *
+ * A periodic request is one whole period, and the server answers it with that
+ * period's scene, so the period prints whole — its end is already the last
+ * inclusive second, so it prints as it is. It is not clipped to the coverage:
+ * core floors a periodic extent's end to the last step's start, so clipping
+ * would cut the last period down to an instant. Any other request prints the
+ * part of the coverage it could have returned.
  */
 const collectedDateLine = (
-    interval: string | null,
     request: RequestSpan,
+    periodic: boolean,
     coverage: Coverage,
     precision: Duration | null,
 ): string | null => {
     const overlap = coverageOverlap(request, coverage)
     if (!overlap) return null
-    const period = layerPeriodFor(interval, request.end, coverage.start)
-    if (period && hasDataIn(coverage, period)) {
-        const start = formatAtPrecision(precision, period.start)
-        // A period ends where the next one starts, so what prints is the last
-        // unit it covers. The period is printed whole: core floors a periodic
-        // layer's extent end to the last step's start, so a coverage end
-        // inside this period says the period is the last one the layer holds,
-        // not that its data stops partway through.
-        const end = formatPeriodEnd(precision, period.end)
-        if (start && end) return spanLine('Collected', start, end)
-    }
-    // An overlap's ends are instants the layer's data reaches, so they print
-    // as they are.
-    const end = formatAtPrecision(precision, overlap.end)
+    const span = periodic ? request : overlap
+    const end = formatAtPrecision(precision, span.end)
     if (!end) return null
-    const start = overlap.start
-        ? formatAtPrecision(precision, overlap.start)
-        : null
+    const start = span.start ? formatAtPrecision(precision, span.start) : null
     return start ? spanLine('Collected', start, end) : `Collected until ${end}`
 }
 
@@ -200,20 +191,14 @@ const collectedDateLine = (
  * the request it can name only the request.
  */
 const cursorDateLine = (
-    interval: string | null,
-    { cursor, windowStart, mode }: TimeCursor,
+    { start, end, periodic }: LayerRequest,
     extent: TemporalExtent | undefined,
     precision: Duration | null,
 ): string | null => {
-    // A window with no cursor in it has no truthful wording: nothing says
-    // where in the window the map was asked to stop.
-    if (!cursor) return null
-    // Point mode's window start is a placeholder, not a bound the request
-    // ran from; in every other case the start is printed as given.
-    const request: RequestSpan = {
-        start: mode === 'point' ? null : windowStart,
-        end: cursor,
-    }
+    // A request with no end has no truthful wording: nothing says where in
+    // the window the map was asked to stop.
+    if (!end) return null
+    const request: RequestSpan = { start, end }
     // A bound that will not parse is no coverage at all. The overlap reads an
     // unreadable bound as unbounded, which is right for narrowing a range and
     // wrong for deciding there is one: without this, an extent of two bad
@@ -224,14 +209,52 @@ const cursorDateLine = (
     }
     if (coverage.start !== null || coverage.end !== null) {
         const collected = collectedDateLine(
-            interval,
             request,
+            periodic,
             coverage,
             precision,
         )
         if (collected) return collected
     }
     return requestedDateLine(request, precision)
+}
+
+const msToIso = (ms: number): string | null => {
+    const date = new Date(ms)
+    return Number.isNaN(date.getTime()) ? null : date.toISOString()
+}
+
+/**
+ * The span a time-enabled layer was requested for. Core's record of the
+ * window it stamped on the layer comes first; without one, the window the
+ * layer's own config carries; without that, the Time Control's window start
+ * and cursor.
+ *
+ * Point mode pins the Time Control's window start to the epoch, so a layer
+ * requesting the window had no real start, and its start is dropped. A
+ * periodic layer's start is the start of its period, a real bound, and is
+ * kept.
+ */
+const layerRequest = (
+    time: NonNullable<LayerConfig['time']>,
+    record: LayerDataCoverage | undefined,
+    globalCursor: TimeCursor,
+): LayerRequest => {
+    const periodic = record?.periodic === true
+    let start: string | null
+    let end: string | null
+    if (record?.requestedWindow) {
+        start = msToIso(record.requestedWindow.start)
+        end = msToIso(record.requestedWindow.end)
+    } else if (typeof time.end === 'string' && time.end) {
+        start = typeof time.start === 'string' ? time.start : null
+        end = time.end
+    } else {
+        start = globalCursor.windowStart
+        end = globalCursor.cursor
+    }
+    if (!periodic && globalCursor.mode === 'point') start = null
+    return { start, end, periodic }
 }
 
 /**
@@ -258,8 +281,8 @@ const extentDateLine = (
  * Every dated line opens with `Collected` or `Requested`, so a bare `A → B`
  * can never be read as a claim about when the pixels were collected. How
  * precisely its dates print is the layer's own `time.interval`'s business,
- * whichever line it ends up on. Null when no date can be had, which is always
- * safer than a borrowed one.
+ * read as core parsed it, whichever line it ends up on. Null when no date can
+ * be had, which is always safer than a borrowed one.
  *
  * Whether a time-enabled layer has data at the cursor is core's call, not
  * this module's: core's coverage gate decides it on every time step and hides
@@ -270,32 +293,21 @@ const extentDateLine = (
 const dateLineFor = (
     cfg: LayerConfig | undefined,
     extent: TemporalExtent | undefined,
-    coverage: LayerDataCoverage | undefined,
+    record: LayerDataCoverage | undefined,
     globalCursor: TimeCursor,
 ): string | null => {
     const time = cfg?.time
     try {
-        const interval =
-            typeof time?.interval === 'string' ? time.interval : null
-        const precision = interval ? parseISODuration(interval.trim()) : null
-        if (time?.enabled !== true) {
+        const precision = extent?.interval ?? null
+        if (!time || time.enabled !== true) {
             return extentDateLine(extent, precision)
         }
-        if (coverage?.outOfDataRange === true) return NO_DATA_AT_CURSOR
-        // A 'local' layer keeps its own window and is not restamped when the
-        // time cursor moves; everything else follows the global cursor. A
-        // local layer the dashboard has not stamped yet has no window of its
-        // own to read, and the global one is what its features are filtered
-        // against until it does. Its stamped window came from the same Time
-        // Control, so the global mode decides whether its start is real.
-        const local: TimeCursor = {
-            cursor: time.end ?? null,
-            windowStart: time.start ?? null,
-            mode: globalCursor.mode,
-        }
-        const cursor: TimeCursor =
-            time.type === 'local' && local.cursor ? local : globalCursor
-        return cursorDateLine(interval, cursor, extent, precision)
+        if (record?.outOfDataRange === true) return NO_DATA_AT_CURSOR
+        return cursorDateLine(
+            layerRequest(time, record, globalCursor),
+            extent,
+            precision,
+        )
     } catch (err) {
         console.warn('[export legend] could not build a layer date line', err)
         return null

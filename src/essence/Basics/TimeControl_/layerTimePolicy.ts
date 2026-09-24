@@ -58,7 +58,7 @@ export function parseISODuration(value: string): Duration | null {
 // date-component math, never ms arithmetic. Applying `factor × d` in one
 // pass keeps a month cadence anchored to the start's day-of-month instead
 // of drifting through short months.
-export function addDuration(date: Date, d: Duration, factor: number): Date {
+function addDuration(date: Date, d: Duration, factor: number): Date {
     const out = new Date(date)
     out.setUTCFullYear(out.getUTCFullYear() + factor * d.years)
     out.setUTCMonth(out.getUTCMonth() + factor * d.months)

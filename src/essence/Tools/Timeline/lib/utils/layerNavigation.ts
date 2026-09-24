@@ -24,9 +24,11 @@ export interface LayerNavigation {
  * A list with nothing readable in it leaves the layer navigating its extent.
  * A stop is the instant an entry names, so a layer that lists the exact
  * times it has data at is navigated to those times and requests them. A bare
- * date names a span, and its stop is the span's last UTC instant: the current
- * time is assigned to each layer as `layer.time.end`, so a stop at the span's
- * first instant would close the query window before its data fell inside it.
+ * date names a span, and its stop is the span's last UTC instant: a layer
+ * requesting the Time Control window has the current time assigned as
+ * `layer.time.end`, so a stop at the span's first instant would close the
+ * query window before its data fell inside it. (A periodic raster layer is
+ * instead stamped with the whole period holding the current time.)
  *
  * An unconfigured bound is completed from the timeline's window, so the
  * controls move through the span the layer's bar is drawn over.

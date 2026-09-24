@@ -48,6 +48,33 @@ const formatted = (time) => `fmt(${time})`
 const CURSOR = '2026-08-25T00:00:00Z'
 const WINDOW_START = '2015-03-13T00:00:00Z'
 
+// A layer's interval as `layers:getTemporalExtent` answers it, already
+// parsed by core.
+const interval = (units) => ({
+    years: 0,
+    months: 0,
+    weeks: 0,
+    days: 0,
+    hours: 0,
+    minutes: 0,
+    seconds: 0,
+    ...units,
+})
+const YEARLY = interval({ years: 1 })
+const MONTHLY = interval({ months: 1 })
+const WEEKLY = interval({ weeks: 1 })
+const DAILY = interval({ days: 1 })
+
+// A layer's `layers:getDataCoverage` record: the window core stamped on it,
+// in epoch milliseconds, and whether that window is one whole period.
+const record = ({ start, end, periodic, outOfDataRange = false }) => ({
+    outOfDataRange,
+    kind: 'continuous',
+    spans: null,
+    requestedWindow: { start: Date.parse(start), end: Date.parse(end) },
+    periodic,
+})
+
 beforeEach(() => {
     vi.resetAllMocks()
     vi.mocked(mmgisGetViewState).mockResolvedValue({
@@ -145,13 +172,9 @@ describe('getExportLegendModel', () => {
 
         // Core appends `datetime=` itself, so a layer varies with the cursor
         // with no URL placeholder in sight: `time.enabled` is the signal.
-        const timeEnabled = (interval) => ({
+        const timeEnabled = (time = {}) => ({
             url: 'stac-collection:no2-monthly',
-            time: {
-                enabled: true,
-                type: 'global',
-                ...(interval ? { interval } : {}),
-            },
+            time: { enabled: true, type: 'global', ...time },
         })
 
         // Nothing says the server had data inside the span, so the line says
@@ -199,33 +222,153 @@ describe('getExportLegendModel', () => {
             warn.mockRestore()
         })
 
-        // The cursor's period is inside the layer's coverage, so the data on
-        // screen was collected in it, and the whole period is what prints.
-        // Core floors a periodic extent's end to the last step's start, so
-        // the weekly layer's end — a Wednesday — is where its last week
-        // begins, not where its data stops.
-        test('a period holding the cursor is the range that prints', async () => {
-            vi.mocked(mmgisGetTimeCurrent).mockResolvedValue(
-                '2025-05-30T00:00:00Z',
-            )
+        // Core requested one whole day for a periodic daily layer and stamped
+        // its end on the day's last second, so at day precision the period
+        // reads as the one day it is.
+        test('a periodic daily layer whose period is covered prints the day', async () => {
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                daily: {
+                    start: '2015-01-01T00:00:00Z',
+                    end: '2026-01-01T00:00:00Z',
+                    interval: DAILY,
+                },
+            })
+            vi.mocked(mmgisGetDataCoverage).mockResolvedValue({
+                daily: record({
+                    start: '2025-06-15T00:00:00Z',
+                    end: '2025-06-15T23:59:59Z',
+                    periodic: true,
+                }),
+            })
+            const rows = await rowsFor({ daily: timeEnabled() })
+            expect(rows[0].dateLine).toBe('Collected 2025-06-15')
+        })
+
+        // The period prints whole, never clipped to the coverage: core floors
+        // a periodic extent's end to the last step's start, so the second
+        // layer's coverage ending on 1 May says May is its last month, not
+        // that its data stops on the first.
+        test('a periodic monthly layer prints its month, unclipped', async () => {
+            const may = {
+                start: '2025-05-01T00:00:00Z',
+                end: '2025-05-31T23:59:59Z',
+                periodic: true,
+            }
             vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
                 monthly: {
                     start: '2015-01-01T00:00:00Z',
                     end: '2026-01-01T00:00:00Z',
+                    interval: MONTHLY,
                 },
-                weekly: {
-                    start: '2025-01-01T00:00:00Z',
-                    end: '2025-05-28T00:00:00Z',
+                lastMonth: {
+                    start: '2015-01-01T00:00:00Z',
+                    end: '2025-05-01T00:00:00Z',
+                    interval: MONTHLY,
                 },
             })
+            vi.mocked(mmgisGetDataCoverage).mockResolvedValue({
+                monthly: record(may),
+                lastMonth: record(may),
+            })
             const rows = await rowsFor({
-                monthly: timeEnabled('P1M'),
-                weekly: timeEnabled('P7D'),
+                monthly: timeEnabled(),
+                lastMonth: timeEnabled(),
             })
             expect(rows.map((row) => row.dateLine)).toEqual([
                 'Collected 2025-05',
-                'Collected 2025-05-28 → 2025-06-03',
+                'Collected 2025-05',
             ])
+        })
+
+        // A period the coverage never reaches held nothing to draw, so the
+        // row names only what was asked for.
+        test('a periodic layer whose period misses the coverage prints the request', async () => {
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                daily: {
+                    start: '2015-01-01T00:00:00Z',
+                    end: '2016-01-01T00:00:00Z',
+                    interval: DAILY,
+                },
+            })
+            vi.mocked(mmgisGetDataCoverage).mockResolvedValue({
+                daily: record({
+                    start: '2014-06-15T00:00:00Z',
+                    end: '2014-06-15T23:59:59Z',
+                    periodic: true,
+                }),
+            })
+            const rows = await rowsFor({ daily: timeEnabled() })
+            expect(rows[0].dateLine).toBe('Requested 2014-06-15')
+        })
+
+        // A layer requesting the window prints the part of the coverage the
+        // window could have returned, from core's record rather than the
+        // Time Control getters.
+        test('a non-periodic layer prints the overlap of its request and coverage', async () => {
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                plain: {
+                    start: '2015-01-01T00:00:00Z',
+                    end: '2016-12-31T00:00:00Z',
+                    interval: null,
+                },
+            })
+            vi.mocked(mmgisGetDataCoverage).mockResolvedValue({
+                plain: record({
+                    start: '2010-01-01T00:00:00Z',
+                    end: '2015-06-01T00:00:00Z',
+                    periodic: false,
+                }),
+            })
+            const rows = await rowsFor({ plain: timeEnabled() })
+            expect(rows[0].dateLine).toBe('Collected 2015-01-01 → 2015-06-01')
+        })
+
+        // Point mode's epoch start is a placeholder only for a layer
+        // requesting the window. A periodic layer's start is the start of
+        // its period, a real bound.
+        test('point mode keeps a periodic layer\'s period start', async () => {
+            vi.mocked(mmgisGetTimeMode).mockResolvedValue('point')
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                weekly: {
+                    start: '2015-01-01T00:00:00Z',
+                    end: '2026-01-01T00:00:00Z',
+                    interval: WEEKLY,
+                },
+            })
+            vi.mocked(mmgisGetDataCoverage).mockResolvedValue({
+                weekly: record({
+                    start: '2025-06-09T00:00:00Z',
+                    end: '2025-06-15T23:59:59Z',
+                    periodic: true,
+                }),
+            })
+            const rows = await rowsFor({ weekly: timeEnabled() })
+            expect(rows[0].dateLine).toBe('Collected 2025-06-09 → 2025-06-15')
+        })
+
+        test('point mode drops a non-periodic layer\'s epoch start', async () => {
+            vi.mocked(mmgisGetTimeMode).mockResolvedValue('point')
+            vi.mocked(mmgisGetDataCoverage).mockResolvedValue({
+                live: record({
+                    start: '1970-01-01T00:00:00Z',
+                    end: CURSOR,
+                    periodic: false,
+                }),
+            })
+            const rows = await rowsFor({ live: timeEnabled() })
+            expect(rows[0].dateLine).toBe('Requested up to 2026-08-25')
+        })
+
+        // Without a record from core, the window stamped on the layer's own
+        // config is the request, not the Time Control's.
+        test('with no record, the layer\'s own stamped window is the request', async () => {
+            const rows = await rowsFor({
+                stamped: timeEnabled({
+                    start: '2020-01-01T00:00:00Z',
+                    end: '2020-06-01T00:00:00Z',
+                }),
+            })
+            expect(rows[0].dateLine).toBe('Requested 2020-01-01 → 2020-06-01')
         })
 
         // Core hides a layer whose coverage the cursor sits outside, so it
@@ -236,6 +379,7 @@ describe('getExportLegendModel', () => {
             kind: 'continuous',
             spans: null,
             requestedWindow: null,
+            periodic: false,
         })
         const parkPastCoverage = () => {
             vi.mocked(mmgisGetTimeStart).mockResolvedValue(
@@ -249,8 +393,8 @@ describe('getExportLegendModel', () => {
                 end: '2016-12-31T00:00:00Z',
             }
             vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
-                yearly: coverage,
-                plain: coverage,
+                yearly: { ...coverage, interval: YEARLY },
+                plain: { ...coverage, interval: null },
             })
         }
 
@@ -261,7 +405,7 @@ describe('getExportLegendModel', () => {
                 plain: verdict(true),
             })
             const rows = await rowsFor({
-                yearly: timeEnabled('P1Y'),
+                yearly: timeEnabled(),
                 plain: timeEnabled(),
             })
             expect(rows.map((row) => row.title)).toEqual(['yearly', 'plain'])
@@ -279,7 +423,7 @@ describe('getExportLegendModel', () => {
                 yearly: verdict(false),
             })
             const rows = await rowsFor({
-                yearly: timeEnabled('P1Y'),
+                yearly: timeEnabled(),
                 plain: timeEnabled(),
             })
             expect(rows.map((row) => row.dateLine)).toEqual([
@@ -295,7 +439,7 @@ describe('getExportLegendModel', () => {
             )
             const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
             const rows = await rowsFor({
-                yearly: timeEnabled('P1Y'),
+                yearly: timeEnabled(),
                 plain: timeEnabled(),
             })
             expect(rows.map((row) => row.dateLine)).toEqual([
@@ -334,28 +478,28 @@ describe('getExportLegendModel', () => {
             expect(rows[0].dateLine).toBe('Requested 2010-01-01 → 2014-01-01')
         })
 
-        // A 'local' layer carries its own window, but only once the dashboard
-        // has stamped one on it; until then the global one is what its
-        // features are filtered against.
-        test('a local layer with no window of its own follows the global cursor', async () => {
+        // With no record from core and no window stamped on the layer, the
+        // Time Control's window start and cursor are the request.
+        test('with no record and no stamped window, the Time Control window is the request', async () => {
             vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
                 vectors: {
                     start: '2015-01-01T00:00:00Z',
                     end: '2016-12-31T00:00:00Z',
+                    interval: YEARLY,
                 },
             })
             const rows = await rowsFor({
                 vectors: {
                     url: 'vectors.geojson',
-                    time: { enabled: true, type: 'local', interval: 'P1Y' },
+                    time: { enabled: true, type: 'local' },
                 },
             })
             expect(rows[0].dateLine).toBe('Collected 2015 → 2016')
         })
 
-        // A local layer's stamped window came from the same Time Control, so
-        // in Point mode its start is the same placeholder.
-        test('a local layer stamped in point mode prints an open-ended request', async () => {
+        // A window stamped on the layer in Point mode opens on the same
+        // epoch placeholder as the Time Control's.
+        test('a stamped window in point mode prints an open-ended request', async () => {
             vi.mocked(mmgisGetTimeMode).mockResolvedValue('point')
             const rows = await rowsFor({
                 vectors: {

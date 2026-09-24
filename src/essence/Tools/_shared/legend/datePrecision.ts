@@ -4,11 +4,12 @@
  * A layer's `time.interval` decides it, not the mission's time format: a
  * daily collection has no business printing seconds, and an hourly one is
  * unreadable rounded to a day. The smallest unit in the interval is the
- * finest thing a reader can tell apart, so it sets the precision. Pure
- * string arithmetic on the ISO-duration vocabulary core owns.
+ * finest thing a reader can tell apart, so it sets the precision. The
+ * interval arrives already parsed, from `layers:getTemporalExtent`; this
+ * module never reads the ISO-duration text itself.
  */
 
-import { type Duration } from '../../../Basics/TimeControl_/layerTimePolicy'
+import { type Duration } from '../adapters/mmgisAPI'
 import { parseInstant } from './isoInstant'
 
 type Precision = 'year' | 'month' | 'day' | 'hour' | 'second'
@@ -67,17 +68,4 @@ export const formatAtPrecision = (
 ): string | null => {
     const parsed = parseInstant(instant)
     return parsed && formatEpochMs(duration, parsed.ms)
-}
-
-/**
- * A period's end, printed inclusively. The end a period carries is the
- * instant the next one starts on, so printing it raw would make a P7D period
- * read as eight days; what prints is the last unit the period covers.
- */
-export const formatPeriodEnd = (
-    duration: Duration | null | undefined,
-    exclusiveEnd: string | null | undefined,
-): string | null => {
-    const parsed = parseInstant(exclusiveEnd)
-    return parsed && formatEpochMs(duration, parsed.ms - 1)
 }
