@@ -104,6 +104,17 @@ describe('contextTicks', () => {
         expect(contextTicks(start, end, 'HOUR', 3600 * 1000).ticks).toHaveLength(2)
     })
 
+    test('a boundary too close to the right edge to fit its label is left out', () => {
+        const start = at('2020-03-01T00:00:00Z')
+        const end = at('2020-03-03T02:00:00Z')
+
+        expect(iso(contextTicks(start, end, 'HOUR', 3 * 3600 * 1000).ticks)).toEqual([
+            '2020-03-01T00:00:00.000Z',
+            '2020-03-02T00:00:00.000Z',
+        ])
+        expect(contextTicks(start, end, 'HOUR', 3600 * 1000).ticks).toHaveLength(3)
+    })
+
     test('a boundary on the left edge is labelled once', () => {
         const { ticks } = contextTicks(
             at('2020-03-02T00:00:00Z'),

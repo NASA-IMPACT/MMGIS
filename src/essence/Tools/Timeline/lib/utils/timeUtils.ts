@@ -60,8 +60,10 @@ const CONTEXT_MODE: Record<TimeMode, ContextMode | null> = {
  * hourly axis is headed by its days, a daily one by its months. Each period
  * that begins inside the view is labelled at its boundary, and the view's own
  * start is labelled too, so a view inside a single period still names it.
- * That leading label is left out when the first boundary falls within
- * `minGapMs` of it, where the two would overlap.
+ * Labels are start-anchored, so a boundary within `minGapMs` of the view's
+ * end is left out rather than drawn past the edge, and the leading label is
+ * left out when the first boundary falls within `minGapMs` of it, where the
+ * two would overlap.
  */
 export function contextTicks(
     startTime: Date,
@@ -78,7 +80,8 @@ export function contextTicks(
         .utc(startTime)
         .startOf(unit as moment.unitOfTime.StartOf)
         .add(1, unit)
-    while (!current.isAfter(endTime)) {
+    const lastFitMs = endTime.getTime() - minGapMs
+    while (current.valueOf() <= lastFitMs) {
         boundaries.push(current.toDate())
         current = current.clone().add(1, unit)
     }
