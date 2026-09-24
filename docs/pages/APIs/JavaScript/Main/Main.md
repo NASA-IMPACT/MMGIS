@@ -551,6 +551,8 @@ window.mmgisAPI.getEndTime();
 
 Returns the start time set for an individual in `YYYY-MM-DDThh:mm:ssZ` format.
 
+For most layers this is the start of the Time Control window. A raster tile layer with a periodic `time.interval` (an hour or more) requests only the period holding the current time, so for it this returns the start of that period. Periods step from a fixed `dataStartTime`; without one, an interval of exactly `P1Y`, `P1M`, `P1D` or `PT1H` follows UTC calendar boundaries, and any other interval requests the Time Control window as usual.
+
 #### Function parameters
 
 - `layer` - The layer name string or a layer object
@@ -566,6 +568,8 @@ window.mmgisAPI.getStartTime("Earthquakes");
 ### getLayerEndTime(layer)
 
 Returns the end time set for an individual in `YYYY-MM-DDThh:mm:ssZ` format.
+
+For most layers this is the current time. For a raster tile layer with a periodic `time.interval` (see `getLayerStartTime`) it is the last second of the period holding the current time, e.g. `2021-05-13T23:59:59Z` for a `P1D` layer.
 
 #### Function parameters
 
