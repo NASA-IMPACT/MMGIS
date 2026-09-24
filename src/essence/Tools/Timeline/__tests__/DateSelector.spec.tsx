@@ -365,7 +365,7 @@ describe('DateSelector Today', () => {
         vi.useRealTimers()
     })
 
-    const render = (showToday: boolean, onCompareClick?: () => void) => {
+    const render = (withToday: boolean, onCompareClick?: () => void) => {
         act(() => {
             root.render(
                 <DateSelector
@@ -373,8 +373,10 @@ describe('DateSelector Today', () => {
                     startTime={START}
                     endTime={END}
                     timeMode="HOUR"
-                    showToday={showToday}
-                    onDateChange={(date) => picked.push(date)}
+                    onTodayClick={
+                        withToday ? (date) => picked.push(date) : undefined
+                    }
+                    onDateChange={() => {}}
                     onCompareClick={onCompareClick}
                 />,
             )
@@ -411,16 +413,18 @@ describe('DateSelector Today', () => {
         ])
     })
 
-    test('is disabled while now is outside the range', () => {
+    test('stays enabled while now is outside the range', () => {
         vi.useFakeTimers({ toFake: ['Date'] })
-        vi.setSystemTime(new Date('2026-09-22T00:00:00Z'))
+        vi.setSystemTime(new Date('2026-09-22T00:00:30Z'))
         render(true)
 
-        expect(todayButton()!.disabled).toBe(true)
+        expect(todayButton()!.disabled).toBe(false)
         act(() => {
             todayButton()!.click()
         })
-        expect(picked).toEqual([])
+        expect(picked.map((date) => date.toISOString())).toEqual([
+            '2026-09-22T00:00:00.000Z',
+        ])
     })
 })
 

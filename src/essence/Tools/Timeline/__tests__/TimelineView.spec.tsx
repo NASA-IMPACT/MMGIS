@@ -328,14 +328,18 @@ describe('TimelineView visible window', () => {
         end: new Date('2020-03-08T00:00:00Z'),
     }
 
-    const render = (view: ViewWindow, bounds: ViewWindow = FULL) => {
+    const render = (
+        view: ViewWindow,
+        bounds: ViewWindow = FULL,
+        timeMode: TimeMode = 'DAY'
+    ) => {
         act(() => {
             root.render(
                 <TimelineView
                     startTime={bounds.start}
                     endTime={bounds.end}
                     currentTime={CURRENT}
-                    timeMode="DAY"
+                    timeMode={timeMode}
                     configuredGranularity="DAY"
                     layers={[layer('MODIS Daily', sparseNav('2020-01-02'))]}
                     view={view}
@@ -375,6 +379,39 @@ describe('TimelineView visible window', () => {
         expect(axisLabels().length).toBeGreaterThan(0)
         // A week-wide window is labelled in days within March.
         expect(axisLabels().every((label) => label?.startsWith('Mar'))).toBe(true)
+    })
+
+    /** The label text of every period named on the top axis. */
+    const topLabels = () =>
+        Array.from(
+            container.querySelectorAll<SVGTextElement>(
+                '.timeline-top-axis .tick text',
+            ),
+        ).map((text) => text.textContent)
+
+    test('zoomed to hours, the top axis names the days they fall in', () => {
+        render({
+            start: new Date('2020-03-02T18:00:00Z'),
+            end: new Date('2020-03-03T12:00:00Z'),
+        })
+
+        expect(axisLabels().some((label) => /^\d\d:\d\d$/.test(label ?? ''))).toBe(true)
+        expect(topLabels()).toEqual(['Mar 2, 2020', 'Mar 3, 2020'])
+    })
+
+    test('across days, the top axis names their months', () => {
+        render(WEEK)
+
+        expect(topLabels()).toEqual(['Mar 2020'])
+    })
+
+    test('labels the axis by the span on screen, not the step mode', () => {
+        render(WEEK, FULL, 'DAY')
+        const labels = axisLabels()
+
+        render(WEEK, FULL, 'YEAR')
+
+        expect(axisLabels()).toEqual(labels)
     })
 
     test('pushes the window into d3 without echoing it back', () => {
