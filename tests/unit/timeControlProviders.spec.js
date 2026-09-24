@@ -14,8 +14,7 @@ vi.hoisted(() => {
  * time:getCurrentFormatted renders the cursor through the mission's
  * time.format, and time:formatTime applies that same format to a time the
  * caller supplies — a per-layer window on an exported legend, say. The format
- * comes in two languages: d3, marked by a specifier such as '%Y', and moment
- * tokens.
+ * is a d3 time-format specifier string, e.g. '%Y-%m-%d'.
  */
 
 vi.mock('../../src/essence/Basics/Map_/Map_', () => ({ default: {} }))
@@ -85,12 +84,12 @@ describe('TimeControl time formatting providers', () => {
         )
     })
 
-    // Moment would leave the '%'s literal and read 'm' as minutes; either
-    // language has to render the date itself, never the pattern string.
+    // d3 renders the date itself through whatever specifier the mission
+    // configured, never the pattern string.
     test.each([
-        ['moment tokens', 'YYYY-MM-DDTHH:mm:ss[Z]', '2026-08-20T19:24:39Z'],
-        ['d3 specifiers', '%-m/%-d/%-y', '8/20/26'],
-    ])('formats the cursor through mission %s', async (_lang, format, shown) => {
+        ['%Y-%m-%d', '2026-08-20'],
+        ['%d/%m/%Y %H:%M', '20/08/2026 19:24'],
+    ])('formats the cursor through mission format %s', async (format, shown) => {
         const handlers = await initTimeControl(enabledTimeConfig(format))
 
         expect(handlers['time:getCurrentFormatted']()).toBe(shown)
@@ -106,26 +105,29 @@ describe('TimeControl time formatting providers', () => {
         )
     })
 
-    // d3 reads a zone-less string as local and moment as UTC, so parsing has
-    // to happen once, up front, or the two languages disagree by the offset
-    // of the machine the build ran on. The TZ pinned at the top of this file
-    // is what supplies that offset regardless of the runner.
-    test('reads a zone-less time as UTC in either language', async () => {
-        const momentHandlers = await initTimeControl(
-            enabledTimeConfig('YYYY-MM-DDTHH:mm:ss[Z]')
-        )
-        const viaMoment = momentHandlers['time:formatTime'](
-            '2026-08-20T19:24:39'
-        )
-
-        vi.resetModules()
-        const d3Handlers = await initTimeControl(
+    // d3 alone would read a zone-less string as local, shifting it by the
+    // process time zone; parsing it as UTC first (moment.utc, before d3 ever
+    // sees it) keeps the printed time the same regardless of the machine the
+    // build runs on. The TZ pinned at the top of this file is what would
+    // expose a mistake here.
+    test('reads a zone-less time as UTC regardless of the process time zone', async () => {
+        const handlers = await initTimeControl(
             enabledTimeConfig('%Y-%m-%dT%H:%M:%SZ')
         )
-        const viaD3 = d3Handlers['time:formatTime']('2026-08-20T19:24:39')
 
-        expect(viaMoment).toBe('2026-08-20T19:24:39Z')
-        expect(viaD3).toBe(viaMoment)
+        expect(handlers['time:formatTime']('2026-08-20T19:24:39')).toBe(
+            '2026-08-20T19:24:39Z'
+        )
+    })
+
+    // A format with no specifier at all is not an error — d3 treats every
+    // character as a literal, so a format mistakenly written in moment
+    // tokens prints out unchanged rather than being interpreted the way
+    // moment would.
+    test('prints a format with no d3 specifier literally', async () => {
+        const handlers = await initTimeControl(enabledTimeConfig('YYYY-MM-DD'))
+
+        expect(handlers['time:getCurrentFormatted']()).toBe('YYYY-MM-DD')
     })
 
     // Nothing to format is not something to format badly.

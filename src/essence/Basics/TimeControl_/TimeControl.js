@@ -70,40 +70,33 @@ const relativeTimeFormat = new RegExp(
     /^(-?)(?:2[0-3]|[01]?[0-9]):[0-5][0-9]:[0-5][0-9]$/
 )
 
-// A mission's time.format is written in one of two languages: d3 time-format
-// specifiers (e.g. '%Y-%m-%dT%H:%M:%SZ') or moment tokens (e.g.
-// 'YYYY-MM-DDTHH:mm:ss[Z]'), moment being what the rest of the app formats
-// in. Falls back to this when a mission never configured a format.
-const DEFAULT_TIME_FORMAT = 'YYYY-MM-DDTHH:mm:ss[Z]'
+// A mission's time.format is written in d3 time-format specifiers (e.g.
+// '%Y-%m-%dT%H:%M:%SZ'). Falls back to this when a mission never configured
+// a format.
+const DEFAULT_TIME_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
 
-// Formats a time through the mission's configured time.format, choosing the
-// formatter that matches the language the format string is written in. A d3
-// specifier is a '%', an optional pad modifier ('-', '_' or '0'), then a
-// letter — a bare '%' doesn't select d3, since it can sit in a moment pattern
-// as a literal ('[100% of] YYYY-MM-DD').
-// This is the one place a time gets parsed: once, as UTC, so the two
-// languages render the same instant (d3 alone would read a zone-less string
-// as local) and so callers have a single answer for what counts as a time.
-// Null for anything that isn't one.
-// Neither formatter throws on a string, so the catch is bare insurance
-// against a time.format that isn't one — it can't come from Configure, but a
-// caller (e.g. an export stamping the time onto a legend) shouldn't fail if
-// it ever does.
+// Formats a time through the mission's configured time.format, a d3
+// time-format specifier string.
+// moment.utc is used only to parse the input as UTC (d3 alone would read a
+// zone-less string as local), so callers have a single answer for what
+// counts as a time. Null for anything that isn't one.
+// utcFormat doesn't throw on a string that isn't a valid specifier, so the
+// catch is bare insurance against a time.format that isn't one — it can't
+// come from Configure, but a caller (e.g. an export stamping the time onto a
+// legend) shouldn't fail if it ever does.
 const formatMissionTime = (time) => {
     const parsed = moment.utc(time)
     if (!parsed.isValid()) return null
 
     const format = L_.configData.time?.format || DEFAULT_TIME_FORMAT
     try {
-        return /%[-_0]?[a-zA-Z]/.test(format)
-            ? utcFormat(format)(parsed.toDate())
-            : parsed.format(format)
+        return utcFormat(format)(parsed.toDate())
     } catch (err) {
         console.warn(
             `Invalid 'Time Format' provided. Defaulting to ${DEFAULT_TIME_FORMAT}.`,
             err
         )
-        return parsed.format(DEFAULT_TIME_FORMAT)
+        return utcFormat(DEFAULT_TIME_FORMAT)(parsed.toDate())
     }
 }
 
@@ -142,10 +135,10 @@ var TimeControl = {
                 window.mmgisAPI.provide('time:isEnabled', () => TimeControl.enabled === true),
                 window.mmgisAPI.provide('time:getCurrent', () => TimeControl.getTime()),
                 // Same current time as time:getCurrent, but through the
-                // mission's time.format (d3 or moment style) rather than raw
-                // ISO — null whenever time isn't enabled or not yet seeded,
-                // matching time:isEnabled/getCurrent's own null-until-ready
-                // convention.
+                // mission's time.format (a d3 time-format specifier) rather
+                // than raw ISO — null whenever time isn't enabled or not yet
+                // seeded, matching time:isEnabled/getCurrent's own
+                // null-until-ready convention.
                 window.mmgisAPI.provide('time:getCurrentFormatted', () =>
                     TimeControl.enabled && TimeControl.currentTime != null
                         ? formatMissionTime(TimeControl.currentTime)
