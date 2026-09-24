@@ -275,6 +275,32 @@ export function resolveLayerExtent(
     }
 }
 
+/** The period a listed entry covers. The hour is the finest. */
+export type ListedUnit = 'year' | 'month' | 'day' | 'hour'
+
+/**
+ * One entry a layer lists data at. `unit` is what the entry names — 2020 a
+ * year, 2020-03 a month, 2020-03-04 a day, 2020-03-04T14 an hour, and
+ * anything finer still its hour — and `start`/`end` cover the whole of it.
+ * `at` is the entry's own timestamp with any part left out filled with its
+ * start, so 2020-03 is 1 March 00:00 and 14:30:15 stays 14:30:15 though its
+ * span is 14:00–14:59.
+ */
+export interface ListedEntry {
+    at: Date
+    start: Date
+    end: Date
+    unit: ListedUnit
+}
+
+/** The unit an ISO 8601 entry names, read from the format it matched. */
+function unitOf(format: string): ListedUnit {
+    if (format.includes('HH')) return 'hour'
+    if (format.includes('D') || format.includes('E')) return 'day'
+    if (format.includes('MM')) return 'month'
+    return 'year'
+}
+
 /**
  * The entries a layer lists data at, each read strictly as ISO 8601 in UTC,
  * give or take the surrounding whitespace a comma-separated list picks up.
@@ -283,14 +309,17 @@ export function resolveLayerExtent(
  * that entry rather than its whole row.
  *
  * Read in UTC, matching every other instant the plugin handles; reading
- * locally would shift each entry off the day it names by the viewer's offset.
+ * locally would shift each entry off the period it names by the viewer's
+ * offset.
  *
- * The one parse of `dataDates`: the days a row draws and the instants it
- * navigates through both come from here, so neither can drift from the other.
+ * An entry listed twice is kept once. Ordered by where each starts, then by
+ * its timestamp. The one parse of `dataDates`: the spans a row draws and the
+ * instants it navigates through both come from here, so neither can drift
+ * from the other.
  */
-function parseListedEntries(
+export function resolveListedEntries(
     time: LayerTimeConfig | undefined
-): moment.Moment[] {
+): ListedEntry[] {
     const raw = time?.dataDates
     const listed = Array.isArray(raw)
         ? raw
@@ -298,68 +327,46 @@ function parseListedEntries(
         ? [raw]
         : []
 
-    return listed
-        .map((date) => moment.utc(String(date).trim(), moment.ISO_8601, true))
-        .filter((entry) => entry.isValid())
-}
-
-const distinctAscending = (instants: number[]): moment.Moment[] =>
-    [...new Set(instants)].sort((a, b) => a - b).map((ms) => moment.utc(ms))
-
-/**
- * The days a layer lists data on, one moment per day at its first UTC instant,
- * ascending, with a day listed more than once collapsed to one — several
- * instants on one day being one day of data.
- */
-export function resolveListedDays(
-    time: LayerTimeConfig | undefined
-): moment.Moment[] {
-    return distinctAscending(
-        parseListedEntries(time).map((entry) => entry.startOf('day').valueOf())
-    )
-}
-
-/**
- * The instants a layer's listed entries name, one per distinct entry,
- * ascending. An entry given down to the second names an exact instant, and
- * its instant is that value as written — precise beyond the second, as a
- * fractional-second entry is, changes nothing. Anything coarser — a bare
- * minute, hour, day, month or year — names a span instead, and its instant is
- * the span's last one: the current time is the trailing edge of a layer's
- * query window, so a stop at the span's first instant would close the window
- * before the span's data fell inside it.
- */
-export function resolveListedInstants(
-    time: LayerTimeConfig | undefined
-): moment.Moment[] {
-    return distinctAscending(
-        parseListedEntries(time).map((entry) => {
-            const format = String(entry.creationData().format ?? '')
-            if (format.includes('ss')) return entry.valueOf()
-            const unit = format.includes('mm')
-                ? 'minute'
-                : format.includes('HH')
-                ? 'hour'
-                : format.includes('D') || format.includes('E')
-                ? 'day'
-                : format.includes('MM')
-                ? 'month'
-                : 'year'
-            return entry.endOf(unit).valueOf()
+    const byKey = new Map<string, ListedEntry>()
+    listed.forEach((date) => {
+        const entry = moment.utc(String(date).trim(), moment.ISO_8601, true)
+        if (!entry.isValid()) return
+        const unit = unitOf(String(entry.creationData().format ?? ''))
+        const at = entry.valueOf()
+        byKey.set(`${unit}|${at}`, {
+            at: new Date(at),
+            start: entry.clone().startOf(unit).toDate(),
+            end: entry.clone().endOf(unit).toDate(),
+            unit,
         })
+    })
+
+    return [...byKey.values()].sort(
+        (a, b) =>
+            a.start.getTime() - b.start.getTime() ||
+            a.at.getTime() - b.at.getTime() ||
+            a.end.getTime() - b.end.getTime()
     )
+}
+
+const LABEL_FORMAT: Record<ListedUnit, string> = {
+    year: 'YYYY',
+    month: 'YYYY-MM',
+    day: 'YYYY-MM-DD',
+    hour: 'YYYY-MM-DD HH:00',
 }
 
 /**
  * The spans of the timeline a layer holds data for.
  *
  * A layer that carries data continuously is one span, running the length of
- * its configured extent. A sparse layer — data on a scattered handful of days
- * rather than throughout — lists those days instead, and gets one whole-day
- * span each, so the timeline shows the gaps rather than implying coverage the
- * layer does not have. Listing no readable days keeps the single continuous
- * span, whose extent is read leniently, since configs carry those bounds in
- * looser formats than the days.
+ * its configured extent. A sparse layer — data at a scattered handful of
+ * times rather than throughout — lists those times instead, and gets one span
+ * per period an entry names: a whole year, month, day or hour, so the
+ * timeline shows the gaps rather than implying coverage the layer does not
+ * have. Entries sharing one period are drawn as one span. Listing nothing
+ * readable keeps the single continuous span, whose extent is read leniently,
+ * since configs carry those bounds in looser formats than the entries.
  */
 export function resolveLayerTimeRanges(
     time: LayerTimeConfig | undefined,
@@ -369,14 +376,23 @@ export function resolveLayerTimeRanges(
     if (!time || time.enabled !== true)
         return [{ start: fallbackStart, end: fallbackEnd }]
 
-    const days = resolveListedDays(time)
+    const entries = resolveListedEntries(time)
 
-    if (days.length > 0)
-        return days.map((day) => ({
-            start: day.toDate(),
-            end: day.clone().endOf('day').toDate(),
-            label: day.format('YYYY-MM-DD'),
-        }))
+    if (entries.length > 0) {
+        // Two spans over one period would stack, and the pair would read
+        // darker than its neighbours through the bars' shared opacity.
+        const bySpan = new Map<string, TimeRange>()
+        entries.forEach((entry) => {
+            const key = `${entry.start.getTime()}|${entry.end.getTime()}`
+            if (bySpan.has(key)) return
+            bySpan.set(key, {
+                start: entry.start,
+                end: entry.end,
+                label: moment.utc(entry.start).format(LABEL_FORMAT[entry.unit]),
+            })
+        })
+        return [...bySpan.values()]
+    }
 
     const { start, end } = resolveLayerExtent(time, fallbackStart, fallbackEnd)
     return [{ start, end }]
