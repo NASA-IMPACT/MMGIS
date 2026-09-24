@@ -53,6 +53,9 @@ yourself; this plugin does not care who sent it.
 
 ## Layer configuration (`layer.variables.timeseries`)
 
+In Configure this is the **Timeseries** row in the Time tab of a vector or
+vector-tile layer's page. The fields write the block below.
+
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `enabled` | no | Set `false` to turn the block off without deleting it (default `true`). |
@@ -102,7 +105,7 @@ Notes:
   (`numberMatched`/`numberReturned`), the chart title carries a
   "first N of M points" notice instead of presenting a page as the record.
 - `groupBy` yields one series per parameter (e.g. PM2.5 + Ozone); the
-  SeriesChart legend picks which one is visible and the card footer shows
+  SeriesChart's Variable dropdown picks which one is visible and the card footer shows
   its unit.
 
 Place SeriesChart in a panel (its default `sources` already includes
