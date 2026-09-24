@@ -1,9 +1,11 @@
 # FetchTimeseries plugin
 
-No-UI background plugin: when asked for a vector feature whose layer opts
-in, it fetches that feature's time series and publishes it as chart-series
-events for the [SeriesChart plugin](../SeriesChart/README.md). Bus-only — no
-core imports, no rendering.
+A small card holding a Start and End date, over the fetch that charts a
+vector feature's time series. When asked for a feature whose layer opts in,
+the card appears, the feature's series is fetched over the chosen range and
+published as a chart-series payload for the
+[SeriesChart plugin](../SeriesChart/README.md). Changing a date refetches.
+Bus-only — no core imports.
 
 ## Behavior
 
@@ -11,21 +13,38 @@ core imports, no rendering.
   Anything may emit it; the shipped emitter is a
   [Feature Popup](../FeaturePopup/) card action, see below.
 - Layer has no `variables.timeseries` block → the request does **nothing**
-  chart-wise (no fetch, no empty chart).
-- Eligible request → emits `seriesLoading`, fetches, then `seriesReady` with
-  the `ChartSeriesPayload` itself as the (flat, unenveloped) event payload
-  (see [`_shared/types/chartSeries.ts`](../_shared/types/chartSeries.ts)),
-  or `seriesError` with a human-readable message (HTTP failure, timeout,
-  bad URL template, unusable response shape).
+  (no card, no fetch, no empty chart).
+- Eligible request → the tool shows its card (it starts hidden), titled with
+  the feature and the layer, with Start and End dates seeded from the mission
+  time window, or the past year when the mission has none. It fetches the
+  feature's series over that range and emits `seriesReady` with the
+  `ChartSeriesPayload` itself as the (flat, unenveloped) event payload (see
+  [`_shared/types/chartSeries.ts`](../_shared/types/chartSeries.ts)).
+  Loading and failure (HTTP error, timeout, bad URL template, unusable
+  response shape) show on the card; neither is an event.
+- Changing a date refetches the same feature over the new range and emits
+  `seriesReady` again, so the chart replaces its card. A start past the end
+  drags the end along, and the reverse.
 - A new request aborts any in-flight fetch and replaces the chart (single
   `chartId: 'vector-timeseries'`); charts persist until replaced. Fetches
-  time out after 30 seconds so a stalled connection cannot strand the
-  spinner.
+  time out after 30 seconds.
 - Tool teardown (`destroy`) aborts any in-flight fetch and emits
-  `seriesCleared` so no card is left behind.
+  `seriesCleared` so no chart is left behind.
 
-Events (all under `plugin:fetch-timeseries:`): `seriesLoading`,
-`seriesReady`, `seriesError`, `seriesCleared`.
+Events (under `plugin:fetch-timeseries:`): `seriesReady`, `seriesCleared`.
+
+## The date range on the URL
+
+The range is appended to the templated URL as a CQL2 text filter on the
+layer's time property (`xKey`, default `datetime`), inclusive of both days:
+
+```
+&filter=datetime >= '2018-01-01T00:00:00' AND datetime <= '2019-12-31T23:59:59'&filter-lang=cql2-text
+```
+
+The standard `datetime=start/end` parameter is not used: the dev features
+API stores its date columns as text and refuses it ("Must have timestamp
+typed column"), while the string comparison works there on every collection.
 
 ## Triggering it from the Feature Popup
 
@@ -50,6 +69,9 @@ fetch event; the card gets a button and pressing it charts the feature:
 The popup runs on the deck.gl engine. Under Leaflet, or from another plugin,
 emit `plugin:fetch-timeseries:fetch` with `{ feature, layerId, latlng }`
 yourself; this plugin does not care who sent it.
+
+Place FetchTimeseries in the same panel as SeriesChart, listed just before
+it, so the date card sits above the chart. Both start hidden.
 
 ## Layer configuration (`layer.variables.timeseries`)
 
@@ -108,6 +130,7 @@ Notes:
   SeriesChart's Variable dropdown picks which one is visible and the card footer shows
   its unit.
 
-Place SeriesChart in a panel (its default `sources` already includes
-`fetch-timeseries`), add FetchTimeseries and FeaturePopup to the mission's
-tools, click a station, press Timeseries on its card.
+Place FetchTimeseries and SeriesChart in a panel in that order (the chart's
+default `sources` already includes `fetch-timeseries`), add FeaturePopup to
+the mission's tools, click a station, press Timeseries on its card, then
+narrow the dates to 2018–2019 and watch the chart redraw.
