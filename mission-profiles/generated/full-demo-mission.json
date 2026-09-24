@@ -427,8 +427,11 @@
       "on": true,
       "variables": {},
       "metadata": {
+        "icon": "calendar-range",
         "startHidden": true,
-        "modernLayoutSupport": true
+        "modernLayoutSupport": true,
+        "width": 400,
+        "height": 0
       }
     },
     {
