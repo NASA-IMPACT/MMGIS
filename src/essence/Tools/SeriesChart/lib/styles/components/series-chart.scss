@@ -65,29 +65,6 @@
     color: var(--theme-color-ink, #1b1b1b);
 }
 
-.series-chart__status {
-    display: flex;
-    align-items: center;
-    gap: var(--theme-spacing-1, 0.5rem);
-    color: var(--theme-color-base-dark, #565c65);
-    font-size: var(--theme-font-size-3xs, 0.75rem);
-}
-
-.series-chart__spinner {
-    width: 1em;
-    height: 1em;
-    border: 2px solid var(--theme-color-base-lighter, #dfe1e2);
-    border-top-color: var(--theme-color-primary, #005ea2);
-    border-radius: 50%;
-    animation: series-chart-spin 0.9s linear infinite;
-}
-
-@keyframes series-chart-spin {
-    to {
-        transform: rotate(360deg);
-    }
-}
-
 .series-chart__error {
     margin: 0;
     color: var(--theme-color-error, #b50909);

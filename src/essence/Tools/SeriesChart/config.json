@@ -10,7 +10,7 @@
     "defaultIcon": "chart-line",
     "description": "Generic chart panel: renders time/line charts published by fetcher plugins over the mmgisAPI Event Bus.",
     "descriptionFull": {
-        "title": "Subscribes to plugin:<source>:seriesLoading/seriesReady/seriesError/seriesCleared for each plugin id listed in variables.sources and renders one chart card per chartId. Knows nothing about data sources — any plugin emitting the shared chart-series payload (src/essence/Tools/_shared/types/chartSeries.ts) can drive it, e.g. FetchTimeseries for vector feature time series.",
+        "title": "Subscribes to plugin:<source>:seriesReady and seriesCleared for each plugin id listed in variables.sources and renders one chart card per chartId; loading and failure are the fetcher's to show. Knows nothing about data sources — any plugin emitting the shared chart-series payload (src/essence/Tools/_shared/types/chartSeries.ts) can drive it, e.g. FetchTimeseries for vector feature time series.",
         "example": {
             "sources": [
                 "fetch-timeseries"

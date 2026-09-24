@@ -9,13 +9,13 @@ that emits the shared contract can drive it. Bus-only, no core imports.
 Defined in [`_shared/types/chartSeries.ts`](../_shared/types/chartSeries.ts).
 A fetcher plugin with id `<id>` emits (names via `seriesEvents('<id>')`):
 
-- `plugin:<id>:seriesLoading` `{ chartId, title? }` → card shows a spinner
 - `plugin:<id>:seriesReady` `ChartSeriesPayload` → card renders the chart
-- `plugin:<id>:seriesError` `{ chartId, message }` → card shows the message
 - `plugin:<id>:seriesCleared` `{ chartId }` → card is removed
 
-All four messages are flat, with `chartId` at the top level — `seriesReady`'s
+Both messages are flat, with `chartId` at the top level — `seriesReady`'s
 payload is the `ChartSeriesPayload` itself, not wrapped in an envelope.
+Loading and failure are the fetcher's to show on its own surface; the chart
+hears only data arriving and data going away.
 
 One card per `chartId`; a new payload with the same `chartId` replaces the
 previous chart. Malformed payloads are dropped with a console warning

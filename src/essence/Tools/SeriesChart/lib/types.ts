@@ -8,14 +8,10 @@ import type { ChartSeriesPayload } from '../../_shared/types/chartSeries'
  *  wide bottom panel. One variable shows at a time either way. */
 export type ChartLayout = 'dropdown' | 'list'
 
-export type CardState =
-    | { status: 'loading'; title?: string }
-    | { status: 'ready'; payload: ChartSeriesPayload }
-    | { status: 'error'; title?: string; message: string }
-
+/** One chart slot: the latest payload that named this chartId. */
 export interface ChartCard {
     chartId: string
-    state: CardState
+    payload: ChartSeriesPayload
 }
 
 /** Colors resolved from the page theme (CSS custom properties). */

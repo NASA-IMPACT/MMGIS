@@ -22,8 +22,6 @@ vi.mock('echarts', () => ({
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const READY = 'plugin:fetch-timeseries:seriesReady'
-const LOADING = 'plugin:fetch-timeseries:seriesLoading'
-const ERROR = 'plugin:fetch-timeseries:seriesError'
 const CLEARED = 'plugin:fetch-timeseries:seriesCleared'
 
 const validPayload = () => ({
@@ -84,17 +82,10 @@ describe('MMGISSeriesChartAdapter', () => {
         expect(host.textContent).toContain('Select something on the map')
     })
 
-    test('seriesLoading renders a spinner card with the title', () => {
-        act(() => bus.emit(LOADING, { chartId: 'c1', title: 'Station 42' }))
-        expect(host.textContent).toContain('Station 42')
-        expect(host.textContent).toContain('Fetching data…')
-    })
-
     test('a flat seriesReady payload renders the chart card', () => {
         act(() => bus.emit(READY, validPayload()))
         expect(host.textContent).toContain('Station 42')
         expect(host.textContent).toContain('NO₂')
-        expect(host.textContent).not.toContain('Fetching data…')
     })
 
     test('several series get a Variable dropdown; the pick drives the footer', () => {
@@ -127,7 +118,7 @@ describe('MMGISSeriesChartAdapter', () => {
             unit: 'ppm',
             points: [{ x: '2026-01-01T00:00:00Z', y: 0.04 }],
         })
-        const cards = [{ chartId: 'c1', state: { status: 'ready', payload } }]
+        const cards = [{ chartId: 'c1', payload }]
         act(() =>
             root.render(
                 React.createElement(SeriesChartPanel, { cards, layout: 'list' }),
@@ -153,7 +144,7 @@ describe('MMGISSeriesChartAdapter', () => {
                 .filter(([name]) => name === 'plugins:show' || name === 'plugins:hide')
                 .map(([name, params]) => [name, params.pluginId])
 
-        await act(async () => bus.emit(LOADING, { chartId: 'c1', title: 'Station 42' }))
+        await act(async () => bus.emit(READY, validPayload()))
         expect(commands()).toEqual([['plugins:show', 'SeriesChartTool']])
 
         // A second card while shown asks nothing more.
@@ -176,18 +167,14 @@ describe('MMGISSeriesChartAdapter', () => {
 
     test('an enveloped seriesReady is dropped with a warning', () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-        act(() => bus.emit(LOADING, { chartId: 'c1', title: 'Station 42' }))
+        act(() => bus.emit(READY, validPayload()))
         act(() => bus.emit(READY, { payload: validPayload() }))
         expect(warn).toHaveBeenCalledWith(
             expect.stringContaining('malformed seriesReady'),
             expect.anything(),
         )
-        expect(host.textContent).toContain('Fetching data…')
-    })
-
-    test('seriesError renders the message', () => {
-        act(() => bus.emit(ERROR, { chartId: 'c1', message: 'Upstream 500' }))
-        expect(host.textContent).toContain('Upstream 500')
+        // The good card stays; the bad payload changed nothing.
+        expect(host.textContent).toContain('Station 42')
     })
 
     test('seriesCleared removes the card', () => {

@@ -22,11 +22,9 @@ const validPayload = {
 
 describe('chartSeries contract', () => {
     describe('seriesEvents', () => {
-        test('builds the four plugin-prefixed event names', () => {
+        test('builds the two plugin-prefixed event names', () => {
             expect(seriesEvents('fetch-timeseries')).toEqual({
-                loading: 'plugin:fetch-timeseries:seriesLoading',
                 ready: 'plugin:fetch-timeseries:seriesReady',
-                error: 'plugin:fetch-timeseries:seriesError',
                 cleared: 'plugin:fetch-timeseries:seriesCleared',
             })
         })

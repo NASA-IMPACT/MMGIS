@@ -43,37 +43,23 @@ export interface ChartSeriesPayload {
     meta?: ChartSeriesMeta
 }
 
-export interface SeriesLoadingPayload {
-    chartId: string
-    /** Optional label shown while loading (e.g. the clicked feature's name). */
-    title?: string
-}
-
-export interface SeriesErrorPayload {
-    chartId: string
-    /** Human-readable; rendered verbatim in the chart card. */
-    message: string
-}
-
 export interface SeriesClearedPayload {
     chartId: string
 }
 
-/** `seriesReady` is flat like its three siblings: the event payload IS the
- *  ChartSeriesPayload (chartId at the top level) — there is no envelope. */
+/** `seriesReady` is flat like `seriesCleared`: the event payload IS the
+ *  ChartSeriesPayload (chartId at the top level) — there is no envelope.
+ *  Loading and failure are the fetcher's own to show; the chart hears only
+ *  data arriving and data going away. */
 export type SeriesReadyPayload = ChartSeriesPayload
 
 const SERIES_EVENT_SUFFIXES = {
-    loading: 'seriesLoading',
     ready: 'seriesReady',
-    error: 'seriesError',
     cleared: 'seriesCleared',
 } as const
 
 export interface SeriesEventNames {
-    loading: string
     ready: string
-    error: string
     cleared: string
 }
 
@@ -85,9 +71,7 @@ export interface SeriesEventNames {
 export function seriesEvents(pluginId: string): SeriesEventNames {
     const prefix = `plugin:${pluginId}:`
     return {
-        loading: prefix + SERIES_EVENT_SUFFIXES.loading,
         ready: prefix + SERIES_EVENT_SUFFIXES.ready,
-        error: prefix + SERIES_EVENT_SUFFIXES.error,
         cleared: prefix + SERIES_EVENT_SUFFIXES.cleared,
     }
 }

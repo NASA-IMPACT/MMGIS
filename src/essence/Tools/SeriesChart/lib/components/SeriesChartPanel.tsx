@@ -24,35 +24,10 @@ export function SeriesChartPanel({
                     Select something on the map to chart it here.
                 </p>
             )}
-            {cards.map(({ chartId, state }) => (
+            {cards.map(({ chartId, payload }) => (
                 <article key={chartId} className="series-chart__card">
-                    <CardErrorBoundary resetOn={state}>
-                        {state.status === 'loading' && (
-                            <>
-                                <CardHeader title={state.title ?? 'Loading…'} />
-                                <div
-                                    className="series-chart__status"
-                                    aria-live="polite"
-                                >
-                                    <span
-                                        className="series-chart__spinner"
-                                        aria-hidden="true"
-                                    />
-                                    Fetching data…
-                                </div>
-                            </>
-                        )}
-                        {state.status === 'error' && (
-                            <>
-                                <CardHeader title={state.title ?? 'Chart'} />
-                                <p className="series-chart__error" role="alert">
-                                    {state.message}
-                                </p>
-                            </>
-                        )}
-                        {state.status === 'ready' && (
-                            <ReadyCard payload={state.payload} layout={layout} />
-                        )}
+                    <CardErrorBoundary resetOn={payload}>
+                        <ReadyCard payload={payload} layout={layout} />
                     </CardErrorBoundary>
                 </article>
             ))}
@@ -61,8 +36,8 @@ export function SeriesChartPanel({
 }
 
 /** One bad payload must cost its own card, not the panel — a render throw
- *  here would otherwise unmount the whole adapter root. A fresh CardState
- *  (any new bus event for this chartId) retries the render. */
+ *  here would otherwise unmount the whole adapter root. A fresh payload for
+ *  this chartId retries the render. */
 export class CardErrorBoundary extends React.Component<
     { resetOn: unknown; children: React.ReactNode },
     { error: Error | null }
