@@ -27,11 +27,6 @@
     },
     "metadata": {
         "icon": "chart-line",
-        "compatiblePositions": [
-            "left",
-            "right",
-            "bottom"
-        ],
         "preferredPosition": "right",
         "modernLayoutSupport": true,
         "width": 400,

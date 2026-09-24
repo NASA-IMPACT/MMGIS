@@ -3,6 +3,10 @@
     flex-direction: column;
     gap: var(--theme-spacing-105, 0.75rem);
     padding: var(--theme-spacing-105, 0.75rem) var(--theme-spacing-2, 1rem);
+    // The host card is a row flex box that gives a tool its intrinsic width;
+    // a chart has none, so claim the card's full width explicitly.
+    width: 100%;
+    flex: 1 1 auto;
     height: 100%;
     min-width: 0;
     overflow-y: auto;
