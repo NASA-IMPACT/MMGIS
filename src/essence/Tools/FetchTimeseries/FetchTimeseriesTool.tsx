@@ -152,8 +152,6 @@ const FetchTimeseriesTool = {
         const range = this._range
         this._root.render(
             <RangeCard
-                title={this._selection?.title}
-                subtitle={this._selection?.layerDisplayName}
                 start={range?.start ?? ''}
                 end={range?.end ?? ''}
                 status={this._status}

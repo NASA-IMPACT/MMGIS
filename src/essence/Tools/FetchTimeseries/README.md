@@ -14,9 +14,9 @@ Bus-only — no core imports.
   [Feature Popup](../FeaturePopup/) card action, see below.
 - Layer has no `variables.timeseries` block → the request does **nothing**
   (no card, no fetch, no empty chart).
-- Eligible request → the tool shows its card (it starts hidden), titled with
-  the feature and the layer, with Start and End dates seeded from the mission
-  time window, or the past year when the mission has none. It fetches the
+- Eligible request → the tool shows its card (it starts hidden) with Start
+  and End dates seeded from the mission time window, or the past year when
+  the mission has none. The chart below names the feature; the card does not. It fetches the
   feature's series over that range and emits `seriesReady` with the
   `ChartSeriesPayload` itself as the (flat, unenveloped) event payload (see
   [`_shared/types/chartSeries.ts`](../_shared/types/chartSeries.ts)).

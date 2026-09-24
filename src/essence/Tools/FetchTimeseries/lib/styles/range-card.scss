@@ -15,30 +15,6 @@
     color: var(--theme-color-ink, #1b1b1b);
 }
 
-.range-card__header {
-    display: flex;
-    flex-direction: column;
-    gap: var(--theme-spacing-05, 0.25rem);
-}
-
-.range-card__title {
-    margin: 0;
-    min-width: 0;
-    font-size: var(--theme-font-size-sm, 1rem);
-    font-weight: var(--theme-font-weight-semibold, 600);
-    line-height: var(--theme-line-height-2, 1.2);
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-
-.range-card__subtitle {
-    margin: 0;
-    font-size: var(--theme-font-size-3xs, 0.75rem);
-    color: var(--theme-color-base-dark, #565c65);
-}
-
 .range-card__fields {
     display: flex;
     gap: var(--theme-spacing-1, 0.5rem);

@@ -146,8 +146,6 @@ describe('FetchTimeseriesTool', () => {
         expect(requested('plugins:show')).toEqual([
             ['plugins:show', { pluginId: 'FetchTimeseriesTool' }],
         ])
-        expect(host.textContent).toContain('Station 42')
-        expect(host.textContent).toContain('Air Stations')
         expect(input('Start date').value).toBe('2025-09-24')
         expect(input('End date').value).toBe('2026-09-24')
 

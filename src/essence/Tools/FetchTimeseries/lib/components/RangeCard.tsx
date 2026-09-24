@@ -6,10 +6,6 @@ export type RangeStatus =
     | { kind: 'error'; message: string }
 
 export interface RangeCardProps {
-    /** The selected feature's title; the card's heading once something is picked. */
-    title?: string
-    /** The layer's display name, under the title. */
-    subtitle?: string
     /** ISO dates, YYYY-MM-DD. */
     start: string
     end: string
@@ -19,23 +15,11 @@ export interface RangeCardProps {
 
 /** Start and End date inputs over a status line. Props only; the tool owns
  *  the state and the fetch. Each input is bounded by the other, so the range
- *  can never be reversed. */
-export function RangeCard({
-    title,
-    subtitle,
-    start,
-    end,
-    status,
-    onRangeChange,
-}: RangeCardProps) {
+ *  can never be reversed. The chart below names the feature; this card
+ *  does not repeat it. */
+export function RangeCard({ start, end, status, onRangeChange }: RangeCardProps) {
     return (
         <div className="range-card">
-            <header className="range-card__header">
-                <h3 className="range-card__title" title={title}>
-                    {title ?? 'Timeseries'}
-                </h3>
-                {subtitle && <p className="range-card__subtitle">{subtitle}</p>}
-            </header>
             <div className="range-card__fields">
                 <label className="range-card__field">
                     <span className="range-card__label">Start date</span>
