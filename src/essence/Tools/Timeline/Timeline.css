@@ -13,6 +13,7 @@
    focusable control in the plugin restores one here. */
 .timeline button:focus-visible,
 .timeline input:focus-visible,
+.timeline select:focus-visible,
 .timeline [tabindex]:focus-visible {
     outline: 2px solid var(--theme-color-primary, #0e7482);
     outline-offset: 2px;
@@ -81,10 +82,15 @@
     color: var(--theme-color-base, #71767a);
 }
 
+/* The three groups sit on one row while they fit, and wrap to further rows
+   when the panel is too narrow, rather than squeezing into one another. */
 .timeline-header {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
+    column-gap: 8px;
+    row-gap: 4px;
     padding: .25rem .75rem;
     border-bottom: 1px solid var(--theme-color-base-lighter, #dfe1e2);
     background: var(--theme-color-white, #ffffff);
@@ -96,10 +102,16 @@
 .timeline-header-right {
     display: flex;
     align-items: center;
+    flex-shrink: 0;
+}
+
+/* Keeps clear of the controls after "Compare date" on a shared row. */
+.timeline-header-left {
+    margin-right: 16px;
 }
 
 .timeline-header-center {
-    flex: 1;
+    flex-grow: 1;
     justify-content: center;
 }
 
@@ -113,7 +125,6 @@
     position: relative;
     display: flex;
     flex-direction: column;
-    padding-bottom: 8px;
 }
 
 /* Empty state shown when no layers are on the timeline */
@@ -202,67 +213,87 @@
     background: var(--theme-color-primary-lightest, #e6f4f6);
 }
 
-/* Time Mode Control */
+/* Time Mode Control: a dropdown ahead of the playback controls. */
 .time-mode-control {
-    display: flex;
-    background: var(--theme-color-white, #ffffff);
-}
-
-.time-mode-button {
-    padding: 4px 12px;
+    height: 24px;
+    margin-right: 8px;
+    padding: 0 4px;
     background: transparent;
-    border: none;
-    font-size: 10px;
-    font-weight: 800;
-    /* 10px text needs the 4.5:1 grade against the white control background. */
-    color: var(--theme-color-base-darker, #3d4551);
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.time-mode-button:hover {
+    border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: var(--theme-font-size-3xs, 12px);
+    font-weight: var(--theme-font-weight-bold, 700);
     color: var(--theme-color-primary, #0e7482);
-    background-color: var(--theme-color-primary-lightest, #e6f4f6);
+    cursor: pointer;
+    transition: background 0.2s ease;
 }
 
-.time-mode-button.active {
-    background: var(--theme-color-primary, #0e7482);
-    color: var(--theme-color-white, #ffffff);
+.time-mode-control:hover {
+    background: var(--theme-color-primary-lightest, #e6f4f6);
 }
 
-/* Timeline View Layout */
+/* Timeline View Layout: a fixed header row over a body of two panes, the
+   layer list and the chart, that scroll together. The list shows the
+   scrollbar so it sits beside the layer names; the chart hides its own. */
 .timeline-view-container {
     display: flex;
+    flex-direction: column;
     width: 100%;
     height: 100%;
     background: var(--theme-color-white, #ffffff);
 }
 
-.timeline-sidebar {
-    width: 160px;
-    flex-shrink: 0;
-    border-right: 1px solid var(--theme-color-base-lighter, #dfe1e2);
-    display: flex;
-    flex-direction: column;
-}
-
 /* Heights of the header bars and layer rows live in TimelineView, which needs
    them to lay the SVG out; they arrive as inline styles rather than being
    restated here. */
+.timeline-view-header,
+.timeline-view-footer {
+    display: flex;
+    flex-shrink: 0;
+}
+
+.timeline-view-footer {
+    border-top: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    box-sizing: border-box;
+}
+
+.timeline-view-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+}
+
+.timeline-sidebar,
+.timeline-sidebar-header,
+.timeline-sidebar-footer {
+    width: 240px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    box-sizing: border-box;
+}
+
+.timeline-sidebar {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
 .timeline-sidebar-header {
     border-bottom: 1px solid var(--theme-color-base-lighter, #dfe1e2);
-    box-sizing: border-box;
-    /* Pinned so the layer list scrolls beneath it when the panel is short. */
-    position: sticky;
-    top: 0;
-    z-index: 3;
     background: var(--theme-color-white, #ffffff);
 }
 
 .timeline-sidebar-layers {
     display: flex;
     flex-direction: column;
+    flex: 1;
+    min-height: 0;
     padding: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    /* Keeps the rows' width constant whether or not the list overflows. */
+    scrollbar-gutter: stable;
 }
 
 .layer-item {
@@ -284,8 +315,8 @@
 }
 
 .layer-name {
-    font-size: 11px;
-    font-weight: 600;
+    font-size: var(--theme-font-size-3xs, 12px);
+    font-weight: var(--theme-font-weight-normal, 400);
     color: var(--theme-color-base-darker, #3d4551);
     white-space: nowrap;
     overflow: hidden;
@@ -293,23 +324,31 @@
 }
 
 .timeline-svg-container {
-    flex-grow: 1;
-    /* Must stay visible (not hidden) so the sticky date bar below pins to the
-       outer scroll container rather than to this element. */
-    overflow: visible;
+    flex: 1;
+    min-width: 0;
     position: relative;
-    display: flex;
-    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: none;
+}
+
+.timeline-svg-container::-webkit-scrollbar {
+    display: none;
 }
 
 .timeline-top-bar {
+    flex: 1;
+    min-width: 0;
+    box-sizing: border-box;
     background-color: var(--theme-color-base-lightest, #f1f3f6);
     border-bottom: 1px solid var(--theme-color-base-lighter, #dfe1e2);
     overflow: hidden;
-    /* Pinned alongside the sidebar header so the date axis stays constant. */
-    position: sticky;
-    top: 0;
-    z-index: 3;
+}
+
+.timeline-bottom-bar {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .timeline-top-axis .domain,
@@ -328,7 +367,7 @@
     display: none;
 }
 
-.timeline-axis .tick line {
+.timeline-grid line {
     stroke: var(--theme-color-base-lighter, #dfe1e2);
     stroke-dasharray: 2 2;
 }
@@ -381,8 +420,15 @@
 .timeline-toolbar {
     display: flex;
     align-items: center;
-    padding-left: 8px;
-    border-left: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+}
+
+/* Divides the toolbar's groups: zoom, info, and collapse. */
+.timeline-toolbar-divider {
+    width: 1px;
+    height: 24px;
+    margin: 0 8px;
+    flex-shrink: 0;
+    background-color: var(--theme-color-base-lighter, #dfe1e2);
 }
 
 .timeline-tool-btn {
@@ -470,7 +516,13 @@
         justify-content: center;
     }
 
+    /* The header stacks to a column here. The toolbar row is centred like
+       the playback row above it. */
+    .timeline-header-right {
+        justify-content: center;
+    }
+
     .timeline-sidebar {
-        width: 100px;
+        width: 150px;
     }
 }

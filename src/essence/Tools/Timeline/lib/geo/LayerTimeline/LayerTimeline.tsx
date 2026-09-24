@@ -13,6 +13,10 @@ export interface LayerTimelineProps {
 // chrome also sets, so the chart stays as light as rows grow.
 const BAR_THICKNESS = 9
 
+// Narrowest a range bar is drawn, so a single instant or a period shorter
+// than a few pixels at the current zoom still reads and can be hovered.
+const MIN_BAR_WIDTH = 6
+
 export const LayerTimeline: React.FC<LayerTimelineProps> = ({
     layer,
     xScale,
@@ -27,12 +31,15 @@ export const LayerTimeline: React.FC<LayerTimelineProps> = ({
             {layer.timeRanges.map((range, index) => {
                 const x1 = xScale(range.start)
                 const x2 = xScale(range.end)
-                const width = Math.max(x2 - x1, 2) // Minimum 2px width
+                const width = Math.max(x2 - x1, MIN_BAR_WIDTH)
+                // A bar widened to the minimum is centred on its span, so it
+                // stays over its own time rather than trailing to the right.
+                const x = width > x2 - x1 ? (x1 + x2 - width) / 2 : x1
 
                 return (
                     <rect
                         key={index}
-                        x={x1}
+                        x={x}
                         y={barY}
                         width={width}
                         height={BAR_THICKNESS}

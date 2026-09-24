@@ -8,24 +8,26 @@ export interface TimeModeControlProps {
     modes?: TimeMode[]
 }
 
+// A native select rather than a custom listbox, so keyboard and assistive
+// technology support come from the browser.
 export const TimeModeControl: React.FC<TimeModeControlProps> = ({
     currentMode,
     onModeChange,
     modes = TIME_MODE_ORDER,
 }) => {
     return (
-        <div className="time-mode-control" role="group" aria-label="Time granularity">
+        <select
+            className="time-mode-control"
+            value={currentMode}
+            onChange={(event) => onModeChange(event.target.value as TimeMode)}
+            aria-label="Time granularity"
+            title="Time granularity"
+        >
             {modes.map((mode) => (
-                <button
-                    key={mode}
-                    className={`time-mode-button${currentMode === mode ? ' active' : ''}`}
-                    onClick={() => onModeChange(mode)}
-                    type="button"
-                    aria-pressed={currentMode === mode}
-                >
+                <option key={mode} value={mode}>
                     {mode}
-                </button>
+                </option>
             ))}
-        </div>
+        </select>
     )
 }

@@ -46,13 +46,13 @@ describe('generateTimeTicks', () => {
         }
     })
 
-    it('closes the axis on the domain end exactly once', () => {
+    it('leaves the domain end unlabelled even when it falls on a boundary', () => {
         const start = new Date('2026-01-01T00:00:00Z')
         const end = new Date('2026-01-05T00:00:00Z')
         const ticks = generateTimeTicks(start, end, 'DAY')
 
-        expect(iso(ticks[ticks.length - 1])).toBe(iso(end))
-        expect(ticks.filter((t) => t.getTime() === end.getTime())).toHaveLength(1)
+        expect(iso(ticks[ticks.length - 1])).toBe('2026-01-04T00:00:00.000Z')
+        expect(ticks.some((t) => t.getTime() === end.getTime())).toBe(false)
     })
 
     it('returns a single tick when the domain is empty or inverted', () => {
