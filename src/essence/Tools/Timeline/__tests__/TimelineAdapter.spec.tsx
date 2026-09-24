@@ -3,7 +3,11 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 import { zoomTransform } from 'd3-zoom'
 import { TimelineAdapter } from '../TimelineAdapter'
-import { transformToWindow, type ViewWindow } from '../lib/utils/zoomWindow'
+import {
+    EDGE_INSET,
+    transformToWindow,
+    type ViewWindow,
+} from '../lib/utils/zoomWindow'
 import { stubReducedMotion } from './support/motion'
 
 /**
@@ -488,7 +492,7 @@ describe('TimelineAdapter following the scrubber', () => {
 
     /** The visible window, as d3 holds it for the chart. */
     const viewOn = (bounds: ViewWindow): ViewWindow =>
-        transformToWindow(zoomTransform(chart()), bounds, WIDTH)
+        transformToWindow(zoomTransform(chart()), bounds, WIDTH, EDGE_INSET)
 
     const SEEDED: ViewWindow = { start: new Date(START), end: new Date(END) }
 

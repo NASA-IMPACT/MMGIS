@@ -253,6 +253,10 @@ export function sliderToWindow(
  * The window framing every extent given, padded by `padFraction` of the
  * union's span on each side so bars do not butt against the chart's edges.
  *
+ * Both sides get the same pad. Where the union runs close to a bound, the pad
+ * shrinks to the room left on that side, rather than the window sliding
+ * inwards and giving the far side the near side's share as well.
+ *
  * Null for an empty list, which is how callers tell "nothing to fit" from
  * "fit to everything".
  */
@@ -271,10 +275,17 @@ export function fitWindow(
         end = Math.max(end, extent.end.getTime())
     }
 
-    const pad = (end - start) * padFraction
+    // A reversed extent leaves start after end; framed forwards all the same.
+    const earliest = Math.min(start, end)
+    const latest = Math.max(start, end)
+    const room = Math.min(
+        earliest - bounds.start.getTime(),
+        bounds.end.getTime() - latest
+    )
+    const pad = Math.max(0, Math.min((latest - earliest) * padFraction, room))
 
     return clampWindow(
-        windowOf(start - pad, end - start + 2 * pad),
+        windowOf(earliest - pad, latest - earliest + 2 * pad),
         bounds,
         minMs
     )
@@ -348,24 +359,35 @@ export function interpolateWindow(
 }
 
 /**
+ * Pixels left clear at each end of the chart, outside the span the view
+ * plots, so the scrubber's head stays whole at the first date or at now.
+ * Wider than half the head, with room for its shadow. Passed as the `inset`
+ * of the transform helpers below.
+ */
+export const EDGE_INSET = 12
+
+/**
  * The d3 zoom transform that maps the global window onto the visible one,
- * across a chart `width` pixels wide. The visible window is the source of
- * truth; this is how d3's own internal state is kept in step with it.
+ * across a chart `width` pixels wide whose plot runs from `inset` to
+ * `width - inset`. The visible window is the source of truth; this is how
+ * d3's own internal state is kept in step with it.
  */
 export function windowToTransform(
     win: ViewWindow,
     bounds: ViewWindow,
-    width: number
+    width: number,
+    inset = 0
 ): ZoomTransform {
     const boundsStart = bounds.start.getTime()
     const boundsSpan = bounds.end.getTime() - boundsStart
     const viewStart = win.start.getTime()
     const viewSpan = win.end.getTime() - viewStart
+    const plotWidth = width - 2 * inset
 
-    if (!(boundsSpan > 0) || !(viewSpan > 0) || !(width > 0)) return zoomIdentity
+    if (!(boundsSpan > 0) || !(viewSpan > 0) || !(plotWidth > 0)) return zoomIdentity
 
     const k = boundsSpan / viewSpan
-    const x = -width * ((viewStart - boundsStart) / viewSpan)
+    const x = inset * (1 - k) - plotWidth * ((viewStart - boundsStart) / viewSpan)
 
     return zoomIdentity.translate(x, 0).scale(k)
 }
@@ -374,20 +396,22 @@ export function windowToTransform(
 export function transformToWindow(
     t: ZoomTransform,
     bounds: ViewWindow,
-    width: number
+    width: number,
+    inset = 0
 ): ViewWindow {
     const boundsStart = bounds.start.getTime()
     const boundsSpan = bounds.end.getTime() - boundsStart
+    const plotWidth = width - 2 * inset
 
-    if (!(boundsSpan > 0) || !(width > 0))
+    if (!(boundsSpan > 0) || !(plotWidth > 0))
         return { start: bounds.start, end: bounds.end }
 
     const at = (px: number) =>
-        boundsStart + (t.invertX(px) / width) * boundsSpan
+        boundsStart + ((t.invertX(px) - inset) / plotWidth) * boundsSpan
 
     return {
-        start: new Date(Math.round(at(0))),
-        end: new Date(Math.round(at(width))),
+        start: new Date(Math.round(at(inset))),
+        end: new Date(Math.round(at(width - inset))),
     }
 }
 
