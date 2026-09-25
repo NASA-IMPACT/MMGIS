@@ -85,18 +85,37 @@ export function MMGISLayerManagerAdapter() {
     // overwritten by that older read until the layer next changes.
     const inFlight = useRef(new Set<Map<string, boolean>>())
 
+    // Core answers the lead for the clock as it stands when asked, so an
+    // older answer must never land over a newer one.
+    const latestRuns = useRef<RunsAnswer | null>(null)
+    const runsAsked = useRef(0)
+    const runsHeld = useRef(0)
+    const readRuns = useCallback(async () => {
+        const seq = ++runsAsked.current
+        const runs = await mmgisRequestIfProvided<RunsAnswer>('layers:getRuns')
+        if (seq > runsHeld.current) {
+            runsHeld.current = seq
+            latestRuns.current = runs
+        }
+        return latestRuns.current
+    }, [])
+
     const refresh = useCallback(async () => {
         const announced = new Map<string, boolean>()
         inFlight.current.add(announced)
         try {
-            const [data, leftOut, runs] = await Promise.all([
+            const [data, leftOut] = await Promise.all([
                 getVisibleLayersWithLegends({
                     showOnlyVisible: toolVars.showOnlyVisible === true,
                 }),
                 getFilteredOutLayers(),
-                mmgisRequestIfProvided<RunsAnswer>('layers:getRuns'),
+                readRuns(),
             ])
-            setLayers(withOutOfRange(withRuns(data, runs), announced))
+            // Read again once the rows are in: the runs answered at the
+            // start may have been overtaken while the layers loaded.
+            setLayers(
+                withOutOfRange(withRuns(data, latestRuns.current), announced),
+            )
             setFilteredOut(leftOut.map((layer) => layer.title))
         } catch (err) {
             console.error('LayerManager: refresh failed', err)
@@ -106,7 +125,7 @@ export function MMGISLayerManagerAdapter() {
             inFlight.current.delete(announced)
             setLoading(false)
         }
-    }, [toolVars.showOnlyVisible])
+    }, [toolVars.showOnlyVisible, readRuns])
 
     const onRunChange = useCallback((layerId: string, run: string) => {
         report('selectRun', selectRun(layerId, run))
@@ -116,13 +135,13 @@ export function MMGISLayerManagerAdapter() {
     // current time, so a time change re-reads the runs and patches the rows
     // rather than rebuilding every legend.
     const refreshLeads = useCallback(() => {
-        mmgisRequestIfProvided<RunsAnswer>('layers:getRuns').then(
+        readRuns().then(
             (runs) => {
                 if (runs) setLayers((rows) => withRuns(rows, runs))
             },
             () => {},
         )
-    }, [])
+    }, [readRuns])
 
     // Core announces a layer's record whenever its verdict or coverage
     // changes, so this keeps each row's warning current between refreshes.

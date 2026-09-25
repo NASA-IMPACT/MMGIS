@@ -230,6 +230,25 @@ describe('MMGISLayerManagerAdapter model runs', () => {
         expect(configReads).toBe(before)
     })
 
+    test('a refresh that read the lead before the clock moved lands with the lead read since', async () => {
+        await mountAdapter()
+
+        // A run change starts a full refresh, which reads the lead at once
+        // and then waits on the layers; the clock moves meanwhile.
+        let release!: () => void
+        gate = new Promise((resolve) => (release = resolve))
+        await emit('layer:runChange', { layerName: FORECAST, run: OLDER })
+        runsAnswer = { [FORECAST]: { ...runsAnswer[FORECAST], lead: 30 } }
+        await emit('time:changed', { currentTime: '2026-09-22T18:00:00Z' })
+        await settle()
+        expect(leadReadout()!.textContent).toBe('+30 h')
+
+        gate = null
+        release()
+        await settle()
+        expect(leadReadout()!.textContent).toBe('+30 h')
+    })
+
     test('a layer core reports no runs for has no run control', async () => {
         runsAnswer = {}
         await mountAdapter()
