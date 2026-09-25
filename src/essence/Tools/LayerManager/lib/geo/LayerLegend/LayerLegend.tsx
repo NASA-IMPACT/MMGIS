@@ -15,6 +15,7 @@ import { FloatingPopover } from '../../FloatingPopover'
 import { PopoverMenu, type PopoverMenuItem } from '../PopoverMenu'
 import { DataCoverageWarning } from '../DataCoverageWarning/DataCoverageWarning'
 import type { Layer } from '../../types'
+import { formatRun, runAge, formatLead } from '../../utils/forecast'
 
 /**
  * Renders an authored description. Markdown is a host concern — the parser,
@@ -50,6 +51,8 @@ export type LayerLegendProps = {
     selectedTime?: string | null
     /** Wires the grip button to a sortable list; no handle without it. */
     dragHandle?: DragHandleProps
+    /** The user picked a model run for a forecast layer. */
+    onRunChange?: (layerId: string, run: string) => void
 }
 
 export type DragHandleProps = {
@@ -71,6 +74,7 @@ export function LayerLegend({
     onCompareLayer,
     selectedTime,
     dragHandle,
+    onRunChange,
 }: LayerLegendProps) {
     const {
         id,
@@ -87,7 +91,16 @@ export function LayerLegend({
         categoricalStops,
         outOfDataRange,
         analysisSupported,
+        forecast,
     } = layer
+
+    // Follows the pinned run from the host; a pick shows at once and the
+    // host's next refresh confirms it.
+    const pinnedRun = forecast?.selectedRun ?? forecast?.runs[0]?.datetime ?? ''
+    const [selectedRun, setSelectedRun] = useState(pinnedRun)
+    useEffect(() => setSelectedRun(pinnedRun), [pinnedRun])
+    const leadLabel =
+        forecast && forecast.lead != null ? formatLead(forecast.lead, forecast.step) : null
 
     const [isVisible, setIsVisible] = useState(visible)
     const [isInfoOpen, setIsInfoOpen] = useState(defaultInfoExpanded)
@@ -405,6 +418,37 @@ export function LayerLegend({
                             layerTitle={title}
                             selectedTime={selectedTime}
                         />
+                    )}
+                </div>
+            )}
+            {forecast && isVisible && forecast.runs.length > 0 && (
+                <div className="blocks-layer-legend__run">
+                    <label className="blocks-layer-legend__run-field">
+                        <span className="blocks-layer-legend__run-label">Model run</span>
+                        <select
+                            className="blocks-layer-legend__run-select"
+                            value={selectedRun}
+                            onChange={(e) => {
+                                setSelectedRun(e.target.value)
+                                onRunChange?.(id, e.target.value)
+                            }}
+                        >
+                            {forecast.runs.map((run, index) => (
+                                <option key={run.datetime} value={run.datetime}>
+                                    {`${formatRun(run.datetime, forecast.step)} · ${
+                                        index === 0 ? 'Latest' : runAge(run.datetime, new Date())
+                                    }`}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    {leadLabel && (
+                        <span
+                            className="blocks-layer-legend__run-lead"
+                            title="Lead: how far past the model run the timeline sits"
+                        >
+                            {leadLabel}
+                        </span>
                     )}
                 </div>
             )}

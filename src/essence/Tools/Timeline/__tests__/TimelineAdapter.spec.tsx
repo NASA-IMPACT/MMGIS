@@ -1281,7 +1281,6 @@ describe('TimelineAdapter without the tool vars', () => {
     })
 })
 
-
 describe('TimelineAdapter config changes', () => {
     let container: HTMLElement
     let root: Root

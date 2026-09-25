@@ -1,5 +1,5 @@
 import React, { act } from 'react'
-import { describe, test, expect, beforeEach, afterEach } from 'vitest'
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { MMGISLayerManagerAdapter } from '../MMGISLayerManagerAdapter'
 import { mount, type Mounted } from '../../_shared/__tests__/reactHarness'
 
@@ -14,6 +14,12 @@ const EVENT = 'layers:dataCoverageChanged'
 
 let outOfRange: Record<string, boolean>
 let listed: Record<string, boolean>
+let configs: Record<string, Record<string, unknown>>
+let configWrites: unknown[]
+let visible: Record<string, boolean>
+let runsAnswer: Record<string, { runs: string[]; selected: string | null; step: string; lead: number | null }>
+let runRequests: unknown[]
+let configReads: number
 let listeners: Map<string, Set<(payload?: unknown) => void>>
 let gate: Promise<void> | null
 let mounted: Mounted | null
@@ -21,21 +27,34 @@ let mounted: Mounted | null
 beforeEach(() => {
     outOfRange = {}
     listed = {}
+    configs = {
+        [SPARSE]: { display_name: 'Sparse' },
+        [CONTINUOUS]: { display_name: 'Continuous' },
+    }
+    configWrites = []
+    visible = { [SPARSE]: true, [CONTINUOUS]: true }
+    runsAnswer = {}
+    runRequests = []
+    configReads = 0
     listeners = new Map()
     gate = null
     mounted = null
     const handlers: Record<string, () => unknown> = {
         'layers:getAll': () => ({}),
         'tool:getVars': () => ({}),
-        'layers:getAllConfigs': () => ({
-            [SPARSE]: { display_name: 'Sparse' },
-            [CONTINUOUS]: { display_name: 'Continuous' },
-        }),
+        'layers:getAllConfigs': () => {
+            configReads++
+            return configs
+        },
+        'layers:updateConfig': () => true,
+        'layers:refresh': () => true,
+        'layers:getRuns': () => runsAnswer,
+        'layers:setRun': () => true,
         // Read after coverage, so a held gate stands for a refresh that has
         // already read coverage but not yet landed.
         'layers:getVisible': async () => {
             if (gate) await gate
-            return { [SPARSE]: true, [CONTINUOUS]: true }
+            return visible
         },
         'layers:getAllOpacities': () => ({}),
         'layers:getListed': () => listed,
@@ -48,8 +67,10 @@ beforeEach(() => {
             ),
     }
     ;(window as any).mmgisAPI = {
-        request: async (name: string) => {
+        request: async (name: string, params?: unknown) => {
             if (!handlers[name]) throw new Error(`No handler for ${name}`)
+            if (name === 'layers:updateConfig') configWrites.push(params)
+            if (name === 'layers:setRun') runRequests.push(params)
             return handlers[name]()
         },
         hasHandler: (name: string) => name in handlers,
@@ -151,5 +172,86 @@ describe('MMGISLayerManagerAdapter filtered-out layers', () => {
         await emit('layer:listedChange')
         await settle()
         expect(hideButton()).toBeNull()
+    })
+})
+
+const FORECAST = 'Forecast_0011223344556677'
+const NEWEST = '2026-09-21T12:00:00'
+const OLDER = '2026-09-21T06:00:00'
+
+describe('MMGISLayerManagerAdapter model runs', () => {
+    const runSelect = () =>
+        mounted!.container.querySelector<HTMLSelectElement>('.blocks-layer-legend__run-select')
+    const leadReadout = () =>
+        mounted!.container.querySelector('.blocks-layer-legend__run-lead')
+
+    beforeEach(() => {
+        configs[FORECAST] = { display_name: 'NAQFC O3', time: { enabled: true } }
+        visible[FORECAST] = true
+        runsAnswer = {
+            [FORECAST]: { runs: [NEWEST, OLDER], selected: NEWEST, step: 'PT1H', lead: 12 },
+        }
+    })
+
+    test('offers the runs core reports, pinned where core pinned them, with the lead', async () => {
+        await mountAdapter()
+        expect(Array.from(runSelect()!.options).map((o) => o.value)).toEqual([NEWEST, OLDER])
+        expect(runSelect()!.value).toBe(NEWEST)
+        expect(leadReadout()!.textContent).toBe('+12 h')
+        expect(configWrites).toEqual([])
+    })
+
+    test('a pick is one request to core', async () => {
+        await mountAdapter()
+        const select = runSelect()!
+        select.value = OLDER
+        await act(async () => {
+            select.dispatchEvent(new Event('change', { bubbles: true }))
+        })
+        expect(runRequests).toEqual([{ layerUUID: FORECAST, run: OLDER }])
+        expect(configWrites).toEqual([])
+    })
+
+    test('follows a run change core announces', async () => {
+        await mountAdapter()
+        runsAnswer[FORECAST] = { ...runsAnswer[FORECAST], selected: OLDER }
+        await emit('layer:runChange', { layerName: FORECAST, run: OLDER })
+        await settle()
+        expect(runSelect()!.value).toBe(OLDER)
+    })
+
+    test('re-reads the lead when the clock moves, without rebuilding the rows', async () => {
+        await mountAdapter()
+        const before = configReads
+        runsAnswer[FORECAST] = { ...runsAnswer[FORECAST], lead: 30 }
+        await emit('time:changed', { currentTime: '2026-09-22T18:00:00Z' })
+        await settle()
+        expect(leadReadout()!.textContent).toBe('+30 h')
+        expect(configReads).toBe(before)
+    })
+
+    test('a refresh that read the lead before the clock moved lands with the lead read since', async () => {
+        await mountAdapter()
+
+        // A run change starts a full refresh, which reads the lead at once
+        // and then waits on the layers; the clock moves meanwhile.
+        let release!: () => void
+        gate = new Promise((resolve) => (release = resolve))
+        await emit('layer:runChange', { layerName: FORECAST, run: OLDER })
+        runsAnswer = { [FORECAST]: { ...runsAnswer[FORECAST], lead: 30 } }
+        await emit('time:changed', { currentTime: '2026-09-22T18:00:00Z' })
+        await settle()
+        expect(leadReadout()!.textContent).toBe('+30 h')
+
+        gate = null
+        release()
+        await settle()
+        expect(leadReadout()!.textContent).toBe('+30 h')
+    })
+
+    test('a layer core reports no runs for has no run control', async () => {
+        runsAnswer = {}
+        await mountAdapter()
+        expect(runSelect()).toBeNull()
     })
 })

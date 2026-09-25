@@ -559,14 +559,18 @@ const L_ = {
                     return all
                 }),
                 // Pins a layer to one of its listed runs: the data window
-                // follows, the layer redraws if it is on, and the clock is
-                // moved into the window when it sits outside it.
+                // follows, the clock is moved into the window when it sits
+                // outside it, and the layer redraws if it is on. The clock
+                // moves before anything is announced, so a listener that
+                // reads the lead on the announcement reads it against the
+                // settled clock.
                 window.mmgisAPI.provide('layers:setRun', async (payload) => {
                     const uuid = L_.asLayerUUID(payload?.layerUUID)
                     const layer = uuid == null ? null : L_.layers.data[uuid]
                     if (!layer?.time?.runs || typeof payload?.run !== 'string')
                         return false
                     if (!applyRunSelection(layer.time, payload.run)) return false
+                    clampClockInto(layer.time.dataStartTime, layer.time.dataEndTime)
                     if (L_.layers.on[uuid]) await refreshTileLayer(uuid)
                     window.mmgisAPI.emit('layers:configChanged', {
                         layerName: uuid,
@@ -578,7 +582,6 @@ const L_ = {
                         start: layer.time.dataStartTime,
                         end: layer.time.dataEndTime,
                     })
-                    clampClockInto(layer.time.dataStartTime, layer.time.dataEndTime)
                     return true
                 }),
                 // Re-reads a layer's runs from its source, for a mission kept

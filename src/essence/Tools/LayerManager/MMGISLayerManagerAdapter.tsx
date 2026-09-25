@@ -18,15 +18,39 @@ import {
     dropLayer,
     getFilteredOutLayers,
     hideFilteredOutLayers,
+    selectRun,
 } from './adapters/handlers'
 import {
     mmgisGetLayerBounds,
     mmgisGetTimeCurrent,
+    mmgisRequestIfProvided,
     mmgisOnDataCoverageChanged,
     type LayerDataCoverageChange,
 } from '../_shared/adapters/mmgisAPI'
 
 type ToolVars = { showOnlyVisible?: boolean; width?: number }
+
+type RunsAnswer = Record<
+    string,
+    { runs: string[]; selected: string | null; step: string; lead: number | null }
+>
+
+// Rows core reports model runs for carry them for the card. Core owns the
+// list, the pin and the lead; this only asks.
+const withRuns = (rows: Layer[], answer: RunsAnswer | null): Layer[] =>
+    rows.map((row) => {
+        const found = answer?.[row.id]
+        if (!found) return row
+        return {
+            ...row,
+            forecast: {
+                runs: found.runs.map((datetime) => ({ datetime })),
+                selectedRun: found.selected,
+                step: found.step,
+                lead: found.lead,
+            },
+        }
+    })
 
 // Panel controls are event callbacks and cannot await the requests they fire,
 // so a rejected one would surface only as an unhandled rejection. Log it
@@ -61,6 +85,21 @@ export function MMGISLayerManagerAdapter() {
     // overwritten by that older read until the layer next changes.
     const inFlight = useRef(new Set<Map<string, boolean>>())
 
+    // Core answers the lead for the clock as it stands when asked, so an
+    // older answer must never land over a newer one.
+    const latestRuns = useRef<RunsAnswer | null>(null)
+    const runsAsked = useRef(0)
+    const runsHeld = useRef(0)
+    const readRuns = useCallback(async () => {
+        const seq = ++runsAsked.current
+        const runs = await mmgisRequestIfProvided<RunsAnswer>('layers:getRuns')
+        if (seq > runsHeld.current) {
+            runsHeld.current = seq
+            latestRuns.current = runs
+        }
+        return latestRuns.current
+    }, [])
+
     const refresh = useCallback(async () => {
         const announced = new Map<string, boolean>()
         inFlight.current.add(announced)
@@ -70,8 +109,13 @@ export function MMGISLayerManagerAdapter() {
                     showOnlyVisible: toolVars.showOnlyVisible === true,
                 }),
                 getFilteredOutLayers(),
+                readRuns(),
             ])
-            setLayers(withOutOfRange(data, announced))
+            // Read again once the rows are in: the runs answered at the
+            // start may have been overtaken while the layers loaded.
+            setLayers(
+                withOutOfRange(withRuns(data, latestRuns.current), announced),
+            )
             setFilteredOut(leftOut.map((layer) => layer.title))
         } catch (err) {
             console.error('LayerManager: refresh failed', err)
@@ -81,7 +125,23 @@ export function MMGISLayerManagerAdapter() {
             inFlight.current.delete(announced)
             setLoading(false)
         }
-    }, [toolVars.showOnlyVisible])
+    }, [toolVars.showOnlyVisible, readRuns])
+
+    const onRunChange = useCallback((layerId: string, run: string) => {
+        report('selectRun', selectRun(layerId, run))
+    }, [])
+
+    // The lead readout follows the scrubber. Core answers the lead for the
+    // current time, so a time change re-reads the runs and patches the rows
+    // rather than rebuilding every legend.
+    const refreshLeads = useCallback(() => {
+        readRuns().then(
+            (runs) => {
+                if (runs) setLayers((rows) => withRuns(rows, runs))
+            },
+            () => {},
+        )
+    }, [readRuns])
 
     // Core announces a layer's record whenever its verdict or coverage
     // changes, so this keeps each row's warning current between refreshes.
@@ -113,6 +173,9 @@ export function MMGISLayerManagerAdapter() {
     useMMGISEvent('layer:refreshStatusChange', refresh)
     useMMGISEvent('layer:opacityChange', refresh)
     useMMGISEvent('layer:listedChange', refresh)
+    useMMGISEvent('layers:configChanged', refresh)
+    useMMGISEvent('layer:runChange', refresh)
+    useMMGISEvent('time:changed', refreshLeads)
     useMMGISEvent('layers:listChanged', refresh)
     useMMGISEvent('layers:orderChanged', refresh)
 
@@ -159,6 +222,7 @@ export function MMGISLayerManagerAdapter() {
             onAddLayer={showAddLayer}
             onHideFilteredLayers={() => { report('hideFilteredOutLayers', hideFilteredOutLayers()) }}
             filteredOutLayers={filteredOut}
+            onRunChange={onRunChange}
         />
     )
 }

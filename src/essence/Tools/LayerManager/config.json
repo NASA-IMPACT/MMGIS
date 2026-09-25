@@ -26,7 +26,10 @@
     "metadata": {
         "icon": "layers-triple-outline",
         "requiredOrientation": "vertical",
-        "compatiblePositions": ["left", "right"],
+        "compatiblePositions": [
+            "left",
+            "right"
+        ],
         "preferredPosition": "left",
         "modernLayoutSupport": true,
         "width": 320,
