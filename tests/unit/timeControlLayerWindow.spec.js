@@ -3,8 +3,8 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 /**
  * TimeControl stamps each time-enabled layer with the window it requests,
  * `layer.time.start/end`, which the tile URL builders read. A raster tile
- * layer with a periodic `time.interval` is stamped with the one period
- * holding the cursor; every other layer with `[window start, cursor]`. Both
+ * layer with a periodic `time.interval` and no listed Data Dates is stamped
+ * with the one period holding the cursor; every other layer with `[window start, cursor]`. Both
  * the per-step path (updateLayersTime) and the init paths stamp the same
  * way, because tile layers are created from the first stamps.
  */
@@ -75,6 +75,23 @@ describe('TimeControl layer window stamping', () => {
             expect(layers[name].time.start).toBe(WINDOW_START)
             expect(layers[name].time.end).toBe(CURSOR)
         }
+    })
+
+    test('updateLayersTime stamps a raster tile layer listing Data Dates with the window, though it has an interval', async () => {
+        const layers = {
+            listedTile: layer('listedTile', 'tile', {
+                interval: 'P1D',
+                dataDates: ['2026-08-20', '2026-08-25'],
+            }),
+        }
+        const TimeControl = await loadTimeControl(layers)
+        TimeControl.startTime = WINDOW_START
+        TimeControl.currentTime = CURSOR
+
+        TimeControl.updateLayersTime()
+
+        expect(layers.listedTile.time.start).toBe(WINDOW_START)
+        expect(layers.listedTile.time.end).toBe(CURSOR)
     })
 
     test('init stamps the same way, from the seeded start and end', async () => {

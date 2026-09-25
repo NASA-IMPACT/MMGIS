@@ -16,11 +16,14 @@
  * extent's end floors to the last step at or before the resolved end —
  * a 7-day cadence that began ten days ago ended three days ago, not now.
  * The same interval decides what a raster tile layer requests at each time
- * step: the one period holding the cursor (see `layerRequestWindow`).
+ * step: the one period holding the cursor (see `layerRequestWindow`) —
+ * unless the layer lists Data Dates, which then decide on their own.
  *
  * Core owns this vocabulary. Plugins never resolve it themselves: they ask
  * `layers:getTemporalExtent` and receive plain ISO datetimes.
  */
+
+import { hasListedEntries } from './listedDates'
 
 const DURATION_RE =
     /^P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/
@@ -189,6 +192,7 @@ export interface RequestTimeConfig {
     type?: string | null
     interval?: string | null
     dataStartTime?: string | null
+    dataDates?: string[] | string | null
 }
 
 export interface RequestWindow {
@@ -254,14 +258,17 @@ function anchorOf(time: RequestTimeConfig): Date | null {
 }
 
 // The cadence a layer requests one period of at a time, or null when the
-// layer is not periodic: time off, a `local` layer, no or unparseable
-// interval, or a cadence shorter than an hour — that is a run of
-// individually timestamped scenes, not a period.
+// layer is not periodic: time off, a `local` layer, a layer that lists at
+// least one readable Data Dates entry (the listed dates decide when it has
+// data, read as the coverage gate reads them), no or unparseable interval,
+// or a cadence shorter than an hour — that is a run of individually
+// timestamped scenes, not a period.
 function requestCadenceOf(
     time: RequestTimeConfig | null | undefined
 ): Duration | null {
     if (time == null || time.enabled !== true) return null
     if (time.type === 'local') return null
+    if (hasListedEntries(time.dataDates)) return null
     if (time.interval == null || time.interval === '') return null
     const cadence = parseISODuration(String(time.interval).trim())
     if (cadence == null || approximateMs(cadence) < MS_PER_HOUR) return null
@@ -299,8 +306,8 @@ function periodAt(
 /**
  * The window a layer requests at the cursor.
  *
- * A periodic layer (`time.interval` of an hour or more, not `local`)
- * requests the one period holding the cursor. Periods step from a concrete
+ * A periodic layer (`time.interval` of an hour or more, not `local`, no
+ * readable Data Dates) requests the one period holding the cursor. Periods step from a concrete
  * `dataStartTime`; without one, a cadence of exactly P1Y, P1M, P1D or PT1H
  * follows UTC calendar boundaries. `end` is the period's last inclusive
  * second, because STAC `datetime=a/b` intervals are closed at both ends and

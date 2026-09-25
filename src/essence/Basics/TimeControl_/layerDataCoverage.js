@@ -1,6 +1,6 @@
-import moment from 'moment'
 import { resolveTimePolicy, isPeriodicRequest } from './layerTimePolicy'
 import { isRasterTileLayerType } from '../MapEngines/types/engine'
+import { readEntry, resolveListedEntries } from './listedDates'
 
 /**
  * A layer's declared data coverage, read from its `time` config.
@@ -11,69 +11,6 @@ import { isRasterTileLayerType } from '../MapEngines/types/engine'
  *
  * Epoch milliseconds throughout. An open bound is -Infinity / Infinity.
  */
-
-/**
- * The unit an ISO 8601 entry names, read from the format the parser matched
- * it against. Anything finer than the hour is the hour: an hour is the
- * finest step the timeline takes.
- */
-function unitOf(format) {
-    if (format.includes('HH')) return 'hour'
-    if (format.includes('D') || format.includes('E')) return 'day'
-    if (format.includes('MM')) return 'month'
-    return 'year'
-}
-
-/**
- * One configured time, read as `{ start, end, at, unit }`, or null when it is
- * not ISO 8601 or names no unit.
- *
- * `unit` is what the entry names — 2020 a year, 2020-03 a month, 2020-03-04
- * a day, 2020-03-04T14 an hour — and `start`/`end` cover the whole of it.
- * `at` is the entry's own timestamp, any part left out filled with its
- * start, so 2020-03 is 1 March 00:00 and 14:30 stays 14:30 though it covers
- * 14:00–14:59.
- *
- * Read strictly, with surrounding whitespace tolerated, and resolved in UTC;
- * an entry carrying an offset is converted, not dropped.
- */
-function readEntry(raw) {
-    const time = moment.utc(String(raw).trim(), moment.ISO_8601, true)
-    if (!time.isValid()) return null
-    const unit = unitOf(time.creationData().format)
-    if (unit == null) return null
-    return {
-        start: time.clone().startOf(unit).valueOf(),
-        end: time.clone().endOf(unit).valueOf(),
-        at: time.valueOf(),
-        unit,
-    }
-}
-
-/**
- * The entries a layer lists data at, one span per entry, ordered by where
- * each starts and then by its timestamp. An entry listed twice is kept once;
- * entries that overlap or nest are all kept, since each is its own place to
- * move the timeline to. `dataDates` is accepted as a list or as a single
- * bare string, and an unreadable entry costs only itself.
- */
-function resolveListedEntries(dataDates) {
-    const listed = Array.isArray(dataDates)
-        ? dataDates
-        : typeof dataDates === 'string'
-        ? [dataDates]
-        : []
-
-    const byKey = new Map()
-    listed.forEach((raw) => {
-        const entry = readEntry(raw)
-        if (entry) byKey.set(`${entry.unit}|${entry.at}`, entry)
-    })
-
-    return [...byKey.values()].sort(
-        (a, b) => a.start - b.start || a.at - b.at || a.end - b.end
-    )
-}
 
 // A `now` bound, bare or offset by a duration (`now - P1D`), names a moving
 // instant rather than a fixed one.
@@ -197,8 +134,8 @@ function spansOverlap(spans, start, end) {
 
 /**
  * Whether the layer requests one period rather than the Time Control
- * window: a raster tile layer whose `time.interval` places a period at the
- * cursor. Decided by the rule TimeControl stamps with (layerRequestWindow),
+ * window: a raster tile layer that lists no readable Data Dates and whose
+ * `time.interval` places a period at the cursor. Decided by the rule TimeControl stamps with (layerRequestWindow),
  * read at the stamped end — for a periodic stamp that end lies inside the
  * period it closes, so the same period is found again.
  */
@@ -225,8 +162,9 @@ function requestsPeriod(layer) {
  * For a layer requesting one period (`periodic: true`), the whole period is
  * the request: it is out of range only when `[start, end]` overlaps no
  * span. Its end is the period's last second, which may lie past a
- * `dataEndTime: 'now'` or between listed times finer than the period, and
- * neither means the period is empty.
+ * `dataEndTime: 'now'`, and that does not mean the period is empty. A layer
+ * that lists Data Dates is never periodic, so its listed entries are always
+ * tested at the current time.
  *
  * `outOfDataRange` is false whenever the question cannot be answered — no
  * coverage declared, no readable window, no `time` at all. The gate may
