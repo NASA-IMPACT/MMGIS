@@ -339,7 +339,8 @@ describe('useTimelineZoom', () => {
 
     describe('framing a sparse layer', () => {
         // Built the way the adapter builds it, so the stops land where
-        // `resolveListedInstants` puts them: at each listed day's last instant.
+        // `resolveListedEntries` puts them: at each listed period's first
+        // instant.
         const sparse = (name: string, dates: string[]) =>
             layer(
                 name,
@@ -351,14 +352,14 @@ describe('useTimelineZoom', () => {
                 )
             )
 
-        test('opens the view to the first instant of the first listed day', () => {
-            // The chart draws each listed day as a whole-day box from the
-            // day's first instant, while the stop is its last. A view opening
-            // at the stop meets the box's trailing edge and leaves the whole
-            // first day off the left of the chart.
-            const listed = sparse('MODIS', ['2019-03-05', '2019-03-12'])
-            expect(listed.navigation?.start.toISOString()).toBe(
-                '2019-03-05T23:59:59.999Z'
+        test('frames the whole of the boxes the listed periods draw', () => {
+            // The chart draws each listed period as a box from its first
+            // instant to its last, while the stop is its first. A view closing
+            // at the last stop would leave the last month's box off the right
+            // of the chart.
+            const listed = sparse('MODIS', ['2019-03-05', '2019-03'])
+            expect(listed.navigation?.end.toISOString()).toBe(
+                '2019-03-05T00:00:00.000Z'
             )
 
             render(defaults({ layers: [layer('Basemap')] }))
@@ -368,16 +369,16 @@ describe('useTimelineZoom', () => {
                 new Date('2019-03-05T00:00:00Z').getTime()
             )
             expect(api.view.end.getTime()).toBeGreaterThanOrEqual(
-                new Date('2019-03-12T23:59:59.999Z').getTime()
+                new Date('2019-03-31T23:59:59.999Z').getTime()
             )
         })
 
-        test('widens to the first listed day, not to its last instant, and settles', () => {
+        test('widens to the first listed hour\'s box, not to its timestamp, and settles', () => {
             // Reaching a sparse layer outside the window widens the window.
-            // Widened only to the stop, the window edge would sit at the end
-            // of the first day's box and hide it at every zoom level, since
+            // Widened only to the stop, the window edge would sit partway
+            // into the first hour's box and cut it at every zoom level, since
             // the view can never open past the window.
-            const listed = sparse('MODIS', ['2018-11-05', '2018-11-20'])
+            const listed = sparse('MODIS', ['2018-11-05T00:30:00Z', '2018-11-20'])
 
             render(defaults({ layers: [listed] }))
 

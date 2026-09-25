@@ -38,8 +38,9 @@ export type LayerConfig = {
          *  mmgisGetTemporalExtents for the dates. */
         dataStartTime?: string
         dataEndTime?: string
-        // The days a sparse layer holds data on, when it holds data on a
-        // scattered few rather than continuously across its extent.
+        // The times a sparse layer holds data at, when it holds data at a
+        // scattered few rather than continuously across its extent. Each
+        // entry covers the year, month, day or hour it names.
         dataDates?: string[] | string
         [key: string]: unknown
     }

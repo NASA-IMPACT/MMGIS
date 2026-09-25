@@ -31,7 +31,11 @@ import {
     clampDate,
     resolveLayerTimeRanges,
 } from './lib/utils/timeUtils'
-import { resolveLayerNavigation, revealStart } from './lib/utils/layerNavigation'
+import {
+    resolveLayerNavigation,
+    revealEnd,
+    revealStart,
+} from './lib/utils/layerNavigation'
 import type { LayerNavigation } from './lib/utils/layerNavigation'
 import { useTimelineZoom } from './lib/hooks/useTimelineZoom'
 import type { ViewWindow } from './lib/utils/zoomWindow'
@@ -231,11 +235,10 @@ export const TimelineAdapter: React.FC = () => {
      * to reach it. A layer's data need not sit inside the window on screen, so
      * the target is committed as given rather than clamped back in.
      *
-     * The window opens to `revealStart` rather than to the target: a sparse
-     * target is a day's last instant, and a window starting there would meet
-     * the trailing edge of that day's bar and leave the whole of it off the
-     * left of the chart. Forwards needs no such allowance, since a bar ends on
-     * the instant its day does.
+     * The window opens to `revealStart` and `revealEnd` rather than to the
+     * target: a sparse target opens the box its period draws, or sits partway
+     * into its hour, and a window meeting the target would leave the rest of
+     * that box off the edge of the chart.
      *
      * The view follows the target once the widened window reaches the zoom
      * state. Both are set in the one batch, so the reveal clamps against the
@@ -246,7 +249,8 @@ export const TimelineAdapter: React.FC = () => {
             const reach = revealStart(navigation, target)
             const start =
                 reach < startTimeRef.current ? reach : startTimeRef.current
-            const end = target > endTimeRef.current ? target : endTimeRef.current
+            const far = revealEnd(navigation, target)
+            const end = far > endTimeRef.current ? far : endTimeRef.current
             requestTime(start, end, target)
             revealTime(target)
         },
