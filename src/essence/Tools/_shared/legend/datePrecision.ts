@@ -9,7 +9,7 @@
  * module never reads the ISO-duration text itself.
  */
 
-import { type Duration } from '../adapters/mmgisAPI'
+import { type CoverageUnit, type Duration } from '../adapters/mmgisAPI'
 import { parseInstant } from './isoInstant'
 
 type Precision = 'year' | 'month' | 'day' | 'hour' | 'second'
@@ -27,13 +27,10 @@ const precisionOf = (duration: Duration | null | undefined): Precision => {
 const pad = (value: number): string => String(value).padStart(2, '0')
 
 /**
- * An epoch moment written at the precision `duration` earns, or null when it
- * is not a moment a date can hold.
+ * An epoch moment written at `precision`, or null when it is not a moment a
+ * date can hold.
  */
-const formatEpochMs = (
-    duration: Duration | null | undefined,
-    ms: number,
-): string | null => {
+const formatEpochMsAt = (precision: Precision, ms: number): string | null => {
     const date = new Date(ms)
     if (Number.isNaN(date.getTime())) return null
     // Years before 1000 still print as four digits, so a date is the same
@@ -41,7 +38,7 @@ const formatEpochMs = (
     const year = `${date.getUTCFullYear()}`.padStart(4, '0')
     const month = `${year}-${pad(date.getUTCMonth() + 1)}`
     const day = `${month}-${pad(date.getUTCDate())}`
-    switch (precisionOf(duration)) {
+    switch (precision) {
         case 'year':
             return year
         case 'month':
@@ -56,6 +53,23 @@ const formatEpochMs = (
             return day
     }
 }
+
+/** An epoch moment written at the precision `duration` earns. */
+const formatEpochMs = (
+    duration: Duration | null | undefined,
+    ms: number,
+): string | null => formatEpochMsAt(precisionOf(duration), ms)
+
+/**
+ * An epoch moment written at the precision of a named unit — `2025` for a
+ * year, `2025-03-09T14:00Z` for an hour — or null when it is not a moment a
+ * date can hold. For a date whose own unit is known, such as a listed Data
+ * Dates entry, rather than one a layer's interval sets the precision for.
+ */
+export const formatEpochMsAtUnit = (
+    unit: CoverageUnit,
+    ms: number,
+): string | null => formatEpochMsAt(unit, ms)
 
 /**
  * `instant` written at the precision `duration` earns, or null when it is

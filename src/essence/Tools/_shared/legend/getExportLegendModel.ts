@@ -7,7 +7,7 @@ import {
     type Coverage,
     type RequestSpan,
 } from './coverageOverlap'
-import { formatAtPrecision } from './datePrecision'
+import { formatAtPrecision, formatEpochMsAtUnit } from './datePrecision'
 import { parseInstant } from './isoInstant'
 import {
     mmgisGetViewState,
@@ -19,6 +19,7 @@ import {
     mmgisGetTemporalExtents,
     mmgisGetDataCoverage,
     mmgisFormatTime,
+    type CoverageSpan,
     type Duration,
     type LayerConfig,
     type LayerDataCoverage,
@@ -219,6 +220,35 @@ const cursorDateLine = (
     return requestedDateLine(request, precision)
 }
 
+/**
+ * The date line for a layer that lists Data Dates: the listed entry the
+ * cursor sits in, at that entry's own precision, or null when no entry holds
+ * the cursor. The narrowest entry wins when entries nest, since it is the most
+ * exact statement of what was collected.
+ *
+ * The entry is printed rather than the request because it is what is on
+ * screen: a layer that lists its dates has tile URLs that ask for exactly the
+ * cursor's entry, whatever the chart window or `time.interval` say. An entry
+ * names one unit, so it prints as one label, never a range.
+ */
+const sparseDateLine = (
+    record: LayerDataCoverage,
+    cursorMs: number,
+): string | null => {
+    let narrowest: CoverageSpan | null = null
+    for (const span of record.spans ?? []) {
+        if (!span.unit) continue
+        if (span.start > cursorMs || cursorMs > span.end) continue
+        const width = span.end - span.start
+        if (!narrowest || width < narrowest.end - narrowest.start) {
+            narrowest = span
+        }
+    }
+    if (!narrowest?.unit) return null
+    const entry = formatEpochMsAtUnit(narrowest.unit, narrowest.start)
+    return entry ? `Collected ${entry}` : null
+}
+
 const msToIso = (ms: number): string | null => {
     const date = new Date(ms)
     return Number.isNaN(date.getTime()) ? null : date.toISOString()
@@ -289,6 +319,9 @@ const extentDateLine = (
  * the layer when the answer is no. The band follows that verdict before any
  * range is worked out, so it never claims a collection range beside a layer
  * that is painting nothing. With no verdict for the layer, the ranges decide.
+ * A layer that lists Data Dates prints the entry the cursor sits in and
+ * nothing about the request or the window; only when no entry holds the
+ * cursor, which a stale record can cause, do the ranges decide for it too.
  */
 const dateLineFor = (
     cfg: LayerConfig | undefined,
@@ -303,11 +336,14 @@ const dateLineFor = (
             return extentDateLine(extent, precision)
         }
         if (record?.outOfDataRange === true) return NO_DATA_AT_CURSOR
-        return cursorDateLine(
-            layerRequest(time, record, globalCursor),
-            extent,
-            precision,
-        )
+        const request = layerRequest(time, record, globalCursor)
+        if (record?.kind === 'sparse' && request.end) {
+            const cursorMs = parseInstant(request.end)?.ms
+            const sparse =
+                cursorMs === undefined ? null : sparseDateLine(record, cursorMs)
+            if (sparse) return sparse
+        }
+        return cursorDateLine(request, extent, precision)
     } catch (err) {
         console.warn('[export legend] could not build a layer date line', err)
         return null

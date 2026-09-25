@@ -415,6 +415,125 @@ describe('getExportLegendModel', () => {
             ])
         })
 
+        // A layer that lists Data Dates: core's record carries one span per
+        // listed entry, covering the whole unit the entry names, inclusive at
+        // both ends, exactly as core's evaluateLayerDataCoverage builds it.
+        const dayEntry = (date) => ({
+            start: Date.parse(`${date}T00:00:00.000Z`),
+            end: Date.parse(`${date}T23:59:59.999Z`),
+            at: Date.parse(`${date}T00:00:00.000Z`),
+            unit: 'day',
+        })
+        const monthEntry = (month, lastDay) => ({
+            start: Date.parse(`${month}-01T00:00:00.000Z`),
+            end: Date.parse(`${month}-${lastDay}T23:59:59.999Z`),
+            at: Date.parse(`${month}-01T00:00:00.000Z`),
+            unit: 'month',
+        })
+        const listedDates = ({
+            spans,
+            start,
+            end,
+            outOfDataRange = false,
+        }) => ({
+            outOfDataRange,
+            kind: 'sparse',
+            spans,
+            requestedWindow: { start: Date.parse(start), end: Date.parse(end) },
+            periodic: false,
+        })
+        const LISTED_EXTENT = {
+            start: '2025-03-03T00:00:00Z',
+            end: '2025-03-09T00:00:00Z',
+        }
+
+        // The tiles ask for the cursor's entry, whatever the chart window
+        // says, so the entry is what is on screen.
+        test('a layer with Data Dates prints the entry the cursor is on, not the window', async () => {
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                listed: { ...LISTED_EXTENT, interval: null },
+            })
+            vi.mocked(mmgisGetDataCoverage).mockResolvedValue({
+                listed: listedDates({
+                    spans: [dayEntry('2025-03-03'), dayEntry('2025-03-09')],
+                    start: '2025-02-15T00:00:00Z',
+                    end: '2025-03-09T12:00:00Z',
+                }),
+            })
+            const rows = await rowsFor({ listed: timeEnabled() })
+            expect(rows[0].dateLine).toBe('Collected 2025-03-09')
+        })
+
+        // The entry's own unit sets the precision; the layer's interval does
+        // not reach this row.
+        test('a layer with Data Dates ignores its interval', async () => {
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                listed: { ...LISTED_EXTENT, interval: MONTHLY },
+            })
+            vi.mocked(mmgisGetDataCoverage).mockResolvedValue({
+                listed: listedDates({
+                    spans: [dayEntry('2025-03-03'), dayEntry('2025-03-09')],
+                    start: '2025-02-15T00:00:00Z',
+                    end: '2025-03-09T12:00:00Z',
+                }),
+            })
+            const rows = await rowsFor({ listed: timeEnabled() })
+            expect(rows[0].dateLine).toBe('Collected 2025-03-09')
+        })
+
+        test('a month entry prints as the month', async () => {
+            vi.mocked(mmgisGetDataCoverage).mockResolvedValue({
+                listed: listedDates({
+                    spans: [monthEntry('2025-03', '31')],
+                    start: '2025-02-15T00:00:00Z',
+                    end: '2025-03-20T00:00:00Z',
+                }),
+            })
+            const rows = await rowsFor({ listed: timeEnabled() })
+            expect(rows[0].dateLine).toBe('Collected 2025-03')
+        })
+
+        // Nested entries all hold the cursor; the narrowest is the most exact.
+        test('nested entries print the narrowest one holding the cursor', async () => {
+            vi.mocked(mmgisGetDataCoverage).mockResolvedValue({
+                listed: listedDates({
+                    spans: [monthEntry('2025-03', '31'), dayEntry('2025-03-09')],
+                    start: '2025-02-15T00:00:00Z',
+                    end: '2025-03-09T12:00:00Z',
+                }),
+            })
+            const rows = await rowsFor({ listed: timeEnabled() })
+            expect(rows[0].dateLine).toBe('Collected 2025-03-09')
+        })
+
+        // Core hides a listed-dates layer whose entries miss the cursor.
+        test('a layer with Data Dates and no entry at the cursor has no data at the cursor', async () => {
+            vi.mocked(mmgisGetDataCoverage).mockResolvedValue({
+                listed: listedDates({
+                    spans: [dayEntry('2025-03-03'), dayEntry('2025-03-09')],
+                    start: '2025-02-15T00:00:00Z',
+                    end: '2025-03-05T12:00:00Z',
+                    outOfDataRange: true,
+                }),
+            })
+            const rows = await rowsFor({ listed: timeEnabled() })
+            expect(rows[0].dateLine).toBe('No data at cursor')
+        })
+
+        // A stale record whose entries miss the cursor, though core says the
+        // layer has data, leaves the line to the ranges.
+        test('a layer with Data Dates and no entry at the cursor falls back to the ranges', async () => {
+            vi.mocked(mmgisGetDataCoverage).mockResolvedValue({
+                listed: listedDates({
+                    spans: [dayEntry('2025-03-03')],
+                    start: '2025-02-15T00:00:00Z',
+                    end: '2025-03-05T12:00:00Z',
+                }),
+            })
+            const rows = await rowsFor({ listed: timeEnabled() })
+            expect(rows[0].dateLine).toBe('Requested 2025-02-15 → 2025-03-05')
+        })
+
         // Only core's verdict hides a row's range: a layer core says has data,
         // or one it has no verdict for, keeps the range the overlap gives.
         test('a layer core says has data, or gave no verdict for, keeps its collected range', async () => {
