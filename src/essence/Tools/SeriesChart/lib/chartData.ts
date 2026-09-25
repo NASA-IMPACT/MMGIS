@@ -1,0 +1,233 @@
+// Pure payload → ECharts option translation. No DOM, no echarts import —
+// the output is a plain option object the rendering component hands to
+// `chart.setOption(...)`, which keeps everything here unit-testable.
+//
+// Time axes deliberately use a VALUE axis over epoch milliseconds with our
+// own tick/tooltip formatting: echarts' native 'time' axis renders labels in
+// the viewer's local zone, and epoch-value with UTC formatters keeps every
+// viewer seeing the same timestamps.
+
+import type { ChartPoint, ChartSeries } from '../../_shared/types/chartSeries'
+import type { ChartTheme } from './types'
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+export interface XyPoint {
+    x: number
+    y: number | null
+}
+
+/** Timezone-less ISO datetimes (common in OGC feature APIs) are read as UTC —
+ *  Date.parse would use the viewer's local zone, shifting points per user.
+ *  Covers both the T-separated form and the space-separated one common from
+ *  Postgres/pandas exports. */
+const TZ_LESS_ISO = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/
+
+/**
+ * Converts a series' points for a time axis: ISO datetime → epoch ms,
+ * dropping unparseable x values (a bad timestamp shouldn't sink the series).
+ * `y: null` gaps pass through — `connectNulls: false` breaks the line there.
+ */
+export function toTimePoints(points: ChartPoint[]): XyPoint[] {
+    const out: XyPoint[] = []
+    for (const p of points) {
+        const ms =
+            typeof p.x === 'number'
+                ? p.x
+                : Date.parse(
+                      TZ_LESS_ISO.test(p.x)
+                          ? `${p.x.replace(' ', 'T')}Z`
+                          : p.x,
+                  )
+        if (Number.isNaN(ms)) continue
+        out.push({ x: ms, y: p.y })
+    }
+    return out.sort((a, b) => a.x - b.x)
+}
+
+/**
+ * Tick formatter for an epoch-ms axis, granularity picked from the span:
+ * hours within ~2 days, month+day up to ~1.5 years, month+year beyond.
+ * Always UTC, matching the project's datetime conventions.
+ */
+export function makeTimeTickFormat(
+    minMs: number,
+    maxMs: number,
+): (ms: number) => string {
+    const span = maxMs - minMs
+    const opts: Intl.DateTimeFormatOptions =
+        span <= 2 * DAY_MS
+            ? { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }
+            : span <= 550 * DAY_MS
+              ? { month: 'short', day: 'numeric' }
+              : { month: 'short', year: 'numeric' }
+    const fmt = new Intl.DateTimeFormat('en-US', { ...opts, timeZone: 'UTC' })
+    return (ms) => fmt.format(new Date(ms))
+}
+
+const TOOLTIP_FMT = new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    timeZone: 'UTC',
+})
+
+export function formatTooltipTime(ms: number): string {
+    return TOOLTIP_FMT.format(new Date(ms))
+}
+
+/** Axis tick labels, sized for a card a few hundred pixels wide. */
+function axisLabel(theme: ChartTheme) {
+    return { color: theme.textColor, fontSize: 10 }
+}
+
+function seriesBase(s: ChartSeries, i: number, theme: ChartTheme) {
+    const color = s.color || theme.palette[i % theme.palette.length]
+    return {
+        name: s.label,
+        type: s.style === 'bar' ? ('bar' as const) : ('line' as const),
+        ...(s.style === 'area' ? { areaStyle: {} } : {}),
+        itemStyle: { color },
+        lineStyle: { width: 2 },
+        symbolSize: 5,
+        showSymbol: false,
+        connectNulls: false,
+    }
+}
+
+/** The preview zoom strip under the chart: the series ghosted inside the
+ *  slider in its own color, light default filler over it, dark end handles. */
+function previewSlider(
+    theme: ChartTheme,
+    color: string,
+    tickFormat: ((ms: number) => string) | null,
+) {
+    return {
+        type: 'slider' as const,
+        height: 24,
+        bottom: 6,
+        textStyle: { fontSize: 10, color: theme.textColor },
+        showDataShadow: true,
+        brushSelect: false,
+        borderColor: theme.gridColor,
+        handleSize: '80%',
+        handleStyle: { color: theme.textColor },
+        moveHandleSize: 0,
+        dataBackground: {
+            lineStyle: { color, opacity: 0.6, width: 1 },
+            areaStyle: { color, opacity: 0.08 },
+        },
+        ...(tickFormat
+            ? { labelFormatter: (v: number) => tickFormat(v) }
+            : {}),
+    }
+}
+
+/** Min/max via a loop — `Math.min(...xs)` overflows the engine's argument
+ *  limit past ~100k points, which real hourly multi-year feeds reach. */
+function extentOf(values: ArrayLike<number>): [number, number] | null {
+    let min = Infinity
+    let max = -Infinity
+    for (let i = 0; i < values.length; i++) {
+        const v = values[i]
+        if (v < min) min = v
+        if (v > max) max = v
+    }
+    return min <= max ? [min, max] : null
+}
+
+type TooltipParam = {
+    marker: string
+    seriesName: string
+    value: [number, number | null]
+}
+
+/** Axis tooltip whose title is the hovered UTC datetime, not raw epoch ms. */
+function timeTooltipFormatter(params: TooltipParam[] | TooltipParam): string {
+    const list = Array.isArray(params) ? params : [params]
+    if (list.length === 0) return ''
+    const rows = list.map(
+        (p) => `${p.marker}${p.seriesName}: ${p.value[1] ?? '—'}`,
+    )
+    return [formatTooltipTime(list[0].value[0]), ...rows].join('<br/>')
+}
+
+/**
+ * The ECharts option for one variable: a single-series chart over a preview
+ * zoom strip (the series redrawn inside the slider). Sparse unlabeled axes —
+ * the card's footer chip, not the chart, names the variable and unit.
+ * `index` is the variable's position in the payload, so it keeps its palette
+ * slot whichever variable is picked. Typed loosely on purpose: echarts' own
+ * option generics add nothing here and the object is validated by rendering.
+ */
+export function buildChartOption(
+    s: ChartSeries,
+    theme: ChartTheme,
+    index: number,
+): Record<string, any> {
+    const color = s.color || theme.palette[index % theme.palette.length]
+
+    const data = toTimePoints(s.points).map(
+        (p) => [p.x, p.y] as [number, number | null],
+    )
+    const xExtent = extentOf(data.map((d) => d[0]))
+    const tickFormat = xExtent
+        ? makeTimeTickFormat(xExtent[0], xExtent[1])
+        : null
+
+    return {
+        tooltip: {
+            trigger: 'axis' as const,
+            axisPointer: { type: 'cross' as const, label: { show: false } },
+            formatter: timeTooltipFormatter,
+        },
+        // Bottom band holds the x labels and the preview strip.
+        grid: { left: 44, right: 8, top: 8, bottom: 64 },
+        xAxis: {
+            type: 'value' as const,
+            min: 'dataMin' as const,
+            max: 'dataMax' as const,
+            splitLine: { show: false },
+            axisLabel: {
+                ...axisLabel(theme),
+                hideOverlap: true,
+                ...(tickFormat
+                    ? { formatter: (v: number) => tickFormat(v) }
+                    : {}),
+            },
+        },
+        yAxis: {
+            type: 'value' as const,
+            scale: true,
+            // A handful of unnamed ticks — identity and unit live in the
+            // card footer, so the plot stays clean like the reference.
+            splitNumber: 2,
+            axisLabel: axisLabel(theme),
+            splitLine: { show: false },
+        },
+        series: [
+            {
+                ...seriesBase(s, index, theme),
+                data,
+            },
+        ],
+        dataZoom: [
+            { type: 'inside' as const },
+            previewSlider(theme, color, tickFormat),
+        ],
+    }
+}
+
+/**
+ * A variable's points as a two-column CSV, `x` then the series label.
+ * `y: null` gaps become empty cells; fields with commas/quotes are quoted.
+ */
+export function seriesToCsv(s: ChartSeries): string {
+    const esc = (v: string) =>
+        /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
+    const rows = s.points.map((p) => `${esc(String(p.x))},${p.y ?? ''}`)
+    return [`x,${esc(s.label)}`, ...rows].join('\n')
+}

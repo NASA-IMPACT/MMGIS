@@ -1,0 +1,214 @@
+import { describe, test, expect } from 'vitest'
+import {
+    toTimePoints,
+    makeTimeTickFormat,
+    formatTooltipTime,
+    buildChartOption,
+    seriesToCsv,
+} from '../../src/essence/Tools/SeriesChart/lib/chartData.ts'
+
+const THEME = {
+    palette: ['#111111', '#222222'],
+    gridColor: '#dddddd',
+    textColor: '#555555',
+}
+
+const DAY = 24 * 60 * 60 * 1000
+
+describe('seriesChart chartData', () => {
+    describe('toTimePoints', () => {
+        test('parses ISO datetimes to epoch ms and keeps null gaps', () => {
+            const pts = toTimePoints([
+                { x: '2026-01-02T00:00:00Z', y: 2 },
+                { x: '2026-01-01T00:00:00Z', y: null },
+            ])
+            expect(pts).toEqual([
+                { x: Date.parse('2026-01-01T00:00:00Z'), y: null },
+                { x: Date.parse('2026-01-02T00:00:00Z'), y: 2 },
+            ])
+        })
+
+        test('drops unparseable x values instead of sinking the series', () => {
+            const pts = toTimePoints([
+                { x: 'garbage', y: 1 },
+                { x: '2026-01-01T00:00:00Z', y: 3 },
+            ])
+            expect(pts).toHaveLength(1)
+            expect(pts[0].y).toBe(3)
+        })
+
+        test('passes numeric x through as ms', () => {
+            expect(toTimePoints([{ x: 1000, y: 1 }])).toEqual([{ x: 1000, y: 1 }])
+        })
+
+        test('reads timezone-less ISO datetimes as UTC, not viewer-local', () => {
+            expect(toTimePoints([{ x: '2017-12-31T00:00:00', y: 1 }])).toEqual([
+                { x: Date.parse('2017-12-31T00:00:00Z'), y: 1 },
+            ])
+        })
+
+        test('reads space-separated timezone-less datetimes as UTC too', () => {
+            expect(toTimePoints([{ x: '2017-12-31 06:30:00', y: 1 }])).toEqual([
+                { x: Date.parse('2017-12-31T06:30:00Z'), y: 1 },
+            ])
+        })
+    })
+
+    describe('makeTimeTickFormat', () => {
+        const t0 = Date.parse('2026-03-04T14:30:00Z')
+        test('uses hours+minutes within a two-day span', () => {
+            expect(makeTimeTickFormat(t0, t0 + DAY)(t0)).toBe('14:30')
+        })
+        test('uses month+day within ~a year', () => {
+            expect(makeTimeTickFormat(t0, t0 + 100 * DAY)(t0)).toBe('Mar 4')
+        })
+        test('uses month+year for multi-year spans', () => {
+            expect(makeTimeTickFormat(t0, t0 + 800 * DAY)(t0)).toBe('Mar 2026')
+        })
+    })
+
+    describe('formatTooltipTime', () => {
+        test('formats a full UTC datetime', () => {
+            expect(formatTooltipTime(Date.parse('2026-03-04T14:30:00Z'))).toBe(
+                'Mar 4, 2026, 14:30',
+            )
+        })
+    })
+
+    describe('buildChartOption', () => {
+        const series = (over = {}) => ({
+            id: 's1',
+            label: 'S1',
+            points: [
+                { x: '2026-01-01T00:00:00Z', y: 1 },
+                { x: '2026-01-02T00:00:00Z', y: 2 },
+            ],
+            ...over,
+        })
+        const card = (s, index = 0) => buildChartOption(s, THEME, index)
+
+        test('single clean series: no legend, no symbols, no gridlines', () => {
+            const opt = card(series())
+            expect(opt.legend).toBeUndefined()
+            expect(opt.series).toHaveLength(1)
+            expect(opt.series[0].showSymbol).toBe(false)
+            expect(opt.yAxis.splitLine.show).toBe(false)
+        })
+
+        test('identity lives in the footer, not the plot: unnamed sparse y-axis', () => {
+            const opt = card(series({ unit: 'ppm' }))
+            expect(opt.yAxis.name).toBeUndefined()
+            expect(opt.yAxis.splitNumber).toBe(2)
+        })
+
+        test('the palette slot follows the variable index, explicit color wins', () => {
+            const s = series()
+            const first = buildChartOption(s, THEME, 0)
+            const second = buildChartOption(s, THEME, 1)
+            expect(first.series[0].itemStyle.color).toBe(THEME.palette[0])
+            expect(second.series[0].itemStyle.color).toBe(THEME.palette[1])
+            const explicit = buildChartOption(series({ color: '#abcdef' }), THEME, 1)
+            expect(explicit.series[0].itemStyle.color).toBe('#abcdef')
+        })
+
+        test('zoom strip previews the series in its own color', () => {
+            const opt = card(series())
+            const slider = opt.dataZoom.find((z) => z.type === 'slider')
+            expect(slider.showDataShadow).toBe(true)
+            expect(slider.dataBackground.lineStyle.color).toBe(THEME.palette[0])
+            expect(opt.dataZoom.map((z) => z.type)).toEqual(['inside', 'slider'])
+        })
+
+        test('time cards format axis, slider labels, and tooltip as UTC', () => {
+            const opt = card(series())
+            expect(opt.xAxis.type).toBe('value')
+            expect(typeof opt.xAxis.axisLabel.formatter).toBe('function')
+            const slider = opt.dataZoom.find((z) => z.type === 'slider')
+            expect(typeof slider.labelFormatter).toBe('function')
+            expect(typeof opt.tooltip.formatter).toBe('function')
+            expect(opt.series[0].data[0]).toEqual([
+                Date.parse('2026-01-01T00:00:00Z'),
+                1,
+            ])
+        })
+
+        test('six-figure point counts build without arg-spread overflow', () => {
+            const points = Array.from({ length: 200000 }, (_, i) => ({
+                x: i * 60000,
+                y: i % 100,
+            }))
+            const opt = card(series({ points }))
+            expect(opt.series[0].data).toHaveLength(200000)
+            expect(typeof opt.xAxis.axisLabel.formatter).toBe('function')
+        })
+
+        test('series style maps to type and area fill', () => {
+            expect(card(series({ style: 'bar' })).series[0].type).toBe('bar')
+            const area = card(series({ style: 'area' })).series[0]
+            expect(area.type).toBe('line')
+            expect(area.areaStyle).toBeDefined()
+        })
+
+        test('gaps are not connected', () => {
+            expect(card(series()).series[0].connectNulls).toBe(false)
+        })
+
+        test('the tooltip titles with the UTC datetime, not raw epoch', () => {
+            const html = card(series()).tooltip.formatter([
+                {
+                    marker: '·',
+                    seriesName: 'S1',
+                    value: [Date.parse('2026-01-01T00:00:00Z'), 1],
+                },
+            ])
+            expect(html).toContain('Jan 1, 2026')
+            expect(html).toContain('S1: 1')
+        })
+
+        test('no in-canvas toolbox or legend: the dropdown picks, the strip resets', () => {
+            const opt = card(series())
+            expect(opt.toolbox).toBeUndefined()
+            expect(opt.legend).toBeUndefined()
+        })
+    })
+
+    describe('seriesToCsv', () => {
+        test('two columns headed x and the series label; gaps are empty cells', () => {
+            const csv = seriesToCsv({
+                id: 'o3',
+                label: 'O3',
+                points: [
+                    { x: '2026-01-01T00:00:00Z', y: 0.04 },
+                    { x: '2026-01-02T00:00:00Z', y: null },
+                ],
+            })
+            expect(csv.split('\n')).toEqual([
+                'x,O3',
+                '2026-01-01T00:00:00Z,0.04',
+                '2026-01-02T00:00:00Z,',
+            ])
+        })
+
+        test('fields with commas or quotes are quoted and escaped', () => {
+            const csv = seriesToCsv({
+                id: 's',
+                label: 'PM2.5, "fine"',
+                points: [{ x: 'a,b', y: 1 }],
+            })
+            expect(csv.split('\n')).toEqual([
+                'x,"PM2.5, ""fine"""',
+                '"a,b",1',
+            ])
+        })
+
+        test('fields with lone carriage returns are quoted', () => {
+            const csv = seriesToCsv({
+                id: 's',
+                label: 'a\rb',
+                points: [{ x: 1, y: 1 }],
+            })
+            expect(csv.split('\n')[0]).toBe('x,"a\rb"')
+        })
+    })
+
+})
