@@ -227,10 +227,9 @@ export function LayerLegend({
                 return (
                     <GradientGraphic
                         stops={stops}
-                        min={min ?? 0}
-                        max={max ?? 0}
+                        min={min ?? null}
+                        max={max ?? null}
                         unit={unit}
-                        cog={cog}
                     />
                 )
             case 'categorical':
@@ -472,9 +471,9 @@ export function LayerLegend({
                     <ColorRampPicker
                         layerId={id}
                         colormap={cog.colormap}
-                        min={cog.min}
-                        max={cog.max}
-                        units={cog.units}
+                        min={min ?? null}
+                        max={max ?? null}
+                        units={unit?.label ?? null}
                         titilerUrl={cog.titilerUrl}
                         onColormapChange={onColormapChange}
                         onRescaleChange={onRescaleChange}

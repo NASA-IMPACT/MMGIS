@@ -1,3 +1,5 @@
+import type { LayerLegend } from '../../../Basics/Layers_/legend/types'
+
 type EventCleanup = () => void
 
 type MMGISAPI = {
@@ -228,6 +230,37 @@ export const mmgisGetLayerCogCapabilities = (
     return mmgisRequestIfProvided<CogCapabilities>(
         'layers:getCogCapabilities',
         layerUUID,
+    )
+}
+
+/**
+ * A layer's legend as core resolves it. Core owns this answer because it is
+ * layer truth, not presentation: which ramp the layer paints through, what
+ * bounds it is scaled to, what its classes are. Plugins draw it.
+ *
+ * Re-exported from core rather than restated, so the wire contract is written
+ * once and a change to it cannot pass unnoticed on this side.
+ */
+export type {
+    LayerLegend,
+    LegendSwatch,
+    LegendType,
+} from '../../../Basics/Layers_/legend/types'
+
+/**
+ * Every layer's legend, keyed by layer UUID.
+ *
+ * Resolved at the moment of asking, against the colormap and rescale the layer
+ * currently paints through — so re-requesting after a change is what refreshes
+ * a legend. Registered as late as mmgisGetLayerConfigs; the same readiness
+ * caveat applies. Null against a core without the handler.
+ */
+export const mmgisGetLayerLegends = (): Promise<Record<
+    string,
+    LayerLegend
+> | null> => {
+    return mmgisRequestIfProvided<Record<string, LayerLegend>>(
+        'layers:getLegend',
     )
 }
 
