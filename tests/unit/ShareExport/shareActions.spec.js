@@ -309,7 +309,7 @@ test.describe('legend compositing in the downloads', () => {
     }
     const composedBlob = new Blob(['composed'], { type: 'image/png' })
     const composed = { ...screenshot, blob: composedBlob, height: 700 }
-    const emptyModel = { missionName: null, headerLines: [], rows: [] }
+    const emptyModel = { missionName: null, headerFacts: [], rows: [] }
 
     test('a PNG carries the composed image', async () => {
         const composeCalls = []
