@@ -1,17 +1,18 @@
 // Generates colormap lookup tables that match TiTiler's colormap_name output,
 // reusing MMGIS's existing js-colormaps evaluator so the client-side render
 // and the TiTiler render agree (including matplotlib `_r` reversed variants).
-import { evaluate_cmap, data as colormapData } from '../../../../external/js-colormaps/js-colormaps.js'
+import { evaluate_cmap } from '../../../../external/js-colormaps/js-colormaps.js'
+import { resolveLocalColormap } from '../../Colormaps/localColormaps'
 
 const FALLBACK = 'viridis'
 
+/**
+ * The ramp to paint for a configured name, falling back rather than failing
+ * since a layer still has to render something. Ask `hasLocalColormap` when you
+ * need to know whether a ramp exists rather than what stands in for it.
+ */
 export function normalizeColormapName(name: string): { name: string; reverse: boolean } {
-    const raw = (name || '').trim()
-    const reverse = /_r$/i.test(raw)
-    const base = reverse ? raw.slice(0, -2) : raw
-    const keys = Object.keys(colormapData)
-    const match = keys.find((k) => k.toLowerCase() === base.toLowerCase())
-    return { name: match || FALLBACK, reverse: match ? reverse : false }
+    return resolveLocalColormap(name) ?? { name: FALLBACK, reverse: false }
 }
 
 export function buildColormapLUT(colormapName: string): Uint8ClampedArray {

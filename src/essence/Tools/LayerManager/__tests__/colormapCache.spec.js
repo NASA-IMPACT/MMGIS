@@ -96,3 +96,39 @@ test.describe('fetchColormapColors', () => {
         expect(global.fetch).not.toHaveBeenCalled()
     })
 })
+
+/**
+ * A supplied ramp needs no service, and takes precedence over one so a swatch
+ * shows what the renderer it came from will paint.
+ */
+test.describe('fetchColormapColors with a local ramp table', () => {
+    const LOCAL = { viridis: ['rgba(68, 1, 84, 1)', 'rgba(253, 231, 37, 1)'] }
+
+    test('resolves a local ramp without touching the network', async () => {
+        global.fetch = vi.fn()
+        expect(await fetchColormapColors('viridis', BASE, LOCAL)).toEqual(LOCAL.viridis)
+        expect(global.fetch).not.toHaveBeenCalled()
+    })
+
+    test('resolves a local ramp even with no service configured', async () => {
+        global.fetch = vi.fn()
+        expect(await fetchColormapColors('viridis', null, LOCAL)).toEqual(LOCAL.viridis)
+        expect(global.fetch).not.toHaveBeenCalled()
+    })
+
+    // A service may define ramps the caller has none of.
+    test('falls back to the service for a ramp the table lacks', async () => {
+        global.fetch = vi.fn(async () => okResponse(VIRIDIS))
+        expect(await fetchColormapColors('nlcd', BASE, LOCAL)).toEqual([
+            'rgba(68, 1, 84, 1)',
+            'rgba(253, 231, 37, 1)',
+        ])
+        expect(global.fetch).toHaveBeenCalledWith(`${BASE}/colorMaps/nlcd`)
+    })
+
+    test('is null for a ramp neither the table nor any service can supply', async () => {
+        global.fetch = vi.fn()
+        expect(await fetchColormapColors('nlcd', null, LOCAL)).toBe(null)
+        expect(global.fetch).not.toHaveBeenCalled()
+    })
+})

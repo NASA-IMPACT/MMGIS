@@ -196,6 +196,8 @@ export const mmgisSetLayerOrder = (order: string[]): Promise<boolean | null> => 
 export type CogCapabilities = {
     hasColormap: boolean
     canChangeColormap: boolean
+    /** Whether the client-side renderer paints the layer. */
+    deckRaster?: boolean
 }
 
 /**
