@@ -35,7 +35,7 @@ const screenshot = {
 
 const bandModel = {
     missionName: 'M20',
-    headerLines: [],
+    headerFacts: [],
     rows: [{ kind: 'plain', title: 'Displacement' }],
 }
 
@@ -44,7 +44,7 @@ describe('composeExportImage', () => {
     // screenshot itself, never a screenshot plus an empty white strip.
     test('a model with no rows returns the screenshot untouched', async () => {
         const createBitmap = vi.fn()
-        const empty = { missionName: null, headerLines: [], rows: [] }
+        const empty = { missionName: null, headerFacts: [], rows: [] }
         for (const model of [empty, null]) {
             expect(
                 await composeExportImage(screenshot, model, { createBitmap }),

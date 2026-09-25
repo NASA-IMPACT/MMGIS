@@ -33,7 +33,7 @@ const textBottom = ({ args: [, , y], font }) => y + fontPx(font)
 
 const model = (rows, overrides = {}) => ({
     missionName: null,
-    headerLines: [],
+    headerFacts: [],
     rows,
     ...overrides,
 })
@@ -112,16 +112,42 @@ describe('drawLegendBand', () => {
     })
 
     // A bound the layer never declared is blank, never a 0 the layer was
-    // never scaled to; a bound it did declare carries the unit.
+    // never scaled to; a bound it did declare carries the unit, set lighter
+    // than the number it qualifies.
     test('labels only the bounds the layer declared', () => {
         const { ctx, fillTextCalls } = makeCtx()
         const m = model([gradientRow({ min: null, max: 0.5, unit: 'm' })])
         drawLegendBand(ctx, m, 400, 0, measureLegendBand(ctx, m, 400, 1), 1)
+        const [, value, unit, ...rest] = fillTextCalls
         expect(fillTextCalls.map(({ args: [text] }) => text)).toEqual([
             'Displacement',
-            '',
-            '0.5 m',
+            '0.5',
+            ' m',
         ])
+        expect(rest).toEqual([])
+        expect(value.font.startsWith('400 ')).toBe(true)
+        expect(unit.font.startsWith('300 ')).toBe(true)
+    })
+
+    // A white swatch would vanish into the white band, so a pale color gets
+    // a hairline edge; a color that stands out on its own is drawn bare.
+    test('edges only the swatches too pale to show against the band', () => {
+        const edgesFor = (color) => {
+            const { ctx } = makeCtx()
+            const fills = []
+            const record = ctx.fillRect
+            ctx.fillRect = (...args) => {
+                fills.push(ctx.fillStyle)
+                record(...args)
+            }
+            const m = model([categoricalRow([{ color, label: 'A' }])])
+            drawLegendBand(ctx, m, 400, 0, measureLegendBand(ctx, m, 400, 1), 1)
+            // The band's own surface is the first fill; the rest are the
+            // swatch.
+            return fills.slice(1)
+        }
+        expect(edgesFor('#ffffff')).toEqual(['#dfe1e2', '#ffffff'])
+        expect(edgesFor('#1c5f2c')).toEqual(['#1c5f2c'])
     })
 
     // The date line sits under the name it belongs to, in the smaller
@@ -135,6 +161,71 @@ describe('drawLegendBand', () => {
         expect(date.args[1]).toBe(title.args[1])
         expect(date.args[2]).toBeGreaterThan(title.args[2])
         expect(fontPx(date.font)).toBeLessThan(fontPx(title.font))
+    })
+
+    // Each header fact is a small label over its value, and the next fact
+    // is set further apart than a label is from its own value, so the two
+    // facts don't read as one run of four lines.
+    test('stacks each header fact as a smaller label over its value', () => {
+        const { ctx, fillTextCalls } = makeCtx()
+        const m = model([plainRow()], {
+            missionName: 'M20',
+            headerFacts: [
+                { label: 'Time cursor', value: '2024-02-01' },
+                { label: 'Exported', value: 'now' },
+            ],
+        })
+        drawLegendBand(ctx, m, 400, 0, measureLegendBand(ctx, m, 400, 1), 1)
+        const byText = (t) => fillTextCalls.find(({ args }) => args[0] === t)
+        const cursorLabel = byText('Time cursor')
+        const cursorValue = byText('2024-02-01')
+        const exportedLabel = byText('Exported')
+        expect(fontPx(cursorLabel.font)).toBeLessThan(fontPx(cursorValue.font))
+        expect(cursorValue.args[1]).toBe(cursorLabel.args[1])
+        const labelToValue = cursorValue.args[2] - textBottom(cursorLabel)
+        const factToFact = exportedLabel.args[2] - textBottom(cursorValue)
+        expect(labelToValue).toBeGreaterThan(0)
+        expect(factToFact).toBeGreaterThan(labelToValue)
+    })
+
+    // Beside the rows, the header column is as wide as its longest line, so
+    // the rows start right after a short title; a longer one moves them right,
+    // and past 25% of the band the title wraps instead. The gap either side
+    // of the hairline is widest beside a short header, where there is room to
+    // spare, and down to its 48px floor once the header fills its 25%.
+    test('sizes the header column to its text, up to 25% of the band', () => {
+        const rowsLeftFor = (missionName) => {
+            const { ctx, fillTextCalls } = makeCtx()
+            const m = model([plainRow({ title: 'Row' })], { missionName })
+            drawLegendBand(ctx, m, 1200, 0, measureLegendBand(ctx, m, 1200, 1), 1)
+            return fillTextCalls.find(({ args }) => args[0] === 'Row').args[1]
+        }
+        const cap = Math.floor((1200 - 64) * 0.25)
+        const short = rowsLeftFor('M20')
+        // 45 characters at the fake 6px each: short of the cap.
+        const between = rowsLeftFor('Greenhouse Gas Emissions Monitoring for North')
+        const huge = rowsLeftFor('Greenhouse Gas Emissions '.repeat(8))
+        // The band's padding, the column, and the hairline with the gap
+        // either side of it. 'M20' is 18px at the fake 6px per character.
+        expect(short).toBe(32 + 18 + 2 * 96 + 1)
+        expect(between).toBeGreaterThan(short)
+        expect(huge).toBeGreaterThan(between)
+        expect(huge).toBe(32 + cap + 2 * 48 + 1)
+    })
+
+    test('wraps a long header line onto at most four lines', () => {
+        const { ctx, fillTextCalls } = makeCtx()
+        const title = 'Greenhouse Gas Emissions '.repeat(12).trim()
+        const m = model([plainRow({ title: 'Row' })], { missionName: title })
+        drawLegendBand(ctx, m, 1200, 0, measureLegendBand(ctx, m, 1200, 1), 1)
+        const titleLines = fillTextCalls.filter(({ args }) => args[0] !== 'Row')
+        expect(titleLines).toHaveLength(4)
+        expect(titleLines[3].args[0].endsWith('…')).toBe(true)
+        const cap = Math.floor((1200 - 64) * 0.25)
+        for (const { args } of titleLines) {
+            expect(ctx.measureText(args[0]).width).toBeLessThanOrEqual(cap)
+            expect(args[1]).toBe(titleLines[0].args[1])
+        }
     })
 
     test('clips text that will not fit rather than overflowing the band', () => {
@@ -206,7 +297,10 @@ describe('what is drawn fits the band that was measured', () => {
         ],
         {
             missionName: 'M20',
-            headerLines: ['Time cursor 2024-02-01', 'Exported now'],
+            headerFacts: [
+                { label: 'Time cursor', value: '2024-02-01' },
+                { label: 'Exported', value: 'now' },
+            ],
         },
     )
 
@@ -216,5 +310,14 @@ describe('what is drawn fits the band that was measured', () => {
 
     test('rows flowed into columns, the tallest cell setting each line', () => {
         assertFits(mixedRows, 1200)
+    })
+
+    test('a header wrapped onto several lines', () => {
+        const wrapped = {
+            ...mixedRows,
+            missionName: 'Greenhouse Gas Emissions '.repeat(6).trim(),
+        }
+        assertFits(wrapped, 1200)
+        assertFits(wrapped, 300)
     })
 })

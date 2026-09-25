@@ -1,11 +1,13 @@
 import type { MapScreenshotResult } from '../adapters/mmgisAPI'
 import { measureLegendBand, drawLegendBand } from './renderLegendBand'
 import type { ExportLegendModel } from './getExportLegendModel'
+import { resolveBandTheme, loadBandFonts, type BandTheme } from './bandTheme'
 
 export type ComposeDeps = {
     createBitmap?: (blob: Blob) => Promise<ImageBitmap>
     createCanvas?: () => HTMLCanvasElement
     scale?: number
+    theme?: BandTheme
 }
 
 /**
@@ -26,8 +28,10 @@ export async function composeExportImage(
             1,
             (typeof window !== 'undefined' && window.devicePixelRatio) || 1,
         ),
+        theme = resolveBandTheme(),
     } = deps
 
+    await loadBandFonts(theme)
     const bitmap = await createBitmap(screenshot.blob)
     try {
         const canvas = createCanvas()
@@ -41,7 +45,13 @@ export async function composeExportImage(
         // anyway, so nothing here depends on that state surviving the
         // resize. That makes a second, throwaway canvas just for measuring
         // unnecessary.
-        const bandHeight = measureLegendBand(ctx, model, screenshot.width, scale)
+        const bandHeight = measureLegendBand(
+            ctx,
+            model,
+            screenshot.width,
+            scale,
+            theme,
+        )
         canvas.width = screenshot.width
         canvas.height = screenshot.height + bandHeight
         ctx.drawImage(bitmap, 0, 0)
@@ -52,6 +62,7 @@ export async function composeExportImage(
             screenshot.height,
             bandHeight,
             scale,
+            theme,
         )
         const blob = await new Promise<Blob | null>((resolve) =>
             canvas.toBlob(resolve, screenshot.mimeType),
