@@ -233,6 +233,8 @@ export interface LayerTimeConfig {
     dataStartTime?: string
     dataEndTime?: string
     dataDates?: string[] | string
+    /** The ISO 8601 duration a periodic layer's data repeats at, e.g. `P1D`. */
+    interval?: string
 }
 
 /** A layer's extent, with either bound completed from the caller's fallback. */
