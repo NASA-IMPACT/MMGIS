@@ -3,6 +3,8 @@ import {
     resolveTimePolicy,
     resolveTemporalExtent,
     parseISODuration,
+    stepsBetween,
+    addDuration,
 } from '../../src/essence/Basics/TimeControl_/layerTimePolicy'
 
 // Injected "now" so results are exact: mid-afternoon UTC.
@@ -290,5 +292,35 @@ describe('layer time policy', () => {
                 end: null,
             })
         })
+    })
+})
+
+describe('stepsBetween', () => {
+    const at = (iso) => new Date(iso)
+    const step = (iso) => parseISODuration(iso)
+
+    test.each([
+        ['PT1H', '2026-09-21T06:00:00Z', '2026-09-22T00:00:00Z', 18],
+        ['PT1H', '2026-09-21T06:00:00Z', '2026-09-21T11:40:00Z', 6],
+        ['PT1H', '2026-09-21T06:00:00Z', '2026-09-21T11:20:00Z', 5],
+        ['P1D', '2026-09-01T00:00:00Z', '2026-09-04T00:00:00Z', 3],
+        ['P1M', '2026-01-31T00:00:00Z', '2026-02-28T00:00:00Z', 1],
+        ['P1M', '2026-01-31T00:00:00Z', '2026-03-31T00:00:00Z', 2],
+        ['P1Y', '2024-02-29T00:00:00Z', '2026-02-28T00:00:00Z', 2],
+        ['PT1H', '2026-09-21T06:00:00Z', '2026-09-21T03:00:00Z', -3],
+        ['PT1H', '2026-09-21T06:00:00Z', '2026-09-21T06:00:00Z', 0],
+    ])('%s from %s to %s is %i steps', (s, from, to, expected) => {
+        expect(stepsBetween(at(from), at(to), step(s))).toBe(expected)
+    })
+})
+
+describe('addDuration month clamp', () => {
+    test('a month step from a month end lands on the next month end, not the overflow', () => {
+        expect(addDuration(new Date('2026-01-31T00:00:00Z'), parseISODuration('P1M'), 1).toISOString()).toBe('2026-02-28T00:00:00.000Z')
+        expect(addDuration(new Date('2024-01-31T00:00:00Z'), parseISODuration('P1M'), 1).toISOString()).toBe('2024-02-29T00:00:00.000Z')
+        expect(addDuration(new Date('2026-03-31T00:00:00Z'), parseISODuration('P1M'), -1).toISOString()).toBe('2026-02-28T00:00:00.000Z')
+    })
+    test('a day step still crosses month ends the ordinary way', () => {
+        expect(addDuration(new Date('2026-01-31T00:00:00Z'), parseISODuration('P1D'), 1).toISOString()).toBe('2026-02-01T00:00:00.000Z')
     })
 })
