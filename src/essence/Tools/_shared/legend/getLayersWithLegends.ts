@@ -1,7 +1,9 @@
 import {
     mmgisRequest,
+    mmgisGetLayerConfigs,
     mmgisGetLayerLegends,
     mmgisGetLayerOrder,
+    type LayerConfig,
     type LegendType,
     type LegendSwatch,
 } from '../adapters/mmgisAPI'
@@ -31,9 +33,12 @@ export type LayerWithLegend = {
     colormap?: string | null
 }
 
-export type LayerFetchOptions = { showOnlyVisible?: boolean }
-
-type LayerConfig = { display_name?: string; description?: string; type?: string }
+export type LayerFetchOptions = {
+    showOnlyVisible?: boolean
+    /** The mission's layer configs, for a caller that already holds them;
+     *  fetched here when it does not. */
+    layerConfigs?: Record<string, LayerConfig> | null
+}
 
 /**
  * Every listed layer with its legend, keyed answers from core assembled onto
@@ -43,9 +48,10 @@ type LayerConfig = { display_name?: string; description?: string; type?: string 
  */
 export const getLayersWithLegends = async ({
     showOnlyVisible = false,
+    layerConfigs,
 }: LayerFetchOptions = {}): Promise<LayerWithLegend[]> => {
-    const layerConfigs = await mmgisRequest<Record<string, LayerConfig>>('layers:getAllConfigs')
-    if (!layerConfigs) return []
+    const configs = layerConfigs ?? (await mmgisGetLayerConfigs())
+    if (!configs) return []
 
     const [visibleLayers, opacities, legends, order] = await Promise.all([
         mmgisRequest<Record<string, boolean>>('layers:getVisible'),
@@ -55,8 +61,8 @@ export const getLayersWithLegends = async ({
     ])
 
     const result: LayerWithLegend[] = []
-    for (const layerName of Object.keys(layerConfigs)) {
-        const cfg = layerConfigs[layerName]
+    for (const layerName of Object.keys(configs)) {
+        const cfg = configs[layerName]
         if (!cfg) continue
         if (cfg.type === 'header') continue
         const isVisible = visibleLayers?.[layerName] === true

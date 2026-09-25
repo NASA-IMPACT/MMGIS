@@ -32,8 +32,23 @@ export type MapScreenshotResult = {
 export type LayerConfig = {
     name?: string
     display_name?: string
+    description?: string
+    /** The layer's kind: 'tile', 'vector', 'header', and so on. */
+    type?: string
     time?: {
         enabled?: boolean
+        /**
+         * 'global' and 'requery' are re-requested as the time cursor moves;
+         * 'local' is fetched once and filtered on the client.
+         */
+        type?: string
+        /**
+         * The window core stamped on the layer at the last time step: one
+         * whole period for a periodic raster layer, otherwise the Time
+         * Control window start to the cursor. Runtime state, not config.
+         */
+        start?: string | null
+        end?: string | null
         /** As authored: a concrete ISO datetime or a policy string ("now",
          *  "now - P1D"). A periodic layer may also carry an `interval`
          *  cadence, already folded into the resolved extent. Ask
@@ -297,10 +312,18 @@ export type LayerDataCoverage = {
      */
     spans: CoverageSpan[] | null
     /**
-     * The window the layer would request. The verdict tests its end, the
-     * current time, against the spans; its start plays no part.
+     * The window core stamped on the layer and requests with, epoch
+     * milliseconds: one whole period, start to its last inclusive second,
+     * when `periodic`; otherwise the Time Control window start to the cursor.
+     * Null when the layer carries no readable window.
      */
-    requestedWindow: CoverageSpan | null
+    requestedWindow: { start: number; end: number } | null
+    /**
+     * Whether core requested one period for the layer rather than the Time
+     * Control window. A periodic verdict tests the whole period against the
+     * spans; any other tests the window's end, the current time, alone.
+     */
+    periodic: boolean
 }
 
 /** The wire shape of 'layers:dataCoverageChanged'. */
@@ -338,10 +361,30 @@ export const mmgisGetLayerDataCoverage = (
     )
 }
 
-/** When a layer has data, as ISO datetimes; null where unset or unreadable. */
+/**
+ * An ISO-8601 duration as core parses it: each unit's count, zero where the
+ * duration leaves it out. Declared here rather than imported, since it is the
+ * shape of a bus answer, not core code.
+ */
+export type Duration = {
+    years: number
+    months: number
+    weeks: number
+    days: number
+    hours: number
+    minutes: number
+    seconds: number
+}
+
+/**
+ * When a layer has data, as ISO datetimes; null where unset or unreadable.
+ * `interval` is the layer's `time.interval` as core parsed it, or null when
+ * the layer declares none or core cannot read it.
+ */
 export type TemporalExtent = {
     start: string | null
     end: string | null
+    interval: Duration | null
 }
 
 /**
@@ -584,6 +627,17 @@ export const mmgisOnPluginsChanged = (
  */
 export const mmgisGetTimeStart = (): Promise<string | null> => {
     return mmgisRequestIfProvided<string>('time:getStart')
+}
+
+/**
+ * Which mode the Time UI bar is in: 'range', or 'point', where core pins the
+ * window start to the epoch, so the window has no meaningful start. Null when
+ * time is disabled or not yet seeded, when the bar is not mounted (mobile and
+ * the modern layout drive time without it), and against a core that predates
+ * the handler.
+ */
+export const mmgisGetTimeMode = (): Promise<'range' | 'point' | null> => {
+    return mmgisRequestIfProvided<'range' | 'point'>('time:getMode')
 }
 
 /** The time window's closing instant; same null cases as mmgisGetTimeStart. */

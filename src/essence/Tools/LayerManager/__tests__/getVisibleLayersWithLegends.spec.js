@@ -182,6 +182,21 @@ describe('getVisibleLayersWithLegends', () => {
         expect(byId(layers, BASEMAP).analysisSupported).toBe(false)
     })
 
+    // The analysis mark and the row assembly both read the configs; the
+    // panel hands its copy on, so core is asked for them once.
+    test('asks core for the layer configs once', async () => {
+        setupMock()
+        const request = global.window.mmgisAPI.request
+        const asked = []
+        global.window.mmgisAPI.request = (name) => {
+            asked.push(name)
+            return request(name)
+        }
+        await getVisibleLayersWithLegends()
+
+        expect(asked.filter((name) => name === 'layers:getAllConfigs')).toHaveLength(1)
+    })
+
     // A layer the LayerFilter plugin has filtered out of the lists is not in
     // this list either — it is still on the map, and an export still legends
     // it, but the panel is a list and this is what the list holds.
