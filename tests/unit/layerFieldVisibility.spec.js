@@ -34,3 +34,66 @@ test('deckgl keeps cogRendererMode', () => {
     const fields = cog.rows.flatMap((r) => r.components.map((c) => c.field))
     expect(fields).toContain('cogRendererMode')
 })
+
+const withFeaturePopup = () => ({
+    tabs: [
+        { name: 'Interface', rows: [
+            { components: [
+                { field: 'variables.useKeyAsName.0', type: 'text' },
+                { field: 'variables.featurePopup.enabled', type: 'checkbox' },
+            ] },
+            { components: [
+                { field: 'variables.featurePopup.title', type: 'text' },
+                { field: 'variables.featurePopup.properties', type: 'textarray' },
+                { field: 'variables.featurePopup.actions', type: 'objectarray' },
+            ] },
+        ] },
+    ],
+})
+
+test('leaflet hides the feature popup fields, which only deck.gl acts on', () => {
+    const hidden = getHiddenFieldsForEngine('leaflet', 'vectortile')
+    const out = stripHiddenFields(withFeaturePopup(), hidden)
+    const fields = out.tabs[0].rows.flatMap((r) => r.components.map((c) => c.field))
+
+    expect(fields).toEqual(['variables.useKeyAsName.0'])
+})
+
+test('deckgl keeps the feature popup fields', () => {
+    const hidden = getHiddenFieldsForEngine('deckgl', 'vectortile')
+    const out = stripHiddenFields(withFeaturePopup(), hidden)
+    const fields = out.tabs[0].rows.flatMap((r) => r.components.map((c) => c.field))
+
+    expect(fields).toContain('variables.featurePopup.enabled')
+    expect(fields).toContain('variables.featurePopup.actions')
+})
+
+const withHoverHighlight = () => ({
+    tabs: [
+        { name: 'Style', rows: [
+            { components: [
+                { field: 'style.vtId', type: 'text' },
+                { field: 'style.hoverHighlight', type: 'checkbox' },
+                { field: 'style.hoverHighlightColor', type: 'colorpicker' },
+            ] },
+        ] },
+    ],
+})
+
+test('leaflet hides the hover highlight fields, which only deck.gl reads', () => {
+    const hidden = getHiddenFieldsForEngine('leaflet', 'vectortile')
+    const out = stripHiddenFields(withHoverHighlight(), hidden)
+    const fields = out.tabs[0].rows.flatMap((r) => r.components.map((c) => c.field))
+
+    // The id key stays: Leaflet reads it too, as its own feature id.
+    expect(fields).toEqual(['style.vtId'])
+})
+
+test('deckgl keeps the hover highlight fields', () => {
+    const hidden = getHiddenFieldsForEngine('deckgl', 'vectortile')
+    const out = stripHiddenFields(withHoverHighlight(), hidden)
+    const fields = out.tabs[0].rows.flatMap((r) => r.components.map((c) => c.field))
+
+    expect(fields).toContain('style.hoverHighlight')
+    expect(fields).toContain('style.hoverHighlightColor')
+})

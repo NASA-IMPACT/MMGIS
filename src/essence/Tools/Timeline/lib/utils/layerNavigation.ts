@@ -2,6 +2,8 @@ import moment from 'moment'
 import type { TimeMode } from '../types'
 import { resolveLayerExtent, resolveListedInstants, stepTime } from './timeUtils'
 import type { LayerTimeConfig } from './timeUtils'
+import { addSteps, parseDuration, stepIndexAtOrBefore } from './duration'
+import type { Duration } from './duration'
 
 /**
  * Where a layer's navigation controls can put the timeline's current time. A
@@ -15,6 +17,23 @@ export interface LayerNavigation {
     /** The span covered — for a sparse layer, its outermost stops. */
     start: Date
     end: Date
+    /**
+     * False when `dataStartTime` names no readable bound: `start` was then
+     * completed from the timeline's window, or closed on the layer's own end.
+     */
+    hasOwnStart: boolean
+    /**
+     * False when `dataEndTime` names no readable bound: `end` was then
+     * completed from the timeline's window, or closed on the layer's own start.
+     */
+    hasOwnEnd: boolean
+    /**
+     * Periodic only: the Data Time Interval the layer's data repeats at, its
+     * steps anchored at `start`. Absent when the layer names no readable
+     * interval, or no start of its own to anchor one to, in which case the
+     * layer is drawn as one span and stepped by the timeline's granularity.
+     */
+    interval?: Duration
 }
 
 /**
@@ -50,6 +69,10 @@ export function resolveLayerNavigation(
             stops,
             start: stops[0],
             end: stops[stops.length - 1],
+            // A sparse layer's stops are read from its own list, so neither
+            // outermost stop was completed from the timeline's window.
+            hasOwnStart: true,
+            hasOwnEnd: true,
         }
 
     const { start, end, hasOwnStart, hasOwnEnd } = resolveLayerExtent(
@@ -64,8 +87,10 @@ export function resolveLayerNavigation(
     // would complete the open side past it, running the extent backwards
     // through a span the layer holds no data for. Close on the bound the layer
     // names instead, leaving the open direction inert.
-    if (!hasOwnStart && start > end) return { kind: 'periodic', start: end, end }
-    if (!hasOwnEnd && end < start) return { kind: 'periodic', start, end: start }
+    if (!hasOwnStart && start > end)
+        return { kind: 'periodic', start: end, end, hasOwnStart, hasOwnEnd }
+    if (!hasOwnEnd && end < start)
+        return { kind: 'periodic', start, end: start, hasOwnStart, hasOwnEnd }
 
     // Both bounds named, and the end before the start: a span the layer cannot
     // hold data in. Every direction through it contradicts another — first
@@ -80,7 +105,18 @@ export function resolveLayerNavigation(
         return null
     }
 
-    return { kind: 'periodic', start, end }
+    // Steps are anchored at the layer's own start. A start borrowed from the
+    // timeline's window moves with the window, so it anchors nothing.
+    const interval = hasOwnStart ? parseDuration(time.interval) : null
+
+    return {
+        kind: 'periodic',
+        start,
+        end,
+        hasOwnStart,
+        hasOwnEnd,
+        ...(interval ? { interval } : {}),
+    }
 }
 
 /**
@@ -133,42 +169,70 @@ function navigateSparseLayer(
 }
 
 /**
+ * The instant one step of the layer's own cadence from `from`: the next or
+ * previous step boundary, anchored at the layer's start. Strict, so a press
+ * from a boundary moves a whole step, and one from between two boundaries
+ * lands on the nearer one in the direction pressed.
+ */
+function stepByInterval(
+    anchor: Date,
+    interval: Duration,
+    from: Date,
+    direction: 1 | -1
+): Date {
+    const n = stepIndexAtOrBefore(anchor, interval, from)
+    if (direction === 1) return addSteps(anchor, interval, n + 1)
+    const onBoundary = addSteps(anchor, interval, n).getTime() === from.getTime()
+    return addSteps(anchor, interval, onBoundary ? n - 1 : n)
+}
+
+/**
  * The periodic half of `navigateLayer`. Data runs throughout the extent, so
- * moving inside it steps by the timeline's granularity and stops short at the
+ * moving inside it steps by the layer's own interval where it names one, and
+ * by the timeline's granularity where it does not, stopping short at the
  * edges; one press from outside reaches the near edge.
  */
 function navigatePeriodicLayer(
-    start: Date,
-    end: Date,
+    nav: LayerNavigation,
     from: Date,
     action: 'first' | 'prev' | 'next' | 'last',
     mode: TimeMode
 ): Date | null {
+    const { start, end, interval } = nav
     const at = from.getTime()
     const startMs = start.getTime()
     const endMs = end.getTime()
+    const step = (direction: 1 | -1) =>
+        interval
+            ? stepByInterval(start, interval, from, direction)
+            : stepTime(from, mode, direction)
 
     switch (action) {
         case 'first':
             return at === startMs ? null : start
         case 'last':
             return at === endMs ? null : end
-        case 'next':
+        case 'next': {
             if (at < startMs) return start
             if (at >= endMs) return null
-            return new Date(Math.min(stepTime(from, mode, 1).getTime(), endMs))
-        case 'prev':
+            // A step past the range a Date can hold overshoots the extent.
+            const next = step(1).getTime()
+            return Number.isFinite(next) ? new Date(Math.min(next, endMs)) : end
+        }
+        case 'prev': {
             if (at > endMs) return end
             if (at <= startMs) return null
-            return new Date(Math.max(stepTime(from, mode, -1).getTime(), startMs))
+            const prev = step(-1).getTime()
+            return Number.isFinite(prev) ? new Date(Math.max(prev, startMs)) : start
+        }
     }
 }
 
 /**
  * Where a layer's first/previous/next/last control puts the current time, or
  * null when that control has nowhere to go — the signal a layer row draws it
- * inert. `mode` is read only by the periodic side; a sparse layer moves
- * between its own stops regardless of it.
+ * inert. `mode` is read only by a periodic layer without an interval of its
+ * own; a sparse layer moves between its own stops regardless of it.
  *
  * A jump to an outermost instant the current time already sits on is nowhere
  * to go: repeating it would re-commit the time already held while the control
@@ -182,5 +246,5 @@ export function navigateLayer(
 ): Date | null {
     return nav.kind === 'sparse'
         ? navigateSparseLayer(nav.stops ?? [], from, action)
-        : navigatePeriodicLayer(nav.start, nav.end, from, action, mode)
+        : navigatePeriodicLayer(nav, from, action, mode)
 }

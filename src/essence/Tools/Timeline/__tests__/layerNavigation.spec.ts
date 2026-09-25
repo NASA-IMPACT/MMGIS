@@ -48,6 +48,8 @@ const sparseNav = (...days: string[]): LayerNavigation => {
         stops,
         start: stops[0],
         end: stops[stops.length - 1],
+        hasOwnStart: true,
+        hasOwnEnd: true,
     }
 }
 
@@ -55,6 +57,8 @@ const periodicNav = (start: string, end: string): LayerNavigation => ({
     kind: 'periodic',
     start: new Date(start),
     end: new Date(end),
+    hasOwnStart: true,
+    hasOwnEnd: true,
 })
 
 const goTo = (
@@ -767,5 +771,217 @@ describe('revealStart', () => {
         const nav = periodicNav('2020-01-01T00:00:00Z', '2021-01-01T00:00:00Z')
         const target = new Date('2020-01-01T00:00:00Z')
         expect(revealStart(nav, target)).toEqual(target)
+    })
+})
+
+describe('which bounds a layer named itself', () => {
+    test('credits a sparse layer with both of its own bounds', () => {
+        // Stops come from the layer's own list, so neither end was completed
+        // from the window.
+        const nav = resolve({
+            enabled: true,
+            dataDates: ['2019-04-02', '2019-04-09'],
+        })!
+
+        expect(nav.hasOwnStart).toBe(true)
+        expect(nav.hasOwnEnd).toBe(true)
+    })
+
+    test('credits a layer that configures both bounds with both', () => {
+        const nav = resolve({
+            enabled: true,
+            dataStartTime: '2019-01-01T00:00:00Z',
+            dataEndTime: '2019-06-01T00:00:00Z',
+        })!
+
+        expect(nav.hasOwnStart).toBe(true)
+        expect(nav.hasOwnEnd).toBe(true)
+    })
+
+    test('marks the end completed when only a start is configured', () => {
+        const nav = resolve({
+            enabled: true,
+            dataStartTime: '2019-01-01T00:00:00Z',
+        })!
+
+        expect(nav.hasOwnStart).toBe(true)
+        expect(nav.hasOwnEnd).toBe(false)
+        expect(nav.end.toISOString()).toBe(windowEnd.toISOString())
+    })
+
+    test('marks the start completed when only an end is configured', () => {
+        const nav = resolve({
+            enabled: true,
+            dataEndTime: '2019-01-01T00:00:00Z',
+        })!
+
+        expect(nav.hasOwnStart).toBe(false)
+        expect(nav.hasOwnEnd).toBe(true)
+        expect(nav.start.toISOString()).toBe(windowStart.toISOString())
+    })
+
+    test('keeps the start marked completed when the extent is closed on the named end', () => {
+        // The window lies wholly after the layer's only bound, so the open
+        // side is closed on that bound rather than run backwards through it.
+        const nav = resolve({
+            enabled: true,
+            dataEndTime: '2017-01-01T00:00:00Z',
+        })!
+
+        expect(nav.start.toISOString()).toBe('2017-01-01T00:00:00.000Z')
+        expect(nav.hasOwnStart).toBe(false)
+        expect(nav.hasOwnEnd).toBe(true)
+    })
+
+    test('keeps the end marked completed when the extent is closed on the named start', () => {
+        // The window lies wholly before the layer's only bound.
+        const nav = resolve({
+            enabled: true,
+            dataStartTime: '2023-01-01T00:00:00Z',
+        })!
+
+        expect(nav.end.toISOString()).toBe('2023-01-01T00:00:00.000Z')
+        expect(nav.hasOwnStart).toBe(true)
+        expect(nav.hasOwnEnd).toBe(false)
+    })
+})
+
+describe('a periodic layer with a Data Time Interval', () => {
+    const weekly = () =>
+        resolve({
+            enabled: true,
+            dataStartTime: '2024-01-01T00:00:00Z',
+            dataEndTime: '2024-03-25T00:00:00Z',
+            interval: 'P7D',
+        })!
+
+    test('carries the interval it names', () => {
+        expect(weekly().interval).toMatchObject({ days: 7 })
+    })
+
+    test('carries none when the interval is missing or unreadable', () => {
+        for (const interval of [undefined, '', 'weekly', 'P0D'])
+            expect(
+                resolve({
+                    enabled: true,
+                    dataStartTime: '2024-01-01T00:00:00Z',
+                    dataEndTime: '2024-03-25T00:00:00Z',
+                    interval,
+                })!.interval
+            ).toBeUndefined()
+    })
+
+    test('carries none without a start of its own to anchor the steps', () => {
+        expect(
+            resolve({
+                enabled: true,
+                dataEndTime: '2021-06-01T00:00:00Z',
+                interval: 'P7D',
+            })!.interval
+        ).toBeUndefined()
+    })
+
+    test('leaves a sparse layer stepping through its listed dates', () => {
+        const nav = resolve({
+            enabled: true,
+            dataDates: ['2024-01-01', '2024-01-03'],
+            interval: 'P7D',
+        })!
+        expect(nav.kind).toBe('sparse')
+        expect(nav.interval).toBeUndefined()
+        expect(goTo(nav, '2024-01-01T23:59:59.999Z', 'next')).toBe(
+            '2024-01-03T23:59:59.999Z'
+        )
+    })
+
+    test('steps a week at a time whatever the granularity', () => {
+        const nav = weekly()
+        for (const mode of ['HOUR', 'DAY', 'MONTH'] as TimeMode[]) {
+            expect(goTo(nav, '2024-01-08T00:00:00Z', 'next', mode)).toBe(
+                '2024-01-15T00:00:00.000Z'
+            )
+            expect(goTo(nav, '2024-01-08T00:00:00Z', 'prev', mode)).toBe(
+                '2024-01-01T00:00:00.000Z'
+            )
+        }
+    })
+
+    test('lands on the nearest step from between two', () => {
+        const nav = weekly()
+        expect(goTo(nav, '2024-01-10T12:00:00Z', 'next')).toBe(
+            '2024-01-15T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2024-01-10T12:00:00Z', 'prev')).toBe(
+            '2024-01-08T00:00:00.000Z'
+        )
+    })
+
+    test('stays inside the layer range', () => {
+        const nav = weekly()
+        expect(goTo(nav, '2024-03-25T00:00:00Z', 'next')).toBeNull()
+        expect(goTo(nav, '2024-01-01T00:00:00Z', 'prev')).toBeNull()
+        expect(goTo(nav, '2024-03-20T00:00:00Z', 'next')).toBe(
+            '2024-03-25T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2024-01-03T00:00:00Z', 'prev')).toBe(
+            '2024-01-01T00:00:00.000Z'
+        )
+    })
+
+    test('keeps first, last, and the jump in from outside', () => {
+        const nav = weekly()
+        expect(goTo(nav, '2024-02-07T00:00:00Z', 'first')).toBe(
+            '2024-01-01T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2024-02-07T00:00:00Z', 'last')).toBe(
+            '2024-03-25T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2023-06-01T00:00:00Z', 'next')).toBe(
+            '2024-01-01T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2025-06-01T00:00:00Z', 'prev')).toBe(
+            '2024-03-25T00:00:00.000Z'
+        )
+    })
+
+    test('steps a monthly layer by calendar month across short months', () => {
+        const nav = resolve({
+            enabled: true,
+            dataStartTime: '2024-01-31T00:00:00Z',
+            dataEndTime: '2024-12-31T00:00:00Z',
+            interval: 'P1M',
+        })!
+        const walk: string[] = []
+        let at: string | null = '2024-01-31T00:00:00.000Z'
+        for (let i = 0; i < 3 && at; i++) {
+            at = goTo(nav, at, 'next')
+            if (at) walk.push(at)
+        }
+        expect(walk).toEqual([
+            '2024-02-29T00:00:00.000Z',
+            '2024-03-31T00:00:00.000Z',
+            '2024-04-30T00:00:00.000Z',
+        ])
+        expect(goTo(nav, '2024-03-31T00:00:00Z', 'prev')).toBe(
+            '2024-02-29T00:00:00.000Z'
+        )
+    })
+})
+
+describe('a periodic layer whose interval steps past what a Date can hold', () => {
+    const nav = resolve({
+        enabled: true,
+        dataStartTime: '2020-01-01T00:00:00Z',
+        dataEndTime: '2021-01-01T00:00:00Z',
+        interval: 'P300000Y',
+    })!
+
+    test('moves to the edge rather than to an invalid time', () => {
+        expect(goTo(nav, '2020-06-01T00:00:00Z', 'next')).toBe(
+            '2021-01-01T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2020-06-01T00:00:00Z', 'prev')).toBe(
+            '2020-01-01T00:00:00.000Z'
+        )
     })
 })

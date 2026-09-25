@@ -51,7 +51,7 @@
     }
 }
 
-/* Sized to the 20px row and styled after the header's playback buttons, but
+/* Sized to fit inside a layer row and styled after the header's playback buttons, but
    in the row's own text colour: the icon sits inline over the layer name and
    reads as part of that row rather than as a header control. */
 .layer-nav-btn {
