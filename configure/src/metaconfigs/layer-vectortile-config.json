@@ -523,6 +523,60 @@
               "width": 3
             }
           ]
+        },
+        {
+          "name": "Timeseries",
+          "components": [
+            {
+              "field": "variables.timeseries.url",
+              "name": "Timeseries URL",
+              "description": "Where a clicked feature's time series is fetched from, read by the FetchTimeseries plugin and charted by SeriesChart. Leave empty to turn this off. Write the feature's values into the URL as placeholders: '{properties.<key>}' (dot notation reaches nested ones), '{lon}' and '{lat}' (the feature's point, or the click location for features without geometry), and '{id}' when the source data carries feature ids. Values are URL-encoded. Trigger it from the Feature Popup (Interface tab): add a Card Action whose Event Name is 'plugin:fetch-timeseries:fetch'.",
+              "type": "text",
+              "width": 12
+            },
+            {
+              "field": "variables.timeseries.titleProp",
+              "name": "Title Property",
+              "description": "The feature property used as the chart's title, e.g. 'local_site_name'. Leave empty to use the layer's naming property, then the layer name.",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "variables.timeseries.groupBy",
+              "name": "Split Series By",
+              "description": "A property of each returned point whose distinct values become one series each, e.g. 'parameter' for one line per measured pollutant. Leave empty for a single series.",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "variables.timeseries.unitKey",
+              "name": "Unit Property",
+              "description": "A property of each returned point holding its unit, e.g. 'units_of_measure'. Shown in the chart's footer next to the variable name.",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "variables.timeseries.seriesPath",
+              "name": "Points Path",
+              "description": "Where the list of points sits in the response when the response is an object, in dot notation. Default 'features', the GeoJSON FeatureCollection an OGC features API returns. Ignored when the response is itself a list.",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "variables.timeseries.xKey",
+              "name": "Time Property",
+              "description": "The property of each point holding its time, an ISO datetime or epoch milliseconds. Default 'datetime'. Found at the point's top level or under its 'properties'.",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "variables.timeseries.yKey",
+              "name": "Value Property",
+              "description": "The property of each point holding the number to chart. Default 'value'. Numbers written as text are read as numbers.",
+              "type": "text",
+              "width": 4
+            }
+          ]
         }
       ]
     },

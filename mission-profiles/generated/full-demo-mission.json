@@ -422,6 +422,16 @@
       "variables": {}
     },
     {
+      "name": "FetchTimeseries",
+      "js": "FetchTimeseriesTool",
+      "on": true,
+      "variables": {},
+      "metadata": {
+        "startHidden": true,
+        "modernLayoutSupport": true
+      }
+    },
+    {
       "name": "LayerFilter",
       "icon": "filter-outline",
       "js": "LayerFilterTool",
