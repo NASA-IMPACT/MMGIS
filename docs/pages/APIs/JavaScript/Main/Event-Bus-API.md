@@ -444,6 +444,7 @@ window.mmgisAPI.request('map:showPopup', {
 | `layers:getOrder` | none | `string[]` | Draw order as layer UUIDs, top first, headers excluded |
 | `layers:setOrder` | `{ order }` | `boolean` | Apply a full permutation of the draw order (UUIDs, or display names where the name is unique). Returns `false` and changes nothing if `order` is not an array or a layer is missing, unknown, or repeated. On Leaflet, vectors always draw above rasters whatever the order says |
 | `layers:getLegend` | `layerUUID` (optional, UUID or display name) | `LayerLegend \| null` for one layer (`null` if unknown), or `Record<string, LayerLegend>` keyed by UUID when called with no argument | Get a layer's resolved legend: `type` (`'gradient' \| 'categorical' \| 'text' \| 'none'`), `stops` (resolved CSS colors or null), `min`/`max` (numbers or null when unset), `unit` (`{ label }` or null), `swatches` (`{ color, label }[]` or null), and `colormap` (name or null). A layer whose legend fails to build answers `type: 'none'` |
+| `layers:getTemporalExtent` | `layerUUID` (optional) | `{ start, end, interval } \| null`, or a UUID-keyed map of them | When the layer has data: `start`/`end` are ISO datetimes (or `null`) with `now`-style policies in `dataStartTime`/`dataEndTime` resolved at the moment of asking, and a periodic layer's `end` floored to its last step. `interval` is the layer's parsed `time.interval` as `{ years, months, weeks, days, hours, minutes, seconds }`, or `null` when it declares none or an unparseable one. Called without a layer, answers for every layer. A raster tile layer with an `interval` of an hour or more requests only the period holding the cursor, not the whole Time Control window, unless the layer lists Data Dates (`time.dataDates`): see `getLayerStartTime` in the Main JavaScript API |
 
 ```javascript
 // Get layer information
@@ -470,6 +471,9 @@ const applied = await window.mmgisAPI.request('layers:setOrder', {
 | `time:getCurrent` | none | `string` | Get current time |
 | `time:getStart` | none | `string` | Get start time |
 | `time:getEnd` | none | `string` | Get end time |
+| `time:getCurrentFormatted` | none | `string` | Current time rendered through the mission's `time.format` (a d3 time format specifier such as `%Y-%m-%d`); `null` until time is enabled and seeded |
+| `time:formatTime` | `string \| number` | `string` | A caller-supplied time rendered through that same mission format; `null` for a missing or unparseable time |
+| `time:getMode` | none | `string` | Mode of the bottom Time UI bar: `'range'` or `'point'` (in point mode `time:getStart` is the epoch, not a real start); `null` until time is enabled and seeded, and when the bar isn't mounted (mobile and the modern layout) |
 | `time:set` | `{ startTime, endTime, currentTime, ... }` | `boolean` | Set time range |
 
 ```javascript
@@ -478,6 +482,7 @@ const timeEnabled = await window.mmgisAPI.request('time:isEnabled')
 const current = await window.mmgisAPI.request('time:getCurrent')
 const start = await window.mmgisAPI.request('time:getStart')
 const end = await window.mmgisAPI.request('time:getEnd')
+const mode = await window.mmgisAPI.request('time:getMode') // 'range' | 'point' | null
 
 // Set time range
 await window.mmgisAPI.request('time:set', {
