@@ -587,11 +587,12 @@ describe('evaluateLayerDataCoverage for a periodic request', () => {
         expect(record.outOfDataRange).toBe(false)
     })
 
-    test('a monthly layer with daily dates is in range though its last day has none', () => {
+    test('a monthly layer is in range though its extent ends before the period does', () => {
         const record = evaluateLayerDataCoverage(
             periodicLayer({
                 interval: 'P1M',
-                dataDates: ['2025-03-03', '2025-03-17'],
+                dataStartTime: '2025-01-01T00:00:00Z',
+                dataEndTime: '2025-03-17T00:00:00Z',
                 start: '2025-03-01T00:00:00Z',
                 end: '2025-03-31T23:59:59Z',
             })
@@ -600,11 +601,11 @@ describe('evaluateLayerDataCoverage for a periodic request', () => {
         expect(record.outOfDataRange).toBe(false)
     })
 
-    test('a period that misses every span is out of range', () => {
+    test('a monthly period that misses the extent is out of range', () => {
         const record = evaluateLayerDataCoverage(
             periodicLayer({
                 interval: 'P1M',
-                dataDates: ['2025-03-03', '2025-05-17'],
+                dataEndTime: '2025-03-17T00:00:00Z',
                 start: '2025-04-01T00:00:00Z',
                 end: '2025-04-30T23:59:59Z',
             })
@@ -653,6 +654,40 @@ describe('evaluateLayerDataCoverage for a periodic request', () => {
         )
         expect(record.periodic).toBe(false)
         expect(record.outOfDataRange).toBe(true)
+    })
+})
+
+// A layer that lists Data Dates is never periodic: its interval shapes
+// neither the request nor the verdict, which tests the listed entries at the
+// current time.
+describe('evaluateLayerDataCoverage for a layer listing Data Dates and an interval', () => {
+    const listedLayer = (end) => ({
+        name: 'Listed',
+        type: 'tile',
+        time: {
+            enabled: true,
+            type: 'requery',
+            interval: 'P1M',
+            dataDates: ['2025-03-03', '2025-03-09'],
+            start: '2025-02-18T00:00:00Z',
+            end,
+        },
+    })
+
+    test('is out of range at a cursor on no listed date, though the month holds some', () => {
+        const record = evaluateLayerDataCoverage(
+            listedLayer('2025-03-20T00:00:00Z')
+        )
+        expect(record.periodic).toBe(false)
+        expect(record.outOfDataRange).toBe(true)
+    })
+
+    test('is in range at a cursor on a listed date', () => {
+        const record = evaluateLayerDataCoverage(
+            listedLayer('2025-03-09T12:00:00Z')
+        )
+        expect(record.periodic).toBe(false)
+        expect(record.outOfDataRange).toBe(false)
     })
 })
 

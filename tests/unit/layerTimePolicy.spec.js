@@ -454,3 +454,40 @@ describe('isPeriodicRequest', () => {
         expect(isPeriodicRequest({ enabled: true })).toBe(false)
     })
 })
+
+describe('a layer listing Data Dates', () => {
+    const WINDOW_START = '2025-02-18T00:00:00Z'
+    const CURSOR = '2025-03-20T00:00:00Z'
+    const passthrough = { start: WINDOW_START, end: CURSOR, periodic: false }
+    const time = (fields) => ({ enabled: true, type: 'requery', ...fields })
+
+    test('requests the window, not a period, though it has an interval', () => {
+        const listed = time({
+            interval: 'P1M',
+            dataDates: ['2025-03-03', '2025-03-09'],
+        })
+        expect(layerRequestWindow(listed, WINDOW_START, CURSOR)).toEqual(
+            passthrough
+        )
+        expect(isPeriodicRequest(listed, CURSOR)).toBe(false)
+        expect(isPeriodicRequest(listed)).toBe(false)
+    })
+
+    test('is still periodic when no listed entry is readable', () => {
+        const unreadable = time({ interval: 'P1D', dataDates: ['not-a-date'] })
+        expect(layerRequestWindow(unreadable, WINDOW_START, CURSOR)).toEqual({
+            start: '2025-03-20T00:00:00Z',
+            end: '2025-03-20T23:59:59Z',
+            periodic: true,
+        })
+        expect(isPeriodicRequest(unreadable)).toBe(true)
+    })
+
+    test('reads a single bare string as a list of one', () => {
+        const single = time({ interval: 'P1M', dataDates: '2025-03-03' })
+        expect(layerRequestWindow(single, WINDOW_START, CURSOR)).toEqual(
+            passthrough
+        )
+        expect(isPeriodicRequest(single)).toBe(false)
+    })
+})
