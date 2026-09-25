@@ -390,6 +390,12 @@
       }
     },
     {
+      "name": "FeaturePopup",
+      "js": "FeaturePopupTool",
+      "on": true,
+      "variables": {}
+    },
+    {
       "name": "FetchStats",
       "js": "FetchStatsTool",
       "on": true,

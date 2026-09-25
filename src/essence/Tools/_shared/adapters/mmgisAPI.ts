@@ -10,6 +10,16 @@ type MMGISAPI = {
     hasHandler?: (name: string) => boolean
 }
 
+/**
+ * A plugin's own handle on the bus: what it emits and provides is published
+ * under `plugin:<pluginId>:`, so a plugin names its events without repeating
+ * its address.
+ */
+export type ScopedMMGISAPI = {
+    emit: (event: string, payload?: unknown) => void
+    provide: (name: string, handler: (...args: unknown[]) => unknown) => EventCleanup
+}
+
 export type MapScreenshotResult = {
     blob: Blob
     mimeType: 'image/png'
@@ -45,8 +55,9 @@ export type LayerConfig = {
          *  mmgisGetTemporalExtents for the dates. */
         dataStartTime?: string
         dataEndTime?: string
-        // The days a sparse layer holds data on, when it holds data on a
-        // scattered few rather than continuously across its extent.
+        // The times a sparse layer holds data at, when it holds data at a
+        // scattered few rather than continuously across its extent. Each
+        // entry covers the year, month, day or hour it names.
         dataDates?: string[] | string
         [key: string]: unknown
     }
@@ -76,6 +87,26 @@ export const mmgisRequest = async <T = unknown>(name: string, params?: unknown):
 export const mmgisOn = (event: string, handler: (payload?: unknown) => void): EventCleanup => {
     if (!window.mmgisAPI?.on) return () => {}
     return window.mmgisAPI.on(event, handler)
+}
+
+/**
+ * The plugin-scoped handle, or a handle that does nothing when there is no bus
+ * — a plugin emitting into a missing core should go quiet, not throw.
+ *
+ * Read through a local widening rather than declared on MMGISAPI: another tool
+ * declares `window.mmgisAPI` too, and TypeScript requires every declaration of
+ * one global to agree, so a property added here alone stops the build.
+ */
+export const mmgisForPlugin = (pluginId: string): ScopedMMGISAPI => {
+    const api = window.mmgisAPI as
+        | (MMGISAPI & { forPlugin?: (id: string) => ScopedMMGISAPI })
+        | undefined
+    return (
+        api?.forPlugin?.(pluginId) ?? {
+            emit: () => {},
+            provide: () => () => {},
+        }
+    )
 }
 
 export const mmgisEmit = (event: string, payload?: unknown): void => {

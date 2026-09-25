@@ -45,7 +45,21 @@ export const ENGINE_HIDDEN_FIELDS = {
 // Fields that only make sense for deck.gl missions and must be ABSENT
 // (not just disabled) when the mission engine is leaflet.
 export const DECK_ONLY_FIELDS = {
-    _all: ['cogRendererMode'],
+    _all: [
+        'cogRendererMode',
+        // The feature popup plugin reads these, and it runs on deck.gl alone:
+        // Leaflet opens a clicked feature through its own per-feature path.
+        'variables.featurePopup.enabled',
+        'variables.featurePopup.title',
+        'variables.featurePopup.properties',
+        'variables.featurePopup.actions',
+        // deck.gl highlights a hovered vector tile feature through its own
+        // picking; Leaflet's vector tile renderer highlights on click, in a
+        // color of its own, and reads neither of these. The id key beside them
+        // is read by both and stays.
+        'style.hoverHighlight',
+        'style.hoverHighlightColor',
+    ],
 }
 
 function unionForType(map, layerType) {

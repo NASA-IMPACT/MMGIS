@@ -20,7 +20,19 @@ export interface DateSelectorProps {
      * picked. The calendar still opens around `selectedDate` throughout.
      */
     placeholder?: string
+    /**
+     * A moment format for the date on the button, in place of the one the
+     * time mode picks. The popover still follows `timeMode`.
+     */
+    dateFormat?: string
     onDateChange: (date: Date) => void
+    /**
+     * Renders a "Today" action beside the date, called with the current
+     * minute. The handler owns fitting the range to it, so the action is
+     * never disabled. When omitted, neither the action nor its divider is
+     * drawn.
+     */
+    onTodayClick?: (now: Date) => void
     /**
      * Renders a "Compare date" action beside the date, wired to this handler.
      * When omitted, neither the action nor its divider is drawn.
@@ -44,7 +56,9 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
     timeMode = 'DAY',
     className,
     placeholder,
+    dateFormat,
     onDateChange,
+    onTodayClick,
     onCompareClick,
 }) => {
     const [isOpen, setIsOpen] = useState(false)
@@ -71,6 +85,16 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
         formattedDate = moment.utc(selectedDate).format('MMMM YYYY')
     } else if (timeMode === 'HOUR') {
         formattedDate = moment.utc(selectedDate).format('MMM D, YYYY, HH:mm')
+    }
+    if (dateFormat) formattedDate = moment.utc(selectedDate).format(dateFormat)
+
+    // The clock is read on click, since the range's end is often the load
+    // time and the current minute soon passes it.
+    const handleTodayClick = () => {
+        if (!onTodayClick) return
+        setHasPicked(true)
+        setIsOpen(false)
+        onTodayClick(moment.utc().startOf('minute').toDate())
     }
 
     const popoverTitle =
@@ -291,11 +315,25 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
                     </span>
                 </button>
 
+                {onTodayClick && (
+                    <>
+                        <div className="date-selector-divider"></div>
+                        <button
+                            className="date-selector-action today-button"
+                            type="button"
+                            onClick={handleTodayClick}
+                            title="Move to the current date and time"
+                        >
+                            Today
+                        </button>
+                    </>
+                )}
+
                 {onCompareClick && (
                     <>
                         <div className="date-selector-divider"></div>
                         <button
-                            className="compare-date-button"
+                            className="date-selector-action compare-date-button"
                             type="button"
                             onClick={onCompareClick}
                         >

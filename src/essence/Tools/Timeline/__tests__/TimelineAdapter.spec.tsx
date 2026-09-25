@@ -1,7 +1,11 @@
 import React, { act } from 'react'
-import { describe, test, expect, beforeEach, afterEach } from 'vitest'
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
+import { zoomTransform } from 'd3-zoom'
 import { TimelineAdapter } from '../TimelineAdapter'
+import { transformToWindow, type ViewWindow } from '../lib/utils/zoomWindow'
+import { EDGE_MARGIN } from '../lib/geo/TimelineView/TimelineView'
+import { stubReducedMotion } from './support/motion'
 
 /**
  * The "Compare date" action is a hand-off, not a call: the timeline knows the
@@ -12,6 +16,17 @@ import { TimelineAdapter } from '../TimelineAdapter'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean })
     .IS_REACT_ACT_ENVIRONMENT = true
+
+// The zoom state applies a fit at once under reduced motion, and every
+// assertion here that reads the view or the slider after a fit relies on
+// that.
+beforeEach(() => {
+    stubReducedMotion(true)
+})
+
+afterEach(() => {
+    vi.unstubAllGlobals()
+})
 
 const START = '2024-01-01T00:00:00Z'
 const END = '2024-12-31T00:00:00Z'
@@ -86,6 +101,129 @@ describe('TimelineAdapter compare hand-off', () => {
             currentTime: new Date(CURRENT).toISOString(),
         })
     })
+
+    const timeRequests = () =>
+        emits.filter((e) => e.event === 'time:changeRequested')
+
+    // The window ends in 2024 while the clock reads 2026, as it does once the
+    // load-time end has been passed.
+    test('Today widens the window out to the current minute', () => {
+        vi.useFakeTimers({ toFake: ['Date'] })
+        vi.setSystemTime(new Date('2026-09-23T10:15:42Z'))
+        try {
+            const today = container.querySelector<HTMLButtonElement>(
+                '.today-button'
+            )!
+            expect(today.disabled).toBe(false)
+
+            act(() => {
+                today.click()
+            })
+
+            const requests = timeRequests()
+            expect(requests[requests.length - 1]?.payload).toEqual({
+                startTime: new Date(START).toISOString(),
+                endTime: '2026-09-23T10:15:00.000Z',
+                currentTime: '2026-09-23T10:15:00.000Z',
+            })
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+})
+
+/**
+ * The header reads the exact instant on the map whatever the granularity, and
+ * keeps the granularity beside the step controls it sets the stride of.
+ */
+describe('TimelineAdapter header', () => {
+    let container: HTMLElement
+    let root: Root
+
+    const mount = async (vars: unknown) => {
+        ;(window as unknown as { mmgisAPI: unknown }).mmgisAPI = {
+            request: async (name: string) => {
+                if (name === 'time:isEnabled') return true
+                if (name === 'time:getStart') return START
+                if (name === 'time:getEnd') return END
+                if (name === 'time:getCurrent') return '2024-06-15T09:41:00Z'
+                if (name === 'tool:getVars') return vars
+                return null
+            },
+            hasHandler: (name: string) => name !== 'layers:getAllConfigs',
+            on: () => () => {},
+            emit: () => {},
+        }
+
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+        await act(async () => {
+            root.render(<TimelineAdapter />)
+        })
+        await act(async () => {})
+    }
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        delete (window as { mmgisAPI?: unknown }).mmgisAPI
+    })
+
+    const dateText = () =>
+        container.querySelector('.timeline-header .date-text')?.textContent
+
+    test.each(['YEAR', 'MONTH', 'DAY', 'HOUR'])(
+        'shows the full UTC date and time under %s',
+        async (mode) => {
+            await mount({ timeMode: mode })
+
+            expect(dateText()).toBe('Jun 15, 2024 · 09:41 UTC')
+        }
+    )
+
+    test('changing the granularity leaves the readout whole', async () => {
+        await mount({ timeMode: 'HOUR' })
+        const select = container.querySelector<HTMLSelectElement>(
+            '.time-mode-control'
+        )!
+
+        act(() => {
+            select.value = 'YEAR'
+            select.dispatchEvent(new Event('change', { bubbles: true }))
+        })
+
+        expect(select.value).toBe('YEAR')
+        expect(dateText()).toBe('Jun 15, 2024 · 09:41 UTC')
+    })
+
+    test('offers the granularity beside the playback controls', async () => {
+        await mount({ timeMode: 'DAY' })
+
+        const center = container.querySelector('.timeline-header-center')!
+        expect(center.querySelector('select.time-mode-control')).not.toBeNull()
+        expect(
+            container.querySelector('.timeline-header-right .time-mode-control')
+        ).toBeNull()
+    })
+
+    test('divides the zoom controls from the buttons after them', async () => {
+        await mount({ timeMode: 'DAY' })
+
+        const divider = container.querySelector('.timeline-toolbar-divider')
+        expect(divider?.previousElementSibling?.className).toBe(
+            'timeline-zoom-controls'
+        )
+    })
+
+    test('offers Today between the date and the compare action', async () => {
+        await mount({ timeMode: 'DAY' })
+
+        const actions = Array.from(
+            container.querySelectorAll('.date-selector-action')
+        ).map((button) => button.textContent)
+        expect(actions).toEqual(['Today', 'Compare date'])
+    })
 })
 
 /**
@@ -102,14 +240,15 @@ class NoopResizeObserver {
     disconnect() {}
 }
 
-// Three scattered days — one before the window, one inside, one past its end
-// — so first/next/last each land differently against it.
-const BEFORE_WINDOW = '2023-11-05T23:59:59.999Z'
-// The window opens on the whole of the day a backwards stop names, so the bar
-// drawn over that day sits inside the chart rather than against its left edge.
-const BEFORE_WINDOW_DAY_START = '2023-11-05T00:00:00.000Z'
-const INSIDE_WINDOW = '2024-06-20T23:59:59.999Z'
-const PAST_WINDOW = '2025-03-20T23:59:59.999Z'
+// Three scattered entries — a day before the window, an exact time inside it
+// and a month past its end — so first/next/last each land differently against
+// it. Each stop is the first instant its entry names.
+const BEFORE_WINDOW = '2023-11-05T00:00:00.000Z'
+const INSIDE_WINDOW = '2024-06-20T14:30:00.000Z'
+const PAST_WINDOW = '2025-03-01T00:00:00.000Z'
+// The window closes on the whole of the month a forwards stop opens, so the
+// bar drawn over that month sits inside the chart rather than past its edge.
+const PAST_WINDOW_MONTH_END = '2025-03-31T23:59:59.999Z'
 
 const LAYER_CONFIGS = {
     sparse: {
@@ -117,7 +256,7 @@ const LAYER_CONFIGS = {
         display_name: 'Rover Images',
         time: {
             enabled: true,
-            dataDates: ['2023-11-05', '2024-06-20', '2025-03-20'],
+            dataDates: ['2023-11-05', '2024-06-20T14:30:00Z', '2025-03'],
         },
     },
     basemap: {
@@ -125,7 +264,65 @@ const LAYER_CONFIGS = {
         display_name: 'Basemap',
         time: { enabled: false },
     },
+    // Three days inside the window: shorter than every zoom floor but the
+    // hourly one, so a fit to it lands on whichever floor is in force.
+    short: {
+        name: 'short',
+        display_name: 'Short Campaign',
+        time: {
+            enabled: true,
+            dataStartTime: '2024-05-01T00:00:00Z',
+            dataEndTime: '2024-05-04T00:00:00Z',
+        },
+    },
 }
+
+type Listener = (payload?: unknown) => void
+
+/**
+ * A core whose visible-layer answer can change between requests, and whose
+ * bus subscriptions are kept so a test can fire them. Visibility is read
+ * afresh on every request, so flipping a flag and firing the change event is
+ * what revealing a layer looks like from the plugin's side.
+ *
+ * A requested commit is broadcast straight back on 'time:changed' with the
+ * payload unchanged, inside the emit that asked for it, as TimeControl does:
+ * the plugin meets its own echo before the render its commit causes.
+ */
+const installSparseApi = (
+    emits: Emit[],
+    visible: Record<string, boolean>,
+    listeners: Record<string, Listener>
+) => {
+    ;(window as unknown as { mmgisAPI: unknown }).mmgisAPI = {
+        request: async (name: string) => {
+            if (name === 'time:isEnabled') return true
+            if (name === 'time:getStart') return START
+            if (name === 'time:getEnd') return END
+            if (name === 'time:getCurrent') return CURRENT
+            if (name === 'tool:getVars') return {}
+            if (name === 'layers:getAllConfigs') return LAYER_CONFIGS
+            if (name === 'layers:getVisible') return { ...visible }
+            return null
+        },
+        hasHandler: () => true,
+        on: (event: string, handler: Listener) => {
+            listeners[event] = handler
+            return () => {}
+        },
+        emit: (event: string, payload?: unknown) => {
+            emits.push({ event, payload })
+            if (event === 'time:changeRequested') {
+                listeners['time:changed']?.(payload)
+            }
+        },
+    }
+}
+
+const autoFitToggle = (container: HTMLElement) =>
+    container.querySelector<HTMLButtonElement>(
+        '[aria-label="Auto-fit to visible layers"]'
+    )
 
 describe('TimelineAdapter layer navigation', () => {
     let container: HTMLElement
@@ -139,24 +336,15 @@ describe('TimelineAdapter layer navigation', () => {
             .ResizeObserver
         ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
             NoopResizeObserver
-        ;(window as unknown as { mmgisAPI: unknown }).mmgisAPI = {
-            request: async (name: string) => {
-                if (name === 'time:isEnabled') return true
-                if (name === 'time:getStart') return START
-                if (name === 'time:getEnd') return END
-                if (name === 'time:getCurrent') return CURRENT
-                if (name === 'tool:getVars') return {}
-                if (name === 'layers:getAllConfigs') return LAYER_CONFIGS
-                if (name === 'layers:getVisible')
-                    return { sparse: true, basemap: true }
-                return null
-            },
-            hasHandler: () => true,
-            on: () => () => {},
-            emit: (event: string, payload?: unknown) => {
-                emits.push({ event, payload })
-            },
-        }
+
+        // Auto-fit is armed at load, and the sparse layer's dates straddle
+        // the seeded window, so with the layer visible from the start the
+        // fit would open the window onto those dates before any row control
+        // could. The layer is revealed only once auto-fit is disarmed, which
+        // leaves the seeded window for a control to reach past.
+        const visible = { sparse: false, basemap: true }
+        const listeners: Record<string, Listener> = {}
+        installSparseApi(emits, visible, listeners)
 
         container = document.createElement('div')
         document.body.appendChild(container)
@@ -165,6 +353,16 @@ describe('TimelineAdapter layer navigation', () => {
             root.render(<TimelineAdapter />)
         })
         // The layer configs arrive a request later than the first render.
+        await act(async () => {})
+
+        act(() => {
+            autoFitToggle(container)!.click()
+        })
+        visible.sparse = true
+        expect(listeners['layer:visibilityChange']).toBeDefined()
+        await act(async () => {
+            listeners['layer:visibilityChange']()
+        })
         await act(async () => {})
     })
 
@@ -191,6 +389,13 @@ describe('TimelineAdapter layer navigation', () => {
         ).toBeNull()
     })
 
+    test('with auto-fit disarmed, a layer revealed beyond the window leaves it be', () => {
+        expect(autoFitToggle(container)!.getAttribute('aria-pressed')).toBe(
+            'false'
+        )
+        expect(requests()).toHaveLength(0)
+    })
+
     test('a target inside the window commits it and leaves the window be', () => {
         act(() => {
             navButton('next date')!.click()
@@ -204,31 +409,31 @@ describe('TimelineAdapter layer navigation', () => {
         })
     })
 
-    test('a target past the end widens the end onto it, and only the end', () => {
+    test('a target past the end widens the end onto its whole month, and only the end', () => {
         act(() => {
             navButton('last date')!.click()
         })
 
         expect(requests()[0].payload).toEqual({
             startTime: new Date(START).toISOString(),
-            endTime: PAST_WINDOW,
+            endTime: PAST_WINDOW_MONTH_END,
             currentTime: PAST_WINDOW,
         })
     })
 
-    test('a target before the start opens the start onto its whole day, and only the start', () => {
+    test('a target before the start opens the start onto it, and only the start', () => {
         act(() => {
             navButton('first date')!.click()
         })
 
         expect(requests()[0].payload).toEqual({
-            startTime: BEFORE_WINDOW_DAY_START,
+            startTime: BEFORE_WINDOW,
             endTime: new Date(END).toISOString(),
             currentTime: BEFORE_WINDOW,
         })
     })
 
-    test('a step back onto an earlier stop opens the window past that day\'s midnight', () => {
+    test('a step back onto an earlier stop opens the window onto that day\'s midnight', () => {
         // The stop the current time steps back to is the one before the
         // window, so the press both moves and widens.
         act(() => {
@@ -241,7 +446,7 @@ describe('TimelineAdapter layer navigation', () => {
         }
         expect(currentTime).toBe(BEFORE_WINDOW)
         expect(new Date(startTime).getTime()).toBeLessThanOrEqual(
-            new Date(BEFORE_WINDOW_DAY_START).getTime()
+            new Date(BEFORE_WINDOW).getTime()
         )
     })
 
@@ -257,6 +462,513 @@ describe('TimelineAdapter layer navigation', () => {
         expect(
             document.querySelector('.timeline-info-tooltip-content')?.textContent
         ).toMatch(/layer/i)
+    })
+})
+
+/**
+ * Every time change but the chart's pointer brings the scrubber into view
+ * when it lands off screen, panning at the span the view has: playback, the
+ * playback controls, the layer rows, the date selector and commits made
+ * outside the plugin. A drag in the chart does not: the view must not move
+ * under the pointer.
+ */
+describe('TimelineAdapter following the scrubber', () => {
+    let container: HTMLElement
+    let root: Root
+    let emits: Emit[]
+    let listeners: Record<string, Listener>
+    let originalResizeObserver: unknown
+
+    /** The width the chart starts at, which the stub observer leaves alone. */
+    const WIDTH = 800
+
+    const button = (label: string) =>
+        container.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!
+
+    const chart = () =>
+        container.querySelector<SVGSVGElement>('.timeline-svg-container > svg')!
+
+    /** The visible window, as d3 holds it for the chart. */
+    const viewOn = (bounds: ViewWindow): ViewWindow =>
+        transformToWindow(zoomTransform(chart()), bounds, WIDTH, EDGE_MARGIN)
+
+    const SEEDED: ViewWindow = { start: new Date(START), end: new Date(END) }
+
+    const spanOf = (win: ViewWindow) => win.end.getTime() - win.start.getTime()
+    const centreOf = (win: ViewWindow) => win.start.getTime() + spanOf(win) / 2
+
+    const requests = () => emits.filter((e) => e.event === 'time:changeRequested')
+    const lastCurrent = () =>
+        new Date(
+            (requests()[requests().length - 1].payload as { currentTime: string })
+                .currentTime
+        )
+
+    /** Asserts the view keeps the zoomed span and is centred on `at`. */
+    const expectCentredOn = (zoomed: ViewWindow, at: Date) => {
+        const followed = viewOn(SEEDED)
+        expect(spanOf(followed)).toBeCloseTo(spanOf(zoomed), -1)
+        expect(Math.abs(centreOf(followed) - at.getTime())).toBeLessThanOrEqual(1)
+    }
+
+    const commitFromOutside = (currentTime: string) => {
+        act(() => {
+            listeners['time:changed']({ startTime: START, endTime: END, currentTime })
+        })
+    }
+
+    beforeEach(async () => {
+        emits = []
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+
+        // The sparse layer is revealed only once auto-fit is disarmed, as in
+        // the layer navigation cases, so the seeded window holds.
+        const visible = { sparse: false, basemap: true }
+        listeners = {}
+        installSparseApi(emits, visible, listeners)
+
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+        await act(async () => {
+            root.render(<TimelineAdapter />)
+        })
+        await act(async () => {})
+
+        act(() => {
+            autoFitToggle(container)!.click()
+        })
+        visible.sparse = true
+        await act(async () => {
+            listeners['layer:visibilityChange']()
+        })
+        await act(async () => {})
+
+        // Three halvings about the scrubber: about six weeks, around mid-June.
+        for (let i = 0; i < 3; i++) {
+            act(() => button('Zoom in').click())
+        }
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        delete (window as { mmgisAPI?: unknown }).mmgisAPI
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver
+        vi.useRealTimers()
+    })
+
+    test('stepping forward holds the view until the scrubber passes its edge, then centres it', () => {
+        const zoomed = viewOn(SEEDED)
+        expect(spanOf(zoomed)).toBeLessThan(spanOf(SEEDED) / 4)
+
+        let presses = 0
+        while (presses < 120) {
+            act(() => button('Step forward').click())
+            presses++
+            if (lastCurrent().getTime() > zoomed.end.getTime()) break
+            // Inside the view, a step never moves it.
+            expect(viewOn(SEEDED)).toEqual(zoomed)
+        }
+
+        expectCentredOn(zoomed, lastCurrent())
+    })
+
+    test('playback holds the view while playing inside it, and re-centres once past the edge', () => {
+        // Playback steps on its interval, so the clock driving it is faked.
+        vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+        const zoomed = viewOn(SEEDED)
+
+        act(() => button('Play').click())
+
+        let ticks = 0
+        while (ticks < 120) {
+            act(() => vi.advanceTimersByTime(1000))
+            ticks++
+            if (lastCurrent().getTime() > zoomed.end.getTime()) break
+            expect(viewOn(SEEDED)).toEqual(zoomed)
+        }
+
+        expectCentredOn(zoomed, lastCurrent())
+    })
+
+    test('a layer jump past the window lands on the widened window, with the target on screen', () => {
+        act(() => button('Rover Images: last date').click())
+
+        // Committed locally at once, alongside the reveal.
+        const widened: ViewWindow = {
+            start: new Date(START),
+            end: new Date(PAST_WINDOW_MONTH_END),
+        }
+        const followed = viewOn(widened)
+        const target = new Date(PAST_WINDOW).getTime()
+        expect(followed.start.getTime()).toBeLessThan(target)
+        expect(followed.end.getTime()).toBeGreaterThan(target)
+    })
+
+    test('a drag released past the edge of the chart commits there and leaves the view be', () => {
+        // The drag is clamped to the global window, not to the view, so a
+        // release past the chart's right edge commits an instant off screen.
+        // Core's echo of that commit arrives inside the emit, before the
+        // render the commit causes, and is not followed either. Pointer
+        // capture keeps the move and release on the head wherever the
+        // pointer goes.
+        const zoomed = viewOn(SEEDED)
+        const head = container.querySelector<SVGGElement>('g.timeline-scrubber-handle')!
+        const pointer = (type: string, x: number) =>
+            new MouseEvent(type, { bubbles: true, clientX: x, clientY: 30 })
+
+        act(() => head.dispatchEvent(pointer('pointerdown', 400)))
+        act(() => head.dispatchEvent(pointer('pointermove', WIDTH * 1.5)))
+        act(() => head.dispatchEvent(pointer('pointerup', WIDTH * 1.5)))
+
+        expect(requests()).toHaveLength(1)
+        expect(lastCurrent().getTime()).toBeGreaterThan(zoomed.end.getTime())
+        expect(lastCurrent().getTime()).toBeLessThan(new Date(END).getTime())
+        expect(viewOn(SEEDED)).toEqual(zoomed)
+    })
+
+    test('a day picked in the date selector off screen centres the view on it', () => {
+        const zoomed = viewOn(SEEDED)
+
+        act(() => {
+            container
+                .querySelector<HTMLButtonElement>('.date-selector-main-button')!
+                .click()
+        })
+        // The popover portals to document.body. Three months back from June.
+        for (let i = 0; i < 3; i++) {
+            act(() => {
+                document.body
+                    .querySelector<HTMLButtonElement>('[aria-label="Previous month"]')!
+                    .click()
+            })
+        }
+        const day = Array.from(
+            document.body.querySelectorAll<HTMLButtonElement>(
+                '.day-calendar-grid .day-calendar-cell'
+            )
+        ).find((cell) => cell.textContent === '15')!
+        act(() => day.click())
+
+        expect(lastCurrent().toISOString()).toBe('2024-03-15T00:00:00.000Z')
+        expect(lastCurrent().getTime()).toBeLessThan(zoomed.start.getTime())
+        expectCentredOn(zoomed, lastCurrent())
+    })
+
+    test('a commit from outside the plugin off screen centres the view on it', () => {
+        const zoomed = viewOn(SEEDED)
+        const at = new Date('2024-10-01T00:00:00Z')
+        expect(at.getTime()).toBeGreaterThan(zoomed.end.getTime())
+
+        commitFromOutside(at.toISOString())
+
+        expectCentredOn(zoomed, at)
+        // Following core's commit is not a commit of the plugin's own.
+        expect(requests()).toHaveLength(0)
+    })
+
+    test('collapsed, a commit from a button or from outside is revealed once the chart expands', () => {
+        const zoomed = viewOn(SEEDED)
+        const collapse = container.querySelector<HTMLButtonElement>('.timeline-collapse-btn')!
+
+        act(() => collapse.click())
+        act(() => button('Go to end').click())
+        expect(lastCurrent().toISOString()).toBe(new Date(END).toISOString())
+        act(() => collapse.click())
+
+        const followed = viewOn(SEEDED)
+        expect(followed.end.getTime()).toBe(new Date(END).getTime())
+        expect(spanOf(followed)).toBeCloseTo(spanOf(zoomed), -1)
+
+        const at = new Date('2024-03-01T00:00:00Z')
+        act(() => collapse.click())
+        commitFromOutside(at.toISOString())
+        act(() => collapse.click())
+
+        expectCentredOn(zoomed, at)
+    })
+})
+
+/**
+ * The zoom group lives in the toolbar, and a fit that reaches data outside
+ * the global window opens the window through the same request path the row
+ * controls use. Auto-fit is armed at load, so the sparse layer's dates, which
+ * straddle the seeded window, widen it the moment the layer arrives.
+ */
+describe('TimelineAdapter zoom wiring', () => {
+    let container: HTMLElement
+    let root: Root
+    let emits: Emit[]
+    let originalResizeObserver: unknown
+
+    beforeEach(async () => {
+        emits = []
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+        installSparseApi(emits, { sparse: true, basemap: true }, {})
+
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+        await act(async () => {
+            root.render(<TimelineAdapter />)
+        })
+        await act(async () => {})
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        delete (window as { mmgisAPI?: unknown }).mmgisAPI
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver
+    })
+
+    const requests = () => emits.filter((e) => e.event === 'time:changeRequested')
+
+    test('offers the zoom group in the toolbar', () => {
+        expect(
+            container.querySelector(
+                '.timeline-toolbar [role="group"][aria-label="Zoom"]'
+            )
+        ).not.toBeNull()
+        expect(autoFitToggle(container)!.getAttribute('aria-pressed')).toBe(
+            'true'
+        )
+    })
+
+    test('a fit reaching outside the global window widens it once, onto the whole of its boxes, leaving the scrubber be', () => {
+        // The widen closes on the last instant of the latest month, the
+        // same instant a row's forwards control closes the window on, so
+        // the box drawn over that month is inside the chart.
+        expect(requests()).toHaveLength(1)
+        expect(requests()[0].payload).toEqual({
+            startTime: BEFORE_WINDOW,
+            endTime: PAST_WINDOW_MONTH_END,
+            currentTime: new Date(CURRENT).toISOString(),
+        })
+    })
+
+    test('takes the zoom group away while collapsed', () => {
+        // Collapsed, the chart the zoom group acts on is not on screen, so
+        // the group has nothing to show a change against.
+        const zoomGroup = () =>
+            container.querySelector('[role="group"][aria-label="Zoom"]')
+        const collapse = () =>
+            container.querySelector<HTMLButtonElement>('.timeline-collapse-btn')!
+
+        expect(zoomGroup()).not.toBeNull()
+
+        act(() => collapse().click())
+        expect(zoomGroup()).toBeNull()
+
+        act(() => collapse().click())
+        expect(zoomGroup()).not.toBeNull()
+    })
+
+    test('the help popover covers the zoom controls', () => {
+        act(() => {
+            container
+                .querySelector<HTMLButtonElement>(
+                    '[aria-label="Timeline controls help"]'
+                )!
+                .click()
+        })
+
+        expect(
+            document.querySelector('.timeline-info-tooltip-content')?.textContent
+        ).toMatch(/zoom controls/i)
+    })
+})
+
+/**
+ * Until core answers, the adapter holds a placeholder window. The zoom state
+ * exists from the first render, so it meets that placeholder before it meets
+ * the seeded window; neither the view nor any commit may be derived from it.
+ */
+describe('TimelineAdapter zoom before and at the seed', () => {
+    let container: HTMLElement
+    let root: Root
+    let emits: Emit[]
+    let listeners: Record<string, Listener>
+    let originalResizeObserver: unknown
+
+    const slider = () =>
+        container.querySelector<HTMLInputElement>('.timeline-zoom-slider')
+
+    const requests = () => emits.filter((e) => e.event === 'time:changeRequested')
+
+    /**
+     * Mounts with the given layers visible. One of core's answers can be
+     * held back behind the returned release, so the layers land first: the
+     * seed, or the tool vars, which answer with a monthly granularity.
+     */
+    const mount = async (
+        visible: Record<string, boolean>,
+        hold: 'time:getStart' | 'tool:getVars' | null
+    ): Promise<() => void> => {
+        let release: () => void = () => {}
+        const gate = new Promise<void>((resolve) => {
+            release = resolve
+        })
+        listeners = {}
+        installSparseApi(emits, visible, listeners)
+        const api = (window as unknown as {
+            mmgisAPI: { request: (name: string) => Promise<unknown> }
+        }).mmgisAPI
+        const request = api.request
+        api.request = async (name: string) => {
+            if (name === hold) await gate
+            if (name === 'tool:getVars') return { timeMode: 'MONTH' }
+            return request(name)
+        }
+
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+        await act(async () => {
+            root.render(<TimelineAdapter />)
+        })
+        await act(async () => {})
+        return release
+    }
+
+    beforeEach(() => {
+        emits = []
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        delete (window as { mmgisAPI?: unknown }).mmgisAPI
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver
+    })
+
+    test('with nothing to fit, the view opens on the whole seeded window', async () => {
+        await mount({ basemap: true }, null)
+
+        expect(slider()!.value).toBe('0')
+        expect(requests()).toHaveLength(0)
+    })
+
+    test('layers arriving ahead of the seed commit nothing until it lands', async () => {
+        const releaseSeed = await mount(
+            { sparse: true, basemap: true },
+            'time:getStart'
+        )
+
+        expect(container.querySelector('.timeline-loading')).not.toBeNull()
+        expect(requests()).toHaveLength(0)
+
+        await act(async () => {
+            releaseSeed()
+        })
+        await act(async () => {})
+
+        // The one widen frames the layer against the seeded window, never
+        // the placeholder, and closes on the whole of the layer's last month.
+        expect(requests()).toHaveLength(1)
+        expect(requests()[0].payload).toEqual({
+            startTime: BEFORE_WINDOW,
+            endTime: PAST_WINDOW_MONTH_END,
+            currentTime: new Date(CURRENT).toISOString(),
+        })
+    })
+
+    test('layers load once core answers, even when its window reached the bus first', async () => {
+        const releaseSeed = await mount(
+            { sparse: true, basemap: true },
+            'time:getStart'
+        )
+
+        // Core broadcasts every commit, and one can carry the very instants
+        // the seed will answer with. The adapter keeps its Date identities
+        // when an instant is unchanged, so from here the seed changes
+        // nothing but readiness; the layer fetch has to follow readiness
+        // itself, not the window's identity.
+        expect(listeners['time:changed']).toBeDefined()
+        act(() => {
+            listeners['time:changed']({
+                startTime: START,
+                endTime: END,
+                currentTime: CURRENT,
+            })
+        })
+        expect(container.querySelector('.timeline-loading')).not.toBeNull()
+
+        await act(async () => {
+            releaseSeed()
+        })
+        await act(async () => {})
+
+        expect(container.querySelector('.timeline-loading')).toBeNull()
+        expect(
+            container.querySelector('[aria-label="Rover Images: next date"]')
+        ).not.toBeNull()
+        expect(requests()).toHaveLength(1)
+    })
+
+    test('a commit reaching the bus ahead of the seed leaves the first fit armed and in place', async () => {
+        const releaseSeed = await mount(
+            { sparse: true, basemap: true },
+            'time:getStart'
+        )
+
+        // An instant other than the one the seed will answer with, as a URL
+        // or another plugin might commit while the timeline is still loading.
+        act(() => {
+            listeners['time:changed']({
+                startTime: START,
+                endTime: END,
+                currentTime: '2024-09-01T00:00:00Z',
+            })
+        })
+
+        await act(async () => {
+            releaseSeed()
+        })
+        await act(async () => {})
+
+        expect(autoFitToggle(container)!.getAttribute('aria-pressed')).toBe('true')
+        // The fit's one widen, framing the layer, and nothing moved after it.
+        expect(requests()).toHaveLength(1)
+        expect(requests()[0].payload).toMatchObject({
+            startTime: BEFORE_WINDOW,
+            endTime: PAST_WINDOW_MONTH_END,
+        })
+    })
+
+    test('the first fit waits for the configured granularity and runs at its floor', async () => {
+        // The seed and the layer configs answer at once; the tool vars,
+        // carrying the monthly granularity, are held back. A fit before they
+        // answer would be made at a provisional floor and redone at the real
+        // one: on this three-day layer, a three-day view jumping to two
+        // months. So there is nothing to fit against until they do.
+        const releaseVars = await mount({ short: true }, 'tool:getVars')
+
+        expect(container.querySelector('.timeline-loading')).not.toBeNull()
+        expect(slider()).toBeNull()
+
+        await act(async () => {
+            releaseVars()
+        })
+        await act(async () => {})
+
+        expect(container.querySelector('.timeline-loading')).toBeNull()
+        expect(slider()!.getAttribute('aria-valuetext')).toBe('2 months')
+        expect(requests()).toHaveLength(0)
     })
 })
 
@@ -350,5 +1062,222 @@ describe('TimelineAdapter open-ended layer time', () => {
             endTime: new Date(END).toISOString(),
             currentTime: FLOORED_END,
         })
+    })
+})
+
+/**
+ * 'tool:getVars' can be registered and still never answer — the request has
+ * no deadline of its own. The granularity gates every control that reads the
+ * zoom floor, so an unanswered request has to fall back like an absent one.
+ */
+/**
+ * The configured time mode names the finest step offered: the step control
+ * lists every mode from YEAR down to it and starts on it.
+ */
+describe('TimelineAdapter time modes against the configured granularity', () => {
+    let container: HTMLElement
+    let root: Root
+    let originalResizeObserver: unknown
+
+    const modeOptions = () =>
+        Array.from(
+            container.querySelectorAll<HTMLOptionElement>(
+                '.time-mode-control option'
+            )
+        ).map((option) => option.textContent)
+
+    const mount = async (vars: unknown) => {
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+        installSparseApi([], { basemap: true }, {})
+        const api = (window as unknown as {
+            mmgisAPI: { request: (name: string) => Promise<unknown> }
+        }).mmgisAPI
+        const request = api.request
+        api.request = async (name: string) => {
+            if (name === 'tool:getVars') return vars
+            return request(name)
+        }
+
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+        await act(async () => {
+            root.render(<TimelineAdapter />)
+        })
+        await act(async () => {})
+    }
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        delete (window as { mmgisAPI?: unknown }).mmgisAPI
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver
+    })
+
+    const selectedMode = () =>
+        container.querySelector<HTMLSelectElement>('.time-mode-control')?.value
+
+    test.each([
+        ['YEAR', ['YEAR']],
+        ['MONTH', ['YEAR', 'MONTH']],
+        ['DAY', ['YEAR', 'MONTH', 'DAY']],
+        ['HOUR', ['YEAR', 'MONTH', 'DAY', 'HOUR']],
+    ])('a mission configured for %s offers %j and starts on it', async (mode, offered) => {
+        await mount({ timeMode: mode })
+
+        expect(modeOptions()).toEqual(offered)
+        expect(selectedMode()).toBe(mode)
+    })
+
+    test('a mission saved with only the older default mode keeps it', async () => {
+        await mount({ defaultTimeMode: 'MONTH' })
+
+        expect(modeOptions()).toEqual(['YEAR', 'MONTH'])
+        expect(selectedMode()).toBe('MONTH')
+    })
+
+    test('the time mode wins over the older default mode', async () => {
+        await mount({ timeMode: 'HOUR', defaultTimeMode: 'YEAR' })
+
+        expect(selectedMode()).toBe('HOUR')
+    })
+
+    test.each([{}, { timeMode: '' }, { timeMode: 'WEEK' }])(
+        'vars %j fall back to DAY',
+        async (vars) => {
+            await mount(vars)
+
+            expect(modeOptions()).toEqual(['YEAR', 'MONTH', 'DAY'])
+            expect(selectedMode()).toBe('DAY')
+        }
+    )
+
+    test('vars that never arrive leave the default floor in place', async () => {
+        await mount(null)
+
+        expect(modeOptions()).toEqual(['YEAR', 'MONTH', 'DAY'])
+    })
+})
+
+describe('TimelineAdapter when the tool vars never answer', () => {
+    let container: HTMLElement
+    let root: Root
+    let originalResizeObserver: unknown
+
+    beforeEach(() => {
+        vi.useFakeTimers({
+            toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'],
+        })
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+
+        installSparseApi([], { basemap: true }, {})
+        const api = (window as unknown as {
+            mmgisAPI: { request: (name: string) => Promise<unknown> }
+        }).mmgisAPI
+        const request = api.request
+        // Registered, so the poll hands over at once, and then silent.
+        api.request = async (name: string) => {
+            if (name === 'tool:getVars') return new Promise(() => {})
+            return request(name)
+        }
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        delete (window as { mmgisAPI?: unknown }).mmgisAPI
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver
+        vi.useRealTimers()
+    })
+
+    test('settles on the default granularity when the request never resolves', async () => {
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+        await act(async () => {
+            root.render(<TimelineAdapter />)
+        })
+        await act(async () => {})
+
+        expect(container.querySelector('.timeline-loading')).not.toBeNull()
+
+        await act(async () => {
+            vi.advanceTimersByTime(11000)
+        })
+        await act(async () => {})
+
+        expect(container.querySelector('.timeline-loading')).toBeNull()
+        expect(container.querySelector('.timeline-zoom-slider')).not.toBeNull()
+    })
+})
+
+describe('TimelineAdapter without the tool vars', () => {
+    let container: HTMLElement
+    let root: Root
+    let originalResizeObserver: unknown
+
+    beforeEach(() => {
+        // The poll behind 'tool:getVars' gives up on a wall-clock deadline,
+        // so the clock it reads has to be one the test can wind forward.
+        vi.useFakeTimers({
+            toFake: ['setInterval', 'clearInterval', 'Date'],
+        })
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+
+        installSparseApi([], { basemap: true }, {})
+        const api = (window as unknown as {
+            mmgisAPI: { hasHandler: (name: string) => boolean }
+        }).mmgisAPI
+        // 'tool:getVars' registers in Layers_.fina(), the time handlers in
+        // TimeControl. A mission whose layers never finish loading leaves the
+        // first absent while the second answers, which is the shape here.
+        api.hasHandler = (name: string) => name !== 'tool:getVars'
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        delete (window as { mmgisAPI?: unknown }).mmgisAPI
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver
+        vi.useRealTimers()
+    })
+
+    const mount = async () => {
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+        await act(async () => {
+            root.render(<TimelineAdapter />)
+        })
+        await act(async () => {})
+    }
+
+    test('settles on the default granularity when the handler never registers', async () => {
+        await mount()
+
+        // Core has answered on time, so the only thing still outstanding is
+        // the granularity.
+        expect(container.querySelector('.timeline-loading')).not.toBeNull()
+
+        await act(async () => {
+            vi.advanceTimersByTime(11000)
+        })
+        await act(async () => {})
+
+        expect(container.querySelector('.timeline-loading')).toBeNull()
+        expect(container.querySelector('.timeline')).not.toBeNull()
+        expect(container.querySelector('.timeline-zoom-slider')).not.toBeNull()
     })
 })
