@@ -394,6 +394,14 @@
     transition: opacity 0.2s ease;
 }
 
+/* The pinches cut into a bar at each step of the layer's data interval, in
+   the timeline's own background so the bar reads as narrowing there. */
+.layer-time-divisions {
+    fill: var(--theme-color-white, #ffffff);
+    stroke: none;
+    pointer-events: none;
+}
+
 .timeline-scrubber {
     pointer-events: all;
 }
