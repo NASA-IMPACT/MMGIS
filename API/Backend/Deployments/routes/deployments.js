@@ -179,18 +179,40 @@ function updateRefusalFor(deployment) {
   }
 }
 
+// The dashboard's own credential (`settings.auth`) a Publish or Update body
+// asks for: null clears it (`removePassword`), undefined leaves it as it is,
+// and a blank username or password keeps `stored`'s.
+function authFromBody(body, stored) {
+  if (body && body.removePassword === true) return null;
+  const given = (key) =>
+    body && typeof body[key] === "string" && body[key] !== ""
+      ? body[key]
+      : stored && stored[key];
+  const password = given("password");
+  if (!password) return undefined;
+  const username = given("username");
+  return { password, ...(username && { username }) };
+}
+
 // Claims the row for an update with one conditional write: the row moves to
 // `updating` only from a resting status (published or failed), and the
 // previous run's task ARN is cleared so a read before the new task starts
 // cannot see a stopped task. Two Update clicks race here and exactly one
 // claims the row. Resolves null when claimed, otherwise the refusal for the
-// status the row is actually in.
-async function claimForUpdate(deployment) {
+// status the row is actually in. The write also stores the credential the
+// body asks for (authFromBody).
+async function claimForUpdate(deployment, body) {
+  const settings = deployment.settings || {};
+  const auth = authFromBody(body, settings.auth);
   const [claimed] = await Deployments.update(
     {
       status: STATUS.UPDATING,
       last_error: null,
-      settings: { ...(deployment.settings || {}), publish_task_arn: null },
+      settings: {
+        ...settings,
+        publish_task_arn: null,
+        ...(auth !== undefined && { auth }),
+      },
     },
     {
       where: {
@@ -380,7 +402,7 @@ async function withLiveStatus(deployment) {
   return row;
 }
 
-// POST /api/deployments/publish { mission, name, force }
+// POST /api/deployments/publish { mission, name, force, username, password }
 // Inserts a `provisioning` row, starts the ECS publish task, and returns
 // immediately. The task (scripts/publish-static.js) does the long-running
 // bake/build/provision/upload work and writes the terminal status. A second
@@ -400,11 +422,13 @@ router.post("/publish", async function (req, res) {
       return;
     }
 
+    const auth = authFromBody(req.body);
     const deployment = await Deployments.create({
       name: name != null && name !== "" ? name : mission,
       mission: mission,
       created_by: req.user || null,
       status: STATUS.PROVISIONING,
+      settings: auth ? { auth } : {},
     });
     await deployment.update({
       stack_name: stackNameForDeployment(deployment.id),
@@ -420,12 +444,18 @@ router.post("/publish", async function (req, res) {
       body: { deployment: deployment.toJSON() },
     });
   } catch (err) {
-    logger("error", "Failed to publish deployment.", req.originalUrl, req, err);
+    logger(
+      "error",
+      "Failed to publish deployment.",
+      req.originalUrl,
+      req,
+      err.message
+    );
     res.send({ status: "failure", message: "Failed to publish deployment." });
   }
 });
 
-// POST /api/deployments/:id/update
+// POST /api/deployments/:id/update { username, password, removePassword }
 // Claims the row, then re-bakes against the mission's current configuration,
 // replaces the bundle in the existing dashboard bucket, and converges the
 // CloudFormation stack via UpdateStack (re-baking the current dashboard
@@ -439,7 +469,7 @@ router.post("/:id/update", async function (req, res) {
       return;
     }
 
-    const refused = await claimForUpdate(deployment);
+    const refused = await claimForUpdate(deployment, req.body);
     if (refused != null) {
       res.status(409).send(refused);
       return;
@@ -456,7 +486,13 @@ router.post("/:id/update", async function (req, res) {
       body: { deployment: deployment.toJSON() },
     });
   } catch (err) {
-    logger("error", "Failed to update deployment.", req.originalUrl, req, err);
+    logger(
+      "error",
+      "Failed to update deployment.",
+      req.originalUrl,
+      req,
+      err.message
+    );
     res.send({ status: "failure", message: "Failed to update deployment." });
   }
 });
@@ -578,6 +614,7 @@ module.exports = {
   reconcilePublishTask,
   publishRefusal,
   claimForUpdate,
+  authFromBody,
   deleteRefusal,
   claimForDelete,
 };

@@ -13,9 +13,9 @@
  *                       it); "update" converges an existing stack's
  *                       infrastructure to the current template via
  *                       UpdateStack — including re-rendering the auth
- *                       Function under the environment's current gate
- *                       setting — then re-bakes + re-uploads the bundle
- *                       (same URL).
+ *                       Function with the dashboard's own credential, else
+ *                       the environment's — then re-bakes + re-uploads
+ *                       the bundle (same URL).
  *   MMGIS_DASHBOARDS_REQUIRE_AUTH - the exact string "false" publishes
  *                       dashboards with no password gate; any other value,
  *                       including unset, gates them. Set per environment by
@@ -191,18 +191,19 @@ async function main() {
     //    and build: a missing password, a missing stack or a wedged one is a
     //    verdict this run can reach in seconds, and reaching it late costs the
     //    whole build for an answer that never depended on it.
-    //    Whether the dashboard carries the shared-password gate is the
-    //    environment's call; dashboardsAuthRequiredFromEnv() decides which
-    //    way an unset or garbled variable falls.
-    const requireAuth = dashboardsAuthRequiredFromEnv(
-      process.env.MMGIS_DASHBOARDS_REQUIRE_AUTH
-    );
+    //    A dashboard with its own credential (`settings.auth`) is gated with
+    //    it; otherwise the environment's gate and shared password apply.
+    const own = deployment.settings && deployment.settings.auth;
+    const requireAuth =
+      !!own ||
+      dashboardsAuthRequiredFromEnv(process.env.MMGIS_DASHBOARDS_REQUIRE_AUTH);
     if (!requireAuth)
       log("MMGIS_DASHBOARDS_REQUIRE_AUTH=false — publishing with no password.");
     const templateBody = renderCfnTemplate(
-      requireAuth
-        ? { password: requireEnv("MMGIS_DASHBOARDS_PASSWORD") }
-        : { requireAuth: false }
+      own ||
+        (requireAuth
+          ? { password: requireEnv("MMGIS_DASHBOARDS_PASSWORD") }
+          : { requireAuth: false })
     );
     // Idempotent re-run: a previous attempt may have created the stack (or a
     // prior update converged it) — reuse it instead of dying on
@@ -265,8 +266,8 @@ async function main() {
     } else {
       log(
         `Converging stack '${stackName}' to the current template — this ` +
-          "re-renders the auth Function under the environment's current gate " +
-          "setting."
+          "re-renders the auth Function with the dashboard's own credential, " +
+          "else the environment's."
       );
       // Converge OUR OWN template through provision's single retry loop: it
       // runs UpdateStack, waits out any concurrent operation (a double
