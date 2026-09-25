@@ -6,6 +6,10 @@ export {
     type ShareMenuHandlers,
 } from './getShareMenuItems'
 export type { ShareActionKind, ShareFormatFlags } from './types'
+export {
+    resolveIncludeLegend,
+    type IncludeLegendVars,
+} from './resolveIncludeLegend'
 
 // Side-effect import of compiled styles
 import './share-menu.scss'
