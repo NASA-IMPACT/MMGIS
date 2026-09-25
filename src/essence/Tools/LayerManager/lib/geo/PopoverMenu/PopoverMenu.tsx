@@ -9,6 +9,11 @@ export type PopoverMenuItem = {
     disabled?: boolean
     /** Hover text; the place to explain why an item is disabled. */
     title?: string
+    /**
+     * Set on every item of a menu that picks one value; true marks the current
+     * pick. Such items read as radio choices rather than actions.
+     */
+    checked?: boolean
     /** Draws a separator above this item. */
     dividerBefore?: boolean
     onSelect: () => void
@@ -37,7 +42,10 @@ export function PopoverMenu({
     // The menu holds one tab stop, and arrowing moves it. Tab therefore leaves
     // the menu rather than walking its items, which is how a menu is expected
     // to behave. Clamped because the list can shrink under a held index.
-    const [focusedIndex, setFocusedIndex] = useState(0)
+    // A menu of choices starts on the current pick.
+    const [focusedIndex, setFocusedIndex] = useState(() =>
+        Math.max(items.findIndex((item) => item.checked), 0),
+    )
     const tabStop = Math.min(focusedIndex, Math.max(items.length - 1, 0))
 
     const focusItem = (index: number) => {
@@ -99,11 +107,19 @@ export function PopoverMenu({
                             itemRefs.current[index] = el
                         }}
                         type="button"
-                        role="menuitem"
+                        role={
+                            item.checked === undefined
+                                ? 'menuitem'
+                                : 'menuitemradio'
+                        }
+                        aria-checked={item.checked}
                         className={[
                             'blocks-popover-menu__item',
                             item.disabled
                                 ? 'blocks-popover-menu__item--disabled'
+                                : '',
+                            item.checked
+                                ? 'blocks-popover-menu__item--checked'
                                 : '',
                         ]
                             .filter(Boolean)

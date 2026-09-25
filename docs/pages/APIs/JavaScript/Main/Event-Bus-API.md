@@ -395,6 +395,7 @@ has already delivered — the request can resolve after a later event lands.
 | `map:panTo` | `{ lat, lng }` | `true` | Pan map to coordinates |
 | `map:showPopup` | `MapPopupRequest` | `MapPopupResult` | Show a map-anchored card, replacing any current one. Answers only once it closes. `latlng` is required, and so is one of `title` (text) and `html` (sanitized); each action carries a `label`, and focus lands on the first one when the card opens |
 | `map:hidePopup` | none | `true` | Take the current card down, resolving its request with `{ action: 'closed' }` |
+| `map:getEngineType` | none | `'leaflet' \| 'deckgl' \| null` | Which engine is drawing the map, for a plugin whose behaviour differs by engine. Null until the mission has built one |
 
 ```javascript
 // Get current map state

@@ -101,12 +101,23 @@ export function LayerLegend({
     useEffect(() => setSelectedRun(pinnedRun), [pinnedRun])
     const leadLabel =
         forecast && forecast.lead != null ? formatLead(forecast.lead, forecast.step) : null
+    const runLabel = (run: string, index: number): string =>
+        forecast
+            ? `${formatRun(run, forecast.step)} · ${
+                  index === 0 ? 'Latest' : runAge(run, new Date())
+              }`
+            : run
+    const selectedRunIndex =
+        forecast?.runs.findIndex((run) => run.datetime === selectedRun) ?? -1
+    const selectedRunLabel =
+        selectedRunIndex >= 0 ? runLabel(selectedRun, selectedRunIndex) : selectedRun
 
     const [isVisible, setIsVisible] = useState(visible)
     const [isInfoOpen, setIsInfoOpen] = useState(defaultInfoExpanded)
     const [isOpacityExpanded, setIsOpacityExpanded] = useState(false)
     const [isRampPickerOpen, setIsRampPickerOpen] = useState(false)
     const [isMenuOpen, setIsMenuOpen] = useState(false)
+    const [isRunPickerOpen, setIsRunPickerOpen] = useState(false)
     // Null while the answer is outstanding, which keeps the action inert until
     // it is known to lead somewhere.
     const [canZoom, setCanZoom] = useState<boolean | null>(null)
@@ -115,11 +126,15 @@ export function LayerLegend({
     const rampBtnRef = useRef<HTMLButtonElement | null>(null)
     const infoBtnRef = useRef<HTMLButtonElement | null>(null)
     const menuBtnRef = useRef<HTMLButtonElement | null>(null)
+    const runBtnRef = useRef<HTMLButtonElement | null>(null)
     const opacityPopoverId = useId()
     const opacityHeadingId = useId()
     const rampPopoverId = useId()
     const infoPopoverId = useId()
     const menuPopoverId = useId()
+    const runPopoverId = useId()
+    const runLabelId = useId()
+    const runValueId = useId()
 
     // Only raster layers carry rescale/ramp settings to expose, and only those
     // whose colormap can actually be changed. A layer painting from a COG
@@ -150,6 +165,14 @@ export function LayerLegend({
     const closeInfo = useCallback(() => setIsInfoOpen(false), [])
 
     const closeMenu = useCallback(() => setIsMenuOpen(false), [])
+
+    const closeRunPicker = useCallback(() => setIsRunPickerOpen(false), [])
+
+    // The trigger goes with the layer, and a picker left open would float
+    // with nothing to anchor to.
+    useEffect(() => {
+        if (!isVisible) setIsRunPickerOpen(false)
+    }, [isVisible])
 
     // Read through a ref so that opening the menu and changing layer are the
     // only things that ask again. Callers commonly pass a fresh closure on
@@ -215,6 +238,18 @@ export function LayerLegend({
             : []),
     ]
 
+    const runItems: PopoverMenuItem[] = (forecast?.runs ?? []).map(
+        (run, index) => ({
+            id: run.datetime,
+            label: runLabel(run.datetime, index),
+            checked: run.datetime === selectedRun,
+            onSelect: () => {
+                setSelectedRun(run.datetime)
+                onRunChange?.(id, run.datetime)
+            },
+        }),
+    )
+
     const handleVisibilityToggle = () => {
         const newState = !isVisible
         setIsVisible(newState)
@@ -279,7 +314,11 @@ export function LayerLegend({
             className={[
                 'blocks-layer-legend',
                 dragHandle ? 'blocks-layer-legend--draggable' : '',
-                isOpacityExpanded || isRampPickerOpen || isInfoOpen || isMenuOpen
+                isOpacityExpanded ||
+                isRampPickerOpen ||
+                isInfoOpen ||
+                isMenuOpen ||
+                isRunPickerOpen
                     ? 'blocks-layer-legend--menu-open'
                     : '',
             ]
@@ -401,15 +440,11 @@ export function LayerLegend({
                 <div className="blocks-layer-legend__marks">
                     {analysisSupported && (
                         <span
-                            className="blocks-layer-legend__analysis-marker"
+                            className="blocks-layer-legend__badge blocks-layer-legend__analysis-marker"
                             role="img"
                             aria-label="Supports area analysis"
                             title="Supports area analysis"
                         >
-                            <i
-                                className="mdi mdi-chart-bar blocks-layer-legend__mark-icon"
-                                aria-hidden="true"
-                            />
                             Analyzable
                         </span>
                     )}
@@ -423,33 +458,47 @@ export function LayerLegend({
             )}
             {forecast && isVisible && forecast.runs.length > 0 && (
                 <div className="blocks-layer-legend__run">
-                    <label className="blocks-layer-legend__run-field">
-                        <span className="blocks-layer-legend__run-label">Model run</span>
-                        <select
-                            className="blocks-layer-legend__run-select"
-                            value={selectedRun}
-                            onChange={(e) => {
-                                setSelectedRun(e.target.value)
-                                onRunChange?.(id, e.target.value)
-                            }}
+                    <span className="blocks-layer-legend__run-label" id={runLabelId}>
+                        Model run
+                    </span>
+                    <div className="blocks-layer-legend__run-row">
+                        <button
+                            ref={runBtnRef}
+                            type="button"
+                            className={`blocks-layer-legend__run-select ${isRunPickerOpen ? 'blocks-layer-legend__run-select--active' : ''}`}
+                            onClick={() =>
+                                isRunPickerOpen
+                                    ? closeRunPicker()
+                                    : setIsRunPickerOpen(true)
+                            }
+                            aria-haspopup="menu"
+                            aria-expanded={isRunPickerOpen}
+                            aria-controls={isRunPickerOpen ? runPopoverId : undefined}
+                            aria-labelledby={`${runLabelId} ${runValueId}`}
                         >
-                            {forecast.runs.map((run, index) => (
-                                <option key={run.datetime} value={run.datetime}>
-                                    {`${formatRun(run.datetime, forecast.step)} · ${
-                                        index === 0 ? 'Latest' : runAge(run.datetime, new Date())
-                                    }`}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                    {leadLabel && (
-                        <span
-                            className="blocks-layer-legend__run-lead"
-                            title="Lead: how far past the model run the timeline sits"
-                        >
-                            {leadLabel}
-                        </span>
-                    )}
+                            <span
+                                className="blocks-layer-legend__run-value"
+                                id={runValueId}
+                            >
+                                {selectedRunLabel}
+                            </span>
+                            <i
+                                className="mdi mdi-chevron-down blocks-layer-legend__run-chevron"
+                                aria-hidden="true"
+                            />
+                        </button>
+                        {/* A run with no data at the timeline's time has no
+                            lead worth naming; the row's no-data badge already
+                            says why. */}
+                        {leadLabel && !showsCoverageWarning && (
+                            <span
+                                className="blocks-layer-legend__run-lead"
+                                title="Lead: how far past the model run the timeline sits"
+                            >
+                                {leadLabel}
+                            </span>
+                        )}
+                    </div>
                 </div>
             )}
             {unit?.label && (
@@ -561,6 +610,30 @@ export function LayerLegend({
             >
                 <PopoverMenu items={menuItems} onSelect={closeMenu} />
             </FloatingPopover>
+            {/* Portaled like the other row popovers. Focus lands on the pinned
+                run, so arrowing starts from what is showing. */}
+            {forecast && (
+                <FloatingPopover
+                    id={runPopoverId}
+                    anchorRef={runBtnRef}
+                    isOpen={isRunPickerOpen}
+                    onClose={closeRunPicker}
+                    placement="bottom"
+                    offset={4}
+                    className="blocks-layer-legend__run-popover"
+                    label={`Model run for ${title}`}
+                    autoFocus
+                >
+                    <div className="blocks-layer-legend__run-popover-heading">
+                        Model run
+                    </div>
+                    <PopoverMenu
+                        items={runItems}
+                        onSelect={closeRunPicker}
+                        className="blocks-layer-legend__run-menu"
+                    />
+                </FloatingPopover>
+            )}
         </div>
     )
 }

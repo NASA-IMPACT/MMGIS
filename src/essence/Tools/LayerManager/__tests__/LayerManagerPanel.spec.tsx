@@ -324,7 +324,15 @@ describe('LayerManagerPanel forecast runs', () => {
     })
 
     const select = (container: HTMLElement) =>
-        container.querySelector<HTMLSelectElement>('.blocks-layer-legend__run-select')
+        container.querySelector<HTMLButtonElement>('.blocks-layer-legend__run-select')
+
+    // The picker is portaled to the body, away from the row.
+    const openRuns = async (container: HTMLElement) => {
+        await click(select(container)!)
+        return Array.from(
+            document.body.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'),
+        )
+    }
 
     test('a layer without a forecast has no run control', async () => {
         const { container, unmount } = await mount(<LayerManagerPanel layers={[GRADIENT_LAYER]} />)
@@ -334,10 +342,17 @@ describe('LayerManagerPanel forecast runs', () => {
 
     test('offers the runs newest first, named by hour for an hourly step, on the pinned run', async () => {
         const { container, unmount } = await mount(<LayerManagerPanel layers={[forecastLayer()]} />)
-        const options = Array.from(select(container)!.options).map((o) => o.textContent)
-        expect(options[0]).toBe('Sep 21, 12Z · Latest')
-        expect(options[1]).toMatch(/^Sep 21, 06Z · \d+ [hd] ago$/)
-        expect(select(container)!.value).toBe('2026-09-21T06:00:00')
+        expect(select(container)!.textContent).toMatch(/^Sep 21, 06Z · \d+ [hd] ago$/)
+        const options = await openRuns(container)
+        expect(
+            document.body.querySelector('.blocks-layer-legend__run-popover-heading')!.textContent,
+        ).toBe('Model run')
+        expect(options.map((o) => o.textContent)).toEqual([
+            'Sep 21, 12Z · Latest',
+            expect.stringMatching(/^Sep 21, 06Z · \d+ [hd] ago$/),
+        ])
+        expect(options.map((o) => o.getAttribute('aria-checked'))).toEqual(['false', 'true'])
+        expect(document.activeElement).toBe(options[1])
         await unmount()
     })
 
@@ -348,21 +363,20 @@ describe('LayerManagerPanel forecast runs', () => {
             selectedRun: '2026-09-21T00:00:00',
         })
         const { container, unmount } = await mount(<LayerManagerPanel layers={[layer]} />)
-        expect(select(container)!.options[0].textContent).toBe('Sep 21 · Latest')
+        expect(select(container)!.textContent).toBe('Sep 21 · Latest')
         await unmount()
     })
 
-    test('reports a pick through its callback', async () => {
+    test('reports a pick through its callback and closes the picker', async () => {
         const onRunChange = vi.fn()
         const { container, unmount } = await mount(
             <LayerManagerPanel layers={[forecastLayer()]} onRunChange={onRunChange} />,
         )
-        const el = select(container)!
-        el.value = '2026-09-21T12:00:00'
-        await act(async () => {
-            el.dispatchEvent(new Event('change', { bubbles: true }))
-        })
+        const [latest] = await openRuns(container)
+        await click(latest)
         expect(onRunChange).toHaveBeenCalledWith('Forecast_00aa11bb22cc33dd', '2026-09-21T12:00:00')
+        expect(select(container)!.textContent).toBe('Sep 21, 12Z · Latest')
+        expect(document.body.querySelector('[role="menuitemradio"]')).toBeNull()
         await unmount()
     })
 
@@ -374,6 +388,16 @@ describe('LayerManagerPanel forecast runs', () => {
         const unknown = await mount(<LayerManagerPanel layers={[forecastLayer({ lead: null })]} />)
         expect(unknown.container.querySelector('.blocks-layer-legend__run-lead')).toBeNull()
         await unknown.unmount()
+    })
+
+    test('names no lead where the run has no data, leaving that to the no-data badge', async () => {
+        const { container, unmount } = await mount(
+            <LayerManagerPanel layers={[{ ...forecastLayer({ lead: 90 }), outOfDataRange: true }]} />,
+        )
+        expect(container.querySelector('.blocks-layer-legend__run-lead')).toBeNull()
+        expect(container.querySelectorAll('.blocks-layer-legend__coverage-warning')).toHaveLength(1)
+        expect(select(container)).not.toBeNull()
+        await unmount()
     })
 
     test('hides the run control while the layer is off or before runs are known', async () => {

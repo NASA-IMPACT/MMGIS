@@ -8,6 +8,16 @@ type MMGISAPI = {
     hasHandler?: (name: string) => boolean
 }
 
+/**
+ * A plugin's own handle on the bus: what it emits and provides is published
+ * under `plugin:<pluginId>:`, so a plugin names its events without repeating
+ * its address.
+ */
+export type ScopedMMGISAPI = {
+    emit: (event: string, payload?: unknown) => void
+    provide: (name: string, handler: (...args: unknown[]) => unknown) => EventCleanup
+}
+
 export type MapScreenshotResult = {
     blob: Blob
     mimeType: 'image/png'
@@ -59,6 +69,26 @@ export const mmgisRequest = async <T = unknown>(name: string, params?: unknown):
 export const mmgisOn = (event: string, handler: (payload?: unknown) => void): EventCleanup => {
     if (!window.mmgisAPI?.on) return () => {}
     return window.mmgisAPI.on(event, handler)
+}
+
+/**
+ * The plugin-scoped handle, or a handle that does nothing when there is no bus
+ * — a plugin emitting into a missing core should go quiet, not throw.
+ *
+ * Read through a local widening rather than declared on MMGISAPI: another tool
+ * declares `window.mmgisAPI` too, and TypeScript requires every declaration of
+ * one global to agree, so a property added here alone stops the build.
+ */
+export const mmgisForPlugin = (pluginId: string): ScopedMMGISAPI => {
+    const api = window.mmgisAPI as
+        | (MMGISAPI & { forPlugin?: (id: string) => ScopedMMGISAPI })
+        | undefined
+    return (
+        api?.forPlugin?.(pluginId) ?? {
+            emit: () => {},
+            provide: () => () => {},
+        }
+    )
 }
 
 export const mmgisEmit = (event: string, payload?: unknown): void => {
