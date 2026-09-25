@@ -51,11 +51,13 @@ export type ExportLegendRow =
           dateLine: string | null
       }
 
+/** A labelled date printed under the mission name. The renderer prints the
+ *  label and value without knowing which is the cursor and which the export. */
+export type ExportHeaderFact = { label: string; value: string }
+
 export type ExportLegendModel = {
     missionName: string | null
-    /** Lines printed under the mission name, already worded — the renderer
-     *  prints them without knowing which is the cursor and which the export. */
-    headerLines: string[]
+    headerFacts: ExportHeaderFact[]
     rows: ExportLegendRow[]
 }
 
@@ -351,17 +353,17 @@ const dateLineFor = (
 }
 
 /**
- * The band's own lines, under the mission name: where the time cursor sat, and
+ * The band's own facts, under the mission name: where the time cursor sat, and
  * when the picture was made. Both go through core's own formatter so they read
  * the way the mission's Time Control writes a date. A mission without time has
  * no cursor to name. The export time is the one date always available, so an
  * unformattable one prints raw rather than going missing.
  */
-const buildHeaderLines = async (): Promise<string[]> => {
-    const lines: string[] = []
+const buildHeaderFacts = async (): Promise<ExportHeaderFact[]> => {
+    const facts: ExportHeaderFact[] = []
     try {
         const cursor = await mmgisGetTimeCurrentFormatted()
-        if (cursor) lines.push(`Time cursor ${cursor}`)
+        if (cursor) facts.push({ label: 'Time cursor', value: cursor })
     } catch (err) {
         console.warn('[export legend] core could not format the time cursor', err)
     }
@@ -372,8 +374,8 @@ const buildHeaderLines = async (): Promise<string[]> => {
     } catch (err) {
         console.warn('[export legend] could not format the export time', err)
     }
-    lines.push(`Exported ${exported ?? now}`)
-    return lines
+    facts.push({ label: 'Exported', value: exported ?? now })
+    return facts
 }
 
 /**
@@ -408,7 +410,7 @@ const toRow = (
 }
 
 /**
- * What the legend band draws for the current map: the mission's header lines
+ * What the legend band draws for the current map: the mission's header facts
  * and a row per toggled-on layer.
  *
  * Nothing narrows that list by where the map is looking. A configured
@@ -422,18 +424,18 @@ export const getExportLegendModel = async (): Promise<ExportLegendModel> => {
     // The configs are asked for once and handed to the row assembly, which
     // would otherwise request them again for itself.
     const layerConfigs = await mmgisGetLayerConfigs()
-    const [viewState, layers, headerLines, globalCursor, extents, coverages] =
+    const [viewState, layers, headerFacts, globalCursor, extents, coverages] =
         await Promise.all([
             mmgisGetViewState(),
             getLayersWithLegends({ showOnlyVisible: true, layerConfigs }),
-            buildHeaderLines(),
+            buildHeaderFacts(),
             globalTimeCursor(),
             temporalExtents(),
             dataCoverage(),
         ])
     return {
         missionName: viewState?.missionName ?? null,
-        headerLines,
+        headerFacts,
         rows: layers
             .filter((layer) => layer.opacity !== 0)
             .map((layer) =>

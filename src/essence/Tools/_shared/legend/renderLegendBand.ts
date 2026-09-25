@@ -1,59 +1,76 @@
 import type { ExportLegendModel, ExportLegendRow } from './getExportLegendModel'
+import { DEFAULT_BAND_THEME, type BandTheme } from './bandTheme'
 
 // All metrics are logical px, multiplied by `scale` at layout time so the
 // band stays proportionate to hi-DPI captures (capture size follows
 // devicePixelRatio). Measure and draw both read the one layout `layoutBand`
 // builds, so every constant reaches both passes through the same numbers.
 
-// The band is a framed panel: a margin of band background around a bordered
-// white card, padded inside.
-const FRAME_INSET = 12
-const PAD = 16
-// Type sizes, largest to smallest: the mission title, row titles, then the
-// metadata, date and bound labels.
-const TITLE_TEXT = 16
-const ROW_TITLE_TEXT = 13
-const META_TEXT = 11
+// Clear space between the band's edge and its content.
+const PAD = 32
+// Type sizes, largest to smallest: the mission title, row names, then dates
+// and header values, then the header labels and the bound and category
+// labels.
+const TITLE_TEXT = 20
+const ROW_TITLE_TEXT = 14
+const META_TEXT = 12
 const LABEL_TEXT = 11
 // Space between stacked lines of one text block.
-const LINE_GAP = 5
-// Clear space either side of the rule that parts the header from the rows.
-const SECTION_GAP = 12
-// Clear space either side of the rule between two lines of rows.
-const ROW_GAP = 12
+const LINE_GAP = 4
+// Header spacing: a header fact's label sits tight over its value, and each
+// fact (the first one included, under the title) is set off from what comes
+// before it.
+const FACT_LABEL_GAP = 2
+const FACT_GAP = 12
+// Clear space either side of the hairline that parts the header from the
+// rows when the header stacks on top of them.
+const SECTION_GAP = 28
+// Vertical space between two lines of rows.
+const ROW_GAP = 20
 // Space between a row's text and its ramp or swatches.
 const BODY_GAP = 8
-const BAR_HEIGHT = 12
-const BAR_WIDTH = 260
+const BAR_HEIGHT = 8
+const BAR_WIDTH = 280
 const SWATCH = 12
 // Swatch-to-label and item-to-item spacing on a swatch line.
 const SWATCH_GAP = 6
 const ITEM_GAP = 16
 // Clear space kept between a gradient bar's two bound labels.
 const BOUND_GAP = 10
-// Rows flow into columns once the panel is wide enough to hold more than one
+// Rows flow into columns once their area is wide enough to hold more than one
 // column of at least MIN_COL_WIDTH.
-const COL_GAP = 24
-const MIN_COL_WIDTH = 260
+const COL_GAP = 32
+const MIN_COL_WIDTH = 240
 const MAX_COLS = 3
+// With room for at least this much content width, the header takes a column
+// of its own to the left of the rows; below it, the header stacks on top.
+const SIDE_HEADER_MIN_WIDTH = 760
+// The header column is as wide as its longest line, so the rows start right
+// after it, but never wider than this share of the band; longer text wraps
+// within it.
+const HEADER_COL_MAX_SHARE = 0.25
+// A header line wraps onto at most this many lines, the last one ellipsized.
+const HEADER_MAX_LINES = 4
+// Clear space either side of the header column's hairline: the floor when
+// the header fills its share of the band, plus a share of whatever width a
+// shorter header leaves unused, up to a cap. The share is under half, so the
+// gap shrinks more slowly than the column grows and a longer header only ever
+// moves the rows right.
+const SIDE_GAP_MIN = 48
+const SIDE_GAP_MAX = 96
+const SIDE_GAP_SPARE_SHARE = 0.2
 
-// A neutral, print-friendly palette independent of the app theme: an
-// exported PNG/PDF is a shareable artifact, not a UI surface, and no theme
-// token reaches a canvas anyway.
-const BAND_BG = '#f4f4f4'
-const PANEL_BG = '#ffffff'
-const INK = '#1a1a1a'
-const MUTED = '#5c5c5c'
-const ACCENT = '#c6c6c6'
 const NEUTRAL_RAMP = ['#bdbdbd', '#757575']
 const FALLBACK_SWATCH = '#bdbdbd'
-const FAMILY = '"Helvetica Neue", Helvetica, Arial, sans-serif'
+// Relative luminance above which a swatch or ramp end is too pale to hold an
+// edge against the white band, and gets a hairline.
+const PALE_LUMINANCE = 0.85
 
-const FONT = (px: number, scale: number, weight = '') =>
-    `${weight ? `${weight} ` : ''}${Math.round(px * scale)}px ${FAMILY}`
+const FONT = (px: number, scale: number, weight: string, theme: BandTheme) =>
+    `${weight} ${Math.round(px * scale)}px ${theme.family}`
 
-// Hairlines (the frame, the rules, the ramp and swatch outlines) are one
-// device pixel per unit of scale so they read the same at every DPR.
+// Hairlines are one device pixel per unit of scale so they read the same at
+// every DPR.
 const ruleOf = (scale: number): number => Math.max(1, Math.round(scale))
 
 /**
@@ -68,17 +85,21 @@ const ruleOf = (scale: number): number => Math.max(1, Math.round(scale))
  * identical, or the same layer reads one way in the app and another on the
  * export.
  */
+const boundValue = (value: number | null): string => {
+    if (value == null || !Number.isFinite(value)) return ''
+    const magnitude = Math.abs(value)
+    return value !== 0 && (magnitude >= 9999 || magnitude <= 0.0009)
+        ? value.toExponential(2)
+        : String(parseFloat(value.toFixed(3)))
+}
+
+/** A bound and its unit as one label; blank when the bound is. */
 export const boundLabel = (
     value: number | null,
     unit: string | null,
 ): string => {
-    if (value == null || !Number.isFinite(value)) return ''
-    const magnitude = Math.abs(value)
-    const text =
-        value !== 0 && (magnitude >= 9999 || magnitude <= 0.0009)
-            ? value.toExponential(2)
-            : String(parseFloat(value.toFixed(3)))
-    return unit ? `${text} ${unit}` : text
+    const text = boundValue(value)
+    return text && unit ? `${text} ${unit}` : text
 }
 
 /**
@@ -110,35 +131,172 @@ type Ctx2D = Pick<
     | 'restore'
 > & { fillStyle: unknown; font: string; textBaseline: CanvasTextBaseline }
 
-// The header's lines in draw order: the mission name, then whatever the
-// model worded — the renderer prints them without knowing what any of them
-// says.
-type HeaderLine = { text: string; size: number; weight: string; color: string }
+/**
+ * Whether `color` is pale enough to vanish against the white band. The canvas
+ * normalizes any CSS color it accepts to `#rrggbb` or `rgba(...)` on
+ * assignment, which is what gets parsed; a color it can't read counts as not
+ * pale.
+ */
+const isPale = (ctx: Ctx2D, color: string): boolean => {
+    const previous = ctx.fillStyle
+    ctx.fillStyle = color
+    const normalized = String(ctx.fillStyle)
+    ctx.fillStyle = previous
+    let rgb: number[] | null = null
+    let alpha = 1
+    const hex = normalized.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)
+    if (hex) {
+        const h =
+            hex[1].length === 3
+                ? hex[1].replace(/./g, (c) => c + c)
+                : hex[1]
+        rgb = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16))
+    } else {
+        const fn = normalized.match(/^rgba?\(([^)]+)\)$/i)
+        if (fn) {
+            const parts = fn[1].split(/[\s,/]+/).filter(Boolean).map(Number)
+            rgb = parts.slice(0, 3)
+            if (parts.length > 3) alpha = parts[3]
+        }
+    }
+    if (!rgb || rgb.some((c) => !Number.isFinite(c))) return false
+    if (alpha < 0.5) return true
+    const [r, g, b] = rgb.map((c) => {
+        const s = c / 255
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+    })
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b > PALE_LUMINANCE
+}
 
-const headerLinesOf = (model: ExportLegendModel): HeaderLine[] => {
+// The header's lines in draw order: the mission name, then each fact as a
+// small label over its value. The renderer prints them without knowing what
+// any of them says.
+type HeaderLine = {
+    text: string
+    size: number
+    weight: string
+    color: string
+    /** Clear space above this line; none above the first. */
+    gapBefore: number
+}
+
+const headerLinesOf = (
+    model: ExportLegendModel,
+    theme: BandTheme,
+): HeaderLine[] => {
     const lines: HeaderLine[] = []
     if (model.missionName) {
         lines.push({
             text: model.missionName,
             size: TITLE_TEXT,
-            weight: 'bold',
-            color: INK,
+            weight: theme.weights.semibold,
+            color: theme.ink,
+            gapBefore: 0,
         })
     }
-    for (const text of model.headerLines) {
-        lines.push({ text, size: META_TEXT, weight: '', color: MUTED })
+    for (const fact of model.headerFacts) {
+        lines.push({
+            text: fact.label,
+            size: LABEL_TEXT,
+            weight: theme.weights.regular,
+            color: theme.muted,
+            gapBefore: lines.length > 0 ? FACT_GAP : 0,
+        })
+        lines.push({
+            text: fact.value,
+            size: META_TEXT,
+            weight: theme.weights.regular,
+            color: theme.ink,
+            gapBefore: FACT_LABEL_GAP,
+        })
     }
     return lines
 }
 
-const headerHeight = (lines: HeaderLine[], scale: number): number =>
-    lines.reduce(
-        (h, line, i) => h + (i > 0 ? LINE_GAP * scale : 0) + line.size * scale,
+/** A header line wrapped to the width it was laid out at. */
+type HeaderBlock = HeaderLine & { wrapped: string[] }
+
+/**
+ * Breaks `text` at spaces into lines no wider than `maxWidth`, at most
+ * `maxLines` of them. Whatever doesn't fit goes on the last line, ellipsized,
+ * as does a single word too long for a line of its own.
+ */
+const wrapText = (
+    ctx: Ctx2D,
+    text: string,
+    maxWidth: number,
+    maxLines: number,
+): string[] => {
+    const words = text.split(/\s+/).filter(Boolean)
+    const lines: string[] = []
+    let i = 0
+    while (i < words.length && lines.length < maxLines - 1) {
+        let line = words[i++]
+        while (
+            i < words.length &&
+            ctx.measureText(`${line} ${words[i]}`).width <= maxWidth
+        ) {
+            line += ` ${words[i++]}`
+        }
+        lines.push(clipText(ctx, line, maxWidth))
+    }
+    if (i < words.length) {
+        lines.push(clipText(ctx, words.slice(i).join(' '), maxWidth))
+    }
+    return lines.length > 0 ? lines : ['']
+}
+
+const fontOf = (line: HeaderLine, scale: number, theme: BandTheme) =>
+    FONT(line.size, scale, line.weight, theme)
+
+/** The width the widest header line takes unwrapped. */
+const headerNaturalWidth = (
+    ctx: Ctx2D,
+    lines: HeaderLine[],
+    scale: number,
+    theme: BandTheme,
+): number =>
+    Math.max(
+        0,
+        ...lines.map((line) => {
+            ctx.font = fontOf(line, scale, theme)
+            return ctx.measureText(line.text).width
+        }),
+    )
+
+const wrapHeader = (
+    ctx: Ctx2D,
+    lines: HeaderLine[],
+    width: number,
+    scale: number,
+    theme: BandTheme,
+): HeaderBlock[] =>
+    lines.map((line) => {
+        ctx.font = fontOf(line, scale, theme)
+        return {
+            ...line,
+            wrapped: wrapText(ctx, line.text, width, HEADER_MAX_LINES),
+        }
+    })
+
+const headerHeight = (blocks: HeaderBlock[], scale: number): number =>
+    blocks.reduce(
+        (h, block) =>
+            h +
+            block.gapBefore * scale +
+            block.wrapped.length * block.size * scale +
+            (block.wrapped.length - 1) * LINE_GAP * scale,
         0,
     )
 
 /** One swatch and its label, placed relative to its cell's top-left. */
-type CategoryItem = { label: string; color: string; dx: number; line: number }
+type CategoryItem = {
+    label: string
+    color: string
+    pale: boolean
+    dx: number
+    line: number
+}
 
 /** One row placed in the grid: its column offset and width, its height, and
  *  for a categorical row the swatches already wrapped to that width. */
@@ -150,15 +308,18 @@ type Cell = {
     items: CategoryItem[]
 }
 
-/** One horizontal line of cells; `y` is relative to the content top. */
+/** One horizontal line of cells; `y` is relative to the rows' top. */
 type RowLine = { y: number; height: number; cells: Cell[] }
 
 type Layout = {
     rule: number
-    /** Band edge to panel content: the frame's inset, border and padding. */
-    edge: number
-    innerWidth: number
-    header: HeaderLine[]
+    pad: number
+    header: HeaderBlock[]
+    /** The hairline between header and rows, relative to the content box. */
+    divider: { x: number; y: number; w: number; h: number } | null
+    /** Where the rows' area starts, relative to the content box. */
+    rowsX: number
+    rowsY: number
     lines: RowLine[]
     bandHeight: number
 }
@@ -166,7 +327,7 @@ type Layout = {
 // The line a row's date occupies under its title, for the rows that carry
 // one; the draw pass advances by exactly this much before the row's body.
 const dateLineHeight = (row: ExportLegendRow, scale: number): number =>
-    row.dateLine ? (LINE_GAP + LABEL_TEXT) * scale : 0
+    row.dateLine ? (LINE_GAP + META_TEXT) * scale : 0
 
 const rowHeadHeight = (row: ExportLegendRow, scale: number): number =>
     ROW_TITLE_TEXT * scale + dateLineHeight(row, scale)
@@ -176,8 +337,9 @@ const wrapCategorical = (
     stops: { color: string; label: string }[],
     cellWidth: number,
     scale: number,
+    theme: BandTheme,
 ): CategoryItem[] => {
-    ctx.font = FONT(LABEL_TEXT, scale)
+    ctx.font = FONT(LABEL_TEXT, scale, theme.weights.light, theme)
     // The widest a single label can render, so that even alone on a fresh
     // line it can't overflow the cell.
     const labelMaxWidth = cellWidth - (SWATCH + SWATCH_GAP) * scale
@@ -192,12 +354,8 @@ const wrapCategorical = (
             line += 1
             x = 0
         }
-        items.push({
-            label,
-            color: stop.color || FALLBACK_SWATCH,
-            dx: x,
-            line,
-        })
+        const color = stop.color || FALLBACK_SWATCH
+        items.push({ label, color, pale: isPale(ctx, color), dx: x, line })
         x += itemW + ITEM_GAP * scale
     }
     return items
@@ -209,6 +367,7 @@ const cellOf = (
     x: number,
     width: number,
     scale: number,
+    theme: BandTheme,
 ): Cell => {
     const head = rowHeadHeight(row, scale)
     if (row.kind === 'gradient') {
@@ -220,7 +379,7 @@ const cellOf = (
         // room for.
         return { row, x, width, height: head, items: [] }
     }
-    const items = wrapCategorical(ctx, row.stops, width, scale)
+    const items = wrapCategorical(ctx, row.stops, width, scale, theme)
     const lines = items.length > 0 ? items[items.length - 1].line + 1 : 1
     const body =
         BODY_GAP * scale +
@@ -229,46 +388,37 @@ const cellOf = (
     return { row, x, width, height: head + body, items }
 }
 
-const columnCount = (innerWidth: number, rows: number, scale: number): number =>
+const columnCount = (areaWidth: number, rows: number, scale: number): number =>
     Math.max(
         1,
         Math.min(
             MAX_COLS,
             rows,
             Math.floor(
-                (innerWidth + COL_GAP * scale) /
+                (areaWidth + COL_GAP * scale) /
                     ((MIN_COL_WIDTH + COL_GAP) * scale),
             ),
         ),
     )
 
-const layoutBand = (
+/** Lays the rows out in columns across `areaWidth`, from y = 0. */
+const layoutRows = (
     ctx: Ctx2D,
-    model: ExportLegendModel,
-    width: number,
+    rows: ExportLegendRow[],
+    areaWidth: number,
     scale: number,
-): Layout => {
-    const rule = ruleOf(scale)
-    const edge = FRAME_INSET * scale + rule + PAD * scale
-    const innerWidth = Math.max(0, width - 2 * edge)
-
-    const header = headerLinesOf(model)
-    const rowsTop =
-        header.length > 0
-            ? headerHeight(header, scale) + 2 * SECTION_GAP * scale + rule
-            : 0
-
-    const cols = columnCount(innerWidth, model.rows.length, scale)
+    theme: BandTheme,
+): { lines: RowLine[]; height: number } => {
+    const cols = columnCount(areaWidth, rows.length, scale)
     const cellWidth = Math.max(
         0,
-        Math.floor((innerWidth - (cols - 1) * COL_GAP * scale) / cols),
+        Math.floor((areaWidth - (cols - 1) * COL_GAP * scale) / cols),
     )
-
     const lines: RowLine[] = []
-    let y = rowsTop
-    for (let i = 0; i < model.rows.length; i += cols) {
-        if (i > 0) y += 2 * ROW_GAP * scale + rule
-        const cells = model.rows
+    let y = 0
+    for (let i = 0; i < rows.length; i += cols) {
+        if (i > 0) y += ROW_GAP * scale
+        const cells = rows
             .slice(i, i + cols)
             .map((row, c) =>
                 cellOf(
@@ -277,20 +427,98 @@ const layoutBand = (
                     c * (cellWidth + COL_GAP * scale),
                     cellWidth,
                     scale,
+                    theme,
                 ),
             )
         const height = Math.max(...cells.map((cell) => cell.height))
         lines.push({ y, height, cells })
         y += height
     }
+    return { lines, height: y }
+}
 
+const layoutBand = (
+    ctx: Ctx2D,
+    model: ExportLegendModel,
+    width: number,
+    scale: number,
+    theme: BandTheme,
+): Layout => {
+    const rule = ruleOf(scale)
+    const pad = PAD * scale
+    const innerWidth = Math.max(0, width - 2 * pad)
+    const headerLines = headerLinesOf(model, theme)
+
+    if (headerLines.length === 0) {
+        const rows = layoutRows(ctx, model.rows, innerWidth, scale, theme)
+        return {
+            rule,
+            pad,
+            header: [],
+            divider: null,
+            rowsX: 0,
+            rowsY: 0,
+            lines: rows.lines,
+            bandHeight: rows.height + 2 * pad,
+        }
+    }
+
+    if (innerWidth >= SIDE_HEADER_MIN_WIDTH * scale) {
+        // The header in a column of its own, a vertical hairline, then the
+        // rows: the header never lines up with a row as if it were one.
+        const maxWidth = Math.floor(innerWidth * HEADER_COL_MAX_SHARE)
+        const headerWidth = Math.min(
+            maxWidth,
+            Math.ceil(headerNaturalWidth(ctx, headerLines, scale, theme)),
+        )
+        // Whole px, so the rows start on a whole logical pixel.
+        const spare = (maxWidth - headerWidth) / scale
+        const gap =
+            Math.round(
+                Math.min(
+                    SIDE_GAP_MAX,
+                    SIDE_GAP_MIN + spare * SIDE_GAP_SPARE_SHARE,
+                ),
+            ) * scale
+        const header = wrapHeader(ctx, headerLines, headerWidth, scale, theme)
+        const headH = headerHeight(header, scale)
+        const rowsX = headerWidth + 2 * gap + rule
+        const rows = layoutRows(
+            ctx,
+            model.rows,
+            innerWidth - rowsX,
+            scale,
+            theme,
+        )
+        const contentH = Math.max(headH, rows.height)
+        return {
+            rule,
+            pad,
+            header,
+            divider: { x: headerWidth + gap, y: 0, w: rule, h: contentH },
+            rowsX,
+            rowsY: 0,
+            lines: rows.lines,
+            bandHeight: contentH + 2 * pad,
+        }
+    }
+
+    // Too narrow for a header column: the header on top, a full-width
+    // hairline, then the rows.
+    const gap = SECTION_GAP * scale
+    const header = wrapHeader(ctx, headerLines, innerWidth, scale, theme)
+    const headH = headerHeight(header, scale)
+    const rowsY = headH + 2 * gap + rule
+    const rows = layoutRows(ctx, model.rows, innerWidth, scale, theme)
     return {
         rule,
-        edge,
-        innerWidth,
+        pad,
         header,
-        lines,
-        bandHeight: y + 2 * edge,
+        divider: { x: 0, y: headH + gap, w: innerWidth, h: rule },
+        rowsX: 0,
+        rowsY,
+        lines: rows.lines,
+        bandHeight: rowsY + rows.height + 2 * pad,
     }
 }
 
@@ -299,24 +527,33 @@ export const measureLegendBand = (
     model: ExportLegendModel,
     width: number,
     scale: number,
+    theme: BandTheme = DEFAULT_BAND_THEME,
 ): number => {
     if (model.rows.length === 0) return 0
-    return Math.ceil(layoutBand(ctx, model, width, scale).bandHeight)
+    return Math.ceil(layoutBand(ctx, model, width, scale, theme).bandHeight)
 }
 
-/** Paints a hairline frame and returns the box inside it, so a pale ramp or
- *  swatch keeps an edge against the white panel. */
-const outlineRect = (
+/** Fills a box with `color`, edged with a hairline when the color is too
+ *  pale to hold an edge against the band on its own. */
+const fillSwatch = (
     ctx: Ctx2D,
+    color: string,
+    pale: boolean,
     x: number,
     y: number,
-    w: number,
-    h: number,
+    size: number,
     rule: number,
+    theme: BandTheme,
 ) => {
-    ctx.fillStyle = ACCENT
-    ctx.fillRect(x, y, w, h)
-    return { x: x + rule, y: y + rule, w: w - 2 * rule, h: h - 2 * rule }
+    if (pale) {
+        ctx.fillStyle = theme.hairline
+        ctx.fillRect(x, y, size, size)
+        ctx.fillStyle = color
+        ctx.fillRect(x + rule, y + rule, size - 2 * rule, size - 2 * rule)
+        return
+    }
+    ctx.fillStyle = color
+    ctx.fillRect(x, y, size, size)
 }
 
 const paintRamp = (
@@ -326,32 +563,88 @@ const paintRamp = (
     y: number,
     w: number,
     h: number,
+    rule: number,
+    theme: BandTheme,
 ) => {
-    const ramp = colors && colors.length > 0 ? colors : NEUTRAL_RAMP
+    // A blank stop color (a legend entry with no color) would throw inside
+    // addColorStop and fail the whole band away, so it takes the same
+    // neutral the categorical path uses for a missing color.
+    const ramp = (colors && colors.length > 0 ? colors : NEUTRAL_RAMP).map(
+        (color) => color || FALLBACK_SWATCH,
+    )
+    // Only the ends can meet the band's white edge-on, so only they decide
+    // whether the bar needs a hairline to stay visible.
+    if (isPale(ctx, ramp[0]) || isPale(ctx, ramp[ramp.length - 1])) {
+        ctx.fillStyle = theme.hairline
+        ctx.fillRect(x, y, w, h)
+        x += rule
+        y += rule
+        w -= 2 * rule
+        h -= 2 * rule
+    }
     if (ramp.length === 1) {
         ctx.fillStyle = ramp[0]
     } else {
         const grad = ctx.createLinearGradient(x, y, x + w, y)
-        // A blank stop color (a legend entry with no color) would throw here
-        // and fail the whole band away — fall back to the same neutral swatch
-        // the categorical path uses for a missing color.
         ramp.forEach((color, i) =>
-            grad.addColorStop(i / (ramp.length - 1), color || FALLBACK_SWATCH),
+            grad.addColorStop(i / (ramp.length - 1), color),
         )
         ctx.fillStyle = grad
     }
     ctx.fillRect(x, y, w, h)
 }
 
-const drawRule = (
+/**
+ * Draws a bound's number in regular weight and its unit in light, left- or
+ * right-aligned at `x`, clipped as one label to `maxWidth`. Draws nothing for
+ * a blank bound.
+ */
+const drawBound = (
     ctx: Ctx2D,
+    value: number | null,
+    unit: string | null,
     x: number,
     y: number,
-    w: number,
-    rule: number,
+    maxWidth: number,
+    align: 'left' | 'right',
+    minX: number,
+    scale: number,
+    theme: BandTheme,
 ) => {
-    ctx.fillStyle = ACCENT
-    ctx.fillRect(x, y, w, rule)
+    const text = boundValue(value)
+    if (!text) return
+    const regular = FONT(LABEL_TEXT, scale, theme.weights.regular, theme)
+    const light = FONT(LABEL_TEXT, scale, theme.weights.light, theme)
+    ctx.fillStyle = theme.muted
+    ctx.font = regular
+    const textW = ctx.measureText(text).width
+    let unitText = unit ? ` ${unit}` : ''
+    ctx.font = light
+    let unitW = unitText ? ctx.measureText(unitText).width : 0
+    if (textW + unitW > maxWidth) {
+        // Too long to print whole: keep the number and clip the unit, or
+        // clip the number itself when even it doesn't fit.
+        if (textW >= maxWidth) {
+            ctx.font = regular
+            const clipped = clipText(ctx, text, maxWidth)
+            const w = ctx.measureText(clipped).width
+            ctx.fillText(
+                clipped,
+                align === 'left' ? x : Math.max(minX, x - w),
+                y,
+            )
+            return
+        }
+        unitText = clipText(ctx, unitText, maxWidth - textW)
+        unitW = ctx.measureText(unitText).width
+    }
+    const left = align === 'left' ? x : Math.max(minX, x - textW - unitW)
+    ctx.font = regular
+    ctx.fillText(text, left, y)
+    if (unitText) {
+        ctx.font = light
+        ctx.fillText(unitText, left + textW, y)
+    }
 }
 
 const drawCell = (
@@ -361,14 +654,15 @@ const drawCell = (
     y: number,
     rule: number,
     scale: number,
+    theme: BandTheme,
 ) => {
     const { row } = cell
-    ctx.fillStyle = INK
-    ctx.font = FONT(ROW_TITLE_TEXT, scale, 'bold')
+    ctx.fillStyle = theme.ink
+    ctx.font = FONT(ROW_TITLE_TEXT, scale, theme.weights.regular, theme)
     ctx.fillText(clipText(ctx, row.title, cell.width), x, y)
     if (row.dateLine) {
-        ctx.fillStyle = MUTED
-        ctx.font = FONT(LABEL_TEXT, scale)
+        ctx.fillStyle = theme.muted
+        ctx.font = FONT(META_TEXT, scale, theme.weights.regular, theme)
         ctx.fillText(
             clipText(ctx, row.dateLine, cell.width),
             x,
@@ -380,47 +674,64 @@ const drawCell = (
 
     if (row.kind === 'gradient') {
         const barW = Math.min(BAR_WIDTH * scale, cell.width)
-        const inner = outlineRect(ctx, x, bodyY, barW, BAR_HEIGHT * scale, rule)
-        paintRamp(ctx, row.colors, inner.x, inner.y, inner.w, inner.h)
+        paintRamp(
+            ctx,
+            row.colors,
+            x,
+            bodyY,
+            barW,
+            BAR_HEIGHT * scale,
+            rule,
+            theme,
+        )
         const boundsY = bodyY + (BAR_HEIGHT + LINE_GAP) * scale
-        ctx.fillStyle = MUTED
-        ctx.font = FONT(LABEL_TEXT, scale)
         // Each bound is capped at half the bar less half the gap, so a long
         // min and a long max are clipped rather than colliding, and the
         // right-aligned max is clamped to the bar's left edge so it can never
         // start off-canvas.
         const boundMaxWidth = Math.max(0, barW / 2 - (BOUND_GAP / 2) * scale)
-        const minLabel = clipText(
+        drawBound(
             ctx,
-            boundLabel(row.min, row.unit),
+            row.min,
+            row.unit,
+            x,
+            boundsY,
             boundMaxWidth,
+            'left',
+            x,
+            scale,
+            theme,
         )
-        const maxLabel = clipText(
+        drawBound(
             ctx,
-            boundLabel(row.max, row.unit),
+            row.max,
+            row.unit,
+            x + barW,
+            boundsY,
             boundMaxWidth,
+            'right',
+            x,
+            scale,
+            theme,
         )
-        ctx.fillText(minLabel, x, boundsY)
-        const maxW = ctx.measureText(maxLabel).width
-        ctx.fillText(maxLabel, Math.max(x, x + barW - maxW), boundsY)
         return
     }
 
     for (const item of cell.items) {
         const sx = x + item.dx
         const sy = bodyY + item.line * (SWATCH + LINE_GAP) * scale
-        const inner = outlineRect(
+        fillSwatch(
             ctx,
+            item.color,
+            item.pale,
             sx,
             sy,
             SWATCH * scale,
-            SWATCH * scale,
             rule,
+            theme,
         )
-        ctx.fillStyle = item.color
-        ctx.fillRect(inner.x, inner.y, inner.w, inner.h)
-        ctx.fillStyle = MUTED
-        ctx.font = FONT(LABEL_TEXT, scale)
+        ctx.fillStyle = theme.muted
+        ctx.font = FONT(LABEL_TEXT, scale, theme.weights.light, theme)
         ctx.fillText(item.label, sx + (SWATCH + SWATCH_GAP) * scale, sy + scale)
     }
 }
@@ -432,55 +743,48 @@ export const drawLegendBand = (
     yTop: number,
     bandHeight: number,
     scale: number,
+    theme: BandTheme = DEFAULT_BAND_THEME,
 ): void => {
-    const layout = layoutBand(ctx, model, width, scale)
-    const { rule, edge, innerWidth } = layout
-    const left = edge
-    const top = yTop + edge
+    const layout = layoutBand(ctx, model, width, scale, theme)
+    const { rule, pad } = layout
+    const left = pad
+    const top = yTop + pad
     ctx.save()
     ctx.textBaseline = 'top'
 
-    // The frame: the band's margin, the panel's border, then the panel
-    // over it.
-    const inset = FRAME_INSET * scale
-    ctx.fillStyle = BAND_BG
+    ctx.fillStyle = theme.surface
     ctx.fillRect(0, yTop, width, bandHeight)
-    ctx.fillStyle = ACCENT
-    ctx.fillRect(inset, yTop + inset, width - 2 * inset, bandHeight - 2 * inset)
-    ctx.fillStyle = PANEL_BG
-    ctx.fillRect(
-        inset + rule,
-        yTop + inset + rule,
-        width - 2 * (inset + rule),
-        bandHeight - 2 * (inset + rule),
-    )
 
     let y = top
-    layout.header.forEach((line, i) => {
-        if (i > 0) y += LINE_GAP * scale
-        ctx.fillStyle = line.color
-        ctx.font = FONT(line.size, scale, line.weight)
-        ctx.fillText(clipText(ctx, line.text, innerWidth), left, y)
-        y += line.size * scale
-    })
-    if (layout.header.length > 0) {
-        drawRule(ctx, left, y + SECTION_GAP * scale, innerWidth, rule)
+    for (const block of layout.header) {
+        y += block.gapBefore * scale
+        ctx.fillStyle = block.color
+        ctx.font = fontOf(block, scale, theme)
+        block.wrapped.forEach((text, i) => {
+            if (i > 0) y += LINE_GAP * scale
+            ctx.fillText(text, left, y)
+            y += block.size * scale
+        })
     }
 
-    layout.lines.forEach((line, i) => {
-        const lineTop = top + line.y
-        if (i > 0) {
-            drawRule(
+    if (layout.divider) {
+        const { x: dx, y: dy, w, h } = layout.divider
+        ctx.fillStyle = theme.hairline
+        ctx.fillRect(left + dx, top + dy, w, h)
+    }
+
+    for (const line of layout.lines) {
+        for (const cell of line.cells) {
+            drawCell(
                 ctx,
-                left,
-                lineTop - ROW_GAP * scale - rule,
-                innerWidth,
+                cell,
+                left + layout.rowsX + cell.x,
+                top + layout.rowsY + line.y,
                 rule,
+                scale,
+                theme,
             )
         }
-        for (const cell of line.cells) {
-            drawCell(ctx, cell, left + cell.x, lineTop, rule, scale)
-        }
-    })
+    }
     ctx.restore()
 }

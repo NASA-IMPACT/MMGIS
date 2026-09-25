@@ -708,9 +708,12 @@ describe('getExportLegendModel', () => {
             vi.mocked(mmgisGetTimeCurrentFormatted).mockResolvedValue('Sol 1234')
             const model = await getExportLegendModel()
             expect(model.missionName).toBe('Test Mission')
-            expect(model.headerLines).toEqual([
-                'Time cursor Sol 1234',
-                `Exported ${formatted('2026-09-02T18:30:00.000Z')}`,
+            expect(model.headerFacts).toEqual([
+                { label: 'Time cursor', value: 'Sol 1234' },
+                {
+                    label: 'Exported',
+                    value: formatted('2026-09-02T18:30:00.000Z'),
+                },
             ])
         } finally {
             vi.useRealTimers()
@@ -728,7 +731,8 @@ describe('getExportLegendModel', () => {
         )
         const model = await getExportLegendModel()
         expect(model.rows.map((r) => r.title)).toEqual(['Displacement'])
-        expect(model.headerLines).toHaveLength(1)
-        expect(model.headerLines[0]).toMatch(/^Exported fmt\(/)
+        expect(model.headerFacts).toHaveLength(1)
+        expect(model.headerFacts[0].label).toBe('Exported')
+        expect(model.headerFacts[0].value).toMatch(/^fmt\(/)
     })
 })
