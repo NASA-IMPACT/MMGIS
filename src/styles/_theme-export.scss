@@ -18,6 +18,23 @@
     $primary-lightest: color("primary-lightest");
   }
 
+  // The outer warning grades are set in USWDS's defaults but a theme may turn
+  // them off; each falls back a grade toward the base warning color.
+  $warning-darker: color("warning-dark");
+  @if $theme-color-warning-darker {
+    $warning-darker: color("warning-darker");
+  }
+
+  $warning-light: color("warning");
+  @if $theme-color-warning-light {
+    $warning-light: color("warning-light");
+  }
+
+  $warning-lighter: $warning-light;
+  @if $theme-color-warning-lighter {
+    $warning-lighter: color("warning-lighter");
+  }
+
   // The optional weight grades are unset by default and fw() returns that
   // `false` verbatim, which would emit an invalid declaration. Resolve each one
   // to the nearest weight the theme does define, stepping toward normal.
@@ -69,8 +86,11 @@
     --theme-color-accent-cool-darker: #{color("accent-cool-darker")};
 
     /* State colors */
+    --theme-color-warning-lighter: #{$warning-lighter};
+    --theme-color-warning-light: #{$warning-light};
     --theme-color-warning: #{color("warning")};
     --theme-color-warning-dark: #{color("warning-dark")};
+    --theme-color-warning-darker: #{$warning-darker};
 
     /* Base (gray) colors - guaranteed in USWDS */
     --theme-color-base-darkest: #{color("base-darkest")};

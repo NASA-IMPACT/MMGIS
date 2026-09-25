@@ -76,10 +76,15 @@ export const FloatingPopover: React.FC<FloatingPopoverProps> = ({
         if (!isOpen) return
         const previouslyFocused = document.activeElement as HTMLElement | null
 
+        // Focus lands on the first tab stop. Elements held out of the tab
+        // order are skipped, so a list that roves its tab stop opens on the
+        // item that holds it.
         if (autoFocus) {
             const focusTarget =
                 popupRef.current?.querySelector<HTMLElement>(
-                    'input, button, [href], select, textarea, [tabindex]:not([tabindex="-1"])',
+                    ['input', 'button', '[href]', 'select', 'textarea', '[tabindex]']
+                        .map((tag) => `${tag}:not([tabindex="-1"])`)
+                        .join(', '),
                 ) || popupRef.current
             focusTarget?.focus()
         }

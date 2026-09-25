@@ -181,7 +181,17 @@ const OLDER = '2026-09-21T06:00:00'
 
 describe('MMGISLayerManagerAdapter model runs', () => {
     const runSelect = () =>
-        mounted!.container.querySelector<HTMLSelectElement>('.blocks-layer-legend__run-select')
+        mounted!.container.querySelector<HTMLButtonElement>('.blocks-layer-legend__run-select')
+    const openRuns = async () => {
+        await act(async () => {
+            runSelect()!.click()
+        })
+        return Array.from(
+            document.body.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'),
+        )
+    }
+    const checkedRun = () =>
+        document.body.querySelector('[role="menuitemradio"][aria-checked="true"]')
     const leadReadout = () =>
         mounted!.container.querySelector('.blocks-layer-legend__run-lead')
 
@@ -195,18 +205,18 @@ describe('MMGISLayerManagerAdapter model runs', () => {
 
     test('offers the runs core reports, pinned where core pinned them, with the lead', async () => {
         await mountAdapter()
-        expect(Array.from(runSelect()!.options).map((o) => o.value)).toEqual([NEWEST, OLDER])
-        expect(runSelect()!.value).toBe(NEWEST)
         expect(leadReadout()!.textContent).toBe('+12 h')
+        const options = await openRuns()
+        expect(options).toHaveLength(2)
+        expect(checkedRun()).toBe(options[0])
         expect(configWrites).toEqual([])
     })
 
     test('a pick is one request to core', async () => {
         await mountAdapter()
-        const select = runSelect()!
-        select.value = OLDER
+        const [, older] = await openRuns()
         await act(async () => {
-            select.dispatchEvent(new Event('change', { bubbles: true }))
+            older.click()
         })
         expect(runRequests).toEqual([{ layerUUID: FORECAST, run: OLDER }])
         expect(configWrites).toEqual([])
@@ -217,7 +227,8 @@ describe('MMGISLayerManagerAdapter model runs', () => {
         runsAnswer[FORECAST] = { ...runsAnswer[FORECAST], selected: OLDER }
         await emit('layer:runChange', { layerName: FORECAST, run: OLDER })
         await settle()
-        expect(runSelect()!.value).toBe(OLDER)
+        const [, older] = await openRuns()
+        expect(checkedRun()).toBe(older)
     })
 
     test('re-reads the lead when the clock moves, without rebuilding the rows', async () => {
