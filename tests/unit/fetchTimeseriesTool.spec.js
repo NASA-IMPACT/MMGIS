@@ -58,9 +58,10 @@ describe('FetchTimeseriesTool', () => {
         [...host.querySelectorAll('label')]
             .find((l) => l.textContent.includes(label))
             .querySelector('input')
-    // datetime-local serializes zero seconds away; read it back to the second.
+    // datetime-local serializes zero seconds away (and jsdom, unlike browsers,
+    // appends zero milliseconds); read it back to the second either way.
     const valueOf = (label) => {
-        const v = input(label).value
+        const v = input(label).value.replace(/\.000$/, '')
         return v.length === 16 ? `${v}:00` : v
     }
 
@@ -158,13 +159,13 @@ describe('FetchTimeseriesTool', () => {
         expect(requested('plugins:show')).toEqual([
             ['plugins:show', { pluginId: 'FetchTimeseriesTool' }],
         ])
-        expect(valueOf('Start')).toBe('2025-09-24T12:00:00')
-        expect(valueOf('End')).toBe('2026-09-24T12:00:00')
+        expect(valueOf('Start')).toBe('2025-09-24T00:00:00')
+        expect(valueOf('End')).toBe('2026-09-24T23:59:59')
 
         const [url] = fetchMock.mock.calls[0]
         expect(url.startsWith('https://api/x?s=A1&filter=')).toBe(true)
         expect(filterOf(url)).toBe(
-            "datetime >= '2025-09-24T12:00:00' AND datetime <= '2026-09-24T12:00:00'",
+            "datetime >= '2025-09-24T00:00:00' AND datetime <= '2026-09-24T23:59:59'",
         )
         expect(new URL(url).searchParams.get('filter-lang')).toBe('cql2-text')
 
@@ -188,7 +189,7 @@ describe('FetchTimeseriesTool', () => {
             'https://api/x?s={properties.code}&datetime={start}Z/{end}Z'
         await request()
         expect(fetchMock.mock.calls[0][0]).toBe(
-            'https://api/x?s=A1&datetime=2025-09-24T12%3A00%3A00Z/2026-09-24T12%3A00%3A00Z',
+            'https://api/x?s=A1&datetime=2025-09-24T00%3A00%3A00Z/2026-09-24T23%3A59%3A59Z',
         )
     })
 
@@ -218,7 +219,7 @@ describe('FetchTimeseriesTool', () => {
         await settle()
         expect(fetchMock).toHaveBeenCalledTimes(2)
         expect(filterOf(fetchMock.mock.calls[1][0])).toBe(
-            "datetime >= '2026-03-01T00:00:00' AND datetime <= '2026-09-24T12:00:00'",
+            "datetime >= '2026-03-01T00:00:00' AND datetime <= '2026-09-24T23:59:59'",
         )
         expect(emittedFor(READY)).toHaveLength(2)
     })
@@ -236,14 +237,14 @@ describe('FetchTimeseriesTool', () => {
         await request()
         // Chrome's change events while typing a year: 0002-…, then the real one.
         await setDate('End', '0002-03-01T00:00:00')
-        expect(valueOf('Start')).toBe('2025-09-24T12:00:00')
+        expect(valueOf('Start')).toBe('2025-09-24T00:00:00')
         await settle()
         expect(fetchMock).toHaveBeenCalledTimes(1)
         await setDate('End', '2027-03-01T00:00:00')
         await settle()
         expect(fetchMock).toHaveBeenCalledTimes(2)
         expect(filterOf(fetchMock.mock.calls[1][0])).toBe(
-            "datetime >= '2025-09-24T12:00:00' AND datetime <= '2027-03-01T00:00:00'",
+            "datetime >= '2025-09-24T00:00:00' AND datetime <= '2027-03-01T00:00:00'",
         )
     })
 
@@ -349,7 +350,7 @@ describe('FetchTimeseriesTool', () => {
             'https://api/x?lon={lon}&lat={lat}&start={start}'
         await request()
         expect(fetchMock.mock.calls[0][0]).toBe(
-            'https://api/x?lon=-97.7&lat=30.3&start=2025-09-24T12%3A00%3A00',
+            'https://api/x?lon=-97.7&lat=30.3&start=2025-09-24T00%3A00%3A00',
         )
     })
 

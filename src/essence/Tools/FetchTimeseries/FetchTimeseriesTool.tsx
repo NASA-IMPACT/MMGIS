@@ -70,7 +70,8 @@ const FETCH_EVENT = `plugin:${PLUGIN_ID}:fetch`
  *  way out of a hung fetch is the user requesting another feature. */
 const FETCH_TIMEOUT_MS = 30000
 const DAY_MS = 24 * 60 * 60 * 1000
-/** Without a mission time window, the range defaults to the past year. */
+/** Without a mission time window, the range defaults to the past year, in
+ *  whole UTC days, so a date-only row on either end is inside the range. */
 const DEFAULT_SPAN_DAYS = 365
 /** Typing a date fires several changes; the card updates at once, the
  *  refetch waits for the typing to settle. */
@@ -96,6 +97,9 @@ interface Selection {
 
 /** UTC, to the second, without the zone suffix: what datetime-local holds. */
 const isoInstant = (d: Date) => d.toISOString().slice(0, 19)
+const startOfUtcDay = (d: Date) =>
+    new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+const endOfUtcDay = (d: Date) => new Date(startOfUtcDay(d).getTime() + DAY_MS - 1000)
 
 const FetchTimeseriesTool = {
     height: 0,
@@ -198,8 +202,8 @@ const FetchTimeseriesTool = {
         if (!range) {
             const now = new Date()
             range = {
-                start: isoInstant(new Date(now.getTime() - DEFAULT_SPAN_DAYS * DAY_MS)),
-                end: isoInstant(now),
+                start: isoInstant(startOfUtcDay(new Date(now.getTime() - DEFAULT_SPAN_DAYS * DAY_MS))),
+                end: isoInstant(endOfUtcDay(now)),
             }
         }
         this._range = range
