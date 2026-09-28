@@ -561,6 +561,136 @@ describe('evaluateLayerDataCoverage verdict', () => {
     })
 })
 
+// A raster tile layer with a periodic interval is stamped with the one
+// period holding the cursor, its end the period's last second; the whole
+// period is the request, so it is out of range only when no span meets it.
+describe('evaluateLayerDataCoverage for a periodic request', () => {
+    const periodicLayer = (time, type = 'tile') => ({
+        name: 'Periodic',
+        type,
+        time: { enabled: true, type: 'requery', ...time },
+    })
+
+    test('a daily layer ending now is in range for today\'s period', () => {
+        const today = new Date()
+        const day = today.toISOString().split('T')[0]
+        const record = evaluateLayerDataCoverage(
+            periodicLayer({
+                interval: 'P1D',
+                dataStartTime: '2020-01-01T00:00:00Z',
+                dataEndTime: 'now',
+                start: `${day}T00:00:00Z`,
+                end: `${day}T23:59:59Z`,
+            })
+        )
+        expect(record.periodic).toBe(true)
+        expect(record.outOfDataRange).toBe(false)
+    })
+
+    test('a monthly layer is in range though its extent ends before the period does', () => {
+        const record = evaluateLayerDataCoverage(
+            periodicLayer({
+                interval: 'P1M',
+                dataStartTime: '2025-01-01T00:00:00Z',
+                dataEndTime: '2025-03-17T00:00:00Z',
+                start: '2025-03-01T00:00:00Z',
+                end: '2025-03-31T23:59:59Z',
+            })
+        )
+        expect(record.periodic).toBe(true)
+        expect(record.outOfDataRange).toBe(false)
+    })
+
+    test('a monthly period that misses the extent is out of range', () => {
+        const record = evaluateLayerDataCoverage(
+            periodicLayer({
+                interval: 'P1M',
+                dataEndTime: '2025-03-17T00:00:00Z',
+                start: '2025-04-01T00:00:00Z',
+                end: '2025-04-30T23:59:59Z',
+            })
+        )
+        expect(record.periodic).toBe(true)
+        expect(record.outOfDataRange).toBe(true)
+    })
+
+    test('a period that misses a continuous extent is out of range', () => {
+        const record = evaluateLayerDataCoverage(
+            periodicLayer({
+                interval: 'P1D',
+                dataStartTime: '2025-01-09T00:00:00Z',
+                dataEndTime: '2025-01-21T23:59:59Z',
+                start: '2025-01-22T00:00:00Z',
+                end: '2025-01-22T23:59:59Z',
+            })
+        )
+        expect(record.periodic).toBe(true)
+        expect(record.outOfDataRange).toBe(true)
+    })
+
+    test('a non-raster layer with an interval keeps the end-only test', () => {
+        const record = evaluateLayerDataCoverage(
+            periodicLayer(
+                {
+                    interval: 'P1M',
+                    dataDates: ['2025-03-03'],
+                    start: '2025-03-01T00:00:00Z',
+                    end: '2025-03-31T23:59:59Z',
+                },
+                'vector'
+            )
+        )
+        expect(record.periodic).toBe(false)
+        expect(record.outOfDataRange).toBe(true)
+    })
+
+    test('a raster layer without an interval keeps the end-only test', () => {
+        const record = evaluateLayerDataCoverage(
+            periodicLayer({
+                dataDates: ['2025-03-03'],
+                start: '2025-03-01T00:00:00Z',
+                end: '2025-03-31T23:59:59Z',
+            })
+        )
+        expect(record.periodic).toBe(false)
+        expect(record.outOfDataRange).toBe(true)
+    })
+})
+
+// A layer that lists Data Dates is never periodic: its interval shapes
+// neither the request nor the verdict, which tests the listed entries at the
+// current time.
+describe('evaluateLayerDataCoverage for a layer listing Data Dates and an interval', () => {
+    const listedLayer = (end) => ({
+        name: 'Listed',
+        type: 'tile',
+        time: {
+            enabled: true,
+            type: 'requery',
+            interval: 'P1M',
+            dataDates: ['2025-03-03', '2025-03-09'],
+            start: '2025-02-18T00:00:00Z',
+            end,
+        },
+    })
+
+    test('is out of range at a cursor on no listed date, though the month holds some', () => {
+        const record = evaluateLayerDataCoverage(
+            listedLayer('2025-03-20T00:00:00Z')
+        )
+        expect(record.periodic).toBe(false)
+        expect(record.outOfDataRange).toBe(true)
+    })
+
+    test('is in range at a cursor on a listed date', () => {
+        const record = evaluateLayerDataCoverage(
+            listedLayer('2025-03-09T12:00:00Z')
+        )
+        expect(record.periodic).toBe(false)
+        expect(record.outOfDataRange).toBe(false)
+    })
+})
+
 describe('evaluateLayerDataCoverage', () => {
     test('carries every fact a subscriber needs', () => {
         const record = evaluateLayerDataCoverage(
@@ -578,6 +708,7 @@ describe('evaluateLayerDataCoverage', () => {
                 start: ms('2020-04-01T00:00:00Z'),
                 end: ms('2020-05-01T00:00:00Z'),
             },
+            periodic: false,
         })
     })
 
@@ -592,6 +723,7 @@ describe('evaluateLayerDataCoverage', () => {
             kind: null,
             spans: null,
             requestedWindow: null,
+            periodic: false,
         })
     })
 })
@@ -624,6 +756,12 @@ describe('isSameCoverage', () => {
     test('sees a change of verdict', () => {
         const next = base()
         next.outOfDataRange = false
+        expect(isSameCoverage(base(), next)).toBe(false)
+    })
+
+    test('sees a change of which rule decided the verdict', () => {
+        const next = base()
+        next.periodic = true
         expect(isSameCoverage(base(), next)).toBe(false)
     })
 

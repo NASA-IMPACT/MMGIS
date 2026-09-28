@@ -100,7 +100,14 @@ export function MMGISLayerManagerAdapter() {
         return latestRuns.current
     }, [])
 
+    // Ticks on every refresh, so a call can tell whether it is still the most
+    // recent one once its await returns. Without this, an older refresh (a
+    // slow custom colormap fetch, say) that resolves after a newer one has
+    // already landed would overwrite the newer rows with stale ones.
+    const refreshSeq = useRef(0)
+
     const refresh = useCallback(async () => {
+        const seq = ++refreshSeq.current
         const announced = new Map<string, boolean>()
         inFlight.current.add(announced)
         try {
@@ -111,6 +118,9 @@ export function MMGISLayerManagerAdapter() {
                 getFilteredOutLayers(),
                 readRuns(),
             ])
+            // A newer refresh already landed while this one was reading —
+            // its answer is stale, so drop it.
+            if (seq !== refreshSeq.current) return
             // Read again once the rows are in: the runs answered at the
             // start may have been overtaken while the layers loaded.
             setLayers(
@@ -119,11 +129,13 @@ export function MMGISLayerManagerAdapter() {
             setFilteredOut(leftOut.map((layer) => layer.title))
         } catch (err) {
             console.error('LayerManager: refresh failed', err)
-            setLayers([])
-            setFilteredOut([])
+            if (seq === refreshSeq.current) {
+                setLayers([])
+                setFilteredOut([])
+            }
         } finally {
             inFlight.current.delete(announced)
-            setLoading(false)
+            if (seq === refreshSeq.current) setLoading(false)
         }
     }, [toolVars.showOnlyVisible, readRuns])
 

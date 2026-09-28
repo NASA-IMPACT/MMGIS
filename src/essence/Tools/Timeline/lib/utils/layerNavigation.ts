@@ -1,6 +1,5 @@
-import moment from 'moment'
 import type { TimeMode } from '../types'
-import { resolveLayerExtent, resolveListedInstants, stepTime } from './timeUtils'
+import { resolveLayerExtent, resolveListedEntries, stepTime } from './timeUtils'
 import type { LayerTimeConfig } from './timeUtils'
 import { addSteps, parseDuration, stepIndexAtOrBefore } from './duration'
 import type { Duration } from './duration'
@@ -14,6 +13,12 @@ export interface LayerNavigation {
     kind: 'sparse' | 'periodic'
     /** Sparse only: one stop per distinct listed instant, sorted ascending. */
     stops?: Date[]
+    /**
+     * Sparse only, aligned with `stops`: the periods the entries landing on
+     * each stop cover, as the row draws them. A stop opens its period, or
+     * sits partway into its hour when the entry gives minutes or seconds.
+     */
+    stopSpans?: { start: Date; end: Date }[]
     /** The span covered — for a sparse layer, its outermost stops. */
     start: Date
     end: Date
@@ -42,10 +47,10 @@ export interface LayerNavigation {
  *
  * A list with nothing readable in it leaves the layer navigating its extent.
  * A stop is the instant an entry names, so a layer that lists the exact
- * times it has data at is navigated to those times and requests them. A bare
- * date names a span, and its stop is the span's last UTC instant: the current
- * time is assigned to each layer as `layer.time.end`, so a stop at the span's
- * first instant would close the query window before its data fell inside it.
+ * times it has data at is navigated to those times and requests them. An
+ * entry that leaves parts out names a period, and its stop is the period's
+ * first UTC instant: 2020-03 lands on 1 March 00:00, 2020-03-04 on that
+ * day's midnight, 2020-03-04T14 on 14:00.
  *
  * An unconfigured bound is completed from the timeline's window, so the
  * controls move through the span the layer's bar is drawn over.
@@ -61,12 +66,23 @@ export function resolveLayerNavigation(
 ): LayerNavigation | null {
     if (!time || time.enabled !== true) return null
 
-    const stops = resolveListedInstants(time).map((instant) => instant.toDate())
+    const byStop = new Map<number, { start: Date; end: Date }>()
+    resolveListedEntries(time).forEach((entry) => {
+        const at = entry.at.getTime()
+        const held = byStop.get(at)
+        byStop.set(at, {
+            start: held && held.start < entry.start ? held.start : entry.start,
+            end: held && held.end > entry.end ? held.end : entry.end,
+        })
+    })
+    const stopMs = [...byStop.keys()].sort((a, b) => a - b)
+    const stops = stopMs.map((ms) => new Date(ms))
 
     if (stops.length > 0)
         return {
             kind: 'sparse',
             stops,
+            stopSpans: stopMs.map((ms) => byStop.get(ms)!),
             start: stops[0],
             end: stops[stops.length - 1],
             // A sparse layer's stops are read from its own list, so neither
@@ -119,19 +135,53 @@ export function resolveLayerNavigation(
     }
 }
 
+/** The period a sparse stop's entries cover, or null off every stop. */
+function spanAtStop(
+    nav: LayerNavigation,
+    target: Date
+): { start: Date; end: Date } | null {
+    if (nav.kind !== 'sparse' || !nav.stops || !nav.stopSpans) return null
+    const i = nav.stops.findIndex((stop) => stop.getTime() === target.getTime())
+    return i === -1 ? null : nav.stopSpans[i]
+}
+
 /**
  * The earliest instant the timeline's window must include for what a target
- * lands on to be visible in the chart. A sparse stop sits inside the box its
- * day draws, at the day's last instant or partway through it, so a window
- * opening at the stop would cut that box off the left of the chart; the
- * whole day has to be inside. A periodic layer's bounds are instants rather
- * than spans, and its bar runs inward from them, so the window meets them
- * exactly.
+ * lands on to be visible in the chart. A sparse stop opens the box its period
+ * draws, or sits partway into its hour, so the window has to open at the
+ * box's start for the whole of it to be inside. A periodic layer's bounds
+ * are instants rather than spans, and its bar runs inward from them, so the
+ * window meets them exactly.
  */
 export function revealStart(nav: LayerNavigation, target: Date): Date {
-    return nav.kind === 'sparse'
-        ? moment.utc(target).startOf('day').toDate()
-        : target
+    return spanAtStop(nav, target)?.start ?? target
+}
+
+/**
+ * The latest instant the timeline's window must include for what a target
+ * lands on to be visible: the close of the box a sparse stop opens, since a
+ * window ending at the stop would leave all of a month's or year's box off
+ * the right of the chart. A periodic target is met exactly.
+ */
+export function revealEnd(nav: LayerNavigation, target: Date): Date {
+    return spanAtStop(nav, target)?.end ?? target
+}
+
+/**
+ * The span a layer's row draws over: a sparse layer's earliest box start to
+ * its latest box end, which a coarse entry can carry past the last stop, and
+ * a periodic layer's bounds.
+ */
+export function drawnExtent(nav: LayerNavigation): { start: Date; end: Date } {
+    if (nav.kind !== 'sparse' || !nav.stopSpans || nav.stopSpans.length === 0)
+        return { start: nav.start, end: nav.end }
+    let start = nav.stopSpans[0].start
+    let end = nav.stopSpans[0].end
+    nav.stopSpans.forEach((span) => {
+        if (span.start < start) start = span.start
+        if (span.end > end) end = span.end
+    })
+    return { start, end }
 }
 
 /**

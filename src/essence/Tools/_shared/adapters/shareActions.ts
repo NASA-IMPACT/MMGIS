@@ -8,6 +8,11 @@ import {
 } from './mmgisAPI'
 import { buildSharePdf, type JsPdfLike } from './sharePdf'
 import { blobToDataUrl, downloadBlob } from './download'
+import { composeExportImage } from '../legend/composeExportImage'
+import {
+    getExportLegendModel,
+    type ExportLegendModel,
+} from '../legend/getExportLegendModel'
 
 // Orchestrates the three export actions, reaching core only through the
 // shared mmgisAPI client. Dependencies are injectable for tests.
@@ -60,7 +65,36 @@ export async function copyShareLink(
     return url
 }
 
-export type DownloadSharePngDeps = {
+export type LegendDeps = {
+    includeLegend?: boolean
+    getLegendModel?: () => Promise<ExportLegendModel>
+    compose?: (
+        screenshot: MapScreenshotResult,
+        model: ExportLegendModel,
+    ) => Promise<MapScreenshotResult>
+}
+
+// The export must never fail because the legend did — deliver the plain map
+// and log, rather than surfacing a broken download.
+async function applyLegend(
+    screenshot: MapScreenshotResult,
+    deps: LegendDeps,
+): Promise<MapScreenshotResult> {
+    const {
+        includeLegend = true,
+        getLegendModel = getExportLegendModel,
+        compose = composeExportImage,
+    } = deps
+    if (!includeLegend) return screenshot
+    try {
+        return await compose(screenshot, await getLegendModel())
+    } catch (err) {
+        console.warn('Share export: legend omitted', err)
+        return screenshot
+    }
+}
+
+export type DownloadSharePngDeps = LegendDeps & {
     getScreenshot?: () => Promise<MapScreenshotResult | null>
     download?: (blob: Blob, filename: string) => void
     getViewState?: () => Promise<ViewState | null>
@@ -68,7 +102,7 @@ export type DownloadSharePngDeps = {
 }
 
 /**
- * Downloads the current map as a PNG. Returns the screenshot result.
+ * Downloads the current map as a PNG. Returns the composed screenshot result.
  */
 export async function downloadSharePng(
     deps: DownloadSharePngDeps = {},
@@ -80,14 +114,15 @@ export async function downloadSharePng(
     } = deps
     const screenshot = await getScreenshot()
     if (!screenshot) throw new Error('No screenshot available')
+    const composed = await applyLegend(screenshot, deps)
     const filename =
         deps.filename ??
-        buildExportFilename(screenshot.extension, await getViewState())
-    download(screenshot.blob, filename)
-    return screenshot
+        buildExportFilename(composed.extension, await getViewState())
+    download(composed.blob, filename)
+    return composed
 }
 
-export type DownloadSharePdfDeps = {
+export type DownloadSharePdfDeps = LegendDeps & {
     getScreenshot?: () => Promise<MapScreenshotResult | null>
     blobToDataUrl?: (blob: Blob) => Promise<string>
     buildPdf?: (
@@ -115,8 +150,9 @@ export async function downloadSharePdf(
     } = deps
     const screenshot = await getScreenshot()
     if (!screenshot) throw new Error('No screenshot available')
-    const dataUrl = await convertBlobToDataUrl(screenshot.blob)
-    const doc = await buildPdf(dataUrl, screenshot.width, screenshot.height)
+    const composed = await applyLegend(screenshot, deps)
+    const dataUrl = await convertBlobToDataUrl(composed.blob)
+    const doc = await buildPdf(dataUrl, composed.width, composed.height)
     const filename =
         deps.filename ?? buildExportFilename('pdf', await getViewState())
     doc.save(filename)
