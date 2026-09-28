@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { test, expect } from 'vitest'
+import { cacheControlForKey } from '../../scripts/lib/aws-provision.js'
 import {
     resolveLatLng,
     resolveBounds,
@@ -142,27 +143,37 @@ test.describe('DeckGLHelpers', () => {
     })
 
     test.describe('resolveMvtWorkerUrl', () => {
+        const workerPath = 'static/loaders/mvt@4.4.4/mvt-worker.js'
+
         test('resolves a relative public path against the page', () => {
             expect(
-                resolveMvtWorkerUrl('./build/', 'https://example.com/?mission=Air4US')
-            ).toBe('https://example.com/build/static/loaders/mvt-worker.js')
+                resolveMvtWorkerUrl('./build/', workerPath, 'https://example.com/?mission=Air4US')
+            ).toBe('https://example.com/build/static/loaders/mvt@4.4.4/mvt-worker.js')
         })
 
         test('keeps a path prefix the page is served under', () => {
             expect(
-                resolveMvtWorkerUrl('./build/', 'https://example.com/customer/dash/')
-            ).toBe('https://example.com/customer/dash/build/static/loaders/mvt-worker.js')
+                resolveMvtWorkerUrl('./build/', workerPath, 'https://example.com/customer/dash/')
+            ).toBe('https://example.com/customer/dash/build/static/loaders/mvt@4.4.4/mvt-worker.js')
         })
 
         test('resolves a rooted public path against the origin', () => {
             expect(
-                resolveMvtWorkerUrl('/', 'http://localhost:8889/?mission=Air4US')
-            ).toBe('http://localhost:8889/static/loaders/mvt-worker.js')
+                resolveMvtWorkerUrl('/', workerPath, 'http://localhost:8889/?mission=Air4US')
+            ).toBe('http://localhost:8889/static/loaders/mvt@4.4.4/mvt-worker.js')
         })
 
-        test('is undefined without a public path or a page', () => {
-            expect(resolveMvtWorkerUrl(undefined, 'https://example.com/')).toBeUndefined()
-            expect(resolveMvtWorkerUrl('./build/', undefined)).toBeUndefined()
+        test('is undefined without a public path, a worker path or a page', () => {
+            expect(resolveMvtWorkerUrl(undefined, workerPath, 'https://example.com/')).toBeUndefined()
+            expect(resolveMvtWorkerUrl('./build/', undefined, 'https://example.com/')).toBeUndefined()
+            expect(resolveMvtWorkerUrl('./build/', workerPath, undefined)).toBeUndefined()
+        })
+
+        test('a published worker gets the short cache tier, not the immutable one', () => {
+            // Its file name carries no content hash, so a fronting cache must
+            // not hold it as immutable; the version in its path is what moves
+            // an upgrade to a new URL.
+            expect(cacheControlForKey(`build/${workerPath}`)).toBe('public, max-age=300')
         })
 
         test('the worker the build copies exists in the installed loader', () => {

@@ -233,17 +233,15 @@ async function fetchImageTile(
 
 // Set by webpack to the bundle's public path; absent outside a webpack build.
 declare const __webpack_public_path__: string | undefined
-
-/**
- * Where the build serves loaders.gl's vector tile worker, relative to the
- * bundle's public path. The webpack config copies the worker here from
- * node_modules.
- */
-const MVT_WORKER_PATH = 'static/loaders/mvt-worker.js'
+// Where the build copies loaders.gl's vector tile worker, relative to the
+// public path, versioned (`static/loaders/mvt@<version>/mvt-worker.js`).
+// Defined by the webpack config, which does the copy; absent outside a
+// webpack build.
+declare const MVT_WORKER_PATH: string | undefined
 
 /**
  * Absolute URL of the vector tile worker the build serves, or undefined when
- * there is no public path to resolve it against.
+ * the build serves none or there is no page to resolve it against.
  *
  * loaders.gl otherwise fetches the worker from unpkg.com, which the server's
  * Content-Security-Policy refuses. The URL must be absolute: loaders.gl
@@ -253,10 +251,11 @@ const MVT_WORKER_PATH = 'static/loaders/mvt-worker.js'
  */
 export function resolveMvtWorkerUrl(
     publicPath: string | undefined,
+    workerPath: string | undefined,
     baseURI: string | undefined
 ): string | undefined {
-    if (typeof publicPath !== 'string' || !baseURI) return undefined
-    return new URL(publicPath + MVT_WORKER_PATH, baseURI).href
+    if (typeof publicPath !== 'string' || !workerPath || !baseURI) return undefined
+    return new URL(publicPath + workerPath, baseURI).href
 }
 
 function mvtWorkerUrl(): string | undefined {
@@ -264,6 +263,7 @@ function mvtWorkerUrl(): string | undefined {
         typeof __webpack_public_path__ !== 'undefined'
             ? __webpack_public_path__
             : undefined,
+        typeof MVT_WORKER_PATH !== 'undefined' ? MVT_WORKER_PATH : undefined,
         typeof document !== 'undefined' ? document.baseURI : undefined
     )
 }
