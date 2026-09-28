@@ -4,7 +4,15 @@ import { axisBottom } from 'd3-axis'
 import { select } from 'd3-selection'
 import { zoom, ZoomBehavior } from 'd3-zoom'
 import type { TimeMode, LayerTimeData } from '../../types'
-import { generateTimeTicks, formatDateByMode, clampDate, stepTime } from '../../utils/timeUtils'
+import {
+    generateTimeTicks,
+    formatDateByMode,
+    clampDate,
+    stepTime,
+    tickModeForSpan,
+    contextTicks,
+    formatContext,
+} from '../../utils/timeUtils'
 import {
     minViewDuration,
     sameWindow,
@@ -17,6 +25,21 @@ import { LayerTimeline } from '../LayerTimeline/LayerTimeline'
 import { LayerSidebarItem } from '../LayerSidebarItem/LayerSidebarItem'
 import type { LayerNavigation } from '../../utils/layerNavigation'
 
+/** Room a top-axis label takes, in pixels, the widest being "Mar 30, 2020". */
+const CONTEXT_LABEL_WIDTH = 96
+
+/** Rendered size of the scrubber's diamond head, in pixels. */
+const MARKER_SIZE = 18
+
+/**
+ * The margin the chart keeps at each side, in pixels, past the track the
+ * visible window spans. A view held at the global window's edge puts the
+ * scrubber there, and the margin gives its head and shadow room to draw in
+ * full. It shows time beyond the view without widening what the scrubber can
+ * reach: every time set from the chart is still clamped to the global window.
+ */
+export const EDGE_MARGIN = MARKER_SIZE
+
 export interface TimelineViewProps {
     startTime: Date
     endTime: Date
@@ -27,6 +50,12 @@ export interface TimelineViewProps {
     onCurrentTimeChange: (time: Date) => void
     /** Live time while the scrubber is being dragged, for display only. */
     onCurrentTimePreview?: (time: Date) => void
+    /**
+     * Committed time change from the keyboard on the focused scrubber head,
+     * which can step the head off screen, unlike a drag or a click. Falls
+     * back to `onCurrentTimeChange` when not given.
+     */
+    onCurrentTimeStep?: (time: Date) => void
     /**
      * The instant a layer row's navigation controls lead to, with the model it
      * came from. Separate from `onCurrentTimeChange`, which clamps to the
@@ -51,6 +80,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     layers,
     onCurrentTimeChange,
     onCurrentTimePreview,
+    onCurrentTimeStep,
     onLayerNavigate,
     view,
     onViewChange,
@@ -58,6 +88,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     onFitLayer,
 }) => {
     const containerRef = useRef<HTMLDivElement>(null)
+    const sidebarScrollRef = useRef<HTMLDivElement>(null)
     const svgRef = useRef<SVGSVGElement>(null)
     const axisRef = useRef<SVGGElement>(null)
     const topAxisRef = useRef<SVGGElement>(null)
@@ -68,16 +99,24 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     const didDragRef = useRef(false)
     const [dimensions, setDimensions] = useState({ width: 800, height: 200 })
 
-    const axisHeight = 24 // Space for the bottom axis
-    const layerBarHeight = 20 // Row pitch, shared by the sidebar item and the SVG row
-    const topBarHeight = 24 // Space for top axis
-    const markerSize = 18 // Rendered size of the scrubber marker
+    const layerBarHeight = 22 // Row pitch, shared by the sidebar item and the SVG row
+    const barHeight = 24 // Height of the top and bottom date bars
+    const footerPad = 6 // Space below the bottom date bar's labels
+    const markerSize = MARKER_SIZE
+    // A strip between the date bar and the first layer row that the
+    // scrubber's head sits in, so the head never covers a row's bars at the
+    // current time. The sidebar opens with a spacer of the same height to
+    // keep each name level with its row.
+    const headGutter = markerSize
 
     // Calculate total height needed for layers
     const totalLayersHeight = layers.length * layerBarHeight
+    // Where the layer rows end, and with them the chart
+    const layersBottom = headGutter + totalLayersHeight
 
-    // Calculate required SVG height
-    const requiredHeight = axisHeight + totalLayersHeight
+    // Calculate required SVG height. The bottom axis sits in its own bar
+    // below the scrolling panes, so the chart holds only the gutter and rows.
+    const requiredHeight = layersBottom
 
     // Update dimensions on resize
     useEffect(() => {
@@ -100,48 +139,91 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         [startTime, endTime]
     )
 
-    // The visible window is the domain on screen, so the axes and the layer
-    // bars read it directly. Memoized so the axis effects below only fire when
-    // the window or the width actually change; rebuilt every render they would
-    // tear down and redraw both axes on every pointermove of a scrubber drag.
+    // Held under a quarter of the chart, so a narrow chart keeps a track.
+    const inset = Math.min(EDGE_MARGIN, dimensions.width / 4)
+
+    // The visible window is the domain of the track between the margins, so
+    // the axes and the layer bars read it directly. Memoized so the axis
+    // effects below only fire when the window or the width actually change;
+    // rebuilt every render they would tear down and redraw both axes on every
+    // pointermove of a scrubber drag.
     const transformedXScale = useMemo(
-        () => scaleTime().domain([view.start, view.end]).range([0, dimensions.width]),
-        [view, dimensions.width]
+        () =>
+            scaleTime()
+                .domain([view.start, view.end])
+                .range([inset, dimensions.width - inset]),
+        [view, dimensions.width, inset]
+    )
+
+    // What the whole chart shows, margins included, cut to the global window:
+    // the axes mark time the scrubber can reach and none past it.
+    const shownSpan = useMemo(() => {
+        const left = transformedXScale.invert(0)
+        const right = transformedXScale.invert(dimensions.width)
+        return {
+            start: left < startTime ? startTime : left,
+            end: right > endTime ? endTime : right,
+        }
+    }, [transformedXScale, dimensions.width, startTime, endTime])
+
+    // The bottom axis's unit follows the visible span, not the step mode, so
+    // the axes relabel as the view zooms and hold still when the step
+    // changes. Shared with the top axis, which names the periods it falls in.
+    const maxTicks = Math.max(2, Math.floor(dimensions.width / 80))
+    const tickMode = useMemo(
+        () => tickModeForSpan(view.start, view.end, maxTicks),
+        [view, maxTicks]
+    )
+
+    // Shared by the bottom axis and the grid lines the chart draws at the
+    // same instants, across everything the chart shows.
+    const bottomTicks = useMemo(
+        () => generateTimeTicks(shownSpan.start, shownSpan.end, tickMode, maxTicks),
+        [shownSpan, tickMode, maxTicks]
     )
 
     // Render bottom axis
     useEffect(() => {
         if (!axisRef.current) return
 
-        const [visibleStart, visibleEnd] = transformedXScale.domain() as [Date, Date]
-        const tickValues = generateTimeTicks(visibleStart, visibleEnd, timeMode, Math.max(2, Math.floor(dimensions.width / 80)))
         const axis = axisBottom(transformedXScale)
-            .tickValues(tickValues)
-            .tickFormat((d) => formatDateByMode(d as Date, timeMode))
-            .tickSize(6)
-            .tickPadding(8)
+            .tickValues(bottomTicks)
+            .tickFormat((d) => formatDateByMode(d as Date, tickMode))
+            .tickSize(0)
+            .tickPadding(6)
 
         const axisGroup = select(axisRef.current)
         axisGroup.selectAll('*').remove() // Clear existing axis
         axisGroup.call(axis as any)
 
-        // Grid lines shooting up through the layers
-        axisGroup.selectAll('.tick line').attr('y2', -totalLayersHeight)
+        // Labels only: the chart draws the grid lines through the rows.
+        axisGroup.selectAll('.tick line').remove()
 
         // Sizing only — fill and family come from .timeline-axis .tick text
         axisGroup.selectAll('.tick text')
             .style('font-size', '11px')
-    }, [transformedXScale, timeMode, totalLayersHeight, dimensions.width])
+    }, [transformedXScale, shownSpan, tickMode, maxTicks, totalLayersHeight])
 
-    // Render top axis for month/year (like JAN 2025)
+    // Render top axis: the day, month or year each stretch of the bottom
+    // axis falls in, so the two read together as a whole date. Each label
+    // starts at its period's boundary, and one at the left edge names the
+    // period the view opens in.
     useEffect(() => {
         if (!topAxisRef.current) return
 
-        const [visibleStart, visibleEnd] = transformedXScale.domain() as [Date, Date]
-        const tickValues = generateTimeTicks(visibleStart, visibleEnd, 'MONTH', Math.max(2, Math.floor(dimensions.width / 100)))
+        const { start: visibleStart, end: visibleEnd } = shownSpan
+        const msPerPx =
+            (view.end.getTime() - view.start.getTime()) /
+            Math.max(1, dimensions.width - 2 * inset)
+        const { mode, ticks } = contextTicks(
+            visibleStart,
+            visibleEnd,
+            tickMode,
+            CONTEXT_LABEL_WIDTH * msPerPx
+        )
         const topAxis = axisBottom(transformedXScale)
-            .tickValues(tickValues)
-            .tickFormat((d) => formatDateByMode(d as Date, 'MONTH'))
+            .tickValues(ticks)
+            .tickFormat((d) => (mode ? formatContext(d as Date, mode) : ''))
             .tickSize(0)
             .tickPadding(6)
 
@@ -151,9 +233,11 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
         // Sizing only — fill and family come from .timeline-top-axis .tick text
         topAxisGroup.selectAll('.tick text')
+            .attr('text-anchor', 'start')
+            .attr('x', 4)
             .style('font-size', '11px')
             .style('font-weight', '600')
-    }, [transformedXScale, dimensions.width])
+    }, [transformedXScale, shownSpan, view, tickMode, dimensions.width, inset])
 
     // The zoom behaviour is held so the push effect below can hand it a
     // transform, keeping d3's own internal state in step with the window.
@@ -193,17 +277,18 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
             // The lower bound stays 1: zooming out past the global window
             // shows empty space either side and is not useful.
             .scaleExtent([1, maxScale])
-            // The viewport is the chart's own box. Given explicitly rather
-            // than left to d3 to read off the element: the SVG is sized from
-            // these same numbers, and reading them back needs the SVG
-            // geometry API, which jsdom does not implement.
+            // The viewport is the track between the margins, which the
+            // visible window spans. Given explicitly rather than left to d3
+            // to read off the element: the SVG is sized from these same
+            // numbers, and reading them back needs the SVG geometry API,
+            // which jsdom does not implement.
             .extent([
-                [0, 0],
-                [dimensions.width, dimensions.height],
+                [inset, 0],
+                [dimensions.width - inset, dimensions.height],
             ])
             .translateExtent([
-                [0, 0],
-                [dimensions.width, dimensions.height],
+                [inset, 0],
+                [dimensions.width - inset, dimensions.height],
             ])
             // Grabbing the scrubber drags it instead of panning the view.
             .filter((event: any) => {
@@ -214,7 +299,8 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                 const next = transformToWindow(
                     event.transform,
                     bounds,
-                    dimensions.width
+                    dimensions.width,
+                    inset
                 )
                 // Pushing a transform in re-fires this handler with the window
                 // it was just given. Compared by value rather than flagged:
@@ -234,7 +320,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         // window to wherever it lands.
         svg.call(
             zoomBehavior.transform as any,
-            windowToTransform(viewRef.current, bounds, dimensions.width)
+            windowToTransform(viewRef.current, bounds, dimensions.width, inset)
         )
 
         return () => {
@@ -268,7 +354,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
             zoomBehaviorRef.current = null
         }
-    }, [bounds, dimensions, configuredGranularity])
+    }, [bounds, dimensions, inset, configuredGranularity])
 
     // Push the window into d3 so wheel and drag gestures start from where the
     // view actually is, rather than from wherever the last gesture left it.
@@ -278,9 +364,9 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
         select(svgRef.current).call(
             zoomBehavior.transform as any,
-            windowToTransform(view, bounds, dimensions.width)
+            windowToTransform(view, bounds, dimensions.width, inset)
         )
-    }, [view, bounds, dimensions])
+    }, [view, bounds, dimensions, inset])
 
     // Update scrubber position — it follows the pointer while dragging
     const scrubberTime = dragTime ?? currentTime
@@ -361,9 +447,17 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
             event.preventDefault()
             event.stopPropagation()
-            onCurrentTimeChange(clampDate(next, startTime, endTime))
+            const commit = onCurrentTimeStep ?? onCurrentTimeChange
+            commit(clampDate(next, startTime, endTime))
         },
-        [currentTime, timeMode, startTime, endTime, onCurrentTimeChange]
+        [
+            currentTime,
+            timeMode,
+            startTime,
+            endTime,
+            onCurrentTimeStep,
+            onCurrentTimeChange,
+        ]
     )
 
     // Handle click on timeline to jump to that time
@@ -391,146 +485,209 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         [isDragging, transformedXScale, startTime, endTime, onCurrentTimeChange]
     )
 
+    // The sidebar list and the chart scroll as two panes kept level with
+    // each other. Setting a pane to the offset it already has fires no scroll
+    // event, so each sync stops after one hop; the tolerance absorbs the
+    // sub-pixel rounding a fractional offset gets on assignment.
+    const syncScroll = (from: HTMLElement, to: HTMLElement | null) => {
+        if (to && Math.abs(to.scrollTop - from.scrollTop) >= 1) {
+            to.scrollTop = from.scrollTop
+        }
+    }
+    const handleSidebarScroll = (event: React.UIEvent<HTMLDivElement>) =>
+        syncScroll(event.currentTarget, containerRef.current)
+    const handleChartScroll = (event: React.UIEvent<HTMLDivElement>) =>
+        syncScroll(event.currentTarget, sidebarScrollRef.current)
+
     return (
         <>
-            <div className="timeline-view-container" style={{ overflowY: 'auto', overflowX: 'hidden' }}>
-                {/* Layers Sidebar */}
-                <div className="timeline-sidebar" style={{ flexShrink: 0 }}>
-                    <div className="timeline-sidebar-header" style={{ height: topBarHeight, flexShrink: 0, minHeight: topBarHeight }}></div>
-                    <div className="timeline-sidebar-layers">
-                        {layers.map((layer) => (
-                            <LayerSidebarItem
-                                key={layer.name}
-                                layer={layer}
-                                height={layerBarHeight}
-                                currentTime={currentTime}
-                                timeMode={timeMode}
-                                onNavigate={onLayerNavigate}
-                                onFit={onFitLayer}
-                            />
-                        ))}
-                    </div>
-                </div>
-
-                {/* Timeline SVG Area */}
-                <div ref={containerRef} className="timeline-svg-container" style={{ minWidth: 0 }}>
-                    <div className="timeline-top-bar" style={{ height: topBarHeight, flexShrink: 0, minHeight: topBarHeight }}>
-                        <svg width={dimensions.width} height={topBarHeight} style={{ display: 'block' }}>
+            <div className="timeline-view-container">
+                {/* Header row, outside the scrolling body so it stays put */}
+                <div className="timeline-view-header" style={{ height: barHeight }}>
+                    <div className="timeline-sidebar-header" style={{ height: barHeight }}></div>
+                    <div className="timeline-top-bar" style={{ height: barHeight }}>
+                        <svg width={dimensions.width} height={barHeight} style={{ display: 'block' }}>
                             <g ref={topAxisRef} transform={`translate(0, 4)`} className="timeline-top-axis" />
                         </svg>
                     </div>
-                    <svg
-                        ref={svgRef}
-                        width={dimensions.width}
-                        height={dimensions.height}
-                        onClick={handleTimelineClick}
-                        style={{ cursor: isDragging ? 'grabbing' : 'crosshair', display: 'block', flexShrink: 0, minHeight: dimensions.height }}
-                    >
-                        <defs>
-                            {/* Region widened past the default 120% so the blur
-                                isn't clipped at the marker's edges. */}
-                            <filter
-                                id="timeline-scrubber-shadow"
-                                x="-100%"
-                                y="-100%"
-                                width="300%"
-                                height="300%"
-                            >
-                                <feDropShadow
-                                    dx="0"
-                                    dy="0"
-                                    stdDeviation="5"
-                                    floodOpacity="0.2"
-                                />
-                            </filter>
-                        </defs>
+                </div>
 
-                        {/* Layer timelines (rendered first so grid/scrubber goes on top) */}
-                        <g className="layer-timelines">
-                            {layers.map((layer, index) => (
-                                <g key={layer.name}>
-                                    <rect 
-                                        x={0} 
-                                        y={index * layerBarHeight} 
-                                        width={dimensions.width} 
-                                        height={layerBarHeight} 
-                                        fill="transparent"
-                                        className="layer-row-bg"
-                                    />
-                                    <LayerTimeline
-                                        layer={layer}
-                                        xScale={transformedXScale}
-                                        y={index * layerBarHeight}
-                                        height={layerBarHeight}
-                                    />
-                                </g>
-                            ))}
-                        </g>
-
-                        {/* Bottom Time axis */}
-                        <g
-                            ref={axisRef}
-                            transform={`translate(0, ${totalLayersHeight})`}
-                            className="timeline-axis"
-                        />
-
-                        {/* Current time scrubber */}
-                        <g className="timeline-scrubber">
-                            {/* Scrubber line through all layers */}
-                            <line
-                                x1={scrubberX}
-                                y1={0}
-                                x2={scrubberX}
-                                y2={totalLayersHeight}
-                                strokeWidth="2"
-                                className="timeline-scrubber-line"
-                                style={{ pointerEvents: 'none' }}
+                <div className="timeline-view-body">
+                    {/* Layers Sidebar. Its list carries the visible scrollbar,
+                        beside the names; the chart scrolls with it, bar hidden. */}
+                    <div className="timeline-sidebar">
+                        <div
+                            ref={sidebarScrollRef}
+                            className="timeline-sidebar-layers"
+                            onScroll={handleSidebarScroll}
+                        >
+                            <div
+                                className="timeline-sidebar-gutter"
+                                style={{ height: headGutter, flexShrink: 0 }}
+                                aria-hidden="true"
                             />
+                            {layers.map((layer) => (
+                                <LayerSidebarItem
+                                    key={layer.name}
+                                    layer={layer}
+                                    height={layerBarHeight}
+                                    currentTime={currentTime}
+                                    timeMode={timeMode}
+                                    onNavigate={onLayerNavigate}
+                                    onFit={onFitLayer}
+                                />
+                            ))}
+                        </div>
+                    </div>
 
-                            {/* Scrubber diamond head at the top of the layers.
-                                Drawn in the marker artwork's own 43x42 space, then
-                                scaled to markerSize and centred on the scrubber. */}
-                            <g
-                                transform={`translate(${scrubberX}, ${markerSize / 2}) scale(${markerSize / 22}) translate(-21.3609, -21)`}
-                                filter="url(#timeline-scrubber-shadow)"
-                                className="timeline-scrubber-handle"
-                                style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
-                                tabIndex={0}
-                                role="slider"
-                                aria-label="Current time"
-                                aria-valuemin={startTime.getTime()}
-                                aria-valuemax={endTime.getTime()}
-                                aria-valuenow={scrubberTime.getTime()}
-                                aria-valuetext={moment.utc(scrubberTime).format('MMM D, YYYY HH:mm [UTC]')}
-                                onKeyDown={handleScrubberKeyDown}
-                                {...scrubberPointerHandlers}
-                            >
-                                <path
-                                    d="M21.3609 10L32.7219 21L21.3609 32L10 21L21.3609 10Z"
-                                    className="timeline-scrubber-marker"
-                                />
-                                <path
-                                    d="M31.2832 21L21.3604 30.6074L11.4375 21L21.3604 11.3916L31.2832 21Z"
-                                    strokeWidth="2"
-                                    fill="none"
-                                    className="timeline-scrubber-marker-inline"
-                                />
+                    {/* Timeline SVG Area */}
+                    <div
+                        ref={containerRef}
+                        className="timeline-svg-container"
+                        onScroll={handleChartScroll}
+                    >
+                        <svg
+                            ref={svgRef}
+                            width={dimensions.width}
+                            height={dimensions.height}
+                            onClick={handleTimelineClick}
+                            style={{ cursor: isDragging ? 'grabbing' : 'crosshair', display: 'block', flexShrink: 0, minHeight: dimensions.height }}
+                        >
+                            <defs>
+                                {/* Region widened past the default 120% so the blur
+                                    isn't clipped at the marker's edges. */}
+                                <filter
+                                    id="timeline-scrubber-shadow"
+                                    x="-100%"
+                                    y="-100%"
+                                    width="300%"
+                                    height="300%"
+                                >
+                                    <feDropShadow
+                                        dx="0"
+                                        dy="0"
+                                        stdDeviation="5"
+                                        floodOpacity="0.2"
+                                    />
+                                </filter>
+                            </defs>
+
+                            {/* Layer timelines (rendered first so grid/scrubber goes on top) */}
+                            <g className="layer-timelines">
+                                {layers.map((layer, index) => (
+                                    <g key={layer.name}>
+                                        <rect 
+                                            x={0} 
+                                            y={headGutter + index * layerBarHeight} 
+                                            width={dimensions.width} 
+                                            height={layerBarHeight} 
+                                            fill="transparent"
+                                            className="layer-row-bg"
+                                        />
+                                        <LayerTimeline
+                                            layer={layer}
+                                            xScale={transformedXScale}
+                                            bounds={bounds}
+                                            y={headGutter + index * layerBarHeight}
+                                            height={layerBarHeight}
+                                        />
+                                    </g>
+                                ))}
                             </g>
 
-                            {/* Invisible band widening the grab area along the line */}
-                            <rect
-                                x={scrubberX - 5}
-                                y={0}
-                                width={10}
-                                height={Math.max(totalLayersHeight, 16)}
-                                fill="transparent"
-                                className="timeline-scrubber-handle"
-                                style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
-                                aria-hidden="true"
-                                {...scrubberPointerHandlers}
-                            />
-                        </g>
-                    </svg>
+                            {/* Grid lines at the bottom axis's ticks, through
+                                the rows and stopping at the gutter */}
+                            <g className="timeline-grid" aria-hidden="true">
+                                {bottomTicks.map((tick) => {
+                                    const x = transformedXScale(tick)
+                                    return (
+                                        <line
+                                            key={tick.getTime()}
+                                            x1={x}
+                                            y1={headGutter}
+                                            x2={x}
+                                            y2={layersBottom}
+                                        />
+                                    )
+                                })}
+                            </g>
+
+                            {/* Current time scrubber */}
+                            <g className="timeline-scrubber">
+                                {/* Scrubber line from the head down through all layers */}
+                                <line
+                                    x1={scrubberX}
+                                    y1={headGutter / 2}
+                                    x2={scrubberX}
+                                    y2={layersBottom}
+                                    strokeWidth="2"
+                                    className="timeline-scrubber-line"
+                                    style={{ pointerEvents: 'none' }}
+                                />
+
+                                {/* Scrubber diamond head, centred in the gutter above
+                                    the layers. Drawn in the marker artwork's own 43x42
+                                    space, then scaled to markerSize and centred on the
+                                    scrubber. */}
+                                <g
+                                    transform={`translate(${scrubberX}, ${headGutter / 2}) scale(${markerSize / 22}) translate(-21.3609, -21)`}
+                                    filter="url(#timeline-scrubber-shadow)"
+                                    className="timeline-scrubber-handle"
+                                    style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+                                    tabIndex={0}
+                                    role="slider"
+                                    aria-label="Current time"
+                                    aria-valuemin={startTime.getTime()}
+                                    aria-valuemax={endTime.getTime()}
+                                    aria-valuenow={scrubberTime.getTime()}
+                                    aria-valuetext={moment.utc(scrubberTime).format('MMM D, YYYY HH:mm [UTC]')}
+                                    onKeyDown={handleScrubberKeyDown}
+                                    {...scrubberPointerHandlers}
+                                >
+                                    <path
+                                        d="M21.3609 10L32.7219 21L21.3609 32L10 21L21.3609 10Z"
+                                        className="timeline-scrubber-marker"
+                                    />
+                                    <path
+                                        d="M31.2832 21L21.3604 30.6074L11.4375 21L21.3604 11.3916L31.2832 21Z"
+                                        strokeWidth="2"
+                                        fill="none"
+                                        className="timeline-scrubber-marker-inline"
+                                    />
+                                </g>
+
+                                {/* Invisible band widening the grab area along the
+                                    line, from the head's centre down, so the stretch
+                                    of line in the gutter below the head grabs too */}
+                                <rect
+                                    x={scrubberX - 5}
+                                    y={headGutter / 2}
+                                    width={10}
+                                    height={Math.max(totalLayersHeight, 16) + headGutter / 2}
+                                    fill="transparent"
+                                    className="timeline-scrubber-handle"
+                                    style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+                                    aria-hidden="true"
+                                    {...scrubberPointerHandlers}
+                                />
+                            </g>
+                        </svg>
+                    </div>
+                </div>
+
+                {/* Bottom date bar, outside the scrolling body like the header */}
+                <div
+                    className="timeline-view-footer"
+                    style={{ height: barHeight + footerPad, paddingBottom: footerPad }}
+                >
+                    <div className="timeline-sidebar-footer" />
+                    <div className="timeline-bottom-bar">
+                        <svg width={dimensions.width} height={barHeight} style={{ display: 'block' }}>
+                            {/* Offset and padding match the top axis, so both
+                                bars set their labels at the same height */}
+                            <g ref={axisRef} transform={`translate(0, 4)`} className="timeline-axis" />
+                        </svg>
+                    </div>
                 </div>
             </div>
         </>

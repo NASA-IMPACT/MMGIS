@@ -28,6 +28,7 @@ import {
 } from '../Layers_/tileLayerSource'
 import { makeDeckCOGRefresher } from '../Layers_/deckCOGRefresher'
 import { handOffLayerToEngine } from '../Layers_/engineLayerHandoff'
+import { vectorTileHighlightOptions } from '../Layers_/deckVectorTileHighlight'
 import { Kinds } from '../../../pre/tools'
 import DataShaders from '../../Ancillary/DataShaders'
 import calls from '../../../pre/calls'
@@ -1878,7 +1879,9 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
             ),
             interactive: true,
             nativeOptions: {
-                autoHighlight: layerObj.style?.hoverHighlight === true,
+                // Both props together: deck's MVTLayer highlights through the
+                // id key, so the flag alone highlights nothing.
+                ...vectorTileHighlightOptions(layerObj.style),
                 onHover: (info) => {
                     const properties = info?.object?.properties
                     const vtKey = layerObj.style?.vtKey

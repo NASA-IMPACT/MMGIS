@@ -15,7 +15,7 @@ vi.hoisted(() => {
     process.env.TZ = 'America/New_York'
 })
 
-import { TimelineView } from '../lib/geo/TimelineView/TimelineView'
+import { EDGE_MARGIN, TimelineView } from '../lib/geo/TimelineView/TimelineView'
 import type { LayerNavigation } from '../lib/utils/layerNavigation'
 import { transformToWindow, type ViewWindow } from '../lib/utils/zoomWindow'
 import type { LayerTimeData, TimeMode } from '../lib/types'
@@ -212,6 +212,90 @@ describe('TimelineView layer navigation', () => {
     })
 })
 
+/**
+ * The scrubber's head sits in a strip of its own above the first layer row,
+ * so it never covers a row's bars at the current time. The sidebar opens
+ * with a spacer of the same height, so each name stays level with its row.
+ */
+describe('TimelineView head room', () => {
+    let container: HTMLElement
+    let root: Root
+    let originalResizeObserver: unknown
+
+    beforeEach(() => {
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+        act(() => {
+            root.render(
+                <TimelineView
+                    startTime={START}
+                    endTime={END}
+                    currentTime={CURRENT}
+                    timeMode="DAY"
+                    configuredGranularity="DAY"
+                    layers={[
+                        layer('MODIS Daily', sparseNav('2020-05-01')),
+                        layer('Basemap'),
+                        layer('Hillshade'),
+                    ]}
+                    view={{ start: START, end: END }}
+                    onViewChange={() => {}}
+                    onCurrentTimeChange={() => {}}
+                    onLayerNavigate={() => {}}
+                    onFitLayer={() => {}}
+                />,
+            )
+        })
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver as typeof ResizeObserver
+    })
+
+    const chartRows = () =>
+        Array.from(container.querySelectorAll<SVGRectElement>('.layer-row-bg'))
+
+    const num = (el: Element, name: string) => Number(el.getAttribute(name))
+
+    /** The head's vertical centre and scale, read off its transform. */
+    const headPlacement = () => {
+        const transform = container
+            .querySelector('g.timeline-scrubber-handle')!
+            .getAttribute('transform')!
+        const [, y] = /translate\([^,]+,\s*([^)]+)\)/.exec(transform)!
+        const [, scale] = /scale\(([^)]+)\)/.exec(transform)!
+        return { centre: Number(y), scale: Number(scale) }
+    }
+
+    test('draws the head wholly above the first layer row, and opens the sidebar with a spacer of the same height', () => {
+        const top = num(chartRows()[0], 'y')
+
+        // The artwork's diamond is 22 units tall in its own space.
+        const { centre, scale } = headPlacement()
+        const halfHeight = (22 * scale) / 2
+        expect(centre - halfHeight).toBeGreaterThanOrEqual(0)
+        expect(centre + halfHeight).toBeLessThanOrEqual(top)
+
+        const spacer = container.querySelector<HTMLElement>(
+            '.timeline-sidebar-layers > .timeline-sidebar-gutter',
+        )!
+        expect(spacer).not.toBeNull()
+        expect(spacer.style.height).toBe(`${top}px`)
+        // Before every row, so the pitch below it is unchanged.
+        expect(spacer.nextElementSibling).toBe(
+            container.querySelector('.timeline-sidebar-layers > .layer-item'),
+        )
+    })
+})
+
 describe('TimelineView visible window', () => {
     let container: HTMLElement
     let root: Root
@@ -244,14 +328,18 @@ describe('TimelineView visible window', () => {
         end: new Date('2020-03-08T00:00:00Z'),
     }
 
-    const render = (view: ViewWindow, bounds: ViewWindow = FULL) => {
+    const render = (
+        view: ViewWindow,
+        bounds: ViewWindow = FULL,
+        timeMode: TimeMode = 'DAY'
+    ) => {
         act(() => {
             root.render(
                 <TimelineView
                     startTime={bounds.start}
                     endTime={bounds.end}
                     currentTime={CURRENT}
-                    timeMode="DAY"
+                    timeMode={timeMode}
                     configuredGranularity="DAY"
                     layers={[layer('MODIS Daily', sparseNav('2020-01-02'))]}
                     view={view}
@@ -291,6 +379,39 @@ describe('TimelineView visible window', () => {
         expect(axisLabels().length).toBeGreaterThan(0)
         // A week-wide window is labelled in days within March.
         expect(axisLabels().every((label) => label?.startsWith('Mar'))).toBe(true)
+    })
+
+    /** The label text of every period named on the top axis. */
+    const topLabels = () =>
+        Array.from(
+            container.querySelectorAll<SVGTextElement>(
+                '.timeline-top-axis .tick text',
+            ),
+        ).map((text) => text.textContent)
+
+    test('zoomed to hours, the top axis names the days they fall in', () => {
+        render({
+            start: new Date('2020-03-02T18:00:00Z'),
+            end: new Date('2020-03-03T12:00:00Z'),
+        })
+
+        expect(axisLabels().some((label) => /^\d\d:\d\d$/.test(label ?? ''))).toBe(true)
+        expect(topLabels()).toEqual(['Mar 2, 2020', 'Mar 3, 2020'])
+    })
+
+    test('across days, the top axis names their months', () => {
+        render(WEEK)
+
+        expect(topLabels()).toEqual(['Mar 2020'])
+    })
+
+    test('labels the axis by the span on screen, not the step mode', () => {
+        render(WEEK, FULL, 'DAY')
+        const labels = axisLabels()
+
+        render(WEEK, FULL, 'YEAR')
+
+        expect(axisLabels()).toEqual(labels)
     })
 
     test('pushes the window into d3 without echoing it back', () => {
@@ -362,14 +483,15 @@ describe('TimelineView visible window', () => {
     test('reports the window a wheel gesture arrives at, anchored under the pointer', () => {
         // The one positive path from a gesture to the parent: d3's own event
         // pipeline, through the filter and the handler, to onViewChange. The
-        // pointer sits a quarter of the way across the chart, so the instant
-        // there is what the zoom has to hold still.
+        // pointer sits a quarter of the way along the track between the
+        // chart's margins, so the instant there is what the zoom has to hold
+        // still.
         render(FULL)
         act(() => {
             chart().dispatchEvent(
                 new WheelEvent('wheel', {
                     deltaY: -100,
-                    clientX: 200,
+                    clientX: EDGE_MARGIN + (800 - 2 * EDGE_MARGIN) / 4,
                     clientY: 10,
                     bubbles: true,
                     cancelable: true,
@@ -446,7 +568,12 @@ describe('TimelineView visible window', () => {
         })
 
         // 800 is the width the view starts at, which the stub leaves alone.
-        const held = transformToWindow(zoomTransform(chart()), wider, 800)
+        const held = transformToWindow(
+            zoomTransform(chart()),
+            wider,
+            800,
+            EDGE_MARGIN
+        )
         expect(held.start.toISOString()).toBe(WEEK.start.toISOString())
         expect(held.end.toISOString()).toBe(WEEK.end.toISOString())
     })
@@ -478,5 +605,165 @@ describe('TimelineView visible window', () => {
         })
 
         expect(reported.length).toBeGreaterThan(0)
+    })
+})
+
+describe('TimelineView margin past the global window', () => {
+    let container: HTMLElement
+    let root: Root
+    let committed: Date[]
+    let stepped: Date[]
+    let originalResizeObserver: unknown
+
+    const WIDTH = 800
+    const FULL: ViewWindow = { start: START, end: END }
+    // The last week of the global window, so the right margin shows time
+    // past its end.
+    const LAST_WEEK: ViewWindow = {
+        start: new Date(END.getTime() - 7 * 24 * 3600 * 1000),
+        end: END,
+    }
+    const FIRST_WEEK: ViewWindow = {
+        start: START,
+        end: new Date(START.getTime() + 7 * 24 * 3600 * 1000),
+    }
+
+    beforeEach(() => {
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+        committed = []
+        stepped = []
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver as typeof ResizeObserver
+    })
+
+    const render = (view: ViewWindow, currentTime: Date) => {
+        act(() => {
+            root.render(
+                <TimelineView
+                    startTime={START}
+                    endTime={END}
+                    currentTime={currentTime}
+                    timeMode="DAY"
+                    configuredGranularity="DAY"
+                    layers={[layer('Runs on past the window')]}
+                    view={view}
+                    onViewChange={() => {}}
+                    onCurrentTimeChange={(time) => committed.push(time)}
+                    onCurrentTimeStep={(time) => stepped.push(time)}
+                    onLayerNavigate={() => {}}
+                    onFitLayer={() => {}}
+                />,
+            )
+        })
+    }
+
+    const chart = () =>
+        container.querySelector<SVGSVGElement>('.timeline-svg-container > svg')!
+    const head = () =>
+        container.querySelector<SVGGElement>('g.timeline-scrubber-handle')!
+
+    /** The head's horizontal extent on the chart, from its artwork's diamond. */
+    const headExtent = () => {
+        const transform = head().getAttribute('transform')!
+        const [, x] = /translate\(([^,]+),/.exec(transform)!
+        const [, scale] = /scale\(([^)]+)\)/.exec(transform)!
+        // The diamond spans 10 to 32.72 across the artwork's 43 units, about
+        // its centre at 21.36.
+        const half = 11.36 * Number(scale)
+        return { left: Number(x) - half, right: Number(x) + half }
+    }
+
+    test('draws the head in full with the current time at either end, at any zoom', () => {
+        for (const view of [FULL, LAST_WEEK]) {
+            render(view, END)
+            expect(headExtent().right).toBeLessThanOrEqual(WIDTH)
+        }
+        for (const view of [FULL, FIRST_WEEK]) {
+            render(view, START)
+            expect(headExtent().left).toBeGreaterThanOrEqual(0)
+        }
+    })
+
+    test('a click in the margin sets no time past the ends', () => {
+        render(LAST_WEEK, END)
+        act(() => {
+            chart().dispatchEvent(
+                new MouseEvent('click', { bubbles: true, clientX: WIDTH - 2 }),
+            )
+        })
+        render(FIRST_WEEK, START)
+        act(() => {
+            chart().dispatchEvent(
+                new MouseEvent('click', { bubbles: true, clientX: 2 }),
+            )
+        })
+
+        expect(committed.map((time) => time.toISOString())).toEqual([
+            END.toISOString(),
+            START.toISOString(),
+        ])
+    })
+
+    test('a drag into the margin holds the scrubber at the end', () => {
+        render(LAST_WEEK, new Date(END.getTime() - 24 * 3600 * 1000))
+        const pointer = (type: string, clientX: number) =>
+            new PointerEvent(type, { bubbles: true, clientX, pointerId: 1 })
+        act(() => {
+            head().dispatchEvent(pointer('pointerdown', WIDTH - 60))
+        })
+        act(() => {
+            head().dispatchEvent(pointer('pointermove', WIDTH - 1))
+        })
+        act(() => {
+            head().dispatchEvent(pointer('pointerup', WIDTH - 1))
+        })
+
+        expect(committed.map((time) => time.toISOString())).toEqual([
+            END.toISOString(),
+        ])
+    })
+
+    test('the keyboard holds the scrubber at the ends', () => {
+        render(LAST_WEEK, END)
+        act(() => {
+            head().dispatchEvent(
+                new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
+            )
+        })
+        render(FIRST_WEEK, START)
+        act(() => {
+            head().dispatchEvent(
+                new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }),
+            )
+        })
+
+        expect(stepped.map((time) => time.toISOString())).toEqual([
+            END.toISOString(),
+            START.toISOString(),
+        ])
+    })
+
+    test('marks no axis tick past the ends', () => {
+        render(LAST_WEEK, END)
+        const ticks = Array.from(
+            container.querySelectorAll<SVGGElement>('.timeline-axis .tick'),
+        )
+        expect(ticks.length).toBeGreaterThan(0)
+        for (const tick of ticks) {
+            const [, x] = /translate\(([^,]+),/.exec(tick.getAttribute('transform')!)!
+            expect(Number(x)).toBeLessThanOrEqual(WIDTH - EDGE_MARGIN)
+        }
     })
 })

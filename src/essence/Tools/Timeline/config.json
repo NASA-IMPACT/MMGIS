@@ -26,20 +26,13 @@
                         "defaultChecked": true
                     },
                     {
-                        "field": "variables.shownTimeModes",
-                        "name": "Shown Time Modes",
-                        "description": "Which time-granularity buttons appear on the timeline: YEAR, MONTH, DAY, HOUR. Leave empty to show all of them.",
-                        "type": "multiselect",
-                        "width": 6,
-                        "options": ["YEAR", "MONTH", "DAY", "HOUR"]
-                    },
-                    {
-                        "field": "variables.defaultTimeMode",
-                        "name": "Default Time Mode",
-                        "description": "The time granularity the timeline uses when it first loads. Must be one of the shown time modes; users can still switch between them at runtime.",
+                        "field": "variables.timeMode",
+                        "name": "Time Mode",
+                        "description": "The finest time step the timeline offers: YEAR, MONTH, DAY or HOUR. The timeline's step dropdown lists every mode from YEAR down to this one and starts on it; the selected step sets how far the step buttons, playback and arrow keys move the time. Defaults to DAY.",
                         "type": "dropdown",
                         "width": 6,
-                        "options": ["YEAR", "MONTH", "DAY", "HOUR"]
+                        "options": ["YEAR", "MONTH", "DAY", "HOUR"],
+                        "default": "DAY"
                     }
                 ]
             }

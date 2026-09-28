@@ -1109,7 +1109,7 @@ const getComponent = (
           <InputLabel>{com.name}</InputLabel>
           <Select
             disabled={disabled || isDisabled}
-            value={value || getIn(directConf, com.field, com.options?.[0])}
+            value={value || getIn(directConf, com.field, com.default ?? com.options?.[0])}
             onChange={(e) => {
               if (!isDisabled) {
                 updateConfiguration(
