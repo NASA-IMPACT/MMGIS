@@ -37,7 +37,7 @@ export interface ChartSeriesPayload {
      *  chart; distinct chartIds render as separate cards. */
     chartId: string
     title: string
-    /** Reserved: accepted but not yet rendered. */
+    /** Rendered under the title as the section heading. */
     subtitle?: string
     series: ChartSeries[]
     meta?: ChartSeriesMeta

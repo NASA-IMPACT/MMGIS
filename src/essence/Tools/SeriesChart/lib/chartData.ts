@@ -84,8 +84,17 @@ function axisLabel(theme: ChartTheme) {
     return { color: theme.textColor, fontSize: 10 }
 }
 
+/** A series' own color wins; otherwise its variable index walks the palette. */
+export function seriesColor(
+    s: ChartSeries,
+    index: number,
+    palette: readonly string[],
+): string {
+    return s.color || palette[index % palette.length]
+}
+
 function seriesBase(s: ChartSeries, i: number, theme: ChartTheme) {
-    const color = s.color || theme.palette[i % theme.palette.length]
+    const color = seriesColor(s, i, theme.palette)
     return {
         name: s.label,
         type: s.style === 'bar' ? ('bar' as const) : ('line' as const),
@@ -168,7 +177,7 @@ export function buildChartOption(
     theme: ChartTheme,
     index: number,
 ): Record<string, any> {
-    const color = s.color || theme.palette[index % theme.palette.length]
+    const color = seriesColor(s, index, theme.palette)
 
     const data = toTimePoints(s.points).map(
         (p) => [p.x, p.y] as [number, number | null],
