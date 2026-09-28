@@ -719,6 +719,43 @@ test.describe('DeckGLHelpers', () => {
         })
     })
 
+    test.describe('depth against a terrain basemap', () => {
+        // A basemap with 3D terrain writes the terrain into the depth buffer
+        // deck.gl shares; a flat layer that depth-tests against it loses every
+        // pixel the terrain stands in front of.
+        const flat = { depthCompare: 'always', depthWriteEnabled: false }
+        const url = 'https://example.com/{z}/{x}/{y}'
+
+        test.each([
+            ['raster tiles', { type: 'tile', url }],
+            ['WMS', { type: 'tile', tileformat: 'wms', url: 'https://example.com/wms?LAYERS=a' }],
+            ['GeoJSON', { type: 'vector', geojson: { type: 'FeatureCollection', features: [] } }],
+            ['vector tiles', { type: 'vectortile', url }],
+            ['point markers', { type: 'scatterplot', data: [] }],
+        ])('%s ignore depth', (_, options) => {
+            expect(buildDeckLayer('flat', options).props.parameters).toEqual(flat)
+        })
+
+        test.each([
+            ['raised raster tiles', { type: 'tile', url, tileElevation: 1000 }],
+            ['extruded GeoJSON', { type: 'vector', extruded: true, geojson: { type: 'FeatureCollection', features: [] } }],
+            ['3D tiles', { type: 'tile3d', url: 'https://example.com/tileset.json' }],
+            ['point clouds', { type: 'pointcloud', data: [] }],
+        ])('%s keep the depth test', (_, options) => {
+            expect(buildDeckLayer('solid', options).props.parameters).not.toEqual(flat)
+        })
+
+        test("a mission's native options still win", () => {
+            const parameters = { depthCompare: 'less-equal' }
+            const layer = buildDeckLayer('native', {
+                type: 'vectortile',
+                url,
+                nativeOptions: { parameters },
+            })
+            expect(layer.props.parameters).toEqual(parameters)
+        })
+    })
+
     test.describe('hexToRgba', () => {
         test('parses #RRGGBB hex string', () => {
             expect(hexToRgba('#ff0000')).toEqual([255, 0, 0, 255])

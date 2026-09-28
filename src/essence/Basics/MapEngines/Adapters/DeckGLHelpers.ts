@@ -23,6 +23,7 @@ import { WMSImageSource } from '@loaders.gl/wms'
 import { color as parseColor } from 'd3'
 
 import { compileLegendStyle, resolveLegendStyle } from '../../Layers_/LegendStyle'
+import { FLAT_LAYER_PARAMETERS } from './flatLayerParameters'
 
 import type { LatLng, LatLngLike, BoundsLike, PointLike, PaddingLike } from '../types/geometry'
 import type { LayerOptions, TileLayerOptions, GeoJSONLayerOptions, VectorTileLayerOptions, PointCloudLayerOptions } from '../types/layers'
@@ -474,6 +475,7 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                     layers,
                     srs: 'EPSG:3857',
                     opacity: o.opacity ?? 1,
+                    parameters: FLAT_LAYER_PARAMETERS,
                     ...(o.nativeOptions ?? {}),
                 }) as unknown as Layer
             }
@@ -485,6 +487,8 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 minZoom: o.minZoom,
                 maxZoom: o.maxNativeZoom ?? o.maxZoom,
                 opacity: o.opacity ?? 1,
+                // A tile raised to an elevation has height of its own.
+                ...(Number.isFinite(tileElevation) ? {} : { parameters: FLAT_LAYER_PARAMETERS }),
                 getTileData: (tile: { url?: string | null; signal?: AbortSignal }) =>
                     fetchImageTile(tile.url, tile.signal),
                 onTileError: (error: Error) => {
@@ -541,6 +545,7 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 filled: o.filled ?? true,
                 stroked: o.stroked ?? true,
                 extruded: o.extruded ?? false,
+                ...(o.extruded ? {} : { parameters: FLAT_LAYER_PARAMETERS }),
                 getFillColor,
                 getLineColor,
                 getLineWidth,
@@ -591,6 +596,7 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 maxZoom: o.maxNativeZoom ?? o.maxZoom,
                 opacity: o.opacity ?? 1,
                 pickable: o.interactive ?? true,
+                parameters: FLAT_LAYER_PARAMETERS,
                 // deck.gl decodes vector tiles into a binary form by default,
                 // which hoists every numeric property into one tile-wide typed
                 // array covering every feature in the tile. A feature that
@@ -700,6 +706,7 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 getLineWidth: style.weight !== undefined ? Number(style.weight) : 1,
                 radiusUnits: 'pixels',
                 lineWidthUnits: 'pixels',
+                parameters: FLAT_LAYER_PARAMETERS,
                 ...(o.nativeOptions ?? {}),
             } as ConstructorParameters<typeof ScatterplotLayer>[0]) as unknown as Layer
         }
