@@ -9,7 +9,6 @@ import CursorInfo from '../../Ancillary/CursorInfo'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
-import { resolveTemporalExtent } from '../TimeControl_/layerTimePolicy'
 import {
     fetchLayerRunSource,
     applyRunSelection,
