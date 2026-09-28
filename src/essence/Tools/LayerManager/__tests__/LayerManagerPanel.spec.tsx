@@ -359,6 +359,42 @@ describe('LayerManagerPanel forecast runs', () => {
         await unmount()
     })
 
+    const pickThenSettle = async (container: HTMLElement) => {
+        const el = select(container)!
+        el.value = '2026-09-21T12:00:00'
+        await act(async () => {
+            el.dispatchEvent(new Event('change', { bubbles: true }))
+        })
+        // The callback's promise settles on the microtask queue.
+        await act(async () => {
+            await Promise.resolve()
+            await Promise.resolve()
+        })
+        return el
+    }
+
+    test('a refused pick puts the dropdown back on the pinned run', async () => {
+        const onRunChange = vi.fn(async () => false)
+        const { container, unmount } = await mount(
+            <LayerManagerPanel layers={[forecastLayer()]} onRunChange={onRunChange} />,
+        )
+        const el = await pickThenSettle(container)
+        expect(el.value).toBe('2026-09-21T06:00:00')
+        await unmount()
+    })
+
+    test('a pick whose callback throws goes back too', async () => {
+        const onRunChange = vi.fn(async () => {
+            throw new Error('bus down')
+        })
+        const { container, unmount } = await mount(
+            <LayerManagerPanel layers={[forecastLayer()]} onRunChange={onRunChange} />,
+        )
+        const el = await pickThenSettle(container)
+        expect(el.value).toBe('2026-09-21T06:00:00')
+        await unmount()
+    })
+
     test('shows the lead core reports, in step units, and nothing before core knows it', async () => {
         const known = await mount(<LayerManagerPanel layers={[forecastLayer({ lead: 18 })]} />)
         expect(known.container.querySelector('.blocks-layer-legend__run-lead')!.textContent).toBe('+18 h')

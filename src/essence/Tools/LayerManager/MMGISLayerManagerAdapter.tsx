@@ -139,9 +139,23 @@ export function MMGISLayerManagerAdapter() {
         }
     }, [toolVars.showOnlyVisible, readRuns])
 
-    const onRunChange = useCallback((layerId: string, run: string) => {
-        report('selectRun', selectRun(layerId, run))
-    }, [])
+    // A refusal resolves false and core announces nothing; a throw can land
+    // after core has already pinned. Either way the rows re-read core's
+    // truth, and the legend hears false so its dropdown snaps back.
+    const onRunChange = useCallback(
+        async (layerId: string, run: string): Promise<boolean> => {
+            let pinned = false
+            try {
+                pinned = await selectRun(layerId, run)
+                if (!pinned) console.warn(`LayerManager: core refused run ${run} for ${layerId}`)
+            } catch (err) {
+                console.error('LayerManager: selectRun failed', err)
+            }
+            if (!pinned) void refresh()
+            return pinned
+        },
+        [refresh],
+    )
 
     // The lead readout follows the scrubber. Core answers the lead for the
     // current time, so a time change re-reads the runs and patches the rows

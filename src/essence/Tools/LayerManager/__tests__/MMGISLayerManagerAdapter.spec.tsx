@@ -24,6 +24,7 @@ let listeners: Map<string, Set<(payload?: unknown) => void>>
 let gate: Promise<void> | null
 let mounted: Mounted | null
 let sparseTitle: string
+let setRunAnswer: unknown
 
 beforeEach(() => {
     outOfRange = {}
@@ -36,6 +37,7 @@ beforeEach(() => {
     visible = { [SPARSE]: true, [CONTINUOUS]: true }
     runsAnswer = {}
     runRequests = []
+    setRunAnswer = true
     configReads = 0
     listeners = new Map()
     gate = null
@@ -53,7 +55,10 @@ beforeEach(() => {
         'layers:updateConfig': () => true,
         'layers:refresh': () => true,
         'layers:getRuns': () => runsAnswer,
-        'layers:setRun': () => true,
+        'layers:setRun': () => {
+            if (setRunAnswer instanceof Error) throw setRunAnswer
+            return setRunAnswer
+        },
         // Read after coverage, so a held gate stands for a refresh that has
         // already read coverage but not yet landed.
         'layers:getVisible': async () => {
@@ -219,6 +224,42 @@ describe('MMGISLayerManagerAdapter model runs', () => {
         })
         expect(runRequests).toEqual([{ layerUUID: FORECAST, run: OLDER }])
         expect(configWrites).toEqual([])
+    })
+
+    test('a refused pick is warned about and the dropdown returns to the pinned run', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        setRunAnswer = false
+        await mountAdapter()
+        const select = runSelect()!
+        select.value = OLDER
+        await act(async () => {
+            select.dispatchEvent(new Event('change', { bubbles: true }))
+        })
+        await settle()
+        expect(runRequests).toEqual([{ layerUUID: FORECAST, run: OLDER }])
+        expect(runSelect()!.value).toBe(NEWEST)
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('refused run'))
+        expect(configWrites).toEqual([])
+        warn.mockRestore()
+    })
+
+    test('a pick core fails after pinning resyncs the rows to what core holds', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+        setRunAnswer = new Error('engine refresh rejected')
+        await mountAdapter()
+        const select = runSelect()!
+        // Core pinned the run and moved the lead before it threw, and
+        // announced nothing; only a re-read can bring the rows along.
+        runsAnswer[FORECAST] = { ...runsAnswer[FORECAST], selected: OLDER, lead: 30 }
+        select.value = OLDER
+        await act(async () => {
+            select.dispatchEvent(new Event('change', { bubbles: true }))
+        })
+        await settle()
+        expect(error).toHaveBeenCalledWith('LayerManager: selectRun failed', expect.any(Error))
+        expect(runSelect()!.value).toBe(OLDER)
+        expect(leadReadout()!.textContent).toBe('+30 h')
+        error.mockRestore()
     })
 
     test('follows a run change core announces', async () => {

@@ -52,7 +52,7 @@ export type LayerLegendProps = {
     /** Wires the grip button to a sortable list; no handle without it. */
     dragHandle?: DragHandleProps
     /** The user picked a model run for a forecast layer. */
-    onRunChange?: (layerId: string, run: string) => void
+    onRunChange?: (layerId: string, run: string) => void | Promise<boolean>
 }
 
 export type DragHandleProps = {
@@ -94,8 +94,8 @@ export function LayerLegend({
         forecast,
     } = layer
 
-    // Follows the pinned run from the host; a pick shows at once and the
-    // host's next refresh confirms it.
+    // Follows the pinned run from the host; a pick shows at once, and snaps
+    // back when the host reports that core refused it.
     const pinnedRun = forecast?.selectedRun ?? forecast?.runs[0]?.datetime ?? ''
     const [selectedRun, setSelectedRun] = useState(pinnedRun)
     useEffect(() => setSelectedRun(pinnedRun), [pinnedRun])
@@ -428,8 +428,14 @@ export function LayerLegend({
                             className="blocks-layer-legend__run-select"
                             value={selectedRun}
                             onChange={(e) => {
-                                setSelectedRun(e.target.value)
-                                onRunChange?.(id, e.target.value)
+                                const picked = e.target.value
+                                setSelectedRun(picked)
+                                Promise.resolve(onRunChange?.(id, picked)).then(
+                                    (pinned) => {
+                                        if (pinned === false) setSelectedRun(pinnedRun)
+                                    },
+                                    () => setSelectedRun(pinnedRun),
+                                )
                             }}
                         >
                             {forecast.runs.map((run, index) => (
