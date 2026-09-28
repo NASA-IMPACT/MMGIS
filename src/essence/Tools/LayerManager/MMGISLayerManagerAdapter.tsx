@@ -86,16 +86,22 @@ export function MMGISLayerManagerAdapter() {
     const inFlight = useRef(new Set<Map<string, boolean>>())
 
     // Core answers the lead for the clock as it stands when asked, so an
-    // older answer must never land over a newer one.
+    // older answer must never land over a newer one. One request covers
+    // every layer, so a failure is logged and the last answer kept: the
+    // layers still list, without run info, rather than the panel emptying.
     const latestRuns = useRef<RunsAnswer | null>(null)
     const runsAsked = useRef(0)
     const runsHeld = useRef(0)
     const readRuns = useCallback(async () => {
         const seq = ++runsAsked.current
-        const runs = await mmgisRequestIfProvided<RunsAnswer>('layers:getRuns')
-        if (seq > runsHeld.current) {
-            runsHeld.current = seq
-            latestRuns.current = runs
+        try {
+            const runs = await mmgisRequestIfProvided<RunsAnswer>('layers:getRuns')
+            if (seq > runsHeld.current) {
+                runsHeld.current = seq
+                latestRuns.current = runs
+            }
+        } catch (err) {
+            console.warn('LayerManager: runs unavailable', err)
         }
         return latestRuns.current
     }, [])

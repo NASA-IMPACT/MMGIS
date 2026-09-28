@@ -25,6 +25,7 @@ let gate: Promise<void> | null
 let mounted: Mounted | null
 let sparseTitle: string
 let setRunAnswer: unknown
+let runsFailure: Error | null
 
 beforeEach(() => {
     outOfRange = {}
@@ -38,6 +39,7 @@ beforeEach(() => {
     runsAnswer = {}
     runRequests = []
     setRunAnswer = true
+    runsFailure = null
     configReads = 0
     listeners = new Map()
     gate = null
@@ -54,7 +56,10 @@ beforeEach(() => {
         },
         'layers:updateConfig': () => true,
         'layers:refresh': () => true,
-        'layers:getRuns': () => runsAnswer,
+        'layers:getRuns': () => {
+            if (runsFailure) throw runsFailure
+            return runsAnswer
+        },
         'layers:setRun': () => {
             if (setRunAnswer instanceof Error) throw setRunAnswer
             return setRunAnswer
@@ -303,6 +308,28 @@ describe('MMGISLayerManagerAdapter model runs', () => {
         runsAnswer = {}
         await mountAdapter()
         expect(runSelect()).toBeNull()
+    })
+
+    test('a failing runs read keeps every layer listed, just without run info', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        runsFailure = new Error('one bad forecast layer')
+        await mountAdapter()
+        expect(titlesIn()).toEqual(['Sparse', 'Continuous', 'NAQFC O3'])
+        expect(runSelect()).toBeNull()
+        expect(warn).toHaveBeenCalledWith('LayerManager: runs unavailable', expect.any(Error))
+        warn.mockRestore()
+    })
+
+    test('a runs read that fails later keeps the runs last known', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        await mountAdapter()
+        expect(runSelect()!.value).toBe(NEWEST)
+        runsFailure = new Error('transient')
+        await emit('layers:listChanged')
+        await settle()
+        expect(titlesIn()).toEqual(['Sparse', 'Continuous', 'NAQFC O3'])
+        expect(runSelect()!.value).toBe(NEWEST)
+        warn.mockRestore()
     })
 })
 
