@@ -45,11 +45,10 @@ export const DayCalendar: React.FC<DayCalendarProps> = ({
         return moment.utc({ year, month, day: 1 })
     }
 
-    // The month steps within its year, so neither control moves the other.
+    // Stepping past December or before January carries into the next or
+    // previous year.
     const monthTarget = (delta: number) => {
-        const month = viewMonth.month() + delta
-        if (month < 0 || month > 11) return null
-        const target = viewMonth.clone().month(month)
+        const target = viewMonth.clone().add(delta, 'month')
         return overlapsRange(target) ? target : null
     }
 
@@ -57,14 +56,12 @@ export const DayCalendar: React.FC<DayCalendarProps> = ({
         if (target) setViewMonth(target)
     }
 
-    // Both fields can be typed into as well as stepped. Text is held locally
+    // The year can be typed into as well as stepped. Its text is held locally
     // while editing and re-synced from the view whenever an arrow moves it.
     const [yearText, setYearText] = useState(() => viewMonth.format('YYYY'))
-    const [monthText, setMonthText] = useState(() => viewMonth.format('MMM'))
 
     useEffect(() => {
         setYearText(viewMonth.format('YYYY'))
-        setMonthText(viewMonth.format('MMM'))
     }, [viewMonth])
 
     const handleYearInput = (text: string) => {
@@ -74,25 +71,17 @@ export const DayCalendar: React.FC<DayCalendarProps> = ({
         const year = parseInt(digits, 10)
         if (year < moment.utc(startTime).year() || year > moment.utc(endTime).year()) return
         const month = snapMonthToRange(year, viewMonth.month(), startTime, endTime)
-        const target = moment.utc({ year, month, day: 1 })
-        setViewMonth(target)
-        // The year can push the month inside the covered range.
-        setMonthText(target.format('MMM'))
+        setViewMonth(moment.utc({ year, month, day: 1 }))
     }
 
-    // Accepts a month name, an abbreviation, or its number.
-    const handleMonthInput = (text: string) => {
-        setMonthText(text)
-        const parsed = moment.utc(text.trim(), ['MMMM', 'MMM', 'MM', 'M'], true)
-        if (!parsed.isValid()) return
-        const target = viewMonth.clone().month(parsed.month())
+    const handleMonthSelect = (month: number) => {
+        const target = viewMonth.clone().month(month)
         if (overlapsRange(target)) setViewMonth(target)
     }
 
-    // An unparseable or out-of-range entry falls back to what's on screen.
+    // An unparseable or out-of-range year falls back to what's on screen.
     const resyncText = () => {
         setYearText(viewMonth.format('YYYY'))
-        setMonthText(viewMonth.format('MMM'))
     }
 
     return (
@@ -108,17 +97,24 @@ export const DayCalendar: React.FC<DayCalendarProps> = ({
                     >
                         <ChevronLeft />
                     </button>
-                    <input
-                        className="date-field-input"
-                        type="text"
-                        // Without this the input asks for its default 20
-                        // characters of width and stretches the popover.
-                        size={4}
-                        value={monthText}
-                        onChange={(e) => handleMonthInput(e.target.value)}
-                        onBlur={resyncText}
+                    {/* Lists every month of the viewed year when opened;
+                        those with no part inside the range can't be picked. */}
+                    <select
+                        className="date-field-input date-field-select"
+                        value={viewMonth.month()}
+                        onChange={(e) => handleMonthSelect(Number(e.target.value))}
                         aria-label="Month"
-                    />
+                    >
+                        {moment.monthsShort().map((label, month) => (
+                            <option
+                                key={label}
+                                value={month}
+                                disabled={!overlapsRange(viewMonth.clone().month(month))}
+                            >
+                                {label}
+                            </option>
+                        ))}
+                    </select>
                     <button
                         type="button"
                         className="date-step-button"

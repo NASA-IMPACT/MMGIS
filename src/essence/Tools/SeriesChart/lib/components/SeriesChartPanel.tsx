@@ -85,17 +85,21 @@ function ReadyCard({
     payload: ChartSeriesPayload
     layout: ChartLayout
 }) {
-    const [pickedId, setPickedId] = useState(payload.series[0]?.id)
+    const [pickedId, setPickedId] = useState(payload.series[0].id)
     useEffect(() => {
-        setPickedId(payload.series[0]?.id)
+        setPickedId((prev) =>
+            payload.series.some((s) => s.id === prev)
+                ? prev
+                : payload.series[0].id,
+        )
     }, [payload])
 
+    // The payload guard rejects an empty series, so index 0 always exists.
     const index = Math.max(
         payload.series.findIndex((s) => s.id === pickedId),
         0,
     )
     const picked = payload.series[index]
-    if (!picked) return <CardHeader title={payload.title} subtitle={payload.subtitle} />
 
     return (
         <>
@@ -203,8 +207,12 @@ function downloadCsv(s: ChartSeries) {
     const a = document.createElement('a')
     a.href = url
     a.download = `${s.label.replace(/[^\w.-]+/g, '_') || 'series'}.csv`
+    // Safari and some Firefox builds start the download asynchronously and
+    // need the anchor in the document; revoking on the next tick lets it read.
+    document.body.appendChild(a)
     a.click()
-    URL.revokeObjectURL(url)
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
 /** Colored dot naming the variable (with unit), then the interaction hint

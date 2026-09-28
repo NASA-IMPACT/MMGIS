@@ -12,7 +12,8 @@
  *   - enabled     (bool) the opt-in
  *   - title       (str)  heading template; '{prop}' is replaced by that
  *                        property's value. Falls back to useKeyAsName
- *   - properties  (arr)  property keys to list; omit to list all
+ *   - properties  (arr)  properties to list, each 'key' or 'key|Label';
+ *                        omit to list all
  *   - actions     (arr)  up to two { label, event }
  *
  * Emits, on a card button press, { feature, layerId, latlng } under:
@@ -37,6 +38,7 @@ import {
     mmgisRequest,
 } from '../_shared/adapters/mmgisAPI'
 import { fillTemplate, getIn } from '../_shared/content/fillTemplate'
+import { parseNamingProperties } from '../_shared/content/namingProperty'
 import { whenMMGISHandlerReady } from '../_shared/adapters/whenMMGISHandlerReady'
 
 const PLUGIN_ID = 'feature-popup'
@@ -280,8 +282,7 @@ function cardTitle(properties, config) {
         const filled = fillTemplate(template, properties).trim()
         return filled === '' ? undefined : filled
     }
-    const named = config.useKeyAsName
-    const key = Array.isArray(named) ? named[0] : named
+    const key = parseNamingProperties(config.useKeyAsName)[0]?.prop
     if (key == null) return undefined
     // The service takes a string and refuses anything else, so a layer named
     // by a number — an id, a sol — would otherwise cost the card entirely.
@@ -292,28 +293,29 @@ function cardTitle(properties, config) {
 }
 
 /**
- * The card body: one row per property, in the order the layer configured. An
- * unconfigured `keys` shows everything the feature carries.
+ * The card body: one row per property, in the order the layer configured,
+ * headed by its display label. An unconfigured `keys` shows everything the
+ * feature carries, each under its own key.
  *
  * Keys and values are escaped rather than trusted. Core sanitizes what it is
  * handed, which stops a script from running but not a value holding `<` from
  * swallowing the rest of the row.
  */
 function propertyTable(properties, keys) {
+    // Configure stores this list by splitting on commas and nothing else, so
+    // 'depth_m, sample_class' arrives with the space still attached; the
+    // parser trims it, along with the space around a label's pipe.
     const shown = Array.isArray(keys)
-        ? // Configure stores this list by splitting on commas and nothing
-          // else, so 'depth_m, sample_class' arrives with the space still
-          // attached and would look up nothing.
-          keys.map((key) => String(key).trim()).filter((key) => key !== '')
-        : Object.keys(properties)
+        ? parseNamingProperties(keys.map((key) => (key == null ? key : String(key))))
+        : Object.keys(properties).map((key) => ({ prop: key, label: key }))
     const rows = shown
         // A property the feature does not carry, and one carrying no value,
         // both have nothing to show; a row reading 'null' is noise.
-        .filter((key) => readProperty(properties, key) != null)
+        .filter(({ prop }) => readProperty(properties, prop) != null)
         .map(
-            (key) =>
-                `<tr><th>${escapeHtml(key)}</th><td>${escapeHtml(
-                    formatValue(readProperty(properties, key))
+            ({ prop, label }) =>
+                `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(
+                    formatValue(readProperty(properties, prop))
                 )}</td></tr>`
         )
     return rows.length ? `<table>${rows.join('')}</table>` : undefined

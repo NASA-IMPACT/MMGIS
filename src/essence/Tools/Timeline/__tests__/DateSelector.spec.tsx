@@ -19,6 +19,8 @@ vi.hoisted(() => {
 })
 
 import { DateSelector } from '../lib/geo/DateSelector/DateSelector'
+import moment from 'moment'
+import { DayCalendar } from '../lib/geo/DateSelector/DayCalendar'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean })
     .IS_REACT_ACT_ENVIRONMENT = true
@@ -307,5 +309,244 @@ describe('DateSelector placeholder', () => {
     test('the date shows when no placeholder is given', () => {
         render()
         expect(dateText()).toBe('Oct 31, 2024')
+    })
+})
+
+describe('DateSelector display format', () => {
+    let container: HTMLElement
+    let root: Root
+
+    beforeEach(() => {
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+    })
+
+    test('a given format overrides the one the time mode picks', () => {
+        act(() => {
+            root.render(
+                <DateSelector
+                    selectedDate={new Date('2024-10-31T14:30:00Z')}
+                    startTime={START}
+                    endTime={END}
+                    timeMode="YEAR"
+                    dateFormat="MMM D, YYYY · HH:mm [UTC]"
+                    onDateChange={() => {}}
+                />,
+            )
+        })
+
+        expect(container.querySelector('.date-text')?.textContent).toBe(
+            'Oct 31, 2024 · 14:30 UTC',
+        )
+    })
+})
+
+describe('DateSelector Today', () => {
+    let container: HTMLElement
+    let root: Root
+    let picked: Date[]
+
+    beforeEach(() => {
+        picked = []
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        vi.useRealTimers()
+    })
+
+    const render = (withToday: boolean, onCompareClick?: () => void) => {
+        act(() => {
+            root.render(
+                <DateSelector
+                    selectedDate={new Date('2024-03-01T00:00:00Z')}
+                    startTime={START}
+                    endTime={END}
+                    timeMode="HOUR"
+                    onTodayClick={
+                        withToday ? (date) => picked.push(date) : undefined
+                    }
+                    onDateChange={() => {}}
+                    onCompareClick={onCompareClick}
+                />,
+            )
+        })
+    }
+
+    const todayButton = () =>
+        container.querySelector<HTMLButtonElement>('.today-button')
+
+    test('stays hidden unless asked for', () => {
+        render(false)
+        expect(todayButton()).toBeNull()
+    })
+
+    test('sits between the date and the compare action', () => {
+        render(true, () => {})
+        const actions = Array.from(
+            container.querySelectorAll('.date-selector-action'),
+        ).map((button) => button.textContent)
+        expect(actions).toEqual(['Today', 'Compare date'])
+    })
+
+    test('moves to the current UTC minute', () => {
+        vi.useFakeTimers({ toFake: ['Date'] })
+        vi.setSystemTime(new Date('2024-10-31T14:30:42.500Z'))
+        render(true)
+
+        act(() => {
+            todayButton()!.click()
+        })
+
+        expect(picked.map((date) => date.toISOString())).toEqual([
+            '2024-10-31T14:30:00.000Z',
+        ])
+    })
+
+    test('stays enabled while now is outside the range', () => {
+        vi.useFakeTimers({ toFake: ['Date'] })
+        vi.setSystemTime(new Date('2026-09-22T00:00:30Z'))
+        render(true)
+
+        expect(todayButton()!.disabled).toBe(false)
+        act(() => {
+            todayButton()!.click()
+        })
+        expect(picked.map((date) => date.toISOString())).toEqual([
+            '2026-09-22T00:00:00.000Z',
+        ])
+    })
+})
+
+describe('DayCalendar month dropdown', () => {
+    let container: HTMLElement
+    let root: Root
+
+    beforeEach(() => {
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+    })
+
+    const render = () => {
+        act(() => {
+            root.render(
+                <DayCalendar
+                    value={new Date('2024-06-15T00:00:00Z')}
+                    startTime={new Date('2024-03-15T00:00:00Z')}
+                    endTime={new Date('2024-10-10T00:00:00Z')}
+                    onSelect={() => {}}
+                />,
+            )
+        })
+    }
+
+    const monthSelect = () =>
+        container.querySelector<HTMLSelectElement>('select[aria-label="Month"]')!
+
+    test('lists every month, with those outside the range disabled', () => {
+        render()
+
+        const options = Array.from(monthSelect().options)
+        expect(options.map((option) => option.textContent)).toEqual(
+            moment.monthsShort(),
+        )
+        expect(
+            options.filter((option) => option.disabled).map((o) => o.textContent),
+        ).toEqual(['Jan', 'Feb', 'Nov', 'Dec'])
+        expect(monthSelect().value).toBe('5')
+    })
+
+    test('picking a month shows its days', () => {
+        render()
+
+        act(() => {
+            monthSelect().value = '8'
+            monthSelect().dispatchEvent(new Event('change', { bubbles: true }))
+        })
+
+        expect(monthSelect().value).toBe('8')
+        expect(container.querySelectorAll('.day-calendar-cell')).toHaveLength(30)
+    })
+})
+
+describe('DayCalendar month steppers', () => {
+    let container: HTMLElement
+    let root: Root
+
+    beforeEach(() => {
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+    })
+
+    const render = (value: string) => {
+        act(() => {
+            root.render(
+                <DayCalendar
+                    value={new Date(value)}
+                    startTime={new Date('2023-06-01T00:00:00Z')}
+                    endTime={new Date('2025-06-30T00:00:00Z')}
+                    onSelect={() => {}}
+                />,
+            )
+        })
+    }
+
+    const shown = () => ({
+        month: container.querySelector<HTMLSelectElement>(
+            'select[aria-label="Month"]',
+        )!.value,
+        year: container.querySelector<HTMLInputElement>(
+            'input[aria-label="Year"]',
+        )!.value,
+    })
+
+    const step = (label: string) => {
+        act(() => {
+            container
+                .querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!
+                .click()
+        })
+    }
+
+    test('stepping past December moves into January of the next year', () => {
+        render('2024-12-10T00:00:00Z')
+        step('Next month')
+        expect(shown()).toEqual({ month: '0', year: '2025' })
+    })
+
+    test('stepping before January moves into December of the previous year', () => {
+        render('2024-01-10T00:00:00Z')
+        step('Previous month')
+        expect(shown()).toEqual({ month: '11', year: '2023' })
+    })
+
+    test('stops at the edge of the range', () => {
+        render('2025-06-10T00:00:00Z')
+        const next = container.querySelector<HTMLButtonElement>(
+            'button[aria-label="Next month"]',
+        )!
+        expect(next.disabled).toBe(true)
     })
 })

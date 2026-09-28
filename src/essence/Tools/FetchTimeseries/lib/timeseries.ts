@@ -3,9 +3,10 @@
 // into the shared chart-series payload. No MMGIS, no DOM, no fetch — the
 // tool entry owns I/O, everything here is unit-testable.
 
-import type {
-    ChartPoint,
-    ChartSeriesPayload,
+import {
+    isRecord,
+    type ChartPoint,
+    type ChartSeriesPayload,
 } from '../../_shared/types/chartSeries'
 
 /** Per-layer opt-in, authored at `layer.variables.timeseries`. Only `url` is
@@ -41,10 +42,6 @@ export interface FeatureLike {
     id?: string | number
     properties?: Record<string, unknown>
     geometry?: { type?: string; coordinates?: unknown }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return value != null && typeof value === 'object' && !Array.isArray(value)
 }
 
 /** The layer's timeseries block, or null when the layer doesn't opt in

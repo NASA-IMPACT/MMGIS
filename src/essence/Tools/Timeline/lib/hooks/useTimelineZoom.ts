@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import moment from 'moment'
 import type { LayerTimeData, TimeMode } from '../types'
-import { revealStart, type LayerNavigation } from '../utils/layerNavigation'
+import { drawnExtent } from '../utils/layerNavigation'
 import {
     clampWindow,
     fitWindow,
     minViewDuration,
+    revealWindow,
     sameWindow,
     sliderToWindow,
     windowToSlider,
@@ -77,25 +78,25 @@ export interface TimelineZoom {
     fitToLayers(): void
     /** Frames one layer's span, in transition. */
     fitToLayer(layer: LayerTimeData): void
+    /**
+     * Pans the view, at the span it has, to bring `at` on screen: centred on
+     * it, or stopped at the edge of the global window where centring would
+     * pass it. Nothing moves when `at` is already in view. Auto-fit is left
+     * as it stands: only its toggle disarms it. In transition; instant under
+     * reduced motion.
+     */
+    revealTime(at: Date): void
 }
-
-/**
- * The instant a fit must open the view at to show a layer's first data. A
- * sparse layer's start is a stop at its first listed day's last instant, but
- * the chart draws that day as a whole-day box from the day's first instant,
- * so a view opening at the stop meets the box's trailing edge and leaves the
- * whole first day off the left of the chart. The end needs no allowance: a
- * box ends on the instant its day does. A periodic start is returned as is.
- *
- * The revealed start is a fixed function of the layer's own listed days and
- * never of the global window, so a widen to it is a fixed point: the refetch
- * that follows finds the same instant, not one moved outward again.
- */
-const framedStart = (nav: LayerNavigation): Date => revealStart(nav, nav.start)
 
 /**
  * The span a layer contributes to an automatic fit: only the bounds it named
  * itself, with a borrowed side left out entirely.
+ *
+ * A sparse layer's bounds are the boxes its periods draw, not its outermost
+ * stops: a stop opens its box, so a view ending at the last stop would leave
+ * a month's or year's box off the right of the chart. Those boxes are a fixed
+ * function of the layer's own list and never of the global window, so a widen
+ * to them is a fixed point: the refetch that follows finds the same span.
  *
  * A borrowed bound is the global window's own edge, so a union reading one
  * reaches that edge, and the fit opens the view out to the whole window and
@@ -114,10 +115,10 @@ const ownExtent = (layer: LayerTimeData): ViewWindow | null => {
     const nav = layer.navigation
     if (!nav) return null
     if (!nav.hasOwnStart && !nav.hasOwnEnd) return null
-    const start = framedStart(nav)
+    const { start, end } = drawnExtent(nav)
     return {
-        start: nav.hasOwnStart ? start : nav.end,
-        end: nav.hasOwnEnd ? nav.end : start,
+        start: nav.hasOwnStart ? start : end,
+        end: nav.hasOwnEnd ? end : start,
     }
 }
 
@@ -400,10 +401,53 @@ export function useTimelineZoom({
         (layer: LayerTimeData) => {
             const nav = layer.navigation
             if (!nav) return
-            applyFit([{ start: framedStart(nav), end: nav.end }])
+            applyFit([drawnExtent(nav)])
         },
         [applyFit]
     )
+
+    // An instant waiting to be revealed, and a count bumped with each request
+    // so the render that carries it runs the effect below even when nothing
+    // else in the hook changed.
+    const pendingRevealRef = useRef<Date | null>(null)
+    const [revealRequest, setRevealRequest] = useState(0)
+
+    const revealTime = useCallback((at: Date) => {
+        pendingRevealRef.current = at
+        setRevealRequest((count) => count + 1)
+    }, [])
+
+    // Applied once the request's render commits rather than when it is made.
+    // A layer control, or a commit from outside the plugin, moves the global
+    // window in the same batch as it asks for the reveal, so at the call the
+    // hook holds only the window from before; clamped against that, a
+    // target past the old edge would be slid straight back out of view. The
+    // render that carries the request also carries the moved window, and the
+    // effect clamps against that render's span. The request is consumed from
+    // the ref, so an effect re-run with nothing new to reveal does nothing.
+    //
+    // Measured from the destination of a transition in flight, as a zoom
+    // press is, so a reveal landing mid-flight whose instant the flight is
+    // already heading to show leaves the flight to finish. Declared after
+    // the auto-fit effect, so a refit started in the same render is the
+    // origin the reveal measures from and, when it has to pan, the flight
+    // the reveal replaces.
+    //
+    // Auto-fit stays armed through a pan. The refit it arms keys on the
+    // layers' own bounds, which a reveal does not touch, and the refetch a
+    // widen causes leaves them as they were, so the view stays on the
+    // revealed instant until the layer set itself changes.
+    useEffect(() => {
+        const at = pendingRevealRef.current
+        if (!at) return
+        pendingRevealRef.current = null
+
+        const origin = transition.target() ?? viewRef.current
+        const next = revealWindow(origin, at, effectiveBounds, minMs)
+        if (next === origin || sameWindow(next, origin)) return
+
+        transition.animateTo(viewRef.current, next)
+    }, [revealRequest, effectiveBounds, transition, minMs])
 
     /**
      * Records standing intent, not the last action: a manual zoom holds the
@@ -440,5 +484,6 @@ export function useTimelineZoom({
         toggleAutoFit,
         fitToLayers,
         fitToLayer,
+        revealTime,
     }
 }

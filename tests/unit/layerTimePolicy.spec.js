@@ -3,6 +3,8 @@ import {
     resolveTimePolicy,
     resolveTemporalExtent,
     parseISODuration,
+    layerRequestWindow,
+    isPeriodicRequest,
 } from '../../src/essence/Basics/TimeControl_/layerTimePolicy'
 
 // Injected "now" so results are exact: mid-afternoon UTC.
@@ -290,5 +292,202 @@ describe('layer time policy', () => {
                 end: null,
             })
         })
+    })
+})
+
+describe('layerRequestWindow', () => {
+    const WINDOW_START = '2026-07-26T15:42:31Z'
+    const CURSOR = '2026-08-25T15:42:31Z'
+    const passthrough = { start: WINDOW_START, end: CURSOR, periodic: false }
+    const time = (fields) => ({ enabled: true, type: 'requery', ...fields })
+    const at = (fields, cursor = CURSOR) =>
+        layerRequestWindow(time(fields), WINDOW_START, cursor)
+
+    test('a layer without an interval requests the Time Control window', () => {
+        expect(at({})).toEqual(passthrough)
+        expect(at({ interval: 'garbage' })).toEqual(passthrough)
+        expect(at({ interval: 'P0D' })).toEqual(passthrough)
+    })
+
+    test('a disabled or absent time block requests the window', () => {
+        expect(
+            layerRequestWindow(
+                { enabled: false, interval: 'P1D' },
+                WINDOW_START,
+                CURSOR
+            )
+        ).toEqual(passthrough)
+        expect(layerRequestWindow(null, WINDOW_START, CURSOR)).toEqual(
+            passthrough
+        )
+    })
+
+    test('P1D without an anchor requests the UTC day, ending on its last second', () => {
+        expect(at({ interval: 'P1D' })).toEqual({
+            start: '2026-08-25T00:00:00Z',
+            end: '2026-08-25T23:59:59Z',
+            periodic: true,
+        })
+    })
+
+    test('P1Y, P1M and PT1H without an anchor follow UTC calendar boundaries', () => {
+        expect(at({ interval: 'P1Y' })).toEqual({
+            start: '2026-01-01T00:00:00Z',
+            end: '2026-12-31T23:59:59Z',
+            periodic: true,
+        })
+        expect(at({ interval: 'P1M' })).toEqual({
+            start: '2026-08-01T00:00:00Z',
+            end: '2026-08-31T23:59:59Z',
+            periodic: true,
+        })
+        expect(at({ interval: 'PT1H' })).toEqual({
+            start: '2026-08-25T15:00:00Z',
+            end: '2026-08-25T15:59:59Z',
+            periodic: true,
+        })
+    })
+
+    test('a cursor exactly on a boundary opens the next period', () => {
+        expect(at({ interval: 'P1D' }, '2026-08-25T00:00:00Z')).toEqual({
+            start: '2026-08-25T00:00:00Z',
+            end: '2026-08-25T23:59:59Z',
+            periodic: true,
+        })
+    })
+
+    test('P1M anchored on Jan 31 steps from the anchor without overlapping', () => {
+        const monthly = (cursor) =>
+            at(
+                { interval: 'P1M', dataStartTime: '2025-01-31T00:00:00Z' },
+                cursor
+            )
+        // Jan 31 + 1 month overflows to Mar 3; + 2 months lands on Mar 31.
+        const feb = monthly('2025-02-15T12:00:00Z')
+        const mar = monthly('2025-03-15T12:00:00Z')
+        expect(feb).toEqual({
+            start: '2025-01-31T00:00:00Z',
+            end: '2025-03-02T23:59:59Z',
+            periodic: true,
+        })
+        expect(mar).toEqual({
+            start: '2025-03-03T00:00:00Z',
+            end: '2025-03-30T23:59:59Z',
+            periodic: true,
+        })
+        expect(new Date(feb.end).getTime()).toBeLessThan(
+            new Date(mar.start).getTime()
+        )
+        expect(monthly('2025-04-01T00:00:00Z').start).toBe(
+            '2025-03-31T00:00:00Z'
+        )
+    })
+
+    test('an anchored cadence that is not a calendar unit steps from the anchor', () => {
+        expect(
+            at(
+                { interval: 'P7D', dataStartTime: '2026-08-01T06:00:00Z' },
+                '2026-08-15T00:00:00Z'
+            )
+        ).toEqual({
+            start: '2026-08-08T06:00:00Z',
+            end: '2026-08-15T05:59:59Z',
+            periodic: true,
+        })
+    })
+
+    test('a cursor before the anchor requests the window', () => {
+        expect(
+            at({ interval: 'P1D', dataStartTime: '2026-09-01T00:00:00Z' })
+        ).toEqual(passthrough)
+    })
+
+    test('a "now - P1Y" dataStartTime anchors nothing', () => {
+        expect(
+            at({ interval: 'P1D', dataStartTime: 'now - P1Y' })
+        ).toEqual({
+            start: '2026-08-25T00:00:00Z',
+            end: '2026-08-25T23:59:59Z',
+            periodic: true,
+        })
+        expect(
+            at({ interval: 'P7D', dataStartTime: 'now - P1Y' })
+        ).toEqual(passthrough)
+    })
+
+    test('a cadence under an hour is a run of scenes, not a period', () => {
+        expect(at({ interval: 'PT30M' })).toEqual(passthrough)
+        expect(
+            at({ interval: 'PT30M', dataStartTime: '2026-01-01T00:00:00Z' })
+        ).toEqual(passthrough)
+    })
+
+    test('a week without an anchor is ambiguous and requests the window', () => {
+        expect(at({ interval: 'P1W' })).toEqual(passthrough)
+        expect(at({ interval: 'P7D' })).toEqual(passthrough)
+    })
+
+    test('a local layer requests the window', () => {
+        expect(at({ interval: 'P1D', type: 'local' })).toEqual(passthrough)
+    })
+
+    test('an unreadable cursor or out-of-range period requests the window', () => {
+        expect(
+            layerRequestWindow(time({ interval: 'P1D' }), WINDOW_START, 'nope')
+        ).toEqual({ start: WINDOW_START, end: 'nope', periodic: false })
+        expect(
+            at({ interval: 'P999999999Y', dataStartTime: '2020-01-01T00:00:00Z' })
+        ).toEqual(passthrough)
+    })
+})
+
+describe('isPeriodicRequest', () => {
+    test('agrees with layerRequestWindow at a cursor', () => {
+        const time = { enabled: true, interval: 'P1D', dataStartTime: '2026-09-01T00:00:00Z' }
+        expect(isPeriodicRequest(time, '2026-08-25T00:00:00Z')).toBe(false)
+        expect(isPeriodicRequest(time, '2026-09-02T00:00:00Z')).toBe(true)
+    })
+
+    test('without a cursor, says whether the layer is periodic at all', () => {
+        expect(isPeriodicRequest({ enabled: true, interval: 'P1D' })).toBe(true)
+        expect(isPeriodicRequest({ enabled: true, interval: 'P7D' })).toBe(false)
+        expect(isPeriodicRequest({ enabled: true })).toBe(false)
+    })
+})
+
+describe('a layer listing Data Dates', () => {
+    const WINDOW_START = '2025-02-18T00:00:00Z'
+    const CURSOR = '2025-03-20T00:00:00Z'
+    const passthrough = { start: WINDOW_START, end: CURSOR, periodic: false }
+    const time = (fields) => ({ enabled: true, type: 'requery', ...fields })
+
+    test('requests the window, not a period, though it has an interval', () => {
+        const listed = time({
+            interval: 'P1M',
+            dataDates: ['2025-03-03', '2025-03-09'],
+        })
+        expect(layerRequestWindow(listed, WINDOW_START, CURSOR)).toEqual(
+            passthrough
+        )
+        expect(isPeriodicRequest(listed, CURSOR)).toBe(false)
+        expect(isPeriodicRequest(listed)).toBe(false)
+    })
+
+    test('is still periodic when no listed entry is readable', () => {
+        const unreadable = time({ interval: 'P1D', dataDates: ['not-a-date'] })
+        expect(layerRequestWindow(unreadable, WINDOW_START, CURSOR)).toEqual({
+            start: '2025-03-20T00:00:00Z',
+            end: '2025-03-20T23:59:59Z',
+            periodic: true,
+        })
+        expect(isPeriodicRequest(unreadable)).toBe(true)
+    })
+
+    test('reads a single bare string as a list of one', () => {
+        const single = time({ interval: 'P1M', dataDates: '2025-03-03' })
+        expect(layerRequestWindow(single, WINDOW_START, CURSOR)).toEqual(
+            passthrough
+        )
+        expect(isPeriodicRequest(single)).toBe(false)
     })
 })

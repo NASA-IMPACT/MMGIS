@@ -492,7 +492,7 @@
             {
               "field": "time.interval",
               "name": "Data Time Interval",
-              "description": "How often new data is added, as an ISO 8601 duration (e.g., P1D for daily, P7D for weekly, P1M for monthly). When set, the data end time snaps back to the most recent date that actually has data. Leave empty for continuous or irregular data. An unreadable value is ignored. When a Time Extent URL is set below and its path finds a value, that value is used instead and this one is the fallback.",
+              "description": "How often new data is added, as an ISO 8601 duration (e.g., P1D for daily, P7D for weekly, P1M for monthly). When set, the data end time snaps back to the most recent date that actually has data, and a raster tile layer requests only the one period that holds the timeline's current time instead of the whole window: periods step from Data Start Time when it is a fixed date, or follow UTC calendar boundaries for exactly P1Y, P1M, P1D or PT1H. An interval shorter than an hour, or one that cannot be placed, leaves the request as the whole window. When Data Dates below lists any readable entry, this interval does not shape the request or the availability check; the listed dates do. Leave empty for continuous or irregular data. An unreadable value is ignored. When a Time Extent URL is set below and its path finds a value, that value is used instead and this one is the fallback.",
               "type": "text",
               "width": 4
             },

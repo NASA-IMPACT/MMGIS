@@ -70,6 +70,20 @@
                 ]
             },
             {
+                "name": "Export Legend",
+                "description": "Appends a legend band below exported images.",
+                "components": [
+                    {
+                        "field": "variables.includeLegend",
+                        "name": "Include Legend On Exports",
+                        "description": "Append a legend below exported PNGs and PDFs: the name of every layer that is toggled on, with its color bar, range and unit.",
+                        "type": "checkbox",
+                        "width": 6,
+                        "defaultChecked": true
+                    }
+                ]
+            },
+            {
                 "name": "Action Button",
                 "description": "An optional action button at the end of the control bar.",
                 "components": [

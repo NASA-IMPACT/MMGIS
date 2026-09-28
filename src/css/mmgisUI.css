@@ -782,17 +782,23 @@
     border-radius: 0px;
 }
 
+/* A translucent neutral thumb reads on both the light and the dark panels.
+   The transparent border keeps a 14px grab area around an 8px visible bar. */
 ::-webkit-scrollbar {
     width: 14px;
     height: 14px;
 }
+::-webkit-scrollbar-track {
+    background-color: transparent;
+}
 ::-webkit-scrollbar-thumb {
     border: 3px solid rgba(0, 0, 0, 0);
     background-clip: padding-box;
-    border-radius: 0px;
-    background-color: var(--color-a2);
-    box-shadow: inset -1px -1px 0px rgba(0, 0, 0, 0.05),
-        inset 1px 1px 0px rgba(0, 0, 0, 0.05);
+    border-radius: 7px;
+    background-color: rgba(128, 134, 138, 0.35);
+}
+::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(128, 134, 138, 0.8);
 }
 ::-webkit-scrollbar-button {
     width: 0;

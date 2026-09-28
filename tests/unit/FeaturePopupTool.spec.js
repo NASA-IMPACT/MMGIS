@@ -530,6 +530,68 @@ test('lists every configured property when the keys arrive with spaces', async (
     expect(html).toContain('sedimentary')
 })
 
+test('heads a row with the label written after a pipe', async () => {
+    LAYER_CONFIGS.craters.variables.featurePopup.properties = [
+        'depth_m|Depth (m)',
+        'sample_class | Sample Class',
+    ]
+    await start()
+
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+
+    const { html } = api.namesOf('map:showPopup')[0].payload
+    expect(html).toContain('<th>Depth (m)</th><td>12</td>')
+    expect(html).toContain('<th>Sample Class</th><td>sedimentary</td>')
+    expect(html).not.toContain('depth_m')
+})
+
+test('heads a row with its key when the label after the pipe is blank', async () => {
+    LAYER_CONFIGS.craters.variables.featurePopup.properties = ['depth_m|']
+    await start()
+
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+
+    expect(api.namesOf('map:showPopup')[0].payload.html).toContain(
+        '<th>depth_m</th><td>12</td>'
+    )
+})
+
+test('escapes a label that holds markup', async () => {
+    LAYER_CONFIGS.craters.variables.featurePopup.properties = ['depth_m|<b>Depth</b>']
+    await start()
+
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+
+    const { html } = api.namesOf('map:showPopup')[0].payload
+    expect(html).toContain('&lt;b&gt;Depth&lt;/b&gt;')
+    expect(html).not.toContain('<b>')
+})
+
+test('skips the empty slots a partly filled property list saves', async () => {
+    LAYER_CONFIGS.craters.variables.featurePopup.properties = [null, 'depth_m', '']
+    await start()
+
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+
+    const { html } = api.namesOf('map:showPopup')[0].payload
+    expect(html).toBe('<table><tr><th>depth_m</th><td>12</td></tr></table>')
+})
+
+test('reads the heading from the property of a labelled naming entry', async () => {
+    LAYER_CONFIGS.craters.variables.useKeyAsName = ['sample_class|Sample Class']
+    delete LAYER_CONFIGS.craters.variables.featurePopup.title
+    await start()
+
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+
+    expect(api.namesOf('map:showPopup')[0].payload.title).toBe('sedimentary')
+})
+
 test('lists a nested property by the dot path the heading already accepts', async () => {
     LAYER_CONFIGS.craters.variables.featurePopup.properties = ['site.name']
     await start()

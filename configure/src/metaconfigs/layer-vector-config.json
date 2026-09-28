@@ -583,7 +583,7 @@
             {
               "field": "variables.timeseries.titleProp",
               "name": "Title Property",
-              "description": "The feature property used as the chart's title, e.g. 'local_site_name'. Leave empty to use the layer's naming property, then the layer name.",
+              "description": "The feature property used as the chart's title, e.g. 'local_site_name'. Leave empty to use the feature's 'name', then 'title', then its id, then the layer name.",
               "type": "text",
               "width": 4
             },
@@ -1057,7 +1057,7 @@
             {
               "field": "variables.featurePopup.properties",
               "name": "Properties To List",
-              "description": "Which feature properties the card lists, in this order. Dot notation reaches a nested one: 'site.name'. Leave empty to list every property the feature carries.",
+              "description": "Which feature properties the card lists, in this order. Dot notation reaches a nested one: 'site.name'. Add a display label after a pipe: 'density_rank|Density Rank'; without one, the row shows the property name. Leave empty to list every property the feature carries.",
               "type": "textarray",
               "width": 12
             },
