@@ -37,6 +37,7 @@ import {
     mmgisOn,
     mmgisEmit,
     mmgisGetLayerConfig,
+    mmgisGetLayerTemporalExtent,
     mmgisHidePlugin,
     mmgisGetTimeEnd,
     mmgisGetTimeStart,
@@ -51,6 +52,7 @@ import {
     usesRange,
     featureTitle,
     buildPayload,
+    seedRange,
     TemplateError,
     MappingError,
     type DateRange,
@@ -69,10 +71,6 @@ const FETCH_EVENT = `plugin:${PLUGIN_ID}:fetch`
 /** A stalled connection must not strand the card's spinner — the only other
  *  way out of a hung fetch is the user requesting another feature. */
 const FETCH_TIMEOUT_MS = 30000
-const DAY_MS = 24 * 60 * 60 * 1000
-/** Without a mission time window, the range defaults to the past year, in
- *  whole UTC days, so a date-only row on either end is inside the range. */
-const DEFAULT_SPAN_DAYS = 365
 /** Typing a date fires several changes; the card updates at once, the
  *  refetch waits for the typing to settle. */
 const REFETCH_DEBOUNCE_MS = 400
@@ -95,12 +93,6 @@ interface Selection {
     layerDisplayName: string
 }
 
-/** UTC, to the second, without the zone suffix: what datetime-local holds. */
-const isoInstant = (d: Date) => d.toISOString().slice(0, 19)
-const startOfUtcDay = (d: Date) =>
-    new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
-const endOfUtcDay = (d: Date) => new Date(startOfUtcDay(d).getTime() + DAY_MS - 1000)
-
 const FetchTimeseriesTool = {
     height: 0,
     width: 0,
@@ -110,6 +102,8 @@ const FetchTimeseriesTool = {
     _root: null as Root | null,
     _selection: null as Selection | null,
     _range: null as DateRange | null,
+    /** The layer the range was seeded for; a pick on another layer reseeds. */
+    _rangeLayer: null as string | null,
     _refetchTimer: null as number | null,
     /** Bumped per fetch request, and by destroy and EXIT: a lookup that
      *  finishes after a newer request started, or after the card was torn
@@ -155,6 +149,7 @@ const FetchTimeseriesTool = {
         this._root = null
         this._selection = null
         this._range = null
+        this._rangeLayer = null
         this._status = { kind: 'idle' }
         // The data source is going away: remove its card rather than strand
         // a stale chart.
@@ -186,28 +181,21 @@ const FetchTimeseriesTool = {
         this._render()
     },
 
-    /** The mission's time window when the mission has one, else the past
-     *  year. Read once; the viewer owns the range after that. */
-    async _ensureRange(): Promise<DateRange> {
-        if (this._range) return this._range
-        let range: DateRange | null = null
+    /** The layer's own data range, its last year when longer, else the
+     *  mission window, else the past year; a future end is capped at today.
+     *  Seeded once per layer: the viewer owns the range after that, until a
+     *  feature on another layer is picked. */
+    async _ensureRange(layerName: string): Promise<DateRange> {
+        if (this._range && this._rangeLayer === layerName) return this._range
+        const extent = await mmgisGetLayerTemporalExtent(layerName)
+        let window: { start: string | null; end: string | null } | null = null
         if ((await mmgisIsTimeEnabled()) === true) {
             const [start, end] = await Promise.all([mmgisGetTimeStart(), mmgisGetTimeEnd()])
-            const s = start ? new Date(start) : null
-            const e = end ? new Date(end) : null
-            if (s && e && !Number.isNaN(s.getTime()) && !Number.isNaN(e.getTime()) && s <= e) {
-                range = { start: isoInstant(s), end: isoInstant(e) }
-            }
+            window = { start, end }
         }
-        if (!range) {
-            const now = new Date()
-            range = {
-                start: isoInstant(startOfUtcDay(new Date(now.getTime() - DEFAULT_SPAN_DAYS * DAY_MS))),
-                end: isoInstant(endOfUtcDay(now)),
-            }
-        }
-        this._range = range
-        return range
+        this._range = seedRange({ extent, window, now: new Date() })
+        this._rangeLayer = layerName
+        return this._range
     },
 
     /** EXIT closes both surfaces: the chart hears `seriesCleared` and takes
@@ -290,7 +278,7 @@ const FetchTimeseriesTool = {
             title: featureTitle(feature, config, layerDisplayName),
             layerDisplayName,
         }
-        await this._ensureRange()
+        await this._ensureRange(layerName)
         if (seq !== this._fetchSeq) return
         this._render()
         mmgisShowPlugin(TOOL_ID)
@@ -301,7 +289,7 @@ const FetchTimeseriesTool = {
 
     async _fetchFor(selection: Selection) {
         const { feature, layerName, latlng, config, title, layerDisplayName } = selection
-        const range = await this._ensureRange()
+        const range = await this._ensureRange(layerName)
 
         this._abort?.abort()
         const abort = new AbortController()

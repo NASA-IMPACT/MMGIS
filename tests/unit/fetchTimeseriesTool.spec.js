@@ -46,6 +46,7 @@ describe('FetchTimeseriesTool', () => {
     let timeEnabled
     let host
     let configGate
+    let extents
 
     const emittedFor = (event) =>
         emitted.filter(([e]) => e === event).map(([, p]) => p)
@@ -85,6 +86,7 @@ describe('FetchTimeseriesTool', () => {
         hasHandler = () => true
         timeEnabled = false
         configGate = null
+        extents = {}
         layerConfigs = {
             [LAYER]: {
                 display_name: 'Air Stations',
@@ -106,6 +108,7 @@ describe('FetchTimeseriesTool', () => {
                     if (configGate) await configGate
                     return layerConfigs[params] ?? null
                 }
+                if (name === 'layers:getTemporalExtent') return extents[params] ?? null
                 if (name === 'time:isEnabled') return timeEnabled
                 if (name === 'time:getStart') return '2018-01-01T00:00:00Z'
                 if (name === 'time:getEnd') return '2019-12-31T00:00:00Z'
@@ -176,12 +179,52 @@ describe('FetchTimeseriesTool', () => {
         expect(host.textContent).not.toContain('Fetching data…')
     })
 
-    test('the range seeds from the mission time window when time is enabled', async () => {
+    test('without a layer extent, the range seeds from the mission time window, clipped to its last year', async () => {
         timeEnabled = true
         await request()
-        expect(valueOf('Start')).toBe('2018-01-01T00:00:00')
+        expect(valueOf('Start')).toBe('2018-12-31T00:00:00')
         expect(valueOf('End')).toBe('2019-12-31T00:00:00')
-        expect(filterOf(fetchMock.mock.calls[0][0])).toContain("datetime >= '2018-01-01T00:00:00'")
+        expect(filterOf(fetchMock.mock.calls[0][0])).toContain("datetime >= '2018-12-31T00:00:00'")
+    })
+
+    test("the range seeds from the layer's own extent", async () => {
+        timeEnabled = true
+        extents[LAYER] = { start: '2023-06-01T00:00:00Z', end: '2023-06-30T23:59:59Z', interval: null }
+        await request()
+        expect(valueOf('Start')).toBe('2023-06-01T00:00:00')
+        expect(valueOf('End')).toBe('2023-06-30T23:59:59')
+        expect(filterOf(fetchMock.mock.calls[0][0])).toBe(
+            "datetime >= '2023-06-01T00:00:00' AND datetime <= '2023-06-30T23:59:59'",
+        )
+    })
+
+    test('an extent longer than a year seeds its last year, with a future end capped at today', async () => {
+        extents[LAYER] = { start: '2020-01-01T00:00:00Z', end: '2026-12-31T23:59:59Z', interval: null }
+        await request()
+        expect(valueOf('Start')).toBe('2025-09-24T00:00:00')
+        expect(valueOf('End')).toBe('2026-09-24T23:59:59')
+    })
+
+    test('an extent with an open start seeds the year before its end', async () => {
+        extents[LAYER] = { start: null, end: '2023-06-30T23:59:59Z', interval: null }
+        await request()
+        expect(valueOf('Start')).toBe('2022-06-30T00:00:00')
+        expect(valueOf('End')).toBe('2023-06-30T23:59:59')
+    })
+
+    test("a second pick on the same layer keeps the viewer's dates; another layer reseeds", async () => {
+        const LAYER2 = 'uuid-2'
+        extents[LAYER] = { start: '2023-06-01T00:00:00Z', end: '2023-06-30T23:59:59Z', interval: null }
+        extents[LAYER2] = { start: '2024-01-01T00:00:00Z', end: '2024-01-31T23:59:59Z', interval: null }
+        layerConfigs[LAYER2] = { display_name: 'Other', variables: { timeseries: { url: RANGED_URL } } }
+        await request()
+        await setDate('Start', '2023-06-10T00:00:00')
+        await settle()
+        await request()
+        expect(valueOf('Start')).toBe('2023-06-10T00:00:00')
+        await request(fetchPayload({ layerId: LAYER2 }))
+        expect(valueOf('Start')).toBe('2024-01-01T00:00:00')
+        expect(valueOf('End')).toBe('2024-01-31T23:59:59')
     })
 
     test('{start}/{end} expand wherever the author put them, URL-encoded', async () => {

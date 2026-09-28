@@ -15,9 +15,12 @@ Bus-only — no core imports.
 - Layer has no `variables.timeseries` block → the request does **nothing**
   (no card, no fetch, no empty chart).
 - Eligible request → the tool shows its card (it starts hidden) with Start
-  and End instants seeded from the mission time window, or the past year
-  when the mission has none: from the start of the day a year ago to the end
-  of today, UTC, so whole days are covered. The chart below names the feature; the card
+  and End instants seeded from the layer's own data range (its Data Time
+  Extent, as core resolves it), clipped to the last year when it is longer,
+  with an end in the future capped at the end of today, UTC. A side the layer
+  leaves open comes from the mission time window, else from today and the
+  year before it. The range is seeded once per layer; a pick on another layer
+  reseeds it. The chart below names the feature; the card
   does not. It fetches the feature's series over that range and emits `seriesReady` with the
   `ChartSeriesPayload` itself as the (flat, unenveloped) event payload (see
   [`_shared/types/chartSeries.ts`](../_shared/types/chartSeries.ts)).

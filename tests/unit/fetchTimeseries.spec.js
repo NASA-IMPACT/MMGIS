@@ -3,6 +3,7 @@ import {
     getTimeseriesConfig,
     templateUrl,
     usesRange,
+    seedRange,
     featureTitle,
     mapResponseSeries,
     buildPayload,
@@ -176,6 +177,59 @@ describe('fetchTimeseries lib', () => {
         test('a range placeholder with no range is a TemplateError naming it', () => {
             expect(() => templateUrl('https://api/items?start={start}', FEATURE)).toThrow(TemplateError)
             expect(() => templateUrl('https://api/items?start={start}', FEATURE)).toThrow(/\{start\}/)
+        })
+    })
+
+    describe('seedRange', () => {
+        const NOW = new Date('2026-09-24T12:00:00Z')
+        const seed = (extent, window = null) => seedRange({ extent, window, now: NOW })
+
+        test('an extent under a year is taken whole', () => {
+            expect(seed({ start: '2023-06-01T00:00:00Z', end: '2023-06-30T23:59:59Z' })).toEqual({
+                start: '2023-06-01T00:00:00',
+                end: '2023-06-30T23:59:59',
+            })
+        })
+
+        test('an extent over a year is clipped to the year ending at its end', () => {
+            expect(seed({ start: '2020-01-01T00:00:00Z', end: '2023-06-30T23:59:59Z' })).toEqual({
+                start: '2022-06-30T00:00:00',
+                end: '2023-06-30T23:59:59',
+            })
+        })
+
+        test('an end in the future is capped at the end of today', () => {
+            expect(seed({ start: '2020-01-01T00:00:00Z', end: '2026-12-31T23:59:59Z' })).toEqual({
+                start: '2025-09-24T00:00:00',
+                end: '2026-09-24T23:59:59',
+            })
+        })
+
+        test('an open side comes from the mission window', () => {
+            const window = { start: '2018-01-01T00:00:00Z', end: '2019-12-31T00:00:00Z' }
+            expect(seed({ start: null, end: '2019-06-30T00:00:00Z' }, window)).toEqual({
+                start: '2018-06-30T00:00:00',
+                end: '2019-06-30T00:00:00',
+            })
+            expect(seed({ start: '2019-06-01T00:00:00Z', end: null }, window)).toEqual({
+                start: '2019-06-01T00:00:00',
+                end: '2019-12-31T00:00:00',
+            })
+        })
+
+        test('no extent and no window means today and the year before it', () => {
+            expect(seed(null)).toEqual({ start: '2025-09-24T00:00:00', end: '2026-09-24T23:59:59' })
+            expect(seed({ start: null, end: null }, { start: null, end: null })).toEqual({
+                start: '2025-09-24T00:00:00',
+                end: '2026-09-24T23:59:59',
+            })
+        })
+
+        test('an extent start after a capped end gives the year before the end', () => {
+            expect(seed({ start: '2027-01-01T00:00:00Z', end: '2027-12-31T00:00:00Z' })).toEqual({
+                start: '2025-09-24T00:00:00',
+                end: '2026-09-24T23:59:59',
+            })
         })
     })
 

@@ -71,6 +71,64 @@ export function usesRange(template: string): boolean {
     return /{\s*(start|end)\s*}/.test(template)
 }
 
+export const DAY_MS = 24 * 60 * 60 * 1000
+/** The most the card seeds: a year, in whole UTC days, so a date-only row
+ *  on either end is inside the range. */
+export const DEFAULT_SPAN_DAYS = 365
+
+/** UTC, to the second, without the zone suffix: what datetime-local holds. */
+export const isoInstant = (d: Date) => d.toISOString().slice(0, 19)
+export const startOfUtcDay = (d: Date) =>
+    new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+export const endOfUtcDay = (d: Date) =>
+    new Date(startOfUtcDay(d).getTime() + DAY_MS - 1000)
+
+const parseInstant = (value: string | null | undefined): Date | null => {
+    if (!value) return null
+    const d = new Date(value)
+    return Number.isNaN(d.getTime()) ? null : d
+}
+
+/** One side of a seeded range, from the layer's extent or the mission window. */
+export interface RangeSource {
+    start: string | null
+    end: string | null
+}
+
+const yearBefore = (end: Date) =>
+    startOfUtcDay(new Date(end.getTime() - DEFAULT_SPAN_DAYS * DAY_MS))
+
+/**
+ * The range the card opens with. The layer's own data extent comes first,
+ * side by side; a side it leaves open comes from the mission window, and
+ * failing that from today and the year before it. An end in the future is
+ * capped at the end of today, and a span longer than a year is clipped to
+ * the year ending at its end.
+ */
+export function seedRange(args: {
+    extent?: RangeSource | null
+    window?: RangeSource | null
+    now: Date
+}): DateRange {
+    const today = endOfUtcDay(args.now)
+    let start = parseInstant(args.extent?.start)
+    let end = parseInstant(args.extent?.end)
+    if (end && end > today) end = today
+    if (!start || !end) {
+        const ws = parseInstant(args.window?.start)
+        const we = parseInstant(args.window?.end)
+        if (ws && we && ws <= we) {
+            start = start ?? ws
+            end = end ?? we
+        }
+    }
+    if (!end) end = today
+    if (!start || start > end || end.getTime() - start.getTime() > DEFAULT_SPAN_DAYS * DAY_MS) {
+        start = yearBefore(end)
+    }
+    return { start: isoInstant(start), end: isoInstant(end) }
+}
+
 /**
  * Substitutes feature values into the URL template. Values are URL-encoded.
  * An unresolvable placeholder throws TemplateError naming it — an eligible
