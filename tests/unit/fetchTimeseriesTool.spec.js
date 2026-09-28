@@ -2,9 +2,7 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import FetchTimeseriesTool from '../../src/essence/Tools/FetchTimeseries/FetchTimeseriesTool'
 import { isChartSeriesPayload } from '../../src/essence/Tools/_shared/types/chartSeries'
 
-const LOADING = 'plugin:fetch-timeseries:seriesLoading'
 const READY = 'plugin:fetch-timeseries:seriesReady'
-const ERROR = 'plugin:fetch-timeseries:seriesError'
 const CLEARED = 'plugin:fetch-timeseries:seriesCleared'
 
 const LAYER = 'uuid-1'
@@ -37,6 +35,7 @@ describe('FetchTimeseriesTool', () => {
 
     const emittedFor = (event) =>
         emitted.filter(([e]) => e === event).map(([, p]) => p)
+    const emittedNames = () => emitted.map(([e]) => e)
 
     const request = (payload = fetchPayload()) =>
         FetchTimeseriesTool._onFetch(payload)
@@ -92,15 +91,12 @@ describe('FetchTimeseriesTool', () => {
     test('the fetch event on the bus drives the same path as a direct call', async () => {
         handlers[FETCH][0](fetchPayload())
         await new Promise((r) => setTimeout(r, 0))
-        expect(emittedFor(LOADING)).toHaveLength(1)
-        expect(emittedFor(READY)).toHaveLength(1)
+        expect(emittedNames()).toEqual([READY])
     })
 
-    test('happy path: loading, then a flat valid seriesReady payload', async () => {
+    test('happy path: one flat valid seriesReady payload, nothing else', async () => {
         await request()
-        expect(emittedFor(LOADING)).toEqual([
-            { chartId: 'vector-timeseries', title: 'Station 42' },
-        ])
+        expect(emittedNames()).toEqual([READY])
         const [ready] = emittedFor(READY)
         expect(isChartSeriesPayload(ready)).toBe(true)
         expect(ready.chartId).toBe('vector-timeseries')
@@ -119,7 +115,7 @@ describe('FetchTimeseriesTool', () => {
             'https://api/x?lon=-97.7&lat=30.3',
             expect.anything(),
         )
-        expect(emittedFor(ERROR)).toEqual([])
+        expect(emittedNames()).toEqual([READY])
     })
 
     test('a second request aborts the first fetch; only its chart arrives', async () => {
@@ -143,32 +139,32 @@ describe('FetchTimeseriesTool', () => {
         resolveSecond(okResponse())
         await Promise.all([first, second])
         expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true)
-        expect(emittedFor(LOADING)).toHaveLength(2)
-        expect(emittedFor(READY)).toHaveLength(1)
-        expect(emittedFor(ERROR)).toEqual([])
+        expect(emittedNames()).toEqual([READY])
     })
 
-    test('an HTTP error becomes a seriesError card', async () => {
+    test('an HTTP error is logged and emits nothing', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
         fetchMock.mockResolvedValueOnce({ ok: false, status: 502 })
         await request()
-        expect(emittedFor(ERROR)).toEqual([
-            {
-                chartId: 'vector-timeseries',
-                message: 'Could not load data (HTTP 502)',
-            },
-        ])
+        expect(emitted).toEqual([])
+        expect(warn).toHaveBeenCalledWith(
+            '[FetchTimeseries] Could not load data (HTTP 502)',
+        )
     })
 
-    test('a bad URL template becomes a seriesError card without fetching', async () => {
+    test('a bad URL template is logged without fetching', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
         layerConfigs[LAYER].variables.timeseries.url =
             'https://api/x?s={properties.missing}'
         await request()
         expect(fetchMock).not.toHaveBeenCalled()
-        const [error] = emittedFor(ERROR)
-        expect(error.message).toContain('properties.missing')
+        expect(emitted).toEqual([])
+        expect(warn).toHaveBeenCalledWith(
+            expect.stringContaining('properties.missing'),
+        )
     })
 
-    test('a stalled fetch times out into a seriesError card', async () => {
+    test('a stalled fetch times out, logged, emitting nothing', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
         vi.useFakeTimers()
         fetchMock.mockImplementationOnce(
@@ -183,9 +179,8 @@ describe('FetchTimeseriesTool', () => {
         await vi.advanceTimersByTimeAsync(30001)
         await pending
         vi.useRealTimers()
-        expect(emittedFor(ERROR)).toEqual([
-            { chartId: 'vector-timeseries', message: 'Request timed out' },
-        ])
+        expect(emitted).toEqual([])
+        expect(warn).toHaveBeenCalledWith('[FetchTimeseries] Request timed out')
         warn.mockRestore()
     })
 
@@ -204,8 +199,7 @@ describe('FetchTimeseriesTool', () => {
         FetchTimeseriesTool.destroy()
         await pending
         expect(emittedFor(CLEARED)).toEqual([{ chartId: 'vector-timeseries' }])
-        expect(emittedFor(ERROR)).toEqual([])
-        expect(emittedFor(READY)).toEqual([])
+        expect(emittedNames()).toEqual([CLEARED])
     })
 
     test('requests before layers:getConfig registers are silent no-ops', async () => {

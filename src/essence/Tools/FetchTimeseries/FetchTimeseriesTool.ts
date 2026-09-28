@@ -10,11 +10,13 @@
  *     plugin or engine may emit the same message.
  *
  * Emits (full names, consumed by SeriesChart via the shared contract in
- * _shared/types/chartSeries.ts — all four messages are flat):
- *   - plugin:fetch-timeseries:seriesLoading  { chartId, title }
+ * _shared/types/chartSeries.ts — both messages are flat):
  *   - plugin:fetch-timeseries:seriesReady    ChartSeriesPayload
- *   - plugin:fetch-timeseries:seriesError    { chartId, message }
  *   - plugin:fetch-timeseries:seriesCleared  { chartId } (on destroy)
+ *
+ * Loading and failure are the fetcher's own to show. This plugin has no
+ * surface yet, so a failed request is logged and the chart is left as it
+ * was; the range card that follows shows both.
  *
  * 'fetch-timeseries' is the kebab-case plugin id used in event names (the
  * convention the chart-series contract adopts, like FetchStats); it is
@@ -45,8 +47,8 @@ const PLUGIN_ID = 'fetch-timeseries'
 const CHART_ID = 'vector-timeseries'
 const EVENTS = seriesEvents(PLUGIN_ID)
 const FETCH_EVENT = `plugin:${PLUGIN_ID}:fetch`
-/** A stalled connection must not strand the chart's spinner — the only other
- *  way out of a hung fetch is the user requesting another feature. */
+/** A stalled connection must not hang the tool — the only other way out of
+ *  a hung fetch is the user requesting another feature. */
 const FETCH_TIMEOUT_MS = 30000
 
 interface FetchRequest {
@@ -88,8 +90,8 @@ const FetchTimeseriesTool = {
         this._abort = null
         this._cleanups.forEach((off) => off())
         this._cleanups = []
-        // The data source is going away: remove its card rather than strand
-        // a spinner (the aborted fetch resolves silently) or a stale chart.
+        // The data source is going away: remove its card rather than leave
+        // a stale chart (the aborted fetch resolves silently).
         if (this.made) mmgisEmit(EVENTS.cleared, { chartId: CHART_ID })
         this.made = false
     },
@@ -121,14 +123,12 @@ const FetchTimeseriesTool = {
         const abort = new AbortController()
         this._abort = abort
 
-        mmgisEmit(EVENTS.loading, { chartId: CHART_ID, title })
-
         let url: string
         try {
             url = templateUrl(config.url, feature, payload?.latlng)
         } catch (err) {
             if (err instanceof TemplateError) {
-                mmgisEmit(EVENTS.error, { chartId: CHART_ID, message: err.message })
+                this._fail(err.message)
                 return
             }
             throw err
@@ -153,10 +153,7 @@ const FetchTimeseriesTool = {
             })
             if (abort.signal.aborted && !timedOut) return
             if (!resp.ok) {
-                mmgisEmit(EVENTS.error, {
-                    chartId: CHART_ID,
-                    message: `Could not load data (HTTP ${resp.status})`,
-                })
+                this._fail(`Could not load data (HTTP ${resp.status})`)
                 return
             }
             const body: unknown = await resp.json()
@@ -183,10 +180,14 @@ const FetchTimeseriesTool = {
             if (!(err instanceof MappingError)) {
                 console.warn('[FetchTimeseries] fetch failed', err)
             }
-            mmgisEmit(EVENTS.error, { chartId: CHART_ID, message })
+            this._fail(message)
         } finally {
             window.clearTimeout(timer)
         }
+    },
+
+    _fail(message: string) {
+        console.warn(`[FetchTimeseries] ${message}`)
     },
 }
 

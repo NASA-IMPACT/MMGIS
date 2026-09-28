@@ -12,20 +12,20 @@ core imports, no rendering.
   [Feature Popup](../FeaturePopup/) card action, see below.
 - Layer has no `variables.timeseries` block → the request does **nothing**
   chart-wise (no fetch, no empty chart).
-- Eligible request → emits `seriesLoading`, fetches, then `seriesReady` with
-  the `ChartSeriesPayload` itself as the (flat, unenveloped) event payload
-  (see [`_shared/types/chartSeries.ts`](../_shared/types/chartSeries.ts)),
-  or `seriesError` with a human-readable message (HTTP failure, timeout,
-  bad URL template, unusable response shape).
+- Eligible request → fetches, then emits `seriesReady` with the
+  `ChartSeriesPayload` itself as the (flat, unenveloped) event payload
+  (see [`_shared/types/chartSeries.ts`](../_shared/types/chartSeries.ts)).
+- A failure (HTTP failure, timeout, bad URL template, unusable response
+  shape) is logged to the console and emits nothing. Loading and failure are
+  the fetcher's own to show, and this plugin has no surface of its own yet.
 - A new request aborts any in-flight fetch and replaces the chart (single
   `chartId: 'vector-timeseries'`); charts persist until replaced. Fetches
-  time out after 30 seconds so a stalled connection cannot strand the
-  spinner.
+  time out after 30 seconds so a stalled connection cannot hang the tool.
 - Tool teardown (`destroy`) aborts any in-flight fetch and emits
   `seriesCleared` so no card is left behind.
 
-Events (all under `plugin:fetch-timeseries:`): `seriesLoading`,
-`seriesReady`, `seriesError`, `seriesCleared`.
+Events (all under `plugin:fetch-timeseries:`): `seriesReady`,
+`seriesCleared`.
 
 ## Triggering it from the Feature Popup
 
