@@ -66,6 +66,16 @@ The VEDA dev features API, whose date columns are text and refuse
 A URL with neither placeholder fetches whatever the service returns, and the
 card shows no Start/End inputs.
 
+## Paging
+
+OGC Features services page their answers. The URL's `limit` is the page
+size; the plugin follows the standard `next` link (`links[rel=next]`) until
+it is gone or the rows gathered reach `numberMatched`, then charts every page
+as one response. The card counts pages while it walks ("Fetching data… page
+3 of 12"). More than 100 pages is a failure shown on the card: narrow the
+range. A response without those members (a bare array, a service that does
+not page) is one request, as before.
+
 ## Triggering it from the Feature Popup
 
 The Feature Popup shows a card when a feature is clicked and emits a
@@ -141,11 +151,11 @@ Notes:
 
 - The observation features carry `datetime`/`value` under `properties`, so
   `xKey`/`yKey` need no configuration.
-- Keep the `limit=1000` on the timeseries URL: the API defaults to 10 items
-  per page and this plugin does not follow `rel: next` pagination links.
-  When a response reports more matches than it returned
-  (`numberMatched`/`numberReturned`), the chart title carries a
-  "first N of M points" notice instead of presenting a page as the record.
+- Keep a `limit` on the timeseries URL: the API defaults to 10 items per
+  page. The plugin follows `rel: next` links (see Paging above), so the
+  `limit` sets the page size, not the ceiling. Should a response still
+  report more matches than the plugin ended up with, the chart title carries
+  a "first N of M points" notice instead of presenting a page as the record.
 - `groupBy` yields one series per parameter (e.g. PM2.5 + Ozone); the
   SeriesChart's Variable dropdown picks which one is visible and the card footer shows
   its unit.

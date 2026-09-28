@@ -248,6 +248,109 @@ describe('FetchTimeseriesTool', () => {
         expect(fetchMock).toHaveBeenCalledTimes(1)
     })
 
+    /** An OGC Features page: points under `features`, the standard counters,
+     *  and a `next` link when there is more. */
+    const page = (values, { matched, returned = values.length, next = null } = {}) => ({
+        ok: true,
+        json: async () => ({
+            type: 'FeatureCollection',
+            numberMatched: matched ?? values.length,
+            numberReturned: returned,
+            links: next ? [{ rel: 'next', href: next }] : [],
+            features: values.map((value, i) => ({
+                properties: { datetime: `2026-01-0${i + 1}T00:00:00Z`, value },
+            })),
+        }),
+    })
+    const pointsOut = () => emittedFor(READY)[0].series[0].points.map((p) => p.y)
+    /** A request awaits several bus answers before its first fetch, and each
+     *  page after it; this drains the microtask chain without a timer. */
+    const flush = () =>
+        act(async () => {
+            for (let i = 0; i < 40; i++) await Promise.resolve()
+        })
+
+    test('follows next links and charts every page as one series', async () => {
+        fetchMock
+            .mockResolvedValueOnce(page([1, 2], { matched: 3, next: 'https://api/x?offset=2' }))
+            .mockResolvedValueOnce(page([3], { matched: 3 }))
+        await request()
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+        expect(fetchMock.mock.calls[1][0]).toBe('https://api/x?offset=2')
+        expect(emittedFor(READY)).toHaveLength(1)
+        expect(pointsOut()).toEqual([1, 2, 3])
+        // Every page arrived, so the title carries no truncation notice.
+        expect(emittedFor(READY)[0].title).not.toContain('first ')
+        expect(host.textContent).not.toContain('Fetching data…')
+    })
+
+    test('stops when the rows gathered reach numberMatched, even with a next link offered', async () => {
+        fetchMock.mockResolvedValueOnce(page([1, 2], { matched: 2, next: 'https://api/x?offset=2' }))
+        await request()
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expect(pointsOut()).toEqual([1, 2])
+    })
+
+    test('the card counts pages while it walks', async () => {
+        let resolveSecond
+        fetchMock
+            .mockResolvedValueOnce(page([1, 2], { matched: 6, next: 'https://api/x?offset=2' }))
+            .mockImplementationOnce(
+                (url, opts) =>
+                    new Promise((resolve, reject) => {
+                        resolveSecond = resolve
+                        opts.signal.addEventListener('abort', () =>
+                            reject(new DOMException('aborted', 'AbortError')),
+                        )
+                    }),
+            )
+            .mockResolvedValueOnce(page([5, 6], { matched: 6 }))
+        const pending = FetchTimeseriesTool._onFetch(fetchPayload())
+        await flush()
+        expect(host.textContent).toContain('Fetching data… page 2 of 3')
+        // The third page answers at once, so the walk completes here.
+        resolveSecond(page([3, 4], { matched: 6, next: 'https://api/x?offset=4' }))
+        await act(async () => {
+            await pending
+        })
+        expect(fetchMock).toHaveBeenCalledTimes(3)
+        expect(host.textContent).not.toContain('Fetching data…')
+        expect(pointsOut()).toEqual([1, 2, 3, 4, 5, 6])
+    })
+
+    test('EXIT between pages emits nothing more', async () => {
+        fetchMock
+            .mockResolvedValueOnce(page([1], { matched: 2, next: 'https://api/x?offset=1' }))
+            .mockImplementationOnce(
+                (url, opts) =>
+                    new Promise((resolve, reject) => {
+                        opts.signal.addEventListener('abort', () =>
+                            reject(new DOMException('aborted', 'AbortError')),
+                        )
+                    }),
+            )
+        const pending = FetchTimeseriesTool._onFetch(fetchPayload())
+        await flush()
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+        await act(async () => {
+            host.querySelector('.range-card__exit').click()
+        })
+        await act(async () => {
+            await pending
+        })
+        expect(emitted.map(([e]) => e)).toEqual([CLEARED])
+    })
+
+    test('more pages than the cap fails on the card instead of charting a truncated series', async () => {
+        fetchMock.mockImplementation(async (url) =>
+            page([1], { matched: 1e9, next: `${url}&more` }),
+        )
+        await request()
+        expect(fetchMock).toHaveBeenCalledTimes(100)
+        expect(host.textContent).toContain('More than 100 pages of data')
+        expect(emitted.map(([e]) => e)).toEqual([CLEARED])
+    })
+
     /** The refetch waits for typing to settle; this lets it fire. */
     const settle = () =>
         act(async () => {

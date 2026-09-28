@@ -267,6 +267,60 @@ function toY(value: unknown): number | null {
 
 export class MappingError extends Error {}
 
+/** What an OGC Features page says about the rest of the answer. All null
+ *  for a bare array or an object without the standard members. */
+export interface PageInfo {
+    next: string | null
+    matched: number | null
+    returned: number | null
+}
+
+export function pageInfo(response: unknown): PageInfo {
+    if (!isRecord(response)) return { next: null, matched: null, returned: null }
+    const links = Array.isArray(response.links) ? response.links : []
+    const next = links.find(
+        (l) => isRecord(l) && l.rel === 'next' && typeof l.href === 'string',
+    ) as { href: string } | undefined
+    const count = (v: unknown) =>
+        typeof v === 'number' && Number.isFinite(v) ? v : null
+    return {
+        next: next?.href ?? null,
+        matched: count(response.numberMatched),
+        returned: count(response.numberReturned),
+    }
+}
+
+function withArrayAt(
+    obj: Record<string, unknown>,
+    path: string,
+    points: unknown[],
+): Record<string, unknown> {
+    const [head, ...tail] = path.split('.')
+    if (tail.length === 0) return { ...obj, [head]: points }
+    const child = obj[head]
+    return {
+        ...obj,
+        [head]: withArrayAt(isRecord(child) ? child : {}, tail.join('.'), points),
+    }
+}
+
+/** The first page with every page's points concatenated into its point
+ *  array, so the mapper sees one response, and numberReturned raised to the
+ *  merged count so the truncation notice knows the walk completed. A page
+ *  without the array is the same MappingError a single response would raise. */
+export function mergePages(
+    first: unknown,
+    rest: unknown[],
+    config: TimeseriesConfig,
+): unknown {
+    if (rest.length === 0) return first
+    const seriesPath = config.seriesPath || DEFAULT_SERIES_PATH
+    const points = [first, ...rest].flatMap((page) => pointsOf(page, seriesPath))
+    if (Array.isArray(first) || !isRecord(first)) return points
+    const merged = withArrayAt(first, seriesPath, points)
+    return 'numberReturned' in merged ? { ...merged, numberReturned: points.length } : merged
+}
+
 export interface MappedSeries {
     /** Distinct groupBy value; '' for the ungrouped single series. */
     key: string

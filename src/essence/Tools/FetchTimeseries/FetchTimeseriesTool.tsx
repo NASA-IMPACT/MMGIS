@@ -53,6 +53,8 @@ import {
     featureTitle,
     buildPayload,
     seedRange,
+    pageInfo,
+    mergePages,
     TemplateError,
     MappingError,
     type DateRange,
@@ -71,6 +73,16 @@ const FETCH_EVENT = `plugin:${PLUGIN_ID}:fetch`
 /** A stalled connection must not strand the card's spinner — the only other
  *  way out of a hung fetch is the user requesting another feature. */
 const FETCH_TIMEOUT_MS = 30000
+/** A paged answer is walked page by page; past this many the range is too
+ *  wide to chart, and a silently truncated series would mislead. */
+const MAX_PAGES = 100
+const ACCEPT = 'application/geo+json, application/json;q=0.9, */*;q=0.8'
+
+class HttpError extends Error {
+    constructor(readonly status: number) {
+        super(`HTTP ${status}`)
+    }
+}
 /** Typing a date fires several changes; the card updates at once, the
  *  refetch waits for the typing to settle. */
 const REFETCH_DEBOUNCE_MS = 400
@@ -308,32 +320,60 @@ const FetchTimeseriesTool = {
         }
 
         // The timeout aborts the same controller a superseding request would;
-        // the flag is what tells the two apart in the catch below.
+        // the flag is what tells the two apart in the catch below. It guards
+        // a stalled connection, so it is re-armed for every page.
         let timedOut = false
-        const timer = window.setTimeout(() => {
-            timedOut = true
-            abort.abort()
-        }, FETCH_TIMEOUT_MS)
-        try {
+        let timer = 0
+        const getPage = async (pageUrl: string): Promise<unknown> => {
+            window.clearTimeout(timer)
+            timer = window.setTimeout(() => {
+                timedOut = true
+                abort.abort()
+            }, FETCH_TIMEOUT_MS)
             // Prefer GeoJSON: content-negotiating APIs (tipg) serve flat rows
             // for bare application/json; servers that don't negotiate ignore
             // the extra types.
-            const resp = await fetch(url, {
+            const resp = await fetch(pageUrl, {
                 signal: abort.signal,
-                headers: {
-                    Accept: 'application/geo+json, application/json;q=0.9, */*;q=0.8',
-                },
+                headers: { Accept: ACCEPT },
             })
+            if (!resp.ok) throw new HttpError(resp.status)
+            return resp.json()
+        }
+        try {
+            const first = await getPage(url)
             if (abort.signal.aborted && !timedOut) return
-            if (!resp.ok) {
-                this._fail(`Could not load data (HTTP ${resp.status})`)
-                return
+
+            // OGC Features pages the answer: follow `next` until it is gone
+            // or the rows gathered reach numberMatched, whichever first.
+            const pageSize = pageInfo(first).returned
+            const rest: unknown[] = []
+            let info = pageInfo(first)
+            let gathered = info.returned ?? 0
+            let fetched = url
+            while (
+                info.next &&
+                info.next !== fetched &&
+                (info.matched == null || gathered < info.matched)
+            ) {
+                if (rest.length + 1 >= MAX_PAGES) {
+                    this._fail(`More than ${MAX_PAGES} pages of data; narrow the range`)
+                    return
+                }
+                const pages =
+                    info.matched != null && pageSize ? Math.ceil(info.matched / pageSize) : null
+                this._setStatus({ kind: 'loading', page: rest.length + 2, pages })
+                fetched = info.next
+                const page = await getPage(fetched)
+                if (abort.signal.aborted && !timedOut) return
+                rest.push(page)
+                info = pageInfo(page)
+                gathered += info.returned ?? 0
             }
-            const body: unknown = await resp.json()
-            if (abort.signal.aborted && !timedOut) return
+
             const chartPayload = buildPayload({
                 chartId: CHART_ID,
-                response: body,
+                response: mergePages(first, rest, config),
                 config,
                 title,
                 layerDisplayName,
@@ -348,10 +388,12 @@ const FetchTimeseriesTool = {
             const message =
                 err instanceof MappingError
                     ? err.message
-                    : timedOut
-                      ? 'Request timed out'
-                      : 'Could not load data for this feature'
-            if (!(err instanceof MappingError)) {
+                    : err instanceof HttpError
+                      ? `Could not load data (HTTP ${err.status})`
+                      : timedOut
+                        ? 'Request timed out'
+                        : 'Could not load data for this feature'
+            if (!(err instanceof MappingError) && !(err instanceof HttpError)) {
                 console.warn('[FetchTimeseries] fetch failed', err)
             }
             this._fail(message)

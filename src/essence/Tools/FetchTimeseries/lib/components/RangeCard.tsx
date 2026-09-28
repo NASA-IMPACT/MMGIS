@@ -2,7 +2,8 @@ import React from 'react'
 
 export type RangeStatus =
     | { kind: 'idle' }
-    | { kind: 'loading' }
+    /** `page` and `pages` appear once the answer turns out to be paged. */
+    | { kind: 'loading'; page?: number; pages?: number | null }
     | { kind: 'error'; message: string }
 
 export interface RangeCardProps {
@@ -84,6 +85,8 @@ export function RangeCard({
                 <div className="range-card__status" aria-live="polite">
                     <span className="range-card__spinner" aria-hidden="true" />
                     Fetching data…
+                    {status.page != null &&
+                        ` page ${status.page}${status.pages ? ` of ${status.pages}` : ''}`}
                 </div>
             )}
             {status.kind === 'error' && (

@@ -4,6 +4,8 @@ import {
     templateUrl,
     usesRange,
     seedRange,
+    pageInfo,
+    mergePages,
     featureTitle,
     mapResponseSeries,
     buildPayload,
@@ -230,6 +232,56 @@ describe('fetchTimeseries lib', () => {
                 start: '2025-09-24T00:00:00',
                 end: '2026-09-24T23:59:59',
             })
+        })
+    })
+
+    describe('pageInfo', () => {
+        test('reads the counters and the next link from an OGC Features page', () => {
+            expect(
+                pageInfo({
+                    numberMatched: 30,
+                    numberReturned: 10,
+                    links: [
+                        { rel: 'self', href: 'https://x/items' },
+                        { rel: 'next', href: 'https://x/items?offset=10' },
+                    ],
+                    features: [],
+                }),
+            ).toEqual({ next: 'https://x/items?offset=10', matched: 30, returned: 10 })
+        })
+
+        test('is empty for a bare array, an object without the members, or a malformed link', () => {
+            const none = { next: null, matched: null, returned: null }
+            expect(pageInfo([{ datetime: 'x', value: 1 }])).toEqual(none)
+            expect(pageInfo({ features: [] })).toEqual(none)
+            expect(pageInfo({ links: [{ rel: 'next' }], numberMatched: '30' })).toEqual(none)
+        })
+    })
+
+    describe('mergePages', () => {
+        test('concatenates every page into the first one under the default path', () => {
+            const first = { type: 'FeatureCollection', numberMatched: 3, numberReturned: 1, features: [{ a: 1 }] }
+            const merged = mergePages(first, [{ features: [{ a: 2 }, { a: 3 }] }], { url: 'x' })
+            expect(merged).toEqual({
+                type: 'FeatureCollection',
+                numberMatched: 3,
+                numberReturned: 3,
+                features: [{ a: 1 }, { a: 2 }, { a: 3 }],
+            })
+            expect(first.features).toHaveLength(1)
+            expect(first.numberReturned).toBe(1)
+        })
+
+        test('follows a custom seriesPath and keeps a bare array bare', () => {
+            expect(
+                mergePages({ data: { rows: [1] } }, [{ data: { rows: [2] } }], { url: 'x', seriesPath: 'data.rows' }),
+            ).toEqual({ data: { rows: [1, 2] } })
+            expect(mergePages([1], [[2], [3]], { url: 'x' })).toEqual([1, 2, 3])
+            expect(mergePages({ features: [1] }, [], { url: 'x' })).toEqual({ features: [1] })
+        })
+
+        test('a page without the point array is the usual MappingError', () => {
+            expect(() => mergePages({ features: [] }, [{ nope: [] }], { url: 'x' })).toThrow(MappingError)
         })
     })
 
