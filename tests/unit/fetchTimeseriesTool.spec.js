@@ -45,6 +45,7 @@ describe('FetchTimeseriesTool', () => {
     let hasHandler
     let timeEnabled
     let host
+    let configGate
 
     const emittedFor = (event) =>
         emitted.filter(([e]) => e === event).map(([, p]) => p)
@@ -82,6 +83,7 @@ describe('FetchTimeseriesTool', () => {
         requests = []
         hasHandler = () => true
         timeEnabled = false
+        configGate = null
         layerConfigs = {
             [LAYER]: {
                 display_name: 'Air Stations',
@@ -99,7 +101,10 @@ describe('FetchTimeseriesTool', () => {
             hasHandler: (name) => hasHandler(name),
             request: async (name, params) => {
                 requests.push([name, params])
-                if (name === 'layers:getConfig') return layerConfigs[params] ?? null
+                if (name === 'layers:getConfig') {
+                    if (configGate) await configGate
+                    return layerConfigs[params] ?? null
+                }
                 if (name === 'time:isEnabled') return timeEnabled
                 if (name === 'time:getStart') return '2018-01-01T00:00:00Z'
                 if (name === 'time:getEnd') return '2019-12-31T00:00:00Z'
@@ -240,6 +245,49 @@ describe('FetchTimeseriesTool', () => {
         expect(filterOf(fetchMock.mock.calls[1][0])).toBe(
             "datetime >= '2025-09-24T12:00:00' AND datetime <= '2027-03-01T00:00:00'",
         )
+    })
+
+    test('destroy during the refetch wait cancels it', async () => {
+        await request()
+        await setDate('Start', '2026-03-01T00:00:00')
+        act(() => FetchTimeseriesTool.destroy())
+        await settle()
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+
+    test('destroy while the layer lookup is pending fetches nothing afterwards', async () => {
+        let release
+        configGate = new Promise((resolve) => (release = resolve))
+        const pending = FetchTimeseriesTool._onFetch(fetchPayload())
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(0)
+            FetchTimeseriesTool.destroy()
+            release()
+            await pending
+        })
+        expect(fetchMock).not.toHaveBeenCalled()
+        expect(requested('plugins:show')).toEqual([])
+        expect(emitted.map(([e]) => e)).toEqual([CLEARED])
+        expect(host.innerHTML).toBe('')
+    })
+
+    test('EXIT while the layer lookup is pending does not reopen the card', async () => {
+        await request()
+        let release
+        configGate = new Promise((resolve) => (release = resolve))
+        const pending = FetchTimeseriesTool._onFetch(fetchPayload())
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(0)
+            host.querySelector('.range-card__exit').click()
+            release()
+            await pending
+        })
+        await settle()
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expect(requested('plugins:show')).toHaveLength(1)
+        expect(requested('plugins:hide')).toHaveLength(1)
+        expect(emittedFor(READY)).toHaveLength(1)
+        expect(FetchTimeseriesTool._selection).toBeNull()
     })
 
     test('EXIT during the refetch wait cancels it', async () => {

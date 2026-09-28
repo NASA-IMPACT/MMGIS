@@ -107,8 +107,9 @@ const FetchTimeseriesTool = {
     _selection: null as Selection | null,
     _range: null as DateRange | null,
     _refetchTimer: null as number | null,
-    /** Bumped per fetch request; a lookup that finishes after a newer
-     *  request started must not become the selection. */
+    /** Bumped per fetch request, and by destroy and EXIT: a lookup that
+     *  finishes after a newer request started, or after the card was torn
+     *  down or closed, must not become the selection. */
     _fetchSeq: 0,
     _status: { kind: 'idle' } as RangeStatus,
 
@@ -140,6 +141,7 @@ const FetchTimeseriesTool = {
     },
 
     destroy() {
+        this._fetchSeq++
         this._cancelRefetch()
         this._abort?.abort()
         this._abort = null
@@ -208,6 +210,7 @@ const FetchTimeseriesTool = {
      *  itself down, this card hides. The bus subscription stays, so the next
      *  Timeseries press opens everything again. */
     _onExit() {
+        this._fetchSeq++
         this._cancelRefetch()
         this._abort?.abort()
         this._abort = null
