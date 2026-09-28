@@ -252,12 +252,21 @@ describe('FetchTimeseriesTool', () => {
         expect(fetchMock).toHaveBeenCalledTimes(1)
     })
 
-    test('a start after the end drags the end along, and the reverse', async () => {
+    test('a start after the end drags the end along, and the reverse; the refetch uses the clamped range', async () => {
         await request()
         await setDate('Start', '2026-12-01T00:00:00')
         expect(valueOf('End')).toBe('2026-12-01T00:00:00')
+        await settle()
+        expect(filterOf(fetchMock.mock.calls[1][0])).toBe(
+            "datetime >= '2026-12-01T00:00:00' AND datetime <= '2026-12-01T00:00:00'",
+        )
         await setDate('End', '2026-02-01T00:00:00')
         expect(valueOf('Start')).toBe('2026-02-01T00:00:00')
+        await settle()
+        expect(filterOf(fetchMock.mock.calls[2][0])).toBe(
+            "datetime >= '2026-02-01T00:00:00' AND datetime <= '2026-02-01T00:00:00'",
+        )
+        expect(emittedFor(READY)).toHaveLength(3)
     })
 
     test('EXIT clears the chart, hides this card, and leaves the next request working', async () => {
