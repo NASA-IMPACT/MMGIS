@@ -1,10 +1,10 @@
 # FetchTimeseries plugin
 
-A small card holding a Start and End date, over the fetch that charts a
+A small card holding a Start and End instant, over the fetch that charts a
 vector feature's time series. When asked for a feature whose layer opts in,
 the card appears, the feature's series is fetched over the chosen range and
 published as a chart-series payload for the
-[SeriesChart plugin](../SeriesChart/README.md). Changing a date refetches.
+[SeriesChart plugin](../SeriesChart/README.md). Changing the range refetches.
 Bus-only — no core imports.
 
 ## Behavior
@@ -15,16 +15,17 @@ Bus-only — no core imports.
 - Layer has no `variables.timeseries` block → the request does **nothing**
   (no card, no fetch, no empty chart).
 - Eligible request → the tool shows its card (it starts hidden) with Start
-  and End dates seeded from the mission time window, or the past year when
-  the mission has none. The chart below names the feature; the card does not. It fetches the
-  feature's series over that range and emits `seriesReady` with the
+  and End instants seeded from the mission time window, or the past year
+  when the mission has none. The chart below names the feature; the card
+  does not. It fetches the feature's series over that range and emits `seriesReady` with the
   `ChartSeriesPayload` itself as the (flat, unenveloped) event payload (see
   [`_shared/types/chartSeries.ts`](../_shared/types/chartSeries.ts)).
   Loading and failure (HTTP error, timeout, bad URL template, unusable
   response shape) show on the card; neither is an event.
-- Changing a date refetches the same feature over the new range and emits
-  `seriesReady` again, so the chart replaces its card. A start past the end
-  drags the end along, and the reverse.
+- Changing the range refetches the same feature and emits `seriesReady`
+  again, so the chart replaces its card. A start past the end drags the end
+  along, and the reverse. A layer whose URL takes no range gets the card
+  with EXIT only.
 - A new request aborts any in-flight fetch and replaces the chart (single
   `chartId: 'vector-timeseries'`); charts persist until replaced. Fetches
   time out after 30 seconds.
@@ -36,18 +37,28 @@ Bus-only — no core imports.
 
 Events (under `plugin:fetch-timeseries:`): `seriesReady`, `seriesCleared`.
 
-## The date range on the URL
+## The range on the URL
 
-The range is appended to the templated URL as a CQL2 text filter on the
-layer's time property (`xKey`, default `datetime`), inclusive of both days:
+Services disagree on how a range is asked for, so the layer's URL says it.
+The card's instants fill `{start}` and `{end}`, as `YYYY-MM-DDTHH:MM:SS` in
+UTC with no zone suffix, wherever the URL puts them; the author writes the
+service's own syntax around them. Two working forms:
+
+OGC Features / STAC, a `datetime` interval:
 
 ```
-&filter=datetime >= '2018-01-01T00:00:00' AND datetime <= '2019-12-31T23:59:59'&filter-lang=cql2-text
+...&datetime={start}Z/{end}Z
 ```
 
-The standard `datetime=start/end` parameter is not used: the dev features
-API stores its date columns as text and refuses it ("Must have timestamp
-typed column"), while the string comparison works there on every collection.
+The VEDA dev features API, whose date columns are text and refuse
+`datetime=` ("Must have timestamp typed column"), as a CQL2 text comparison:
+
+```
+...&filter=datetime >= '{start}' AND datetime <= '{end}'&filter-lang=cql2-text
+```
+
+A URL with neither placeholder fetches whatever the service returns, and the
+card shows no Start/End inputs.
 
 ## Triggering it from the Feature Popup
 

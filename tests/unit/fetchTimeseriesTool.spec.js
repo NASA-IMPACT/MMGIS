@@ -29,11 +29,12 @@ function fetchPayload(over = {}) {
     }
 }
 
-/** The clause the fetcher appended, decoded, or null when the URL has none. */
-const filterOf = (url) => {
-    const m = new URL(url).searchParams.get('filter')
-    return m
-}
+/** The layer's URL: the range goes wherever its author put {start}/{end}. */
+const RANGED_URL =
+    "https://api/x?s={properties.code}&filter=datetime >= '{start}' AND datetime <= '{end}'&filter-lang=cql2-text"
+
+/** The filter clause as the server would read it, or null when the URL has none. */
+const filterOf = (url) => new URL(url).searchParams.get('filter')
 
 describe('FetchTimeseriesTool', () => {
     let handlers
@@ -56,6 +57,11 @@ describe('FetchTimeseriesTool', () => {
         [...host.querySelectorAll('label')]
             .find((l) => l.textContent.includes(label))
             .querySelector('input')
+    // datetime-local serializes zero seconds away; read it back to the second.
+    const valueOf = (label) => {
+        const v = input(label).value
+        return v.length === 16 ? `${v}:00` : v
+    }
 
     const setDate = (label, value) =>
         act(() => {
@@ -80,7 +86,7 @@ describe('FetchTimeseriesTool', () => {
             [LAYER]: {
                 display_name: 'Air Stations',
                 variables: {
-                    timeseries: { url: 'https://api/x?s={properties.code}' },
+                    timeseries: { url: RANGED_URL },
                 },
             },
         }
@@ -147,13 +153,13 @@ describe('FetchTimeseriesTool', () => {
         expect(requested('plugins:show')).toEqual([
             ['plugins:show', { pluginId: 'FetchTimeseriesTool' }],
         ])
-        expect(input('Start date').value).toBe('2025-09-24')
-        expect(input('End date').value).toBe('2026-09-24')
+        expect(valueOf('Start')).toBe('2025-09-24T12:00:00')
+        expect(valueOf('End')).toBe('2026-09-24T12:00:00')
 
         const [url] = fetchMock.mock.calls[0]
         expect(url.startsWith('https://api/x?s=A1&filter=')).toBe(true)
         expect(filterOf(url)).toBe(
-            "datetime >= '2025-09-24T00:00:00' AND datetime <= '2026-09-24T23:59:59'",
+            "datetime >= '2025-09-24T12:00:00' AND datetime <= '2026-09-24T12:00:00'",
         )
         expect(new URL(url).searchParams.get('filter-lang')).toBe('cql2-text')
 
@@ -167,37 +173,52 @@ describe('FetchTimeseriesTool', () => {
     test('the range seeds from the mission time window when time is enabled', async () => {
         timeEnabled = true
         await request()
-        expect(input('Start date').value).toBe('2018-01-01')
-        expect(input('End date').value).toBe('2019-12-31')
+        expect(valueOf('Start')).toBe('2018-01-01T00:00:00')
+        expect(valueOf('End')).toBe('2019-12-31T00:00:00')
         expect(filterOf(fetchMock.mock.calls[0][0])).toContain("datetime >= '2018-01-01T00:00:00'")
     })
 
-    test('the filter uses the configured time property, without a properties prefix', async () => {
-        layerConfigs[LAYER].variables.timeseries.xKey = 'properties.obs_time'
+    test('{start}/{end} expand wherever the author put them, URL-encoded', async () => {
+        layerConfigs[LAYER].variables.timeseries.url =
+            'https://api/x?s={properties.code}&datetime={start}Z/{end}Z'
         await request()
-        expect(filterOf(fetchMock.mock.calls[0][0])).toContain("obs_time >= '")
+        expect(fetchMock.mock.calls[0][0]).toBe(
+            'https://api/x?s=A1&datetime=2025-09-24T12%3A00%3A00Z/2026-09-24T12%3A00%3A00Z',
+        )
+    })
+
+    test('a URL without range placeholders gets a card without inputs, and a range change fetches nothing', async () => {
+        layerConfigs[LAYER].variables.timeseries.url = 'https://api/x?s={properties.code}'
+        await request()
+        expect(fetchMock.mock.calls[0][0]).toBe('https://api/x?s=A1')
+        expect(host.querySelector('input')).toBeNull()
+        expect(host.querySelector('.range-card__exit')).not.toBeNull()
+        await act(async () => {
+            FetchTimeseriesTool._onRangeChange('2026-01-01T00:00:00', '2026-02-01T00:00:00')
+        })
+        expect(fetchMock).toHaveBeenCalledTimes(1)
     })
 
     test('changing a date refetches the same feature over the new range and emits again', async () => {
         await request()
         expect(fetchMock).toHaveBeenCalledTimes(1)
-        await setDate('Start date', '2026-03-01')
+        await setDate('Start', '2026-03-01T00:00:00')
         await act(async () => {
             await vi.advanceTimersByTimeAsync(0)
         })
         expect(fetchMock).toHaveBeenCalledTimes(2)
         expect(filterOf(fetchMock.mock.calls[1][0])).toBe(
-            "datetime >= '2026-03-01T00:00:00' AND datetime <= '2026-09-24T23:59:59'",
+            "datetime >= '2026-03-01T00:00:00' AND datetime <= '2026-09-24T12:00:00'",
         )
         expect(emittedFor(READY)).toHaveLength(2)
     })
 
     test('a start after the end drags the end along, and the reverse', async () => {
         await request()
-        await setDate('Start date', '2026-12-01')
-        expect(input('End date').value).toBe('2026-12-01')
-        await setDate('End date', '2026-02-01')
-        expect(input('Start date').value).toBe('2026-02-01')
+        await setDate('Start', '2026-12-01T00:00:00')
+        expect(valueOf('End')).toBe('2026-12-01T00:00:00')
+        await setDate('End', '2026-02-01T00:00:00')
+        expect(valueOf('Start')).toBe('2026-02-01T00:00:00')
     })
 
     test('EXIT clears the chart, hides this card, and leaves the next request working', async () => {
@@ -210,8 +231,8 @@ describe('FetchTimeseriesTool', () => {
         expect(requested('plugins:hide')).toEqual([
             ['plugins:hide', { pluginId: 'FetchTimeseriesTool' }],
         ])
-        // A date change now fetches nothing: the selection is gone.
-        await setDate('Start date', '2026-03-01')
+        // A range change now fetches nothing: the selection is gone.
+        await setDate('Start', '2026-03-01T00:00:00')
         expect(fetchMock).toHaveBeenCalledTimes(1)
         // The next request reopens and fetches again.
         await request()
@@ -219,9 +240,9 @@ describe('FetchTimeseriesTool', () => {
         expect(requested('plugins:show')).toHaveLength(2)
     })
 
-    test('a date change before any feature is picked fetches nothing', async () => {
+    test('a range change before any feature is picked fetches nothing', async () => {
         await act(async () => {
-            FetchTimeseriesTool._onRangeChange('2026-01-01', '2026-02-01')
+            FetchTimeseriesTool._onRangeChange('2026-01-01T00:00:00', '2026-02-01T00:00:00')
         })
         expect(fetchMock).not.toHaveBeenCalled()
         expect(emitted).toEqual([])
@@ -229,9 +250,11 @@ describe('FetchTimeseriesTool', () => {
 
     test('{lon}/{lat} resolve from the request location when geometry is empty', async () => {
         layerConfigs[LAYER].variables.timeseries.url =
-            'https://api/x?lon={lon}&lat={lat}'
+            'https://api/x?lon={lon}&lat={lat}&start={start}'
         await request()
-        expect(fetchMock.mock.calls[0][0].startsWith('https://api/x?lon=-97.7&lat=30.3&filter=')).toBe(true)
+        expect(fetchMock.mock.calls[0][0]).toBe(
+            'https://api/x?lon=-97.7&lat=30.3&start=2025-09-24T12%3A00%3A00',
+        )
     })
 
     test('a second request aborts the first fetch; only its chart arrives', async () => {

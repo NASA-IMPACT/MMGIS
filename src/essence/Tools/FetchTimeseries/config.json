@@ -2,9 +2,9 @@
     "defaults": {
         "variables": {}
     },
-    "description": "Fetches a vector feature's time series on request over a viewer-picked date range (URL from the layer's variables.timeseries config, plus a CQL2 filter on its time property) and publishes it as a chart-series payload for the SeriesChart plugin. A small card holds the Start and End dates.",
+    "description": "Fetches a vector feature's time series on request over a viewer-picked datetime range (URL from the layer's variables.timeseries config, with {start}/{end} placeholders where the service wants them) and publishes it as a chart-series payload for the SeriesChart plugin. A small card holds the Start and End instants.",
     "descriptionFull": {
-        "title": "Listens to plugin:fetch-timeseries:fetch ({ feature, layerId, latlng }), which a Feature Popup card action emits when a layer's variables.featurePopup names it. When the feature's layer carries a variables.timeseries block, the tool's card appears with Start and End dates (seeded from the mission time window, else the past year), builds the fetch URL from the feature ({properties.<key>}, {lon}/{lat} — falling back to the request location — and {id} placeholders), appends filter=<time property> >= start AND <time property> <= end with filter-lang=cql2-text, fetches, and emits plugin:fetch-timeseries:seriesReady; changing a date refetches. Loading and errors show on the card. seriesCleared is emitted on tool teardown. Layers without the block are ignored. The block is authored on the layer's own page in Configure, under the Timeseries row in the Time tab of a vector or vector-tile layer; the example below is what that row writes.",
+        "title": "Listens to plugin:fetch-timeseries:fetch ({ feature, layerId, latlng }), which a Feature Popup card action emits when a layer's variables.featurePopup names it. When the feature's layer carries a variables.timeseries block, the tool's card appears with Start and End instants (seeded from the mission time window, else the past year), builds the fetch URL from the feature ({properties.<key>}, {lon}/{lat} — falling back to the request location — and {id} placeholders) and the range ({start}/{end}, YYYY-MM-DDTHH:MM:SS in UTC, placed in whatever syntax the service takes), fetches, and emits plugin:fetch-timeseries:seriesReady; changing the range refetches. A URL without {start}/{end} gets a card with no inputs. Loading and errors show on the card. seriesCleared is emitted on tool teardown. Layers without the block are ignored. The block is authored on the layer's own page in Configure, under the Timeseries row in the Time tab of a vector or vector-tile layer; the example below is what that row writes.",
         "example": {
             "variables": {
                 "featurePopup": {
@@ -18,7 +18,7 @@
                     ]
                 },
                 "timeseries": {
-                    "url": "https://dev.openveda.cloud/api/features/collections/public.aqs_sites_gases/items?station_code={properties.station_code}&limit=1000",
+                    "url": "https://dev.openveda.cloud/api/features/collections/public.aqs_sites_gases/items?station_code={properties.station_code}&limit=1000&f=geojson&filter=datetime >= '{start}' AND datetime <= '{end}'&filter-lang=cql2-text",
                     "titleProp": "local_site_name",
                     "groupBy": "properties.parameter",
                     "unitKey": "properties.units_of_measure"

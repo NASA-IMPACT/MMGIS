@@ -2,7 +2,7 @@ import { describe, test, expect } from 'vitest'
 import {
     getTimeseriesConfig,
     templateUrl,
-    withDateRange,
+    usesRange,
     featureTitle,
     mapResponseSeries,
     buildPayload,
@@ -152,23 +152,38 @@ describe('fetchTimeseries lib', () => {
         })
     })
 
-    describe('withDateRange', () => {
-        test('appends an inclusive CQL2 day range on the time column, percent-encoded', () => {
-            const url = withDateRange('https://api/items?limit=10', 'datetime', '2018-01-01', '2019-12-31')
-            expect(url).toBe(
-                'https://api/items?limit=10&filter=' +
-                    encodeURIComponent("datetime >= '2018-01-01T00:00:00' AND datetime <= '2019-12-31T23:59:59'") +
-                    '&filter-lang=cql2-text',
+    describe('templateUrl with a range', () => {
+        const RANGE = { start: '2018-01-01T00:00:00', end: '2019-12-31T23:59:59' }
+
+        test('{start}/{end} fill an OGC datetime parameter, URL-encoded', () => {
+            expect(
+                templateUrl('https://api/items?datetime={start}Z/{end}Z', FEATURE, null, RANGE),
+            ).toBe('https://api/items?datetime=2018-01-01T00%3A00%3A00Z/2019-12-31T23%3A59%3A59Z')
+        })
+
+        test('{start}/{end} fill a CQL2 text comparison the author wrote', () => {
+            const url = templateUrl(
+                "https://api/items?filter=datetime >= '{start}' AND datetime <= '{end}'&filter-lang=cql2-text",
+                FEATURE,
+                null,
+                RANGE,
             )
-            expect(decodeURIComponent(url)).toContain("datetime >= '2018-01-01T00:00:00' AND datetime <= '2019-12-31T23:59:59'")
+            expect(new URL(url).searchParams.get('filter')).toBe(
+                "datetime >= '2018-01-01T00:00:00' AND datetime <= '2019-12-31T23:59:59'",
+            )
         })
 
-        test('starts the query when the URL has none', () => {
-            expect(withDateRange('https://api/items', 'datetime', '2018-01-01', '2018-01-02')).toMatch(/^https:\/\/api\/items\?filter=/)
+        test('a range placeholder with no range is a TemplateError naming it', () => {
+            expect(() => templateUrl('https://api/items?start={start}', FEATURE)).toThrow(TemplateError)
+            expect(() => templateUrl('https://api/items?start={start}', FEATURE)).toThrow(/\{start\}/)
         })
+    })
 
-        test('filters on the configured time key, without the GeoJSON properties prefix', () => {
-            expect(decodeURIComponent(withDateRange('https://api/items', 'properties.obs_time', '2018-01-01', '2018-01-02'))).toContain("obs_time >= '2018-01-01T00:00:00'")
+    describe('usesRange', () => {
+        test('true when the template names {start} or {end}, false otherwise', () => {
+            expect(usesRange('https://x?a={start}')).toBe(true)
+            expect(usesRange('https://x?a={ end }')).toBe(true)
+            expect(usesRange('https://x/{properties.code}?limit=10')).toBe(false)
         })
     })
 

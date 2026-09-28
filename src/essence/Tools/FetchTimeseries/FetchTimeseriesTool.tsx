@@ -1,6 +1,6 @@
 /**
- * FetchTimeseries plugin — a small card holding the date range, over the
- * fetch that charts a vector feature's time series.
+ * FetchTimeseries plugin — a small card holding the datetime range, over
+ * the fetch that charts a vector feature's time series.
  *
  * pluginId: 'fetch-timeseries'
  *
@@ -23,8 +23,10 @@
  *
  * A layer opts in via `variables.timeseries` (see lib/timeseries.ts). A
  * request for a feature of a layer without that block does nothing. The
- * card appears with the first request and stays: changing a date refetches
- * the same feature over the new range, and the chart replaces its card.
+ * card appears with the first request and stays: changing the range
+ * refetches the same feature, and the chart replaces its card. The range
+ * reaches the service through `{start}`/`{end}` in the layer's URL; a URL
+ * without them gets a card with no inputs.
  */
 
 import React from 'react'
@@ -43,11 +45,12 @@ import { seriesEvents } from '../_shared/types/chartSeries'
 import {
     getTimeseriesConfig,
     templateUrl,
-    withDateRange,
+    usesRange,
     featureTitle,
     buildPayload,
     TemplateError,
     MappingError,
+    type DateRange,
     type FeatureLike,
     type TimeseriesConfig,
 } from './lib/timeseries'
@@ -79,16 +82,14 @@ interface Selection {
     layerName: string
     latlng: { lat: number; lng: number } | null | undefined
     config: TimeseriesConfig
+    /** Whether the URL takes {start}/{end}; without them the card has no inputs. */
+    hasRange: boolean
     title: string
     layerDisplayName: string
 }
 
-interface DateRange {
-    start: string
-    end: string
-}
-
-const isoDay = (d: Date) => d.toISOString().slice(0, 10)
+/** UTC, to the second, without the zone suffix: what datetime-local holds. */
+const isoInstant = (d: Date) => d.toISOString().slice(0, 19)
 
 const FetchTimeseriesTool = {
     height: 0,
@@ -155,6 +156,7 @@ const FetchTimeseriesTool = {
             <RangeCard
                 start={range?.start ?? ''}
                 end={range?.end ?? ''}
+                hasRange={this._selection?.hasRange ?? true}
                 status={this._status}
                 onRangeChange={(start, end) => this._onRangeChange(start, end)}
                 onExit={() => this._onExit()}
@@ -177,14 +179,14 @@ const FetchTimeseriesTool = {
             const s = start ? new Date(start) : null
             const e = end ? new Date(end) : null
             if (s && e && !Number.isNaN(s.getTime()) && !Number.isNaN(e.getTime()) && s <= e) {
-                range = { start: isoDay(s), end: isoDay(e) }
+                range = { start: isoInstant(s), end: isoInstant(e) }
             }
         }
         if (!range) {
             const now = new Date()
             range = {
-                start: isoDay(new Date(now.getTime() - DEFAULT_SPAN_DAYS * DAY_MS)),
-                end: isoDay(now),
+                start: isoInstant(new Date(now.getTime() - DEFAULT_SPAN_DAYS * DAY_MS)),
+                end: isoInstant(now),
             }
         }
         this._range = range
@@ -208,7 +210,7 @@ const FetchTimeseriesTool = {
     _onRangeChange(start: string, end: string) {
         this._range = { start, end }
         this._render()
-        if (this._selection) {
+        if (this._selection?.hasRange) {
             this._fetchFor(this._selection).catch((err) =>
                 console.warn('[FetchTimeseries] refetch failed', err),
             )
@@ -237,6 +239,7 @@ const FetchTimeseriesTool = {
             layerName,
             latlng: payload?.latlng,
             config,
+            hasRange: usesRange(config.url),
             title: featureTitle(feature, config, layerDisplayName),
             layerDisplayName,
         }
@@ -259,12 +262,7 @@ const FetchTimeseriesTool = {
 
         let url: string
         try {
-            url = withDateRange(
-                templateUrl(config.url, feature, latlng),
-                config.xKey || 'datetime',
-                range.start,
-                range.end,
-            )
+            url = templateUrl(config.url, feature, latlng, range)
         } catch (err) {
             if (err instanceof TemplateError) {
                 this._setStatus({ kind: 'error', message: err.message })

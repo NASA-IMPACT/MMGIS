@@ -59,28 +59,48 @@ export function getTimeseriesConfig(layer: unknown): TimeseriesConfig | null {
 
 export class TemplateError extends Error {}
 
+/** The viewer's range, two ISO instants `YYYY-MM-DDTHH:MM:SS` read as UTC. */
+export interface DateRange {
+    start: string
+    end: string
+}
+
+/** Whether the template asks for the range at all. A layer whose URL has
+ *  neither placeholder gets no Start/End inputs on the card. */
+export function usesRange(template: string): boolean {
+    return /{\s*(start|end)\s*}/.test(template)
+}
+
 /**
  * Substitutes feature values into the URL template. Values are URL-encoded.
  * An unresolvable placeholder throws TemplateError naming it — an eligible
  * layer with a bad template is a visible error, not a silent no-op.
- * Braces are placeholder syntax; a literal `{`/`}` in the URL (e.g. CQL2
- * filters) is not supported.
+ * Braces are placeholder syntax; a literal `{`/`}` in the URL is not
+ * supported.
  *
  * `{lon}`/`{lat}` prefer the feature's own Point coordinates but fall back
  * to the click location — the vector-tile and deck.gl click paths hand over
  * features with empty geometry, so the event's latlng is the coordinate
  * source that always exists.
+ *
+ * `{start}`/`{end}` are the card's instants, exactly as held: the layer
+ * author writes the service's own range syntax around them (a `datetime=`
+ * parameter, a CQL2 comparison, custom parameters), so the plugin never
+ * assumes one.
  */
 export function templateUrl(
     template: string,
     feature: FeatureLike,
     latlng?: { lat: number; lng: number } | null,
+    range?: DateRange | null,
 ): string {
     return template.replace(/{([^}]+)}/g, (whole, rawKey: string) => {
         const key = rawKey.trim()
         let value: unknown
         if (key === 'id') {
             value = feature.id
+        } else if (key === 'start' || key === 'end') {
+            value = range?.[key]
         } else if (key === 'lon' || key === 'lat') {
             const coords =
                 feature.geometry?.type === 'Point'
@@ -115,23 +135,6 @@ export function templateUrl(
         }
         return encodeURIComponent(String(value))
     })
-}
-
-/** The URL with a CQL2 text filter bounding `timeKey` to the day range,
- *  inclusive. The dev features API stores its date columns as text, so the
- *  comparison is string against string; `datetime=start/end` is refused
- *  there. Column names carry no `properties.` prefix: that is the GeoJSON
- *  envelope, not the table. */
-export function withDateRange(
-    url: string,
-    timeKey: string,
-    start: string,
-    end: string,
-): string {
-    const column = timeKey.replace(/^properties\./, '')
-    const clause = `${column} >= '${start}T00:00:00' AND ${column} <= '${end}T23:59:59'`
-    const separator = url.includes('?') ? '&' : '?'
-    return `${url}${separator}filter=${encodeURIComponent(clause)}&filter-lang=cql2-text`
 }
 
 /** Feature-derived chart title: configured property → name → title → id. */
