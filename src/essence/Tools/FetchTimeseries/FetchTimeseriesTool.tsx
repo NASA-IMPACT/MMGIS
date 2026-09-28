@@ -69,6 +69,9 @@ const FETCH_TIMEOUT_MS = 30000
 const DAY_MS = 24 * 60 * 60 * 1000
 /** Without a mission time window, the range defaults to the past year. */
 const DEFAULT_SPAN_DAYS = 365
+/** Typing a date fires several changes; the card updates at once, the
+ *  refetch waits for the typing to settle. */
+const REFETCH_DEBOUNCE_MS = 400
 
 interface FetchRequest {
     feature?: FeatureLike | null
@@ -100,6 +103,7 @@ const FetchTimeseriesTool = {
     _root: null as Root | null,
     _selection: null as Selection | null,
     _range: null as DateRange | null,
+    _refetchTimer: null as number | null,
     _status: { kind: 'idle' } as RangeStatus,
 
     initialize() {
@@ -130,6 +134,7 @@ const FetchTimeseriesTool = {
     },
 
     destroy() {
+        this._cancelRefetch()
         this._abort?.abort()
         this._abort = null
         this._cleanups.forEach((off) => off())
@@ -197,6 +202,7 @@ const FetchTimeseriesTool = {
      *  itself down, this card hides. The bus subscription stays, so the next
      *  Timeseries press opens everything again. */
     _onExit() {
+        this._cancelRefetch()
         this._abort?.abort()
         this._abort = null
         this._selection = null
@@ -210,11 +216,21 @@ const FetchTimeseriesTool = {
     _onRangeChange(start: string, end: string) {
         this._range = { start, end }
         this._render()
-        if (this._selection?.hasRange) {
+        if (!this._selection?.hasRange) return
+        this._cancelRefetch()
+        this._refetchTimer = window.setTimeout(() => {
+            this._refetchTimer = null
+            if (!this._selection) return
             this._fetchFor(this._selection).catch((err) =>
                 console.warn('[FetchTimeseries] refetch failed', err),
             )
-        }
+        }, REFETCH_DEBOUNCE_MS)
+    },
+
+    _cancelRefetch() {
+        if (this._refetchTimer == null) return
+        window.clearTimeout(this._refetchTimer)
+        this._refetchTimer = null
     },
 
     async _onFetch(payload?: FetchRequest) {

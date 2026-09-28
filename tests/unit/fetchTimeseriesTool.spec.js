@@ -199,18 +199,57 @@ describe('FetchTimeseriesTool', () => {
         expect(fetchMock).toHaveBeenCalledTimes(1)
     })
 
+    /** The refetch waits for typing to settle; this lets it fire. */
+    const settle = () =>
+        act(async () => {
+            await vi.advanceTimersByTimeAsync(400)
+        })
+
     test('changing a date refetches the same feature over the new range and emits again', async () => {
         await request()
         expect(fetchMock).toHaveBeenCalledTimes(1)
         await setDate('Start', '2026-03-01T00:00:00')
-        await act(async () => {
-            await vi.advanceTimersByTimeAsync(0)
-        })
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        await settle()
         expect(fetchMock).toHaveBeenCalledTimes(2)
         expect(filterOf(fetchMock.mock.calls[1][0])).toBe(
             "datetime >= '2026-03-01T00:00:00' AND datetime <= '2026-09-24T12:00:00'",
         )
         expect(emittedFor(READY)).toHaveLength(2)
+    })
+
+    test('quick successive changes refetch once, with the last range', async () => {
+        await request()
+        await setDate('Start', '2026-03-01T00:00:00')
+        await setDate('Start', '2026-04-01T00:00:00')
+        await settle()
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+        expect(filterOf(fetchMock.mock.calls[1][0])).toContain("datetime >= '2026-04-01T00:00:00'")
+    })
+
+    test('a partial year typed into End leaves Start alone and fetches only the finished value', async () => {
+        await request()
+        // Chrome's change events while typing a year: 0002-…, then the real one.
+        await setDate('End', '0002-03-01T00:00:00')
+        expect(valueOf('Start')).toBe('2025-09-24T12:00:00')
+        await settle()
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        await setDate('End', '2027-03-01T00:00:00')
+        await settle()
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+        expect(filterOf(fetchMock.mock.calls[1][0])).toBe(
+            "datetime >= '2025-09-24T12:00:00' AND datetime <= '2027-03-01T00:00:00'",
+        )
+    })
+
+    test('EXIT during the refetch wait cancels it', async () => {
+        await request()
+        await setDate('Start', '2026-03-01T00:00:00')
+        await act(async () => {
+            host.querySelector('.range-card__exit').click()
+        })
+        await settle()
+        expect(fetchMock).toHaveBeenCalledTimes(1)
     })
 
     test('a start after the end drags the end along, and the reverse', async () => {

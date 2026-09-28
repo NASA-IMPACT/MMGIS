@@ -22,6 +22,11 @@ export interface RangeCardProps {
 const toSeconds = (value: string) =>
     value.length === 16 ? `${value}:00` : value
 
+/** Chrome fires change for every partial year typed (0002-…, 0020-…,
+ *  0202-…); those would drag the other bound back to year 2. */
+const MIN_INSTANT = '1000-01-01T00:00:00'
+const isComplete = (value: string) => value >= MIN_INSTANT
+
 /** Start and End inputs over a status line. Props only; the tool owns the
  *  state and the fetch. Each input is bounded by the other, so the range can
  *  never be reversed. The chart below names the feature; this card does not
@@ -51,10 +56,11 @@ export function RangeCard({
                             step={1}
                             className="range-card__input"
                             value={start}
+                            min={MIN_INSTANT}
                             max={end}
                             onChange={(e) => {
                                 const next = toSeconds(e.target.value)
-                                if (next) onRangeChange(next, next > end ? next : end)
+                                if (isComplete(next)) onRangeChange(next, next > end ? next : end)
                             }}
                         />
                     </label>
@@ -68,7 +74,7 @@ export function RangeCard({
                             min={start}
                             onChange={(e) => {
                                 const next = toSeconds(e.target.value)
-                                if (next) onRangeChange(next < start ? next : start, next)
+                                if (isComplete(next)) onRangeChange(next < start ? next : start, next)
                             }}
                         />
                     </label>
