@@ -56,8 +56,13 @@ describe('seriesChart chartData', () => {
 
     describe('makeTimeTickFormat', () => {
         const t0 = Date.parse('2026-03-04T14:30:00Z')
-        test('uses hours+minutes within a two-day span', () => {
-            expect(makeTimeTickFormat(t0, t0 + DAY)(t0)).toBe('14:30')
+        test('uses hours+minutes inside one UTC day', () => {
+            expect(makeTimeTickFormat(t0, t0 + 6 * 60 * 60 * 1000)(t0)).toBe('14:30')
+        })
+        test('adds the day once the span crosses midnight, so two days do not read as one', () => {
+            const fmt = makeTimeTickFormat(t0, t0 + DAY)
+            expect(fmt(t0)).toBe('Mar 4, 14:30')
+            expect(fmt(Date.parse('2026-03-05T00:40:00Z'))).toBe('Mar 5, 00:40')
         })
         test('uses month+day within ~a year', () => {
             expect(makeTimeTickFormat(t0, t0 + 100 * DAY)(t0)).toBe('Mar 4')

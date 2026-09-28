@@ -45,10 +45,14 @@ export function toTimePoints(points: ChartPoint[]): XyPoint[] {
     return out.sort((a, b) => a.x - b.x)
 }
 
+const utcDayOf = (ms: number) => Math.floor(ms / DAY_MS)
+
 /**
  * Tick formatter for an epoch-ms axis, granularity picked from the span:
- * hours within ~2 days, month+day up to ~1.5 years, month+year beyond.
- * Always UTC, matching the project's datetime conventions.
+ * hours+minutes inside one UTC day, day+hours across a midnight within ~2
+ * days (a bare clock would hide the day change), month+day up to ~1.5
+ * years, month+year beyond. Always UTC, matching the project's datetime
+ * conventions.
  */
 export function makeTimeTickFormat(
     minMs: number,
@@ -56,11 +60,13 @@ export function makeTimeTickFormat(
 ): (ms: number) => string {
     const span = maxMs - minMs
     const opts: Intl.DateTimeFormatOptions =
-        span <= 2 * DAY_MS
+        utcDayOf(minMs) === utcDayOf(maxMs)
             ? { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }
-            : span <= 550 * DAY_MS
-              ? { month: 'short', day: 'numeric' }
-              : { month: 'short', year: 'numeric' }
+            : span <= 2 * DAY_MS
+              ? { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }
+              : span <= 550 * DAY_MS
+                ? { month: 'short', day: 'numeric' }
+                : { month: 'short', year: 'numeric' }
     const fmt = new Intl.DateTimeFormat('en-US', { ...opts, timeZone: 'UTC' })
     return (ms) => fmt.format(new Date(ms))
 }
