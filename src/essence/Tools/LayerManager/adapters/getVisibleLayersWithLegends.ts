@@ -1,15 +1,14 @@
 import {
-    mmgisRequest,
     mmgisGetCogCapabilities,
     mmgisGetDataCoverage,
+    mmgisGetLayerConfigs,
     mmgisGetListedLayers,
-    mmgisGetLayerOrder,
     mmgisGetTiTilerUrls,
     type CogCapabilities,
+    type LayerConfig,
 } from '../../_shared/adapters/mmgisAPI'
-import { buildLayerLegendData } from './buildLayerLegendData'
-import { sortByOrder } from '../lib/utils/layerOrder'
-import type { Layer } from '../lib/types'
+import { getLayersWithLegends } from '../../_shared/legend/getLayersWithLegends'
+import type { CogData, Layer } from '../lib/types'
 
 export type FetchOptions = { showOnlyVisible?: boolean }
 
@@ -18,54 +17,68 @@ export type FetchOptions = { showOnlyVisible?: boolean }
  * the analysis plugins gate on. Nothing about a layer's data or type implies
  * it — the layer opts in through its configuration.
  */
-const supportsAnalysis = (cfg: Record<string, unknown>): boolean =>
+const supportsAnalysis = (cfg: LayerConfig | undefined): boolean =>
     (
-        cfg.variables as
+        cfg?.variables as
             | { analysis?: { is_analysis_supported?: boolean } }
             | undefined
     )?.analysis?.is_analysis_supported === true
 
+/**
+ * The colormap controls for one layer, or null when it has no ramp to control.
+ *
+ * `hasColormap` is what puts a ramp on the row; `canChangeColormap` is what
+ * makes it editable. A layer can have the first without the second. The ramp's
+ * name comes from the legend core resolved rather than from the raw config, so
+ * the picker's selection and the bar beside it can never name different ramps.
+ */
+const buildCogData = (
+    capabilities: CogCapabilities | undefined,
+    colormap: string | null | undefined,
+    titilerUrl: string | null,
+): CogData | null => {
+    if (capabilities?.hasColormap !== true || colormap == null) return null
+    return {
+        editable: capabilities.canChangeColormap === true,
+        colormap,
+        titilerUrl,
+    }
+}
+
+/**
+ * The panel's rows: the shared layers-with-legends assembly, minus the layers
+ * something has filtered out of the lists (the LayerFilter plugin's doing —
+ * they still paint, so an export still legends them), plus the colormap
+ * controls and the out-of-range and analysis marks only this panel offers.
+ */
 export const getVisibleLayersWithLegends = async ({
     showOnlyVisible = false,
 }: FetchOptions = {}): Promise<Layer[]> => {
-    const layerConfigs = await mmgisRequest<Record<string, Record<string, unknown>>>('layers:getAllConfigs')
-    if (!layerConfigs) return []
-
+    // The configs are asked for once: the analysis mark reads them here, and
+    // the row assembly is handed them rather than requesting them again.
+    const layerConfigs = await mmgisGetLayerConfigs()
     // Coverage is read with the rest, so a layer core is already holding back
     // for lack of data is flagged on the first render rather than at the next
     // change core announces.
-    const [visibleLayers, opacities, listed, cogCapabilities, titilerUrls, coverage, order] =
+    const [layers, listed, cogCapabilities, titilerUrls, coverage] =
         await Promise.all([
-            mmgisRequest<Record<string, boolean>>('layers:getVisible'),
-            mmgisRequest<Record<string, number>>('layers:getAllOpacities'),
+            getLayersWithLegends({ showOnlyVisible, layerConfigs }),
             mmgisGetListedLayers(),
             mmgisGetCogCapabilities(),
             mmgisGetTiTilerUrls(),
             mmgisGetDataCoverage(),
-            mmgisGetLayerOrder(),
         ])
 
-    const result: Layer[] = []
-    for (const layerName of Object.keys(layerConfigs)) {
-        const cfg = layerConfigs[layerName]
-        if (!cfg) continue
-        if (cfg.type === 'header') continue
-        if (listed?.[layerName] === false) continue
-        const isVisible = visibleLayers?.[layerName] === true
-        if (showOnlyVisible && !isVisible) continue
-        result.push({
-            ...buildLayerLegendData(
-                layerName,
-                cfg as Parameters<typeof buildLayerLegendData>[1],
-                opacities ?? null,
-                isVisible,
-                cogCapabilities?.[layerName] as CogCapabilities | undefined,
-                titilerUrls?.[layerName] ?? null,
+    return layers
+        .filter((layer) => listed?.[layer.id] !== false)
+        .map(({ colormap, ...layer }) => ({
+            ...layer,
+            cog: buildCogData(
+                cogCapabilities?.[layer.id],
+                colormap,
+                titilerUrls?.[layer.id] ?? null,
             ),
-            outOfDataRange: coverage?.[layerName]?.outOfDataRange === true,
-            analysisSupported: supportsAnalysis(cfg),
-        })
-    }
-    // Top first as the map draws; config order against a core with no order.
-    return sortByOrder(result, order)
+            outOfDataRange: coverage?.[layer.id]?.outOfDataRange === true,
+            analysisSupported: supportsAnalysis(layerConfigs?.[layer.id]),
+        }))
 }

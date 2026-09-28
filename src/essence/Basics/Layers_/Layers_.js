@@ -9,7 +9,10 @@ import CursorInfo from '../../Ancillary/CursorInfo'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
-import { resolveTemporalExtent } from '../TimeControl_/layerTimePolicy'
+import {
+    resolveTemporalExtent,
+    parseISODuration,
+} from '../TimeControl_/layerTimePolicy'
 import { fetchLayerExtentSource } from '../TimeControl_/layerExtentSource'
 import {
     isRasterTileLayerType,
@@ -33,6 +36,8 @@ import {
     isCoverageGated,
     isSameCoverage,
 } from '../TimeControl_/layerDataCoverage'
+import { buildLayerLegend } from './legend/buildLayerLegend'
+import { NO_LEGEND } from './legend/types'
 import { bbox } from '@turf/turf'
 import $ from 'jquery'
 
@@ -40,8 +45,17 @@ import $ from 'jquery'
 let _providerCleanups = []
 
 // Resolved at call time so an open-ended "now" is fresh on every ask.
-const temporalExtentFor = (uuid) =>
-    resolveTemporalExtent(L_.layers.data[uuid]?.time)
+// `interval` is the layer's parsed `time.interval` (a Duration), or null
+// when it declares none or an unparseable one — a plugin reads the cadence
+// without parsing ISO-8601 durations itself.
+const temporalExtentFor = (uuid) => {
+    const time = L_.layers.data[uuid]?.time
+    const interval =
+        time?.interval != null && time.interval !== ''
+            ? parseISODuration(String(time.interval).trim())
+            : null
+    return { ...resolveTemporalExtent(time), interval }
+}
 
 /**
  * Canonical layer types whose deck.gl builders read the legend as a style
@@ -99,6 +113,32 @@ function titilerUrlFor(layerConfig) {
     if (url == null) return null
     if (ServiceUrls.hasExternalServiceUrl('titiler', layerConfig)) return url
     return window.mmgisglobal?.WITH_TITILER === 'true' ? url : null
+}
+
+/**
+ * What a layer's legend is, resolved against the layer as it stands right now
+ * — including the colormap and rescale a user has changed since load.
+ *
+ * Async because a colormap the bundled ramps do not hold has to be looked up
+ * from the layer's tiling service.
+ *
+ * A layer nothing can be built from reports nothing to draw. Missions carry
+ * hand-written legends, and one malformed entry must cost that layer its
+ * legend and no more — the bulk answer would otherwise take the whole
+ * mission's legends down with it.
+ *
+ * @param {string} uuid - A key of `L_.layers.data`.
+ * @returns {Promise<import('./legend/types').LayerLegend|null>}
+ */
+async function legendFor(uuid) {
+    const layerObj = L_.layers.data[uuid]
+    if (layerObj == null) return null
+    try {
+        return await buildLayerLegend(layerObj, titilerUrlFor(layerObj))
+    } catch (err) {
+        console.warn(`Layers_: could not build a legend for '${uuid}'`, err)
+        return NO_LEGEND
+    }
 }
 
 /**
@@ -480,8 +520,27 @@ const L_ = {
                     })
                     return capabilities
                 }),
-                // When each layer has data, as ISO datetimes or null. The
-                // config's dataStartTime/dataEndTime may be a policy ("now",
+                // What each layer's legend is: a gradient's resolved colors
+                // and bounds, a categorical legend's swatches, or nothing to
+                // draw. Answered from the layer's live state, so a colormap or
+                // rescale changed in the running dashboard is reflected here
+                // before anything redraws. Same call shapes as above.
+                window.mmgisAPI.provide('layers:getLegend', async (layerUUID) => {
+                    if (layerUUID != null) {
+                        const uuid = L_.asLayerUUID(layerUUID)
+                        return uuid == null ? null : legendFor(uuid)
+                    }
+                    const uuids = Object.keys(L_.layers.data)
+                    const resolved = await Promise.all(uuids.map(legendFor))
+                    const legends = {}
+                    uuids.forEach((uuid, i) => {
+                        legends[uuid] = resolved[i]
+                    })
+                    return legends
+                }),
+                // When each layer has data, as ISO datetimes or null, and its
+                // parsed cadence (`interval`, or null). The config's
+                // dataStartTime/dataEndTime may be a policy ("now",
                 // "now - P1D"); this is where it is resolved, so a plugin
                 // never sees the policy string. Same call shapes as above.
                 window.mmgisAPI.provide('layers:getTemporalExtent', (layerUUID) => {

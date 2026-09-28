@@ -247,6 +247,16 @@ test.describe('DeckGLHelpers', () => {
             expect(layer.id).toBe('mvt-2')
         })
 
+        test('hands the unique id key on to the MVT layer, which highlights by it', () => {
+            const layer = buildDeckLayer('mvt-3', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                nativeOptions: { autoHighlight: true, uniqueIdProperty: 'fid' },
+            })
+            expect(layer.props.uniqueIdProperty).toBe('fid')
+            expect(layer.props.autoHighlight).toBe(true)
+        })
+
         test('gives vectortile points a pixel radius from style.radius', () => {
             const layer = buildDeckLayer('mvt-3', {
                 type: 'vectortile',

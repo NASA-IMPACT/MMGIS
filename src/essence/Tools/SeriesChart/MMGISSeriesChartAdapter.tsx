@@ -74,8 +74,8 @@ export function MMGISSeriesChartAdapter() {
             const events = seriesEvents(sourceId)
             return [
                 mmgisOn(events.ready, (p) => {
-                    // Flat like the other three messages: the event payload
-                    // IS the ChartSeriesPayload, no envelope.
+                    // Flat like seriesCleared: the event payload IS the
+                    // ChartSeriesPayload, no envelope.
                     if (!isChartSeriesPayload(p)) {
                         console.warn(
                             `[SeriesChart] dropped malformed seriesReady from '${sourceId}'`,

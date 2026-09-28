@@ -1,4 +1,5 @@
 import { describe, test, expect, vi } from 'vitest'
+import { zoomIdentity } from 'd3-zoom'
 
 /**
  * The window arithmetic behind the zoom controls.
@@ -17,6 +18,7 @@ import {
     fitWindow,
     interpolateWindow,
     minViewDuration,
+    revealWindow,
     sliderToWindow,
     transformToWindow,
     windowAtSpan,
@@ -133,6 +135,37 @@ describe('zoomAround', () => {
         expect(iso(zoomAround(point, 0.5, point.start, point, 3 * DAY))).toEqual(
             iso(point)
         )
+    })
+})
+
+/**
+ * What a playback or layer control does to the view when it moves the
+ * scrubber: nothing when the scrubber is on screen, a pan that centres it
+ * when it is not, and never a change of span.
+ */
+describe('revealWindow', () => {
+    const month = win('2019-06-01T00:00:00Z', '2019-07-01T00:00:00Z')
+
+    test('returns the window itself for an instant already inside it', () => {
+        const at = new Date('2019-06-20T00:00:00Z')
+        expect(revealWindow(month, at, bounds, 3 * DAY)).toBe(month)
+    })
+
+    test('centres an instant outside at the same span, stopping at the bound it would pass', () => {
+        const after = new Date('2019-09-15T12:00:00Z')
+        const centred = revealWindow(month, after, bounds, 3 * DAY)
+
+        expect(span(centred)).toBe(span(month))
+        expect(centred.start.getTime() + span(centred) / 2).toBe(after.getTime())
+
+        // Four days before the end of the bounds, in a thirty-day window:
+        // centring would hang eleven days past the end.
+        const nearEnd = new Date('2021-12-28T00:00:00Z')
+        const stopped = revealWindow(month, nearEnd, bounds, 3 * DAY)
+
+        expect(span(stopped)).toBe(span(month))
+        expect(stopped.end.toISOString()).toBe(bounds.end.toISOString())
+        expect(nearEnd.getTime()).toBeGreaterThan(stopped.start.getTime())
     })
 })
 
@@ -297,8 +330,7 @@ describe('fitWindow', () => {
 
     test('frames a reversed extent forwards, padded by its own span', () => {
         // A layer configured with its start after its end arrives here
-        // inverted. The union then runs backwards and the pad comes out
-        // negative, and the result is the same forward window the extent
+        // inverted, and the result is the same forward window the extent
         // would have produced the right way round.
         const result = fitWindow(
             [win('2019-01-21T00:00:00Z', '2019-01-01T00:00:00Z')],
@@ -310,6 +342,40 @@ describe('fitWindow', () => {
         expect(iso(result)).toEqual([
             '2018-12-31T04:48:00.000Z',
             '2019-01-21T19:12:00.000Z',
+        ])
+    })
+
+    test('pads both sides alike when the union runs up to a bound', () => {
+        // Layers ending at the global window's end, as data running up to
+        // now does. Sliding a padded window back inside would leave no pad at
+        // the end and a double pad at the start; both sides get none instead.
+        const held = win('2019-01-01T00:00:00Z', '2019-02-01T00:00:00Z')
+        const result = fitWindow(
+            [win('2019-01-11T00:00:00Z', '2019-02-01T00:00:00Z')],
+            held,
+            3 * DAY,
+            0.04
+        )!
+
+        expect(iso(result)).toEqual([
+            '2019-01-11T00:00:00.000Z',
+            '2019-02-01T00:00:00.000Z',
+        ])
+    })
+
+    test('shrinks the pad on both sides to the room left on the nearer', () => {
+        // Union of 20 days wants 19h12m a side; the end has only 6h to give.
+        const held = win('2018-12-01T00:00:00Z', '2019-01-21T06:00:00Z')
+        const result = fitWindow(
+            [win('2019-01-01T00:00:00Z', '2019-01-21T00:00:00Z')],
+            held,
+            3 * DAY,
+            0.04
+        )!
+
+        expect(iso(result)).toEqual([
+            '2018-12-31T18:00:00.000Z',
+            '2019-01-21T06:00:00.000Z',
         ])
     })
 
@@ -362,6 +428,30 @@ describe('the d3 transform conversions', () => {
         }
     })
 
+    test('round-trip a window to the millisecond with the plot inset', () => {
+        const twentyYears = win('2005-01-01T00:00:00Z', '2025-01-01T00:00:00Z')
+        const windows = [
+            win('2005-01-01T00:00:00Z', '2005-01-02T00:00:00Z'),
+            win('2024-12-31T00:00:00Z', '2025-01-01T00:00:00Z'),
+            twentyYears,
+            win('2019-03-07T13:41:07.123Z', '2019-08-22T04:02:59.999Z'),
+        ]
+
+        for (const width of [25, 960, 3840]) {
+            for (const held of windows) {
+                const transform = windowToTransform(held, twentyYears, width, 12)
+                expect(
+                    iso(transformToWindow(transform, twentyYears, width, 12))
+                ).toEqual(iso(held))
+            }
+        }
+    })
+
+    test('scale the full window to the identity transform, inset or not', () => {
+        expect(windowToTransform(bounds, bounds, 960, 12).k).toBe(1)
+        expect(windowToTransform(bounds, bounds, 960, 12).x).toBe(0)
+    })
+
     test('scale the full window to the identity transform', () => {
         const transform = windowToTransform(bounds, bounds, 960)
 
@@ -371,6 +461,34 @@ describe('the d3 transform conversions', () => {
 
     test('fall back to the identity transform with no width to scale into', () => {
         expect(windowToTransform(bounds, bounds, 0).k).toBe(1)
+    })
+
+    test('round-trip a window across a track inset by margins', () => {
+        const twentyYears = win('2005-01-01T00:00:00Z', '2025-01-01T00:00:00Z')
+        const windows = [
+            win('2005-01-01T00:00:00Z', '2005-01-02T00:00:00Z'),
+            win('2024-12-31T00:00:00Z', '2025-01-01T00:00:00Z'),
+            twentyYears,
+            win('2019-03-07T13:41:07.123Z', '2019-08-22T04:02:59.999Z'),
+        ]
+
+        for (const width of [37, 960, 3840]) {
+            for (const held of windows) {
+                const transform = windowToTransform(held, twentyYears, width, 18)
+                expect(
+                    iso(transformToWindow(transform, twentyYears, width, 18))
+                ).toEqual(iso(held))
+            }
+        }
+    })
+
+    test('carry the view onto the track between the margins', () => {
+        // The full window at identity: its ends sit on the track's ends.
+        expect(windowToTransform(bounds, bounds, 960, 18).k).toBe(1)
+        expect(windowToTransform(bounds, bounds, 960, 18).x).toBe(0)
+        expect(iso(transformToWindow(zoomIdentity, bounds, 960, 18))).toEqual(
+            iso(bounds)
+        )
     })
 })
 

@@ -5,8 +5,10 @@ import $ from 'jquery'
 import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
 import Map_ from '../Map_/Map_'
+import TimeUI from './TimeUI'
 import { parseTimeWithOffset, parseTimeToSeconds } from './timeUtils'
 import { evaluateLayerDataCoverage } from './layerDataCoverage'
+import { layerRequestWindow } from './layerTimePolicy'
 import { formatLayerTime, buildTileUrlOptions } from '../Layers_/tileUrlUtils'
 import { resolveTileLayerSource } from '../Layers_/tileLayerSource'
 import { isRasterTileLayerType } from '../MapEngines/types/engine'
@@ -68,6 +70,36 @@ const relativeTimeFormat = new RegExp(
     /^(-?)(?:2[0-3]|[01]?[0-9]):[0-5][0-9]:[0-5][0-9]$/
 )
 
+// A mission's time.format is written in d3 time-format specifiers (e.g.
+// '%Y-%m-%dT%H:%M:%SZ'). Falls back to this when a mission never configured
+// a format.
+const DEFAULT_TIME_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
+
+// Formats a time through the mission's configured time.format, a d3
+// time-format specifier string.
+// moment.utc is used only to parse the input as UTC (d3 alone would read a
+// zone-less string as local), so callers have a single answer for what
+// counts as a time. Null for anything that isn't one.
+// utcFormat doesn't throw on a string that isn't a valid specifier, so the
+// catch is bare insurance against a time.format that isn't one — it can't
+// come from Configure, but a caller (e.g. an export stamping the time onto a
+// legend) shouldn't fail if it ever does.
+const formatMissionTime = (time) => {
+    const parsed = moment.utc(time)
+    if (!parsed.isValid()) return null
+
+    const format = L_.configData.time?.format || DEFAULT_TIME_FORMAT
+    try {
+        return utcFormat(format)(parsed.toDate())
+    } catch (err) {
+        console.warn(
+            `Invalid 'Time Format' provided. Defaulting to ${DEFAULT_TIME_FORMAT}.`,
+            err
+        )
+        return utcFormat(DEFAULT_TIME_FORMAT)(parsed.toDate())
+    }
+}
+
 var TimeControl = {
     enabled: false,
     isRelative: true,
@@ -77,7 +109,6 @@ var TimeControl = {
     endTime: null,
     relativeStartTime: '01:00:00',
     relativeEndTime: '00:00:00',
-    globalTimeFormat: null,
     _updateLockedForAcceptingInput: false,
     customTimes: {
         times: [],
@@ -103,6 +134,40 @@ var TimeControl = {
                 // seeded"; the getters below return null for both.
                 window.mmgisAPI.provide('time:isEnabled', () => TimeControl.enabled === true),
                 window.mmgisAPI.provide('time:getCurrent', () => TimeControl.getTime()),
+                // Same current time as time:getCurrent, but through the
+                // mission's time.format (a d3 time-format specifier) rather
+                // than raw ISO — null whenever time isn't enabled or not yet
+                // seeded, matching time:isEnabled/getCurrent's own
+                // null-until-ready convention.
+                window.mmgisAPI.provide('time:getCurrentFormatted', () =>
+                    TimeControl.enabled && TimeControl.currentTime != null
+                        ? formatMissionTime(TimeControl.currentTime)
+                        : null
+                ),
+                // Formats a caller-supplied time through that same mission
+                // format, so a plugin displaying a time it holds itself
+                // (e.g. a per-layer window on an exported legend) prints it
+                // the mission's way rather than its own. Deliberately not
+                // gated on TimeControl.enabled: the time comes from the
+                // caller, not from the cursor. formatMissionTime answers null
+                // for an unparseable time; the guard here is for no time at
+                // all, which moment would otherwise read as now.
+                window.mmgisAPI.provide('time:formatTime', (time) =>
+                    time != null ? formatMissionTime(time) : null
+                ),
+                // Which mode the bottom Time UI bar is in: 'range' or 'point'.
+                // In point mode the window start is pinned to the epoch, so
+                // this is how a caller tells that apart from a real 1970
+                // start. null until time is enabled and seeded (as above),
+                // and null whenever the bar isn't mounted — mobile and the
+                // modern layout drive time without it, so it has no mode.
+                window.mmgisAPI.provide('time:getMode', () =>
+                    TimeControl.enabled &&
+                    TimeControl.currentTime != null &&
+                    TimeUI.startTempus != null
+                        ? TimeUI.modes[TimeUI.modeIndex].toLowerCase()
+                        : null
+                ),
                 window.mmgisAPI.provide('time:getStart', () => TimeControl.getStartTime()),
                 window.mmgisAPI.provide('time:getEnd', () => TimeControl.getEndTime()),
                 window.mmgisAPI.provide('time:set', (params) => {
@@ -123,9 +188,6 @@ var TimeControl = {
 
         if (L_.configData.time && L_.configData.time.enabled === true) {
             TimeControl.enabled = true
-            TimeControl.globalTimeFormat = utcFormat(
-                L_.configData.time.format
-            )
         } else {
             TimeControl.enabled = false
             return
@@ -800,8 +862,11 @@ var TimeControl = {
         for (let layerName in L_.layers.data) {
             const layer = L_.layers.data[layerName]
             if (layer.time && layer.time.enabled === true) {
-                layer.time.start = TimeControl.startTime
-                layer.time.end = TimeControl.currentTime
+                stampLayerWindow(
+                    layer,
+                    TimeControl.startTime,
+                    TimeControl.currentTime
+                )
                 layer.time.customTimes = TimeControl.customTimes
                 $('.starttime.' + F_.getSafeName(layer.name)).text(
                     layer.time.start
@@ -863,16 +928,37 @@ var TimeControl = {
     },
 }
 
+/**
+ * Writes the window a layer requests into `layer.time.start/end`, which the
+ * tile URL builders read. A raster tile layer with a periodic
+ * `time.interval` gets the one period holding the cursor
+ * (layerRequestWindow); every other layer gets `[windowStart, cursor]`.
+ */
+function stampLayerWindow(layer, windowStart, cursor) {
+    const requested = isRasterTileLayerType(layer)
+        ? layerRequestWindow(layer.time, windowStart, cursor)
+        : { start: windowStart, end: cursor }
+    layer.time.start = requested.start
+    layer.time.end = requested.end
+}
+
+// The window layers are first stamped with: a deep link's start/end when
+// present, else the Time Control's start/end.
+function initialLayerWindow() {
+    const start = L_.FUTURES.startTime
+        ? L_.FUTURES.startTime.toISOString().split('.')[0] + 'Z'
+        : TimeControl.startTime
+    const end = L_.FUTURES.endTime
+        ? L_.FUTURES.endTime.toISOString().split('.')[0] + 'Z'
+        : TimeControl.endTime
+    return [start, end]
+}
+
 function initLayerDataTimes() {
     for (let i in L_.layers.dataFlat) {
         const layer = L_.layers.dataFlat[i]
         if (layer.time && layer.time.enabled === true) {
-            layer.time.start = L_.FUTURES.startTime
-                ? L_.FUTURES.startTime.toISOString().split('.')[0] + 'Z'
-                : TimeControl.startTime
-            layer.time.end = L_.FUTURES.endTime
-                ? L_.FUTURES.endTime.toISOString().split('.')[0] + 'Z'
-                : TimeControl.endTime
+            stampLayerWindow(layer, ...initialLayerWindow())
             layer.time.customTimes = TimeControl.customTimes
         }
     }
@@ -882,12 +968,7 @@ function initLayerTimes() {
     for (let layerName in L_.layers.data) {
         const layer = L_.layers.data[layerName]
         if (layer.time && layer.time.enabled === true) {
-            layer.time.start = L_.FUTURES.startTime
-                ? L_.FUTURES.startTime.toISOString().split('.')[0] + 'Z'
-                : TimeControl.startTime
-            layer.time.end = L_.FUTURES.endTime
-                ? L_.FUTURES.endTime.toISOString().split('.')[0] + 'Z'
-                : TimeControl.endTime
+            stampLayerWindow(layer, ...initialLayerWindow())
             layer.time.customTimes = TimeControl.customTimes
             $('.starttime.' + F_.getSafeName(layer.name)).text(
                 layer.time.start

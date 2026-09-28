@@ -197,4 +197,60 @@ describe('MMGISSeriesChartAdapter', () => {
         act(() => bus.emit(READY, validPayload()))
         expect(host.textContent).toContain('Select something on the map')
     })
+
+    test('a refetch over the same chartId keeps the picked variable', () => {
+        const twoSeries = () => {
+            const payload = validPayload()
+            payload.series.push({
+                id: 'o3',
+                label: 'O₃',
+                points: [{ x: '2026-01-01T00:00:00Z', y: 0.04 }],
+            })
+            return payload
+        }
+        const chip = () => host.querySelector('.series-chart__variable-chip').textContent
+        act(() => bus.emit(READY, twoSeries()))
+        const select = host.querySelector('select.series-chart__picker-select')
+        act(() => {
+            select.value = 'o3'
+            select.dispatchEvent(new Event('change', { bubbles: true }))
+        })
+        expect(chip()).toContain('O₃')
+
+        // Same variables, new points: the pick survives.
+        act(() => bus.emit(READY, twoSeries()))
+        expect(chip()).toContain('O₃')
+
+        // The picked variable is gone: fall back to the first.
+        act(() => bus.emit(READY, validPayload()))
+        expect(chip()).toContain('NO₂')
+    })
+
+    test('the CSV download attaches its link and revokes the URL on the next tick', () => {
+        vi.useFakeTimers()
+        URL.createObjectURL = vi.fn(() => 'blob:series')
+        URL.revokeObjectURL = vi.fn()
+        let connectedAtClick = null
+        const click = vi
+            .spyOn(HTMLAnchorElement.prototype, 'click')
+            .mockImplementation(function () {
+                connectedAtClick = this.isConnected
+            })
+        try {
+            act(() => bus.emit(READY, validPayload()))
+            act(() => host.querySelector('.series-chart__csv-link').click())
+
+            expect(click).toHaveBeenCalledTimes(1)
+            expect(connectedAtClick).toBe(true)
+            expect(document.body.querySelector('a[download]')).toBeNull()
+            expect(URL.revokeObjectURL).not.toHaveBeenCalled()
+
+            vi.runAllTimers()
+            expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:series')
+        } finally {
+            vi.useRealTimers()
+            delete URL.createObjectURL
+            delete URL.revokeObjectURL
+        }
+    })
 })

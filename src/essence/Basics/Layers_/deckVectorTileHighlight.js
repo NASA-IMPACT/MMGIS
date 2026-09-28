@@ -1,0 +1,58 @@
+import { hexToRgba } from '../MapEngines/Adapters/DeckGLHelpers'
+
+/**
+ * The highlight a layer gets when its mission chose no colour: black at a
+ * tenth, which darkens a feature of any hue without recolouring it. deck's own
+ * default is a half-opaque navy, which reads as a bruise over a warm palette
+ * and vanishes into a cool one.
+ */
+const DEFAULT_HIGHLIGHT = [0, 0, 0, 26]
+
+/**
+ * The deck.gl props that decide whether, and how, a vector tile feature
+ * highlights under the cursor, read from the layer's configured style.
+ *
+ * deck's MVTLayer does not use the ordinary auto-highlight: it sets
+ * `autoHighlight` to false on the sub-layers it renders and highlights through
+ * `uniqueIdProperty` instead, matching the hovered feature by that property's
+ * value so a feature split across tiles highlights as one shape. With no such
+ * property the match answers undefined and nothing highlights, whatever the
+ * checkbox says — so the mission's chosen id key has to travel with it.
+ *
+ * Lives outside Map_ so the mapping can be read and tested on its own; Map_
+ * spreads the result into the layer's native options.
+ *
+ * @param {object} [style] - The layer's configured `style` block.
+ * @returns {{autoHighlight: boolean, uniqueIdProperty: string|undefined,
+ *            highlightColor: [number, number, number, number]}}
+ */
+export function vectorTileHighlightOptions(style) {
+    const vtId = typeof style?.vtId === 'string' ? style.vtId.trim() : ''
+
+    return {
+        autoHighlight: style?.hoverHighlight === true,
+        // Undefined rather than '': deck reads an empty key as "no key", and
+        // passing the empty string through would only restate its own default.
+        uniqueIdProperty: vtId === '' ? undefined : vtId,
+        highlightColor: highlightColor(style),
+    }
+}
+
+/**
+ * The configured highlight colour as deck's four channels, falling back to the
+ * default for a field left empty and for a colour that cannot be read — the
+ * helper answers its fallback for one it fails to parse, which is exactly the
+ * answer wanted here.
+ *
+ * Opacity rides along in the colour: the picker writes `rgba(...)` as soon as
+ * a colour is less than fully opaque, and the colour helper reads the alpha
+ * back out. A fill keeps opacity in a field of its own because Leaflet styles
+ * take the two apart; nothing here does.
+ */
+function highlightColor(style) {
+    const configured = style?.hoverHighlightColor
+    if (typeof configured !== 'string' || configured.trim() === '') {
+        return DEFAULT_HIGHLIGHT
+    }
+    return hexToRgba(configured.trim(), undefined, DEFAULT_HIGHLIGHT)
+}

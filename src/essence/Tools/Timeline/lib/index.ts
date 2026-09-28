@@ -13,7 +13,7 @@ export { ZoomControls, type ZoomControlsProps } from './geo/ZoomControls/ZoomCon
 // Shared domain types
 export { TIME_MODE_ORDER } from './types'
 export type { TimeMode, TimeRange, LayerTimeData } from './types'
-export { revealStart } from './utils/layerNavigation'
+export { drawnExtent, revealEnd, revealStart } from './utils/layerNavigation'
 export type { LayerNavigation } from './utils/layerNavigation'
 
 // Zoom

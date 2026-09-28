@@ -2,8 +2,6 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    padding-right: 8px;
-    margin-right: 4px;
 }
 
 /* Drawn from its parts because `accent-color` paints track, range and thumb in

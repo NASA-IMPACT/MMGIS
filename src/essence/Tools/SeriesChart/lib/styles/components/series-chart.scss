@@ -37,13 +37,6 @@
     margin-bottom: var(--theme-spacing-1, 0.5rem);
 }
 
-.series-chart__card-heading {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--theme-spacing-1, 0.5rem);
-}
-
 .series-chart__title {
     margin: 0;
     min-width: 0;
