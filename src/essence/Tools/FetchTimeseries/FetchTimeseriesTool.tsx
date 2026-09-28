@@ -13,7 +13,9 @@
  * Emits (consumed by SeriesChart via the shared contract in
  * _shared/types/chartSeries.ts):
  *   - plugin:fetch-timeseries:seriesReady    ChartSeriesPayload
- *   - plugin:fetch-timeseries:seriesCleared  { chartId } (on destroy)
+ *   - plugin:fetch-timeseries:seriesCleared  { chartId } on EXIT, on
+ *     destroy, and when a fetch fails, so a stale chart never sits under
+ *     an error.
  *
  * Loading and failure show on this tool's own card, so neither is an event.
  *
@@ -40,6 +42,7 @@ import {
     mmgisGetTimeStart,
     mmgisIsTimeEnabled,
     mmgisShowPlugin,
+    type CommandResult,
 } from '../_shared/adapters/mmgisAPI'
 import { seriesEvents } from '../_shared/types/chartSeries'
 import {
@@ -104,6 +107,9 @@ const FetchTimeseriesTool = {
     _selection: null as Selection | null,
     _range: null as DateRange | null,
     _refetchTimer: null as number | null,
+    /** Bumped per fetch request; a lookup that finishes after a newer
+     *  request started must not become the selection. */
+    _fetchSeq: 0,
     _status: { kind: 'idle' } as RangeStatus,
 
     initialize() {
@@ -208,9 +214,25 @@ const FetchTimeseriesTool = {
         this._selection = null
         this._setStatus({ kind: 'idle' })
         mmgisEmit(EVENTS.cleared, { chartId: CHART_ID })
-        mmgisHidePlugin(TOOL_ID).catch((err) =>
-            console.warn('[FetchTimeseries] hide failed:', err),
-        )
+        mmgisHidePlugin(TOOL_ID)
+            .then((result) => this._warnIfRefused('hide', result))
+            .catch((err) => console.warn('[FetchTimeseries] hide failed:', err))
+    },
+
+    /** A refusal resolves as { ok: false, reason }, it does not reject. No
+     *  layout means nothing to show or hide, not a failure. */
+    _warnIfRefused(verb: 'show' | 'hide', result: CommandResult) {
+        if (result.ok === true) return
+        if (result.reason === 'layout-inactive') return
+        console.warn(`[FetchTimeseries] ${verb} refused: ${result.reason}`)
+    },
+
+    /** Every failure shows on the card and takes the previous chart down:
+     *  a narrowed range with no data, or a station that 502s, must not leave
+     *  the last station's chart under the error. */
+    _fail(message: string) {
+        this._setStatus({ kind: 'error', message })
+        mmgisEmit(EVENTS.cleared, { chartId: CHART_ID })
     },
 
     _onRangeChange(start: string, end: string) {
@@ -238,9 +260,11 @@ const FetchTimeseriesTool = {
         const layerName = payload?.layerId
         if (feature == null || layerName == null) return
 
+        const seq = ++this._fetchSeq
         // hasHandler-guarded: during mission load/reload the provider isn't
         // registered yet and this resolves null — the request is a no-op.
         const layerConfig = await mmgisGetLayerConfig(layerName)
+        if (seq !== this._fetchSeq) return
         const config = getTimeseriesConfig(layerConfig)
         // Layers without a timeseries block do nothing — no fetch, no card,
         // no error.
@@ -260,10 +284,11 @@ const FetchTimeseriesTool = {
             layerDisplayName,
         }
         await this._ensureRange()
+        if (seq !== this._fetchSeq) return
         this._render()
-        mmgisShowPlugin(TOOL_ID).catch((err) =>
-            console.warn('[FetchTimeseries] show failed:', err),
-        )
+        mmgisShowPlugin(TOOL_ID)
+            .then((result) => this._warnIfRefused('show', result))
+            .catch((err) => console.warn('[FetchTimeseries] show failed:', err))
         await this._fetchFor(this._selection)
     },
 
@@ -281,7 +306,7 @@ const FetchTimeseriesTool = {
             url = templateUrl(config.url, feature, latlng, range)
         } catch (err) {
             if (err instanceof TemplateError) {
-                this._setStatus({ kind: 'error', message: err.message })
+                this._fail(err.message)
                 return
             }
             throw err
@@ -306,10 +331,7 @@ const FetchTimeseriesTool = {
             })
             if (abort.signal.aborted && !timedOut) return
             if (!resp.ok) {
-                this._setStatus({
-                    kind: 'error',
-                    message: `Could not load data (HTTP ${resp.status})`,
-                })
+                this._fail(`Could not load data (HTTP ${resp.status})`)
                 return
             }
             const body: unknown = await resp.json()
@@ -337,7 +359,7 @@ const FetchTimeseriesTool = {
             if (!(err instanceof MappingError)) {
                 console.warn('[FetchTimeseries] fetch failed', err)
             }
-            this._setStatus({ kind: 'error', message })
+            this._fail(message)
         } finally {
             window.clearTimeout(timer)
         }

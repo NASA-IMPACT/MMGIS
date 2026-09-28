@@ -312,8 +312,9 @@ describe('FetchTimeseriesTool', () => {
             )
         await act(async () => {
             const first = FetchTimeseriesTool._onFetch(fetchPayload())
+            // The first request reaches its fetch before the second arrives.
+            await vi.advanceTimersByTimeAsync(0)
             const second = FetchTimeseriesTool._onFetch(fetchPayload())
-            // Both requests await the layer-config lookup before fetching.
             await vi.advanceTimersByTimeAsync(0)
             resolveSecond(okResponse())
             await Promise.all([first, second])
@@ -322,11 +323,30 @@ describe('FetchTimeseriesTool', () => {
         expect(emittedFor(READY)).toHaveLength(1)
     })
 
-    test('an HTTP error shows on the card and emits nothing', async () => {
+    test('an HTTP error shows on the card and clears the chart', async () => {
         fetchMock.mockResolvedValueOnce({ ok: false, status: 502 })
         await request()
         expect(host.textContent).toContain('Could not load data (HTTP 502)')
-        expect(emitted).toEqual([])
+        expect(emitted).toEqual([[CLEARED, { chartId: 'vector-timeseries' }]])
+    })
+
+    test('a failed refetch takes the previous chart down with it', async () => {
+        await request()
+        expect(emitted.map(([e]) => e)).toEqual([READY])
+        fetchMock.mockResolvedValueOnce({ ok: false, status: 502 })
+        await setDate('Start', '2026-03-01T00:00:00')
+        await settle()
+        expect(emitted.map(([e]) => e)).toEqual([READY, CLEARED])
+        expect(host.textContent).toContain('HTTP 502')
+    })
+
+    test('a narrowed range with no data clears the chart and says so', async () => {
+        await request()
+        fetchMock.mockResolvedValueOnce({ ok: true, json: async () => [] })
+        await setDate('Start', '2026-03-01T00:00:00')
+        await settle()
+        expect(emitted.map(([e]) => e)).toEqual([READY, CLEARED])
+        expect(host.textContent).toContain('No data points in the response')
     })
 
     test('a bad URL template shows on the card without fetching', async () => {
@@ -335,7 +355,44 @@ describe('FetchTimeseriesTool', () => {
         await request()
         expect(fetchMock).not.toHaveBeenCalled()
         expect(host.textContent).toContain('properties.missing')
-        expect(emitted).toEqual([])
+        expect(emitted.map(([e]) => e)).toEqual([CLEARED])
+    })
+
+    test('a later request whose layer lookup finishes first wins the selection', async () => {
+        const lookups = []
+        const base = window.mmgisAPI.request
+        window.mmgisAPI.request = (name, params) =>
+            name === 'layers:getConfig'
+                ? new Promise((resolve) => lookups.push(() => resolve(layerConfigs[params])))
+                : base(name, params)
+        const featureWith = (code) =>
+            fetchPayload({ feature: { properties: { code, name: code }, geometry: {} } })
+        await act(async () => {
+            const first = FetchTimeseriesTool._onFetch(featureWith('A1'))
+            const second = FetchTimeseriesTool._onFetch(featureWith('B2'))
+            await vi.advanceTimersByTimeAsync(0)
+            lookups[1]()
+            lookups[0]()
+            await Promise.all([first, second])
+        })
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expect(fetchMock.mock.calls[0][0].startsWith('https://api/x?s=B2&')).toBe(true)
+        expect(FetchTimeseriesTool._selection.feature.properties.code).toBe('B2')
+    })
+
+    test('a refused show is warned about, not swallowed', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const base = window.mmgisAPI.request
+        window.mmgisAPI.request = (name, params) =>
+            name === 'plugins:show'
+                ? Promise.resolve({ ok: false, reason: 'not-in-layout' })
+                : base(name, params)
+        await request()
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(0)
+        })
+        expect(warn).toHaveBeenCalledWith('[FetchTimeseries] show refused: not-in-layout')
+        warn.mockRestore()
     })
 
     test('a stalled fetch times out onto the card', async () => {
@@ -354,7 +411,7 @@ describe('FetchTimeseriesTool', () => {
             await pending
         })
         expect(host.textContent).toContain('Request timed out')
-        expect(emitted).toEqual([])
+        expect(emitted.map(([e]) => e)).toEqual([CLEARED])
         warn.mockRestore()
     })
 
