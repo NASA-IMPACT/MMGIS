@@ -641,6 +641,25 @@ module.exports = function (webpackEnv) {
           },
         ],
       }),
+      // Serve loaders.gl's vector tile worker from our own origin. Left to
+      // itself loaders.gl loads it from unpkg.com, which the server's
+      // Content-Security-Policy blocks, so deck.gl vector tile layers never
+      // decode. Copying from node_modules on every build keeps the worker at
+      // the version of the loader in the bundle. DeckGLHelpers.ts points the
+      // MVT layer at this path.
+      new CopyWebpackPlugin({
+        patterns: [
+          {
+            from: path.join(
+              __dirname,
+              "../node_modules/@loaders.gl/mvt/dist/mvt-worker.js"
+            ),
+            to: path.join("static", "loaders", "mvt-worker.js"),
+            // Already minified upstream; ship loaders.gl's file unchanged.
+            info: { minimized: true },
+          },
+        ],
+      }),
       // Define Cesium base URL for static assets (must match publicPath)
       new webpack.DefinePlugin({
         CESIUM_BASE_URL: JSON.stringify(

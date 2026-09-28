@@ -1,3 +1,5 @@
+import fs from 'fs'
+import path from 'path'
 import { test, expect } from 'vitest'
 import {
     resolveLatLng,
@@ -9,6 +11,7 @@ import {
     buildDeckLayer,
     hexToRgba,
     isImageTileResponse,
+    resolveMvtWorkerUrl,
 } from '../../src/essence/Basics/MapEngines/Adapters/DeckGLHelpers.ts'
 
 const tileResponse = (ok, status, contentType) => ({
@@ -138,6 +141,41 @@ test.describe('DeckGLHelpers', () => {
         })
     })
 
+    test.describe('resolveMvtWorkerUrl', () => {
+        test('resolves a relative public path against the page', () => {
+            expect(
+                resolveMvtWorkerUrl('./build/', 'https://example.com/?mission=Air4US')
+            ).toBe('https://example.com/build/static/loaders/mvt-worker.js')
+        })
+
+        test('keeps a path prefix the page is served under', () => {
+            expect(
+                resolveMvtWorkerUrl('./build/', 'https://example.com/customer/dash/')
+            ).toBe('https://example.com/customer/dash/build/static/loaders/mvt-worker.js')
+        })
+
+        test('resolves a rooted public path against the origin', () => {
+            expect(
+                resolveMvtWorkerUrl('/', 'http://localhost:8889/?mission=Air4US')
+            ).toBe('http://localhost:8889/static/loaders/mvt-worker.js')
+        })
+
+        test('is undefined without a public path or a page', () => {
+            expect(resolveMvtWorkerUrl(undefined, 'https://example.com/')).toBeUndefined()
+            expect(resolveMvtWorkerUrl('./build/', undefined)).toBeUndefined()
+        })
+
+        test('the worker the build copies exists in the installed loader', () => {
+            // The webpack config copies this file; a loaders.gl upgrade that
+            // moves or renames it would otherwise drop the worker silently.
+            const worker = path.join(
+                __dirname,
+                '../../node_modules/@loaders.gl/mvt/dist/mvt-worker.js'
+            )
+            expect(fs.existsSync(worker)).toBe(true)
+        })
+    })
+
     test.describe('buildDeckLayer', () => {
         test('throws for unsupported layer type', () => {
             expect(() => buildDeckLayer('id', { type: 'unsupported' })).toThrow(
@@ -237,6 +275,15 @@ test.describe('DeckGLHelpers', () => {
                 url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
             })
             expect(layer.id).toBe('mvt-1')
+        })
+
+        test('leaves the MVT worker to loaders.gl when there is no public path', () => {
+            // Outside a webpack build there is nowhere the worker is served.
+            const layer = buildDeckLayer('mvt-worker', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+            })
+            expect(layer.props.loadOptions?.mvt?.workerUrl).toBeUndefined()
         })
 
         test('creates an MVTLayer via MVTLayer alias', () => {

@@ -231,6 +231,43 @@ async function fetchImageTile(
     })
 }
 
+// Set by webpack to the bundle's public path; absent outside a webpack build.
+declare const __webpack_public_path__: string | undefined
+
+/**
+ * Where the build serves loaders.gl's vector tile worker, relative to the
+ * bundle's public path. The webpack config copies the worker here from
+ * node_modules.
+ */
+const MVT_WORKER_PATH = 'static/loaders/mvt-worker.js'
+
+/**
+ * Absolute URL of the vector tile worker the build serves, or undefined when
+ * there is no public path to resolve it against.
+ *
+ * loaders.gl otherwise fetches the worker from unpkg.com, which the server's
+ * Content-Security-Policy refuses. The URL must be absolute: loaders.gl
+ * starts the worker from a blob that imports this URL, and a relative URL
+ * would resolve against the blob rather than the page. Resolving against
+ * `document.baseURI` keeps a dashboard served under a path prefix working.
+ */
+export function resolveMvtWorkerUrl(
+    publicPath: string | undefined,
+    baseURI: string | undefined
+): string | undefined {
+    if (typeof publicPath !== 'string' || !baseURI) return undefined
+    return new URL(publicPath + MVT_WORKER_PATH, baseURI).href
+}
+
+function mvtWorkerUrl(): string | undefined {
+    return resolveMvtWorkerUrl(
+        typeof __webpack_public_path__ !== 'undefined'
+            ? __webpack_public_path__
+            : undefined,
+        typeof document !== 'undefined' ? document.baseURI : undefined
+    )
+}
+
 /**
  * Split a full WMS url into its service endpoint and LAYERS list. Mirrors the
  * param parsing Leaflet's WMSColorFilter does, so a single layer url renders
@@ -583,6 +620,7 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 readsFeatureProperties,
                 legendFingerprint,
             } = resolveStyleAccessors(style, o.legend, o.legendConfigured)
+            const workerUrl = mvtWorkerUrl()
 
             return new MVTLayer({
                 id,
@@ -614,6 +652,7 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 // initialisation. The cost is that a legend configured for
                 // display alone also gives up the binary fast path.
                 binary: !readsFeatureProperties,
+                ...(workerUrl ? { loadOptions: { mvt: { workerUrl } } } : {}),
                 getFillColor,
                 getLineColor,
                 getLineWidth,
