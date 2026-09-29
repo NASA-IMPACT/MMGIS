@@ -165,27 +165,32 @@ test.describe('AOITool popup outcomes', () => {
         expect(api.getSelection()).toMatchObject({ feature: SQUARE, source: 'search' })
     })
 
-    test.each(['secondary', 'dismiss'])(
-        'a %s close clears the selection and its highlight',
-        async (action) => {
-            await selectAndOpen(SQUARE, 'Alabama')
-            api.reset()
+    test('Cancel clears the selection and its highlight', async () => {
+        await selectAndOpen(SQUARE, 'Alabama')
+        api.reset()
 
-            api.closePopup(action)
-            await flush()
+        api.closePopup('secondary')
+        await flush()
 
-            expect(api.namesOf('map:removeLayer').map((r) => r.payload)).toContainEqual({
-                id: 'aoi:selection',
-            })
-            expect(api.emitsOf('plugin:aoi:drawingCleared')).toHaveLength(1)
-            expect(api.getSelection()).toBeNull()
-            // Only the Cancel button is the user saying so in as many words;
-            // the map library taking the card down is not.
-            expect(api.emitsOf('plugin:aoi:drawingCancelled')).toHaveLength(
-                action === 'secondary' ? 1 : 0
-            )
-        }
-    )
+        expect(api.namesOf('map:removeLayer').map((r) => r.payload)).toContainEqual({
+            id: 'aoi:selection',
+        })
+        expect(api.emitsOf('plugin:aoi:drawingCleared')).toHaveLength(1)
+        expect(api.emitsOf('plugin:aoi:drawingCancelled')).toHaveLength(1)
+        expect(api.getSelection()).toBeNull()
+    })
+
+    test('a dismissal takes the card away and leaves the selection', async () => {
+        await selectAndOpen(SQUARE, 'Alabama')
+        api.reset()
+
+        api.closePopup('dismiss')
+        await flush()
+
+        expect(api.namesOf('map:removeLayer')).toHaveLength(0)
+        expect(api.emitsOf('plugin:aoi:drawingCleared')).toHaveLength(0)
+        expect(api.getSelection()).toMatchObject({ feature: SQUARE })
+    })
 
     test('a card that closed on its own leaves the selection alone', async () => {
         await selectAndOpen(SQUARE, 'Alabama')
@@ -239,6 +244,117 @@ test.describe('AOITool popup outcomes', () => {
         // would satisfy a bare "warned about something".
         expect(warn).toHaveBeenCalledWith('[AOI] showPopup failed', expect.any(Error))
         expect(api.getSelection()).toMatchObject({ feature: SQUARE })
+    })
+})
+
+test.describe('AOITool selection clicks', () => {
+    const clickSelection = () =>
+        api.emit('map:featureClick', {
+            feature: SQUARE,
+            layerId: 'aoi:selection',
+            latlng: { lat: 5, lng: 5 },
+            pixel: [0, 0],
+        })
+
+    /** Select, analyze, and let the card go: the state after a first run. */
+    async function selectAndAnalyze() {
+        await selectAndOpen(SQUARE, 'Alabama')
+        api.closePopup('primary')
+        await flush()
+        api.reset()
+    }
+
+    test('the drawn area is put on the map clickable', async () => {
+        await selectAndOpen(SQUARE, 'Alabama')
+        const layer = api.namesOf('map:createLayer').find((r) => r.payload.id === 'aoi:selection')
+        expect(layer.payload.interactive).toBe(true)
+    })
+
+    test('a click on the area after a run brings its card back', async () => {
+        await selectAndAnalyze()
+
+        clickSelection()
+        await flush()
+
+        const shows = api.namesOf('map:showPopup')
+        expect(shows).toHaveLength(1)
+        expect(shows[0].payload.title).toBe('Alabama')
+        expect(shows[0].payload.primaryAction).toEqual({ label: 'Analyze area' })
+        expect(shows[0].payload.secondaryAction).toEqual({ label: 'Cancel' })
+        expect(api.hasOpenPopup()).toBe(true)
+    })
+
+    test('Analyze area on a reopened card hands the same feature over again', async () => {
+        await selectAndAnalyze()
+        clickSelection()
+        await flush()
+
+        api.closePopup('primary')
+        await flush()
+
+        expect(api.emitsOf('plugin:aoi:analysisAOIReady').map((e) => e.data)).toEqual([
+            { feature: SQUARE },
+        ])
+        expect(api.getSelection()).toMatchObject({ feature: SQUARE })
+        // The panel was hidden behind the last results; the run brings it
+        // back so its progress shows.
+        expect(api.namesOf('plugins:setState').map((r) => r.payload)).toContainEqual({
+            pluginId: 'AOITool',
+            state: 'visible',
+        })
+    })
+
+    test('Cancel on a reopened card clears the area', async () => {
+        await selectAndAnalyze()
+        clickSelection()
+        await flush()
+
+        api.closePopup('secondary')
+        await flush()
+
+        expect(api.namesOf('map:removeLayer').map((r) => r.payload)).toContainEqual({
+            id: 'aoi:selection',
+        })
+        expect(api.getSelection()).toBeNull()
+        expect(api.emitsOf('plugin:aoi:drawingCleared')).toHaveLength(1)
+    })
+
+    test('dismissing a reopened card leaves the area in place', async () => {
+        await selectAndAnalyze()
+        clickSelection()
+        await flush()
+
+        api.closePopup('dismiss')
+        await flush()
+
+        expect(api.namesOf('map:removeLayer')).toHaveLength(0)
+        expect(api.getSelection()).toMatchObject({ feature: SQUARE })
+        expect(api.emitsOf('plugin:aoi:drawingCleared')).toHaveLength(0)
+    })
+
+    test('a click while the card is already up asks for nothing more', async () => {
+        await selectAndAnalyze()
+        clickSelection()
+        await flush()
+        expect(api.namesOf('map:showPopup')).toHaveLength(1)
+
+        clickSelection()
+        await flush()
+        expect(api.namesOf('map:showPopup')).toHaveLength(1)
+    })
+
+    test('a click with no area, or while a session is drawing, does nothing', async () => {
+        clickSelection()
+        await flush()
+        expect(api.namesOf('map:showPopup')).toHaveLength(0)
+
+        await selectAndAnalyze()
+        api.emit('map:drawstart')
+        await flush()
+        api.reset()
+        clickSelection()
+        await flush()
+        expect(api.namesOf('map:showPopup')).toHaveLength(0)
     })
 })
 

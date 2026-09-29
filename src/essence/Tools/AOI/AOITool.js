@@ -18,7 +18,8 @@
  *     - tool:change                       (core)
  *     - map:drawstart / drawvertex /
  *       drawcomplete / drawcancel         (engine bus)
- *     - map:featureClick                  (inspect-mode boundary clicks, filtered by layerId)
+ *     - map:featureClick                  (inspect-mode boundary clicks and clicks on the
+ *                                          drawn area, filtered by layerId)
  *     - map:moveend                       (one-shot, while a selection waits for the camera)
  *     - plugin:fetch-stats:analysisProgress  { done, total }
  *     - plugin:fetch-stats:analysisReady     { analysisData }
@@ -144,6 +145,9 @@ const AOITool = {
     // The selection a drawing session took the card away from, held until the
     // session either replaces it or is backed out of.
     _suspendedAOI: null,
+    // The selection whose card is open, so a click on the area while its card
+    // is up does not ask for a second one.
+    _cardFor: null,
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -561,6 +565,10 @@ const AOITool = {
     },
 
     _onMapFeatureClick(info) {
+        if (info?.layerId === SELECTION_LAYER_ID) {
+            this._onSelectionClick()
+            return
+        }
         if (this._state.mode !== 'inspect') return
         if (info?.layerId !== INSPECT_BOUNDARIES_LAYER_ID) return
         const feature = info?.feature
@@ -574,6 +582,25 @@ const AOITool = {
             props.title ||
             (props._aoiKind ? `Inspected ${props._aoiKind}` : 'Inspected area')
         this._applySelection(feature, 'inspect', label)
+    },
+
+    /**
+     * A click on the drawn area brings its card back, to analyze it again or
+     * cancel it. Not while a session is drawing over it, nor while its card is
+     * already up or on its way.
+     */
+    _onSelectionClick() {
+        const aoi = this._state.currentAOI
+        if (!aoi || this._state.isDrawing) return
+        if (this._cardFor === aoi || this._pendingPopup) return
+        window.mmgisAPI?.request?.('map:getBounds')
+            .catch(() => null)
+            .then((view) => {
+                if (this._state.currentAOI !== aoi || this._state.isDrawing) return
+                if (this._cardFor === aoi || this._pendingPopup) return
+                this._showSelectionPopup(aoi.feature, aoi.label, view)
+            })
+            .catch((err) => console.warn('[AOI] reopen popup failed', err))
     },
 
     // ── Upload mode ────────────────────────────────────────────────────────────
@@ -643,7 +670,8 @@ const AOITool = {
             type: 'vector',
             geojson: { type: 'FeatureCollection', features: [feature] },
             style: selectionStyle(),
-            interactive: false,
+            // Clickable: a click on the area brings its card back.
+            interactive: true,
         }).catch((err) => console.warn('[AOI] failed to add selection layer', err))
 
         this._state.currentAOI = { feature, source, label }
@@ -750,6 +778,8 @@ const AOITool = {
      * Show the card at the feature centroid — or, when `view` is given and the
      * centroid is off it, at the view's centre (see {@link selectionPopupAnchor}).
      * Core owns the card; the request is data only and answers with how it closed.
+     * Its two ways out do two different things: Cancel takes the area away,
+     * the card's × (or a click on the map) only takes the card away.
      */
     _showSelectionPopup(feature, label, view) {
         const c = featureCentroid(feature)
@@ -763,6 +793,7 @@ const AOITool = {
         // capture keeps a stale answer from reaching a newer selection,
         // whichever order the two arrive in.
         const aoi = this._state.currentAOI
+        this._cardFor = aoi
         api.request('map:showPopup', {
             latlng: selectionPopupAnchor({ lat: c[1], lng: c[0] }, view),
             // A blank name would leave the service nothing to show, and it
@@ -778,15 +809,18 @@ const AOITool = {
             // failure to show the card.
             .then(
                 ({ action } = {}) => {
+                    if (this._cardFor === aoi) this._cardFor = null
                     if (this._state.currentAOI !== aoi) return
-                    // Cancel and a dismissal both abandon the selection, and
-                    // only Cancel is the user saying so in as many words.
-                    // 'closed' means AOI or core took the card away.
+                    // Only Cancel takes the area away. A dismissal is the
+                    // card going, not the area; 'closed' means AOI or core
+                    // took the card away.
                     if (action === 'primary') this._onAnalyze()
                     else if (action === 'secondary') this._onCancel()
-                    else if (action === 'dismiss') this._clearSelection()
                 },
-                (err) => console.warn('[AOI] showPopup failed', err)
+                (err) => {
+                    if (this._cardFor === aoi) this._cardFor = null
+                    console.warn('[AOI] showPopup failed', err)
+                }
             )
     },
 
@@ -799,6 +833,10 @@ const AOITool = {
     _onAnalyze() {
         const aoi = this._state.currentAOI
         if (!aoi) return
+        // A run asked for from the area's card starts with this panel hidden
+        // behind the last results, so its progress would run unseen. Bring
+        // it back for the run; the results arriving hide it again.
+        mmgisSetPluginState('AOITool', 'visible').catch(() => { })
         this._api?.emit('analysisAOIReady', { feature: aoi.feature })
     },
 
