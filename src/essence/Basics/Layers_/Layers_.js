@@ -312,6 +312,23 @@ async function catchUpLayerTime(s) {
     await L_.TimeControl_.reloadLayer(s, true)
 }
 
+/**
+ * Redraws a layer whose run pin has just moved.
+ *
+ * The pin changes what the layer draws without moving the clock, so the
+ * `time.current` stamp — the time the layer was last reloaded at — no longer
+ * describes what it holds. It is cleared first: `reloadLayer` stamps it again
+ * for a layer it refreshes, and one that is off keeps it cleared, which is
+ * what makes catchUpLayerTime reload it when it is next switched on rather
+ * than show the previous run's tiles.
+ *
+ * @param {object} layer - Layer config, already pinned.
+ */
+async function reloadRepinnedLayer(layer) {
+    layer.time.current = null
+    await L_.TimeControl_.reloadLayer(layer)
+}
+
 const L_ = {
     url: window.location.href,
     mission: null,
@@ -595,14 +612,17 @@ const L_ = {
                 }),
                 // Pins a layer to one of its listed runs: the data window
                 // follows and the layer redraws if it is on. The clock and the
-                // global time window are left where they are.
+                // global time window are left where they are, so the new
+                // window alone decides whether the layer has data at the
+                // current time; reloadLayer asks the coverage gate before it
+                // requests anything, hiding or restoring the layer to match.
                 window.mmgisAPI.provide('layers:setRun', async (payload) => {
                     const uuid = L_.asLayerUUID(payload?.layerUUID)
                     const layer = uuid == null ? null : L_.layers.data[uuid]
                     if (!layer?.time?.runs || typeof payload?.run !== 'string')
                         return false
                     if (!applyRunSelection(layer.time, payload.run)) return false
-                    if (L_.layers.on[uuid]) await refreshTileLayer(uuid)
+                    await reloadRepinnedLayer(layer)
                     window.mmgisAPI.emit('layers:configChanged', {
                         layerName: uuid,
                         keys: ['time'],
@@ -617,7 +637,9 @@ const L_ = {
                 }),
                 // Re-reads a layer's runs from its source, for a mission kept
                 // open across a run boundary. Announces like a pick when the
-                // layer ends up pinned.
+                // layer ends up pinned, and reloads like one: a newer run
+                // moves the data window, which may no longer hold the
+                // current time.
                 window.mmgisAPI.provide('layers:refreshRuns', async (layerUUID) => {
                     const uuid = L_.asLayerUUID(layerUUID)
                     const layer = uuid == null ? null : L_.layers.data[uuid]
@@ -626,7 +648,7 @@ const L_ = {
                         missionPath: L_.missionPath,
                     })
                     if (!pinned) return false
-                    if (L_.layers.on[uuid]) await refreshTileLayer(uuid)
+                    await reloadRepinnedLayer(layer)
                     window.mmgisAPI.emit('layers:configChanged', {
                         layerName: uuid,
                         keys: ['time'],

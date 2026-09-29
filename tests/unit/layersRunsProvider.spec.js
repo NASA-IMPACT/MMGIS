@@ -18,6 +18,7 @@ const OLDER = '2026-09-21T06:00:00'
 let providers
 let emits
 let refreshLayer
+let reloadLayer
 let clock
 
 const registerProviders = () => {
@@ -31,6 +32,12 @@ const registerProviders = () => {
         emit: (event, payload) => emits.push({ event, payload }),
     }
     refreshLayer = vi.fn(() => true)
+    // Faithful to TimeControl.reloadLayer, which stamps the time it refreshed
+    // a layer at, and refreshes only a layer that is on.
+    reloadLayer = vi.fn(async (layer) => {
+        if (L_.layers.on[layer.name]) layer.time.current = clock.current
+        return true
+    })
     clock = {
         current: '2026-09-22T00:00:00Z',
         start: '2020-01-01T00:00:00Z',
@@ -52,6 +59,7 @@ const registerProviders = () => {
             getStartTime: () => clock.start,
             getEndTime: () => clock.end,
             setTime: (...args) => clock.setTime(...args),
+            reloadLayer: (...args) => reloadLayer(...args),
         }
     )
 }
@@ -123,14 +131,48 @@ describe('layers:setRun', () => {
                 payload: { layerName: 'fc', run: OLDER, start: '2026-09-21T07:00:00Z', end: '2026-09-24T06:00:00Z' },
             },
         ])
-        expect(refreshLayer).not.toHaveBeenCalled()
     })
 
-    test('redraws a layer that is on', async () => {
-        forecastLayer(true)
+    test('reloads the layer after the pin moves, so coverage is re-decided against the new window', async () => {
+        const layer = forecastLayer(true)
+        reloadLayer.mockImplementation(async (l) => {
+            expect(l.time.runs.selected).toBe(OLDER)
+            expect(l.time.dataEndTime).toBe('2026-09-24T06:00:00Z')
+            return true
+        })
         await providers['layers:setRun']({ layerUUID: 'fc', run: OLDER })
-        expect(refreshLayer).toHaveBeenCalledTimes(1)
-        expect(refreshLayer.mock.calls[0][0]).toBe('fc')
+        expect(reloadLayer).toHaveBeenCalledTimes(1)
+        expect(reloadLayer.mock.calls[0][0]).toBe(layer)
+    })
+
+    test('reloads a layer that is off too, leaving the on/off decision to reloadLayer', async () => {
+        const layer = forecastLayer(false)
+        await providers['layers:setRun']({ layerUUID: 'fc', run: OLDER })
+        expect(reloadLayer).toHaveBeenCalledWith(layer)
+    })
+
+    // The clock does not move on a pick, so a layer that is off would still
+    // read as current when switched on and bring back the previous run's
+    // tiles. Clearing the stamp is what sends it through catchUpLayerTime.
+    test('leaves a layer that is off marked behind, so it reloads when next shown', async () => {
+        const layer = forecastLayer(false)
+        layer.time.current = clock.current
+        await providers['layers:setRun']({ layerUUID: 'fc', run: OLDER })
+        expect(layer.time.current).toBeNull()
+    })
+
+    test('leaves a layer that is on stamped current once it has redrawn', async () => {
+        const layer = forecastLayer(true)
+        layer.time.current = clock.current
+        await providers['layers:setRun']({ layerUUID: 'fc', run: OLDER })
+        expect(layer.time.current).toBe(clock.current)
+    })
+
+    test('leaves the stamp alone on a refused pick', async () => {
+        const layer = forecastLayer(false)
+        layer.time.current = clock.current
+        await providers['layers:setRun']({ layerUUID: 'fc', run: '2020-01-01T00:00:00' })
+        expect(layer.time.current).toBe(clock.current)
     })
 
     test('refuses an unlisted run, an unknown layer, and a layer without runs', async () => {
@@ -141,6 +183,7 @@ describe('layers:setRun', () => {
         expect(await providers['layers:setRun']({ layerUUID: 'plain', run: OLDER })).toBe(false)
         expect(layer.time.runs.selected).toBe(NEWEST)
         expect(emits).toEqual([])
+        expect(reloadLayer).not.toHaveBeenCalled()
     })
 
     test('never moves the clock or the global window, even when the clock sits outside the run window', async () => {
@@ -161,6 +204,7 @@ describe('layers:refreshRuns', () => {
 
     test('re-reads the source, pins, and announces; false for a layer without one', async () => {
         const layer = forecastLayer(false)
+        layer.time.current = clock.current
         layer.time.runs = { url: 'https://svc/runs', path: 'data', step: 'PT1H' }
         vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ data: [OLDER, NEWEST] }) })))
         try {
@@ -171,6 +215,8 @@ describe('layers:refreshRuns', () => {
         expect(layer.time.runs.list).toEqual([NEWEST, OLDER])
         expect(layer.time.runs.selected).toBe(NEWEST)
         expect(emits.map((e) => e.event)).toEqual(['layers:configChanged', 'layer:runChange'])
+        expect(reloadLayer).toHaveBeenCalledWith(layer)
+        expect(layer.time.current).toBeNull()
 
         L_.layers.data.plain = { name: 'plain', time: { enabled: true } }
         expect(await providers['layers:refreshRuns']('plain')).toBe(false)
