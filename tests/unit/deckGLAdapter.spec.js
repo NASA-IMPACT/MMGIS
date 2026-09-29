@@ -1432,6 +1432,13 @@ test.describe('DeckGLAdapter', () => {
             ['standalone', null],
             ['overlay', MAPLIBRE_BASEMAP],
         ]) {
+            test(`${mode} mode shows a pointer over a pickable feature, a grab elsewhere`, () => {
+                const { props } = initAdapter(basemap)
+                expect(props.getCursor({ isDragging: false, isHovering: true })).toBe('pointer')
+                expect(props.getCursor({ isDragging: false, isHovering: false })).toBe('grab')
+                expect(props.getCursor({ isDragging: true, isHovering: true })).toBe('grabbing')
+            })
+
             test(`${mode} mode reports the clicks deck picks`, () => {
                 const { adapter, props } = initAdapter(basemap)
                 const clicks = []
