@@ -90,7 +90,9 @@ const stepOf = (runs: RunSource) => {
 
 /**
  * The window a run covers: run + first lead through run + last lead, in
- * whole steps. A run with no lead range covers its own instant.
+ * whole steps. A run with no lead range covers its own instant. Null when
+ * either end falls outside what a Date can hold, as leads listed in a unit
+ * far finer than the step (nanoseconds against PT1H) would put it.
  */
 export const runWindow = (
     run: string,
@@ -100,10 +102,10 @@ export const runWindow = (
     if (!from) return null
     const step = stepOf(runs)
     const [first, last] = runs.leadRange ?? [0, 0]
-    return {
-        start: toIso(addDuration(from, step, first)),
-        end: toIso(addDuration(from, step, last)),
-    }
+    const start = addDuration(from, step, first)
+    const end = addDuration(from, step, last)
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
+    return { start: toIso(start), end: toIso(end) }
 }
 
 /** Whole steps from the pinned run to `at`, rounded down; null without a pin. */
@@ -229,6 +231,12 @@ export async function fetchLayerRunSource(
     const leadRange = leadRangeOf(leadList)
     if (leadUrl !== '' && leadRange == null) {
         console.warn(`[Layers] ${label}: lead source listed no leads; the layer is not pinned.`)
+        return false
+    }
+    if (runWindow(list[0], { ...runs, leadRange }) == null) {
+        console.warn(
+            `[Layers] ${label}: leads ${leadRange?.join(' to ')} in steps of ${runs.step ?? DEFAULT_RUN_STEP} give no valid window; the layer is not pinned.`
+        )
         return false
     }
     runs.list = list

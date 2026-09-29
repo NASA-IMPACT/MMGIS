@@ -53,6 +53,10 @@ describe('run source helpers', () => {
         })
     })
 
+    test('runWindow is null when a lead puts either end past what a Date holds', () => {
+        expect(runWindow(OLDER, { step: 'PT1H', leadRange: [0, 3600000000000] })).toBeNull()
+    })
+
     test('leadAt counts whole steps from the pin to an instant, rounded down', () => {
         const runs = { selected: OLDER, step: 'PT1H' }
         expect(leadAt(runs, '2026-09-22T00:00:00Z')).toBe(18)
@@ -119,6 +123,20 @@ describe('fetchLayerRunSource', () => {
         const layer = layerWith({})
         expect(await fetchLayerRunSource(layer, { fetchImpl })).toBe(false)
         expect(layer.time.runs.selected).toBeUndefined()
+        warn.mockRestore()
+    })
+
+    test('leaves the layer unpinned, without rejecting, when its leads give no valid window', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const fetchImpl = answering({
+            [RUNS_URL]: { data: [NEWEST] },
+            [LEAD_URL]: { data: [0, 3600000000000] },
+        })
+        const layer = layerWith({})
+        expect(await fetchLayerRunSource(layer, { fetchImpl })).toBe(false)
+        expect(layer.time.runs.list).toBeUndefined()
+        expect(layer.time.runs.selected).toBeUndefined()
+        expect(warn).toHaveBeenCalledTimes(1)
         warn.mockRestore()
     })
 
