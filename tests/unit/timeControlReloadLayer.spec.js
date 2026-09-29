@@ -539,17 +539,17 @@ describe('TimeControl.performTimeUrlReplacements with a pinned run', () => {
     })
 
     test('counts the lead in the configured step', async () => {
-        const layer = pinned('2026-09-24T00:00:00Z')
+        const layer = pinned('2026-09-24T06:00:00Z')
         layer.time.runs.step = 'P1D'
         const url = await TimeControl.performTimeUrlReplacements(layer.url, layer, false)
         expect(url).toContain('sel=lead=nearest::3')
     })
 
-    test('leaves the placeholders alone for a layer with runs but no pin yet', async () => {
+    test('fills both placeholders with the unresolved marker for a layer with runs but no pin', async () => {
         const layer = pinned('2026-09-22T00:00:00Z')
         layer.time.runs.selected = null
         const url = await TimeControl.performTimeUrlReplacements(layer.url, layer, false)
-        expect(url).toContain('{reftime}')
-        expect(url).toContain('{lead}')
+        expect(url).toContain('reference_time=nearest::MMGIS_UNRESOLVED')
+        expect(url).toContain('lead=nearest::MMGIS_UNRESOLVED')
     })
 })

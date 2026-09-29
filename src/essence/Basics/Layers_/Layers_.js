@@ -7,12 +7,10 @@ import Search from '../../Ancillary/Search'
 import Attributions from '../../Ancillary/Attributions'
 import CursorInfo from '../../Ancillary/CursorInfo'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
-import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
 import {
     fetchLayerRunSource,
     applyRunSelection,
-    runWindow,
     leadAt,
 } from '../TimeControl_/layerRunSource'
 import {
@@ -72,32 +70,8 @@ const runsFor = (uuid) => {
         selected: runs.selected ?? null,
         step: runs.step || 'PT1H',
         leadRange: runs.leadRange ?? null,
-        lead: leadAt(runs, L_.TimeControl_?.getTime?.()),
+        lead: leadAt(runs, time.end),
     }
-}
-
-// The scrubber is moved into [start, end] only when it sits outside: to now
-// when now is inside, else to the window's start. The global window is
-// widened only as far as it must be to hold the span.
-const clampClockInto = (start, end) => {
-    const tc = L_.TimeControl_
-    if (!tc?.getTime || !tc.setTime || !start || !end) return
-    const spanStart = new Date(start).getTime()
-    const spanEnd = new Date(end).getTime()
-    const at = new Date(tc.getTime()).getTime()
-    if (!Number.isNaN(at) && at >= spanStart && at <= spanEnd) return
-    const now = Date.now()
-    const next = now >= spanStart && now <= spanEnd ? now : spanStart
-    const windowStart = new Date(tc.getStartTime()).getTime()
-    const windowEnd = new Date(tc.getEndTime()).getTime()
-    const iso = (ms) => new Date(ms).toISOString().split('.')[0] + 'Z'
-    tc.setTime(
-        iso(Number.isNaN(windowStart) ? spanStart : Math.min(windowStart, spanStart)),
-        iso(Number.isNaN(windowEnd) ? spanEnd : Math.max(windowEnd, spanEnd)),
-        false,
-        undefined,
-        iso(next)
-    )
 }
 
 /**
@@ -334,6 +308,23 @@ async function catchUpLayerTime(s) {
 
     // evenIfOff: the layer is still recorded as off while the toggle runs.
     await L_.TimeControl_.reloadLayer(s, true)
+}
+
+/**
+ * Redraws a layer whose run pin has just moved.
+ *
+ * The pin changes what the layer draws without moving the clock, so the
+ * `time.current` stamp — the time the layer was last reloaded at — no longer
+ * describes what it holds. It is cleared first: `reloadLayer` stamps it again
+ * for a layer it refreshes, and one that is off keeps it cleared, which is
+ * what makes catchUpLayerTime reload it when it is next switched on rather
+ * than show the previous run's tiles.
+ *
+ * @param {object} layer - Layer config, already pinned.
+ */
+async function reloadRepinnedLayer(layer) {
+    layer.time.current = null
+    await L_.TimeControl_.reloadLayer(layer)
 }
 
 const L_ = {
@@ -603,7 +594,8 @@ const L_ = {
                 }),
                 // A layer's model runs, for a picker: the runs offered, the
                 // one it is pinned to, the lead step, the lead range, and the
-                // lead the current time sits at. Null for a layer with no run
+                // lead its tiles are requested at, counted to the layer's end
+                // time as the tile URL is. Null for a layer with no run
                 // source. Same call shapes as the extent above.
                 window.mmgisAPI.provide('layers:getRuns', (layerUUID) => {
                     if (layerUUID != null) {
@@ -618,19 +610,18 @@ const L_ = {
                     return all
                 }),
                 // Pins a layer to one of its listed runs: the data window
-                // follows, the clock is moved into the window when it sits
-                // outside it, and the layer redraws if it is on. The clock
-                // moves before anything is announced, so a listener that
-                // reads the lead on the announcement reads it against the
-                // settled clock.
+                // follows and the layer redraws if it is on. The clock and the
+                // global time window are left where they are, so the new
+                // window alone decides whether the layer has data at the
+                // current time; reloadLayer asks the coverage gate before it
+                // requests anything, hiding or restoring the layer to match.
                 window.mmgisAPI.provide('layers:setRun', async (payload) => {
                     const uuid = L_.asLayerUUID(payload?.layerUUID)
                     const layer = uuid == null ? null : L_.layers.data[uuid]
                     if (!layer?.time?.runs || typeof payload?.run !== 'string')
                         return false
                     if (!applyRunSelection(layer.time, payload.run)) return false
-                    clampClockInto(layer.time.dataStartTime, layer.time.dataEndTime)
-                    if (L_.layers.on[uuid]) await refreshTileLayer(uuid)
+                    await reloadRepinnedLayer(layer)
                     window.mmgisAPI.emit('layers:configChanged', {
                         layerName: uuid,
                         keys: ['time'],
@@ -638,30 +629,6 @@ const L_ = {
                     window.mmgisAPI.emit('layer:runChange', {
                         layerName: uuid,
                         run: payload.run,
-                        start: layer.time.dataStartTime,
-                        end: layer.time.dataEndTime,
-                    })
-                    return true
-                }),
-                // Re-reads a layer's runs from its source, for a mission kept
-                // open across a run boundary. Announces like a pick when the
-                // layer ends up pinned.
-                window.mmgisAPI.provide('layers:refreshRuns', async (layerUUID) => {
-                    const uuid = L_.asLayerUUID(layerUUID)
-                    const layer = uuid == null ? null : L_.layers.data[uuid]
-                    if (!layer?.time?.runs) return false
-                    const pinned = await fetchLayerRunSource(layer, {
-                        missionPath: L_.missionPath,
-                    })
-                    if (!pinned) return false
-                    if (L_.layers.on[uuid]) await refreshTileLayer(uuid)
-                    window.mmgisAPI.emit('layers:configChanged', {
-                        layerName: uuid,
-                        keys: ['time'],
-                    })
-                    window.mmgisAPI.emit('layer:runChange', {
-                        layerName: uuid,
-                        run: layer.time.runs.selected,
                         start: layer.time.dataStartTime,
                         end: layer.time.dataEndTime,
                     })
@@ -759,7 +726,7 @@ const L_ = {
                 window.mmgisAPI.provide('layers:getLoadStatus', (layerUUID) =>
                     layerUUID != null
                         ? L_.layers.loadStatus[L_.asLayerUUID(layerUUID)] ??
-                        null
+                          null
                         : L_.layers.loadStatus
                 ),
                 // Whether each layer's requests are being suppressed for
@@ -928,16 +895,17 @@ const L_ = {
         // Generate different endpoints based on type
         if (type === 'tile') {
             // Tile endpoint for raster tiles
-            return `${baseUrl}/collections/${collectionName}/tiles/${(layerData && layerData.tileMatrixSet) || 'WebMercatorQuad'
-                }/{z}/{x}/{y}?assets=asset${bandsParam}${resamplingParam}`
+            return `${baseUrl}/collections/${collectionName}/tiles/${
+                (layerData && layerData.tileMatrixSet) || 'WebMercatorQuad'
+            }/{z}/{x}/{y}?assets=asset${bandsParam}${resamplingParam}`
         } else {
             // For images, we use preview endpoint
             // Note: STAC collections are typically designed for tile serving
             if (layerData && layerData.name) {
                 console.warn(
                     `STAC layer "${layerData.name}" is configured as an image layer. ` +
-                    `STAC collections work best with tile layer type. ` +
-                    `Attempting to use preview endpoint.`
+                        `STAC collections work best with tile layer type. ` +
+                        `Attempting to use preview endpoint.`
                 )
             }
             return `${baseUrl}/collections/${collectionName}/preview?assets=asset${bandsParam}${resamplingParam}`
@@ -1131,7 +1099,7 @@ const L_ = {
                     if (!ignoreToggleStateChange) {
                         try {
                             $('.drawToolContextMenuHeaderClose').click()
-                        } catch (err) { }
+                        } catch (err) {}
                     }
                     CursorInfo.hide(true)
                     L_.Map_.engine.setLayerVisibility(s.name, false)
@@ -1185,7 +1153,7 @@ const L_ = {
                         for (let sub in L_.layers.attachments[s.name]) {
                             if (L_.layers.attachments[s.name][sub].on) {
                                 switch (
-                                L_.layers.attachments[s.name][sub].type
+                                    L_.layers.attachments[s.name][sub].type
                                 ) {
                                     case 'model':
                                         L_.Globe_.litho.addLayer(
@@ -1444,11 +1412,11 @@ const L_ = {
                                                 ?.bearing &&
                                                 s.variables?.markerAttachments
                                                     ?.bearing.enabled ==
-                                                null) ||
-                                                s.variables?.markerAttachments
-                                                    ?.bearing?.enabled === true
+                                                    null) ||
+                                            s.variables?.markerAttachments
+                                                ?.bearing?.enabled === true
                                                 ? s.variables.markerAttachments
-                                                    .bearing
+                                                      .bearing
                                                 : null,
                                     },
                                     opacity: L_.layers.opacity[s.name],
@@ -1664,7 +1632,7 @@ const L_ = {
                             ]) {
                                 const sublayer =
                                     L_.layers.attachments[
-                                    L_.layers.dataFlat[i].name
+                                        L_.layers.dataFlat[i].name
                                     ][s]
                                 if (sublayer.on) {
                                     switch (sublayer.type) {
@@ -1746,7 +1714,7 @@ const L_ = {
                         console.log(e)
                         console.warn(
                             'Warning: Failed to add layer to map: ' +
-                            L_.layers.dataFlat[i].name
+                                L_.layers.dataFlat[i].name
                         )
                     }
                 }
@@ -1840,10 +1808,10 @@ const L_ = {
                                             ?.bearing &&
                                             s.variables?.markerAttachments
                                                 ?.bearing.enabled == null) ||
-                                            s.variables?.markerAttachments?.bearing
-                                                ?.enabled === true
+                                        s.variables?.markerAttachments?.bearing
+                                            ?.enabled === true
                                             ? s.variables.markerAttachments
-                                                .bearing
+                                                  .bearing
                                             : null,
                                 },
                                 opacity: L_.layers.opacity[s.name],
@@ -1875,8 +1843,8 @@ const L_ = {
                     geojson.features
                         ? geojson.features
                         : geojson.length > 0 && geojson[0].type === 'Feature'
-                            ? geojson
-                            : null
+                          ? geojson
+                          : null
                 )
             if (keepLastN && keepLastN > 0) {
                 layer._sourceGeoJSON.features =
@@ -1955,7 +1923,7 @@ const L_ = {
     setStyle(layer, newStyle) {
         try {
             layer.setStyle(newStyle)
-        } catch (err) { }
+        } catch (err) {}
     },
     setActiveFeature(layer) {
         if (layer && layer.feature && layer.options?.layerName)
@@ -2052,7 +2020,7 @@ const L_ = {
         }
         try {
             //layer.bringToFront()
-        } catch (err) { }
+        } catch (err) {}
     },
     toggleFeature(layer, on) {
         const display = on ? 'inherit' : 'none'
@@ -2400,15 +2368,15 @@ const L_ = {
         const styleString =
             (s.color != null
                 ? 'text-shadow: ' +
-                F_.getTextShadowString(s.color, s.strokeOpacity, s.weight) +
-                '; '
+                  F_.getTextShadowString(s.color, s.strokeOpacity, s.weight) +
+                  '; '
                 : '') +
             (s.fillColor != null ? 'color: ' + s.fillColor + '; ' : '') +
             (s.fontSize != null ? 'font-size: ' + s.fontSize + '; ' : '') +
             (s.rotation != null
                 ? 'transform: rotateZ(' +
-                parseInt(!isNaN(s.rotation) ? s.rotation : 0) * -1 +
-                'deg); '
+                  parseInt(!isNaN(s.rotation) ? s.rotation : 0) * -1 +
+                  'deg); '
                 : '')
 
         const id = className + '_' + id1 + '_' + id2
@@ -2432,14 +2400,14 @@ const L_ = {
             )
             .setContent(
                 "<div>" +
-                `<div id='${id}'` +
-                ` class='${className === 'DrawToolAnnotation' ? 'drawToolAnnotation' : 'mmgisAnnotation'} ${className}_${id1} blackTextBorder'` +
-                " layer='" + id1 +
-                "' layerId='" + layerId +
-                (L_.layers.layer[layerId] != null ? "' index='" + L_.layers.layer[layerId].length : '') +
-                "' style='" + styleString + "'>" +
-                `${feature.properties.name.replace(/[<>;{}]/g, '')}`,
-                '</div>' +
+                    `<div id='${id}'` +
+                    ` class='${className === 'DrawToolAnnotation' ? 'drawToolAnnotation' : 'mmgisAnnotation'} ${className}_${id1} blackTextBorder'` +
+                    " layer='" + id1 +
+                    "' layerId='" + layerId + 
+                    (L_.layers.layer[layerId] != null ? "' index='" + L_.layers.layer[layerId].length : '') +
+                    "' style='" + styleString + "'>" +
+                    `${feature.properties.name.replace(/[<>;{}]/g, '')}`,
+                    '</div>' +
                 '</div>'
             )
 
@@ -2730,9 +2698,9 @@ const L_ = {
                                         'color',
                                         layer.feature?.properties?.style
                                             ?.fillColor ||
-                                        layer.options?.fillColor ||
-                                        fillColor ||
-                                        'white'
+                                            layer.options?.fillColor ||
+                                            fillColor ||
+                                            'white'
                                     )
                         } else if (layer._isArrow) {
                             // Arrow
@@ -2848,7 +2816,7 @@ const L_ = {
                                         sublayerName
                                     ].layer._layers[sll].feature._style
                                 )
-                            } catch (err) { }
+                            } catch (err) {}
                         }
                     }
                 }
@@ -3205,8 +3173,8 @@ const L_ = {
                     layer._latlng.lat,
                     layer._latlng.lng,
                     activePoint.zoom ||
-                    L_.Map_.mapScaleZoom ||
-                    L_.Map_.map.getZoom(),
+                        L_.Map_.mapScaleZoom ||
+                        L_.Map_.map.getZoom(),
                 ]
             } else if (layer._latlngs) {
                 let lat = 0,
@@ -3221,8 +3189,8 @@ const L_ = {
                     lng / llflat.length,
                     parseInt(
                         activePoint.zoom ||
-                        L_.Map_.mapScaleZoom ||
-                        L_.Map_.map.getZoom()
+                            L_.Map_.mapScaleZoom ||
+                            L_.Map_.map.getZoom()
                     ),
                 ]
             }
@@ -3311,7 +3279,7 @@ const L_ = {
                 L_.layers.layer[key].forEach((l) => {
                     try {
                         engine.bringToFront(L_.Map_.nativeLayer(l))
-                    } catch (err) { }
+                    } catch (err) {}
                 })
             }
         })
@@ -3379,9 +3347,9 @@ const L_ = {
         if (!keepTime) {
             console.warn(
                 'Warning: The input for keep' +
-                trimType.capitalizeFirstLetter() +
-                'Time is invalid: ' +
-                keepTime
+                    trimType.capitalizeFirstLetter() +
+                    'Time is invalid: ' +
+                    keepTime
             )
             return
         }
@@ -3389,7 +3357,7 @@ const L_ = {
         if (!timePropPath) {
             console.warn(
                 'Warning: The input for timePropPath is invalid: ' +
-                timePropPath
+                    timePropPath
             )
             return
         }
@@ -3399,9 +3367,9 @@ const L_ = {
             if (isNaN(keepAfterAsDate.getTime())) {
                 console.warn(
                     'Warning: The input for keep' +
-                    trimType.capitalizeFirstLetter() +
-                    'Time is invalid: ' +
-                    keepTime
+                        trimType.capitalizeFirstLetter() +
+                        'Time is invalid: ' +
+                        keepTime
                 )
                 return
             }
@@ -3428,7 +3396,7 @@ const L_ = {
                         if (isNaN(layerDate.getTime())) {
                             console.warn(
                                 'Warning: The time for the layer is invalid: ' +
-                                layer.feature.properties[timePropPath]
+                                    layer.feature.properties[timePropPath]
                             )
                             continue
                         }
@@ -3452,7 +3420,7 @@ const L_ = {
         } else {
             console.warn(
                 'Warning: Unable to trim vector layer as it does not exist: ' +
-                layerName
+                    layerName
             )
         }
     },
@@ -3469,12 +3437,12 @@ const L_ = {
         if (Number.isNaN(Number(keepNum))) {
             console.warn(
                 'Warning: Unable to trim vector layer `' +
-                layerName +
-                '` as keep' +
-                keepType.capitalizeFirstLetter() +
-                'N == ' +
-                keepN +
-                ' and is not a valid integer'
+                    layerName +
+                    '` as keep' +
+                    keepType.capitalizeFirstLetter() +
+                    'N == ' +
+                    keepN +
+                    ' and is not a valid integer'
             )
             return
         }
@@ -3533,7 +3501,7 @@ const L_ = {
         } else {
             console.warn(
                 'Warning: Unable to trim vector layer as it does not exist: ' +
-                layerName
+                    layerName
             )
         }
     },
@@ -3544,10 +3512,10 @@ const L_ = {
         if (!time) {
             console.warn(
                 'Warning: Unable to trim the LineString in vector layer `' +
-                layerName +
-                '` as time === ' +
-                time +
-                ' and is invalid'
+                    layerName +
+                    '` as time === ' +
+                    time +
+                    ' and is invalid'
             )
             return
         }
@@ -3561,10 +3529,10 @@ const L_ = {
         if (!timeProp) {
             console.warn(
                 'Warning: Unable to trim the LineString in vector layer `' +
-                layerName +
-                '` as timeProp === ' +
-                timeProp +
-                ' and is invalid'
+                    layerName +
+                    '` as timeProp === ' +
+                    timeProp +
+                    ' and is invalid'
             )
             return
         }
@@ -3573,10 +3541,10 @@ const L_ = {
         if (Number.isNaN(Number(trimNum))) {
             console.warn(
                 'Warning: Unable to trim the LineString in vector layer `' +
-                layerName +
-                '` as trimN == ' +
-                trimN +
-                ' and is not a valid integer'
+                    layerName +
+                    '` as trimN == ' +
+                    trimN +
+                    ' and is not a valid integer'
             )
             return
         }
@@ -3585,10 +3553,10 @@ const L_ = {
         if (!TRIM_DIRECTION.includes(startOrEnd)) {
             console.warn(
                 'Warning: Unable to trim the LineString in vector layer `' +
-                layerName +
-                '` as startOrEnd == ' +
-                startOrEnd +
-                ' and is not a valid input value'
+                    layerName +
+                    '` as startOrEnd == ' +
+                    startOrEnd +
+                    ' and is not a valid input value'
             )
             return
         }
@@ -3596,10 +3564,10 @@ const L_ = {
         if (!time) {
             console.warn(
                 'Warning: Unable to trim the LineString in vector layer `' +
-                layerName +
-                '` as startOrEnd == ' +
-                startOrEnd +
-                ' and is not a valid input value'
+                    layerName +
+                    '` as startOrEnd == ' +
+                    startOrEnd +
+                    ' and is not a valid input value'
             )
             return
         }
@@ -3618,8 +3586,8 @@ const L_ = {
             if (findNonLineString.length > 0) {
                 console.warn(
                     'Warning: Unable to trim the vector layer `' +
-                    layerName +
-                    '` as the features contain geometry that is not LineString'
+                        layerName +
+                        '` as the features contain geometry that is not LineString'
                 )
                 return
             }
@@ -3650,10 +3618,10 @@ const L_ = {
                         if (!feature.properties.hasOwnProperty(timeProp)) {
                             console.warn(
                                 'Warning: Unable to trim the vector layer `' +
-                                layerName +
-                                "` as the the feature's properties object is missing the `" +
-                                timeProp +
-                                '` key'
+                                    layerName +
+                                    "` as the the feature's properties object is missing the `" +
+                                    timeProp +
+                                    '` key'
                             )
                             return
                         }
@@ -3698,10 +3666,10 @@ const L_ = {
                         if (!feature.properties.hasOwnProperty(timeProp)) {
                             console.warn(
                                 'Warning: Unable to trim the vector layer `' +
-                                layerName +
-                                "` as the the feature's properties object is missing the key `" +
-                                timeProp +
-                                '` for the end time'
+                                    layerName +
+                                    "` as the the feature's properties object is missing the key `" +
+                                    timeProp +
+                                    '` for the end time'
                             )
                             return
                         }
@@ -3741,15 +3709,15 @@ const L_ = {
             } else {
                 console.warn(
                     'Warning: Unable to trim the vector layer `' +
-                    layerName +
-                    '` as the layer contains no features'
+                        layerName +
+                        '` as the layer contains no features'
                 )
                 return
             }
         } else {
             console.warn(
                 'Warning: Unable to trim vector layer as it does not exist: ' +
-                layerName
+                    layerName
             )
         }
     },
@@ -3760,9 +3728,9 @@ const L_ = {
         if (!inputData) {
             console.warn(
                 'Warning: Unable to append to vector layer `' +
-                layerName +
-                '` as inputData is invalid: ' +
-                JSON.stringify(inputData, null, 4)
+                    layerName +
+                    '` as inputData is invalid: ' +
+                    JSON.stringify(inputData, null, 4)
             )
             return false
         }
@@ -3771,11 +3739,11 @@ const L_ = {
         if (!inputData.properties.hasOwnProperty(timeProp)) {
             console.warn(
                 'Warning: Unable to append to the vector layer `' +
-                layerName +
-                '` as timeProp === ' +
-                timeProp +
-                ' and does not exist as a property in inputData: ' +
-                JSON.stringify(lastFeature, null, 4)
+                    layerName +
+                    '` as timeProp === ' +
+                    timeProp +
+                    ' and does not exist as a property in inputData: ' +
+                    JSON.stringify(lastFeature, null, 4)
             )
             return false
         }
@@ -3799,9 +3767,9 @@ const L_ = {
                 if (lastFeature.geometry.type !== 'LineString') {
                     console.warn(
                         'Warning: Unable to append to the vector layer `' +
-                        layerName +
-                        '` as the feature is not a LineStringfeature: ' +
-                        JSON.stringify(lastFeature, null, 4)
+                            layerName +
+                            '` as the feature is not a LineStringfeature: ' +
+                            JSON.stringify(lastFeature, null, 4)
                     )
                     return false
                 }
@@ -3810,11 +3778,11 @@ const L_ = {
                 if (!lastFeature.properties.hasOwnProperty(timeProp)) {
                     console.warn(
                         'Warning: Unable to append to the vector layer `' +
-                        layerName +
-                        '` as timeProp === ' +
-                        timeProp +
-                        ' and does not exist as a property in the feature: ' +
-                        JSON.stringify(lastFeature, null, 4)
+                            layerName +
+                            '` as timeProp === ' +
+                            timeProp +
+                            ' and does not exist as a property in the feature: ' +
+                            JSON.stringify(lastFeature, null, 4)
                     )
                     return
                 }
@@ -3823,9 +3791,9 @@ const L_ = {
                     if (inputData.geometry.type !== 'LineString') {
                         console.warn(
                             'Warning: Unable to append to vector layer `' +
-                            layerName +
-                            "` as inputData has the wrong geometry type (must be of type 'LineString'): " +
-                            JSON.stringify(inputData, null, 4)
+                                layerName +
+                                "` as inputData has the wrong geometry type (must be of type 'LineString'): " +
+                                JSON.stringify(inputData, null, 4)
                         )
                         return false
                     }
@@ -3842,9 +3810,9 @@ const L_ = {
                 } else {
                     console.warn(
                         'Warning: Unable to append to vector layer `' +
-                        layerName +
-                        "` as inputData has the wrong type (must be of type 'Feature'): " +
-                        JSON.stringify(inputData, null, 4)
+                            layerName +
+                            "` as inputData has the wrong type (must be of type 'Feature'): " +
+                            JSON.stringify(inputData, null, 4)
                     )
                     return false
                 }
@@ -3870,7 +3838,7 @@ const L_ = {
                     console.log(e)
                     console.warn(
                         'Warning: Unable to append LineString to layer as the layer or input data is invalid: ' +
-                        layerName
+                            layerName
                     )
                     return false
                 }
@@ -3887,15 +3855,15 @@ const L_ = {
             } else {
                 console.warn(
                     'Warning: Unable to append to the vector layer `' +
-                    layerName +
-                    '` as the layer contains no features'
+                        layerName +
+                        '` as the layer contains no features'
                 )
                 return false
             }
         } else {
             console.warn(
                 'Warning: Unable to append to vector layer as it does not exist: ' +
-                layerName
+                    layerName
             )
             return false
         }
@@ -3921,7 +3889,7 @@ const L_ = {
                 console.log(e)
                 console.warn(
                     'Warning: Unable to update vector layer as the layer or input data is invalid: ' +
-                    layerName
+                        layerName
                 )
                 return false
             }
@@ -3931,7 +3899,7 @@ const L_ = {
         } else {
             console.warn(
                 'Warning: Unable to update vector layer as it does not exist: ' +
-                layerName
+                    layerName
             )
             return false
         }
@@ -4600,7 +4568,7 @@ const L_ = {
             if (
                 typeof props[p] === 'string' &&
                 props[p].toLowerCase().match(/\.(jpeg|jpg|gif|png|xml)$/) !=
-                null
+                    null
             ) {
                 let url = props[p]
                 const isGif = url.toLowerCase().match(/\.gif$/) != null
@@ -4784,26 +4752,7 @@ async function parseConfig(configData, urlOnLayers) {
 
     //Begin recursively going through those layers
     await expandLayers(layers, 0, null)
-    const sourceOutcomes = await Promise.allSettled(extentSourceFetches)
-    // Neither fetcher is meant to reject, so a rejection is a bug in one of
-    // them; named here rather than swallowed, or a layer silently never pins.
-    sourceOutcomes.forEach((outcome) => {
-        if (outcome.status === 'rejected')
-            console.error('[Layers] a time source fetch threw:', outcome.reason)
-    })
-    if (window.mmgisAPI) {
-        Object.keys(L_.layers.data).forEach((uuid) => {
-            const time = L_.layers.data[uuid]?.time
-            if (time?.runs?.selected) {
-                window.mmgisAPI.emit('layer:runChange', {
-                    layerName: uuid,
-                    run: time.runs.selected,
-                    start: time.dataStartTime,
-                    end: time.dataEndTime,
-                })
-            }
-        })
-    }
+    await Promise.allSettled(extentSourceFetches)
 
     async function expandLayers(d, level, prevName) {
         const stacRegex = /^stac(-((item)|(catalog)|(collection)))?:/i
@@ -4843,13 +4792,20 @@ async function parseConfig(configData, urlOnLayers) {
             // layer carries the fetched data times once it resolves.
             // fetchLayerExtentSource resolves null, never rejects, for a
             // layer with no source or a failed fetch.
+            //
+            // A layer's model runs are read after its extent source, and pin
+            // the newest before any reader sees the layer. Both write
+            // `dataStartTime` and `dataEndTime`, so the run source goes second
+            // and the pinned run's window is the one a layer with both keeps.
+            const layerForSources = d[i]
             extentSourceFetches.push(
-                fetchLayerExtentSource(d[i], { missionPath: L_.missionPath })
-            )
-            // A layer's model runs are read the same way, and pin the newest
-            // before any reader sees the layer.
-            extentSourceFetches.push(
-                fetchLayerRunSource(d[i], { missionPath: L_.missionPath })
+                fetchLayerExtentSource(layerForSources, {
+                    missionPath: L_.missionPath,
+                }).then(() =>
+                    fetchLayerRunSource(layerForSources, {
+                        missionPath: L_.missionPath,
+                    })
+                )
             )
 
             if (d[i].display_name === 'TimeCogs') {
@@ -4983,8 +4939,8 @@ async function parseConfig(configData, urlOnLayers) {
             const initialOpacity = parseFloat(d[i].initialOpacity)
             L_.layers.opacity[d[i].name] =
                 Number.isFinite(initialOpacity) &&
-                    initialOpacity >= 0 &&
-                    initialOpacity <= 1
+                initialOpacity >= 0 &&
+                initialOpacity <= 1
                     ? initialOpacity
                     : 1
 
@@ -5005,8 +4961,8 @@ async function parseConfig(configData, urlOnLayers) {
                         urlOnLayers.onLayers[standardId].opacity
                     L_.layers.opacity[d[i].name] =
                         Number.isFinite(urlOpacity) &&
-                            urlOpacity >= 0 &&
-                            urlOpacity <= 1
+                        urlOpacity >= 0 &&
+                        urlOpacity <= 1
                             ? urlOpacity
                             : 1
                 } else if (urlOnLayers.method == 'replace') {

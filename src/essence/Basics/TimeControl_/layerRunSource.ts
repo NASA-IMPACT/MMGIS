@@ -77,13 +77,22 @@ export const leadRangeOf = (list: unknown): [number, number] | null => {
     return [Math.min(...leads), Math.max(...leads)]
 }
 
-const stepOf = (runs: RunSource) =>
-    parseISODuration(String(runs.step ?? DEFAULT_RUN_STEP).trim()) ??
-    parseISODuration(DEFAULT_RUN_STEP)!
+// A zero duration ("PT0H", "P0D") parses but cannot count leads, so it falls
+// back to the default like an unparseable one.
+const stepOf = (runs: RunSource) => {
+    const step = parseISODuration(String(runs.step ?? DEFAULT_RUN_STEP).trim())
+    const nonZero =
+        step != null &&
+        (step.years || step.months || step.weeks || step.days ||
+            step.hours || step.minutes || step.seconds) > 0
+    return nonZero ? step! : parseISODuration(DEFAULT_RUN_STEP)!
+}
 
 /**
  * The window a run covers: run + first lead through run + last lead, in
- * whole steps. A run with no lead range covers its own instant.
+ * whole steps. A run with no lead range covers its own instant. Null when
+ * either end falls outside what a Date can hold, as leads listed in a unit
+ * far finer than the step (nanoseconds against PT1H) would put it.
  */
 export const runWindow = (
     run: string,
@@ -93,13 +102,13 @@ export const runWindow = (
     if (!from) return null
     const step = stepOf(runs)
     const [first, last] = runs.leadRange ?? [0, 0]
-    return {
-        start: toIso(addDuration(from, step, first)),
-        end: toIso(addDuration(from, step, last)),
-    }
+    const start = addDuration(from, step, first)
+    const end = addDuration(from, step, last)
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
+    return { start: toIso(start), end: toIso(end) }
 }
 
-/** Whole steps from the pinned run to `at`; null without a pin. */
+/** Whole steps from the pinned run to `at`, rounded down; null without a pin. */
 export const leadAt = (runs: RunSource | null | undefined, at: unknown): number | null => {
     const from = parseUtc(runs?.selected)
     const to = parseUtc(at)
@@ -164,6 +173,8 @@ async function readList(
  * Reads a layer's runs and leads and pins the newest run. Never rejects: a
  * source that cannot be read leaves the layer as configured, with no runs,
  * and says so once in the console. Nothing for a layer with no `runs.url`.
+ * A layer with a lead source whose leads cannot be read is left as it was,
+ * rather than pinned to a window of one instant.
  */
 export async function fetchLayerRunSource(
     layer: RunLayer,
@@ -217,8 +228,18 @@ export async function fetchLayerRunSource(
         console.warn(`[Layers] ${label}: run source listed no runs; the layer is not pinned.`)
         return false
     }
+    const leadRange = leadRangeOf(leadList)
+    if (leadUrl !== '' && leadRange == null) {
+        console.warn(`[Layers] ${label}: lead source listed no leads; the layer is not pinned.`)
+        return false
+    }
+    if (runWindow(list[0], { ...runs, leadRange }) == null) {
+        console.warn(
+            `[Layers] ${label}: leads ${leadRange?.join(' to ')} in steps of ${runs.step ?? DEFAULT_RUN_STEP} give no valid window; the layer is not pinned.`
+        )
+        return false
+    }
     runs.list = list
-    runs.leadRange = leadRangeOf(leadList)
-    const keep = runs.selected && list.includes(runs.selected) ? runs.selected : list[0]
-    return applyRunSelection(time, keep)
+    runs.leadRange = leadRange
+    return applyRunSelection(time, list[0])
 }

@@ -164,8 +164,8 @@ var TimeControl = {
                 // modern layout drive time without it, so it has no mode.
                 window.mmgisAPI.provide('time:getMode', () =>
                     TimeControl.enabled &&
-                        TimeControl.currentTime != null &&
-                        TimeUI.startTempus != null
+                    TimeControl.currentTime != null &&
+                    TimeUI.startTempus != null
                         ? TimeUI.modes[TimeUI.modeIndex].toLowerCase()
                         : null
                 ),
@@ -282,8 +282,8 @@ var TimeControl = {
             )
         }
     },
-    subscribe: function () { },
-    unsubscribe: function () { },
+    subscribe: function () {},
+    unsubscribe: function () {},
     _subscriptions: {},
     subscribe: function (fid, func) {
         if (typeof func === 'function') TimeControl._subscriptions[fid] = func
@@ -704,19 +704,25 @@ var TimeControl = {
         const layerTimeFormat = formatLayerTime(layer.time?.format)
 
         let nextUrl = url
-        // A layer pinned to a model run fills its two placeholders from the
-        // pin: the run itself, and the whole lead steps from it to the
-        // layer's end time. Filled here so a refresh and a time step take the
-        // same path as every other placeholder.
+        // A layer with model runs fills its two placeholders from its pin:
+        // the run itself, and the whole lead steps from it to the layer's end
+        // time, the same lead layers:getRuns reports. A value that is
+        // missing becomes the unresolved marker, since Leaflet's URL
+        // template throws on an unfilled key.
         const runs = layer.time?.runs
-        if (runs?.selected) {
-            nextUrl = nextUrl.replace(
-                /{reftime}/g,
-                encodeURIComponent(runs.selected)
-            )
-            const lead = leadAt(runs, layer.time?.end)
-            if (lead != null)
-                nextUrl = nextUrl.replace(/{lead}/g, String(lead))
+        if (runs) {
+            const lead = leadAt(runs, layer.time.end)
+            nextUrl = nextUrl
+                .replace(
+                    /{reftime}/g,
+                    encodeURIComponent(
+                        runs.selected || UNRESOLVED_URL_REPLACEMENT
+                    )
+                )
+                .replace(
+                    /{lead}/g,
+                    lead != null ? String(lead) : UNRESOLVED_URL_REPLACEMENT
+                )
         }
         if (layer.variables?.urlReplacements) {
             const keys = Object.keys(layer.variables.urlReplacements)
@@ -751,8 +757,9 @@ var TimeControl = {
         }
 
         if (forceRequery === true) {
-            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'
-                }nocache=${new Date().getTime()}`
+            nextUrl += `${
+                nextUrl.indexOf('?') === -1 ? '?' : '&'
+            }nocache=${new Date().getTime()}`
         }
         return nextUrl
     },
@@ -838,13 +845,13 @@ var TimeControl = {
                         lat = coords[1]
                     } else if (
                         savedActiveFeature.feature.geometry.type ===
-                        'LineString' ||
+                            'LineString' ||
                         savedActiveFeature.feature.geometry.type === 'Polygon'
                     ) {
                         // Get first coordinate or centroid
                         const firstCoord =
                             savedActiveFeature.feature.geometry.type ===
-                                'Polygon'
+                            'Polygon'
                                 ? coords[0][0]
                                 : coords[0]
                         lon = firstCoord[0]

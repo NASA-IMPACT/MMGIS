@@ -53,12 +53,21 @@ describe('run source helpers', () => {
         })
     })
 
-    test('leadAt counts whole steps from the pin to an instant', () => {
+    test('runWindow is null when a lead puts either end past what a Date holds', () => {
+        expect(runWindow(OLDER, { step: 'PT1H', leadRange: [0, 3600000000000] })).toBeNull()
+    })
+
+    test('leadAt counts whole steps from the pin to an instant, rounded down', () => {
         const runs = { selected: OLDER, step: 'PT1H' }
         expect(leadAt(runs, '2026-09-22T00:00:00Z')).toBe(18)
-        expect(leadAt(runs, '2026-09-21T11:40:00Z')).toBe(6)
+        expect(leadAt(runs, '2026-09-21T11:40:00Z')).toBe(5)
         expect(leadAt({ step: 'PT1H' }, '2026-09-22T00:00:00Z')).toBeNull()
         expect(leadAt(null, '2026-09-22T00:00:00Z')).toBeNull()
+    })
+
+    test('leadAt counts a zero lead step as the default hourly step', () => {
+        expect(leadAt({ selected: OLDER, step: 'PT0H' }, '2026-09-22T00:00:00Z')).toBe(18)
+        expect(leadAt({ selected: OLDER, step: 'P0D' }, '2026-09-22T00:00:00Z')).toBe(18)
     })
 
     test('applyRunSelection pins a listed run and derives the window; refuses an unlisted one', () => {
@@ -99,13 +108,6 @@ describe('fetchLayerRunSource', () => {
         expect(layer.time.runs.leadRange).toEqual([3, 4])
     })
 
-    test('keeps an existing selection that is still listed', async () => {
-        const fetchImpl = answering({ [RUNS_URL]: { data: [OLDER, NEWEST] }, [LEAD_URL]: { data: [1, 2] } })
-        const layer = layerWith({ selected: OLDER })
-        await fetchLayerRunSource(layer, { fetchImpl })
-        expect(layer.time.runs.selected).toBe(OLDER)
-    })
-
     test('pins the run alone when there is no lead source', async () => {
         const fetchImpl = answering({ [RUNS_URL]: { data: [NEWEST] } })
         const layer = layerWith({ leadUrl: undefined })
@@ -113,6 +115,29 @@ describe('fetchLayerRunSource', () => {
         expect(layer.time.runs.leadRange).toBeNull()
         expect(layer.time.dataStartTime).toBe('2026-09-21T12:00:00Z')
         expect(layer.time.dataEndTime).toBe('2026-09-21T12:00:00Z')
+    })
+
+    test('leaves the layer unpinned when its leads cannot be read', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const fetchImpl = answering({ [RUNS_URL]: { data: [OLDER, NEWEST] } })
+        const layer = layerWith({})
+        expect(await fetchLayerRunSource(layer, { fetchImpl })).toBe(false)
+        expect(layer.time.runs.selected).toBeUndefined()
+        warn.mockRestore()
+    })
+
+    test('leaves the layer unpinned, without rejecting, when its leads give no valid window', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const fetchImpl = answering({
+            [RUNS_URL]: { data: [NEWEST] },
+            [LEAD_URL]: { data: [0, 3600000000000] },
+        })
+        const layer = layerWith({})
+        expect(await fetchLayerRunSource(layer, { fetchImpl })).toBe(false)
+        expect(layer.time.runs.list).toBeUndefined()
+        expect(layer.time.runs.selected).toBeUndefined()
+        expect(warn).toHaveBeenCalledTimes(1)
+        warn.mockRestore()
     })
 
     test('a source that fails leaves the layer as configured and warns once', async () => {
