@@ -728,6 +728,34 @@ describe('evaluateLayerDataCoverage', () => {
     })
 })
 
+describe('evaluateLayerDataCoverage for a layer with a run source', () => {
+    const forecast = (runs) => ({
+        name: 'fc',
+        type: 'tile',
+        time: {
+            enabled: true,
+            start: '2026-09-21T00:00:00Z',
+            end: '2026-09-22T00:00:00Z',
+            runs: { url: 'https://svc/runs', ...runs },
+        },
+    })
+
+    test('is out of range when no run is pinned', () => {
+        expect(evaluateLayerDataCoverage(forecast({})).outOfDataRange).toBe(true)
+    })
+
+    test('is judged on its window once pinned', () => {
+        const layer = forecast({ selected: '2026-09-21T12:00:00' })
+        expect(evaluateLayerDataCoverage(layer).outOfDataRange).toBe(false)
+    })
+
+    test('is not held back by a blank run source', () => {
+        const layer = forecast({})
+        layer.time.runs.url = '   '
+        expect(evaluateLayerDataCoverage(layer).outOfDataRange).toBe(false)
+    })
+})
+
 describe('isSameCoverage', () => {
     const base = () => ({
         outOfDataRange: true,

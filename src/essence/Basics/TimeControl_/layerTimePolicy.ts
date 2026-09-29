@@ -139,15 +139,14 @@ function approximateMs(d: Duration): number {
     )
 }
 
-// Whole steps from `from` to `to`, nearest; negative when `to` is earlier.
+// Whole steps from `from` to `to`, rounded down; negative when `to` is earlier.
 // Calendar-aware like floorToStep, so a month step counts month boundaries.
 export function stepsBetween(from: Date, to: Date, step: Duration): number {
     const stepAt = (n: number) => addDuration(from, step, n).getTime()
     const target = to.getTime()
-    const distance = (n: number) => Math.abs(stepAt(n) - target)
-    let n = Math.round((target - from.getTime()) / approximateMs(step))
-    while (distance(n + 1) < distance(n)) n++
-    while (distance(n - 1) < distance(n)) n--
+    let n = Math.floor((target - from.getTime()) / approximateMs(step))
+    while (stepAt(n + 1) <= target) n++
+    while (stepAt(n) > target) n--
     return n
 }
 
