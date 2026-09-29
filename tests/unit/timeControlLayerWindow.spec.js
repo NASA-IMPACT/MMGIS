@@ -115,3 +115,37 @@ describe('TimeControl layer window stamping', () => {
         expect(layers.dailyVector.time.end).toBe('2026-08-25T15:42:31.000Z')
     })
 })
+
+describe('TimeControl time:changed ordering', () => {
+    beforeEach(() => {
+        vi.resetModules()
+    })
+
+    afterEach(() => {
+        vi.doUnmock('../../src/essence/Basics/Layers_/Layers_')
+        delete window.mmgisAPI
+    })
+
+    // A listener that reads a layer's window on time:changed, as the Layer
+    // Manager's lead readout does, sees the window for the new time.
+    test('layers are stamped before time:changed is announced', async () => {
+        const layers = { plainTile: layer('plainTile', 'tile', {}) }
+        const TimeControl = await loadTimeControl(layers)
+        TimeControl.enabled = true
+        TimeControl.reloadTimeLayers = vi.fn()
+        const seen = []
+        window.mmgisAPI = {
+            emit: (event) => {
+                if (event === 'time:changed') seen.push(layers.plainTile.time.end)
+            },
+        }
+
+        TimeControl.startTime = WINDOW_START
+        TimeControl.endTime = CURSOR
+        TimeControl.currentTime = CURSOR
+
+        TimeControl.fina()
+
+        expect(seen).toEqual([CURSOR])
+    })
+})

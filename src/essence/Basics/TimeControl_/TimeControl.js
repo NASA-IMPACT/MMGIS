@@ -1010,6 +1010,11 @@ function timeInputChange(startTime, endTime, currentTime, skipUpdate) {
     TimeControl.currentTime = currentTime == null ? endTime : currentTime
     TimeControl.endTime = endTime
 
+    // Layer windows are stamped before anyone hears of the change, so a
+    // listener reading a layer's window, or the lead counted from it, reads
+    // the one for the new time.
+    if (skipUpdate !== true) TimeControl.updateLayersTime()
+
     // Emit event for external listeners via Event Bus
     if (window.mmgisAPI) {
         window.mmgisAPI.emit('time:changed', {
@@ -1033,11 +1038,7 @@ function timeInputChange(startTime, endTime, currentTime, skipUpdate) {
         })
     })
 
-    if (skipUpdate !== true) {
-        // Update layer times and reload
-        TimeControl.updateLayersTime()
-        TimeControl.reloadTimeLayers()
-    }
+    if (skipUpdate !== true) TimeControl.reloadTimeLayers()
 }
 
 export default TimeControl
