@@ -164,8 +164,8 @@ var TimeControl = {
                 // modern layout drive time without it, so it has no mode.
                 window.mmgisAPI.provide('time:getMode', () =>
                     TimeControl.enabled &&
-                        TimeControl.currentTime != null &&
-                        TimeUI.startTempus != null
+                    TimeControl.currentTime != null &&
+                    TimeUI.startTempus != null
                         ? TimeUI.modes[TimeUI.modeIndex].toLowerCase()
                         : null
                 ),
@@ -282,8 +282,8 @@ var TimeControl = {
             )
         }
     },
-    subscribe: function () { },
-    unsubscribe: function () { },
+    subscribe: function () {},
+    unsubscribe: function () {},
     _subscriptions: {},
     subscribe: function (fid, func) {
         if (typeof func === 'function') TimeControl._subscriptions[fid] = func
@@ -757,8 +757,9 @@ var TimeControl = {
         }
 
         if (forceRequery === true) {
-            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'
-                }nocache=${new Date().getTime()}`
+            nextUrl += `${
+                nextUrl.indexOf('?') === -1 ? '?' : '&'
+            }nocache=${new Date().getTime()}`
         }
         return nextUrl
     },
@@ -844,13 +845,13 @@ var TimeControl = {
                         lat = coords[1]
                     } else if (
                         savedActiveFeature.feature.geometry.type ===
-                        'LineString' ||
+                            'LineString' ||
                         savedActiveFeature.feature.geometry.type === 'Polygon'
                     ) {
                         // Get first coordinate or centroid
                         const firstCoord =
                             savedActiveFeature.feature.geometry.type ===
-                                'Polygon'
+                            'Polygon'
                                 ? coords[0][0]
                                 : coords[0]
                         lon = firstCoord[0]
