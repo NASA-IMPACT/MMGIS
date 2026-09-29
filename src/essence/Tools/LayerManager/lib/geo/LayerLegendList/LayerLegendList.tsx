@@ -31,6 +31,7 @@ export type LayerLegendListProps = {
     canZoomToLayer?: LayerLegendProps['canZoomToLayer']
     selectedTime?: LayerLegendProps['selectedTime']
     onCompareLayer?: LayerLegendProps['onCompareLayer']
+    onRunChange?: LayerLegendProps['onRunChange']
     /** A layer was dropped at `toIndex` of this list. Rows drag only with it. */
     onReorder?: (layerId: string, toIndex: number) => void
 }
@@ -73,6 +74,7 @@ export function LayerLegendList({
     canZoomToLayer,
     selectedTime,
     onCompareLayer,
+    onRunChange,
     onReorder,
 }: LayerLegendListProps) {
     // A small distance before a drag starts keeps a click on the handle from
@@ -102,6 +104,7 @@ export function LayerLegendList({
         canZoomToLayer,
         selectedTime,
         onCompareLayer,
+        onRunChange,
     })
 
     if (!onReorder) {
