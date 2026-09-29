@@ -8,7 +8,8 @@ const { default: L_ } = await import('../../src/essence/Basics/Layers_/Layers_.j
 /**
  * `layers:getRuns` and `layers:setRun`: the bus surface a picker uses over a
  * layer core has pinned to a model run. Core owns the list, the pin, the
- * derived data window, the redraw and the clock; the picker only asks.
+ * derived data window and the redraw; the picker only asks. The clock is
+ * never touched.
  */
 
 const NEWEST = '2026-09-21T12:00:00'
@@ -142,41 +143,11 @@ describe('layers:setRun', () => {
         expect(emits).toEqual([])
     })
 
-    test('leaves the clock alone when it already sits inside the run window', async () => {
+    test('never moves the clock or the global window, even when the clock sits outside the run window', async () => {
         forecastLayer()
-        clock.current = '2026-09-22T00:00:00Z'
+        clock.current = '2026-08-01T00:00:00Z'
         await providers['layers:setRun']({ layerUUID: 'fc', run: OLDER })
         expect(clock.setTime).not.toHaveBeenCalled()
-    })
-
-    test('moves the clock to now when now is inside the window', async () => {
-        forecastLayer()
-        clock.current = '2026-08-01T00:00:00Z'
-        vi.useFakeTimers({ now: new Date('2026-09-22T03:30:00Z') })
-        try {
-            await providers['layers:setRun']({ layerUUID: 'fc', run: OLDER })
-        } finally {
-            vi.useRealTimers()
-        }
-        expect(clock.setTime).toHaveBeenCalledWith(
-            '2020-01-01T00:00:00Z', '2027-01-01T00:00:00Z', false, undefined, '2026-09-22T03:30:00Z'
-        )
-    })
-
-    test('moves the clock to the window start otherwise, widening the window to hold it', async () => {
-        forecastLayer()
-        clock.current = '2026-08-01T00:00:00Z'
-        clock.start = '2026-01-01T00:00:00Z'
-        clock.end = '2026-09-22T00:00:00Z'
-        vi.useFakeTimers({ now: new Date('2026-12-01T00:00:00Z') })
-        try {
-            await providers['layers:setRun']({ layerUUID: 'fc', run: OLDER })
-        } finally {
-            vi.useRealTimers()
-        }
-        expect(clock.setTime).toHaveBeenCalledWith(
-            '2026-01-01T00:00:00Z', '2026-09-24T06:00:00Z', false, undefined, '2026-09-21T07:00:00Z'
-        )
     })
 })
 

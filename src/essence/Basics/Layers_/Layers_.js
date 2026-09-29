@@ -76,30 +76,6 @@ const runsFor = (uuid) => {
     }
 }
 
-// The scrubber is moved into [start, end] only when it sits outside: to now
-// when now is inside, else to the window's start. The global window is
-// widened only as far as it must be to hold the span.
-const clampClockInto = (start, end) => {
-    const tc = L_.TimeControl_
-    if (!tc?.getTime || !tc.setTime || !start || !end) return
-    const spanStart = new Date(start).getTime()
-    const spanEnd = new Date(end).getTime()
-    const at = new Date(tc.getTime()).getTime()
-    if (!Number.isNaN(at) && at >= spanStart && at <= spanEnd) return
-    const now = Date.now()
-    const next = now >= spanStart && now <= spanEnd ? now : spanStart
-    const windowStart = new Date(tc.getStartTime()).getTime()
-    const windowEnd = new Date(tc.getEndTime()).getTime()
-    const iso = (ms) => new Date(ms).toISOString().split('.')[0] + 'Z'
-    tc.setTime(
-        iso(Number.isNaN(windowStart) ? spanStart : Math.min(windowStart, spanStart)),
-        iso(Number.isNaN(windowEnd) ? spanEnd : Math.max(windowEnd, spanEnd)),
-        false,
-        undefined,
-        iso(next)
-    )
-}
-
 /**
  * Canonical layer types whose deck.gl builders read the legend as a style
  * specification. Others carry a legend purely for display. Membership is
@@ -618,8 +594,8 @@ const L_ = {
                     return all
                 }),
                 // Pins a layer to one of its listed runs: the data window
-                // follows, the layer redraws if it is on, and the clock is
-                // moved into the window when it sits outside it.
+                // follows and the layer redraws if it is on. The clock and the
+                // global time window are left where they are.
                 window.mmgisAPI.provide('layers:setRun', async (payload) => {
                     const uuid = L_.asLayerUUID(payload?.layerUUID)
                     const layer = uuid == null ? null : L_.layers.data[uuid]
@@ -637,7 +613,6 @@ const L_ = {
                         start: layer.time.dataStartTime,
                         end: layer.time.dataEndTime,
                     })
-                    clampClockInto(layer.time.dataStartTime, layer.time.dataEndTime)
                     return true
                 }),
                 // Re-reads a layer's runs from its source, for a mission kept
