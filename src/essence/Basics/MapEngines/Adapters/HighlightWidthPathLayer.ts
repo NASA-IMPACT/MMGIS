@@ -16,8 +16,12 @@ layout(std140) uniform highlightLineWidthUniforms {
 } as const
 
 // `size` is the half width, in pixels when billboarded and in common space otherwise.
+// `geometry.pickingColor` is raw; the picking module normalizes it only later, in DECKGL_FILTER_COLOR.
 const injectSize = /* glsl */ `
-  if (highlightLineWidth.widthPixels > 0.0 && isVertexHighlighted(geometry.pickingColor)) {
+  if (
+    highlightLineWidth.widthPixels > 0.0 &&
+    isVertexHighlighted(picking_normalizeColor(geometry.pickingColor))
+  ) {
     vec2 halfWidth = vec2(highlightLineWidth.widthPixels / 2.0);
     size = path.billboard
       ? vec3(halfWidth, 0.0)
