@@ -267,27 +267,6 @@ function mvtWorkerUrl(): string | undefined {
         typeof document !== 'undefined' ? document.baseURI : undefined
     )
 }
-
-type LoaderOptions = Record<string, unknown> & { mvt?: Record<string, unknown> }
-
-/**
- * A layer's loaders.gl options with the self-hosted vector tile worker added.
- *
- * Merged rather than replaced: a caller's own loader options (fetch headers,
- * other `mvt` settings) survive, and an explicit `mvt.workerUrl` of theirs
- * wins. Replacing the object would drop the worker URL, send loaders.gl back
- * to unpkg.com, and leave the layer's tiles undecoded under the CSP.
- */
-export function withMvtWorkerUrl(
-    loadOptions: LoaderOptions | undefined,
-    workerUrl: string
-): LoaderOptions {
-    return {
-        ...loadOptions,
-        mvt: { workerUrl, ...loadOptions?.mvt },
-    }
-}
-
 /**
  * Split a full WMS url into its service endpoint and LAYERS list. Mirrors the
  * param parsing Leaflet's WMSColorFilter does, so a single layer url renders
@@ -642,6 +621,9 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
             } = resolveStyleAccessors(style, o.legend, o.legendConfigured)
             const workerUrl = mvtWorkerUrl()
             const nativeOptions = o.nativeOptions ?? {}
+            const nativeLoadOptions = nativeOptions.loadOptions as
+                | { mvt?: object }
+                | undefined
 
             return new MVTLayer({
                 id,
@@ -696,14 +678,16 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                     getLineColor: legendFingerprint,
                 },
                 ...nativeOptions,
-                // After the native options, so their loader options are
-                // merged into rather than replacing the worker URL.
+                // After the native options and merged into their loader
+                // options, so a caller's own loadOptions keep the worker
+                // (replacing it would fall back to unpkg.com, which the CSP
+                // blocks). A workerUrl of their own still wins.
                 ...(workerUrl
                     ? {
-                          loadOptions: withMvtWorkerUrl(
-                              nativeOptions.loadOptions as LoaderOptions | undefined,
-                              workerUrl
-                          ),
+                          loadOptions: {
+                              ...nativeLoadOptions,
+                              mvt: { workerUrl, ...nativeLoadOptions?.mvt },
+                          },
                       }
                     : {}),
             } as ConstructorParameters<typeof MVTLayer>[0]) as unknown as Layer
