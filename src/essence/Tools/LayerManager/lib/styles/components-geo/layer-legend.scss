@@ -197,37 +197,33 @@ $legend-hover-surface: var(--theme-color-base-lightest, #f1f3f6);
     }
 
     /* Always shown, unlike the hover-only actions. Neither is a control, so
-       both read as text with a mark rather than as something to press. */
-    &__analysis-marker,
-    &__coverage-warning {
+       both read as a tinted label rather than as something to press; the title
+       carries the detail. */
+    &__badge {
         display: inline-flex;
         align-items: center;
-        gap: var(--theme-spacing-05, 0.25rem);
-        font-size: var(--theme-font-size-3xs, 0.75rem);
-        line-height: 1.6;
-        color: var(--theme-color-base-dark, #565c65);
+        padding: calc(var(--theme-spacing-05, 0.25rem) * 0.5)
+            calc(var(--theme-spacing-05, 0.25rem) * 1.5);
+        border-radius: var(--theme-radius-sm, 2px);
+        /* A step under the smallest theme size, which is the body text around
+           it: the badge is a tag on the row, not a line of it. */
+        font-size: calc(var(--theme-font-size-3xs, 0.75rem) * 0.85);
+        font-weight: var(--theme-font-weight-semibold, 600);
+        letter-spacing: 0.06em;
+        line-height: 1.4;
+        text-transform: uppercase;
+        white-space: nowrap;
+        cursor: default;
     }
 
-    /* Sized to the body text around it, not the row's 16px controls. The
-       compound selector outranks the icon base class, which would otherwise
-       hold the masked warning icon at 16px. */
-    &__analysis-marker &__mark-icon,
-    &__coverage-warning &__mark-icon {
-        flex-shrink: 0;
-        width: 14px;
-        height: 14px;
-        font-size: 14px;
-        line-height: 1;
-    }
-
-    /* Only the mark is colored; its label stays body text, so a held-back
-       layer reads as a statement rather than an alarm. */
-    &__analysis-marker &__mark-icon {
+    &__analysis-marker {
         color: var(--theme-color-primary, #1c67e3);
+        background: var(--theme-color-primary-lightest, #e6f4f6);
     }
 
-    &__coverage-warning &__mark-icon {
-        color: var(--theme-color-warning-dark, #e5a000);
+    &__coverage-warning {
+        color: var(--theme-color-warning-darker, #936f38);
+        background: var(--theme-color-warning-lighter, #faf3d1);
     }
 
     /* Always shown, unlike the hover-only actions: it is how a row is picked
@@ -252,6 +248,7 @@ $legend-hover-surface: var(--theme-color-base-lightest, #f1f3f6);
     /* The handle sits before the checkbox, so the content under the title
        indents by its width and the handle gap to stay aligned. */
     &--draggable &__marks,
+    &--draggable &__run,
     &--draggable &__unit-label,
     &--draggable &__content {
         padding-left: calc(#{$legend-content-indent} + 22px + #{$legend-handle-gap});
@@ -292,62 +289,82 @@ $legend-hover-surface: var(--theme-color-base-lightest, #f1f3f6);
             mask-image: url('../../geo/icons/more-options.svg');
         }
 
-        &--no-data {
-            -webkit-mask-image: url('../../geo/icons/warning.svg');
-            mask-image: url('../../geo/icons/warning.svg');
-        }
-
         &--drag-handle {
             -webkit-mask-image: url('../../geo/icons/drag-handle.svg');
             mask-image: url('../../geo/icons/drag-handle.svg');
         }
     }
 
-    /* Model run row of a forecast layer: label over a full-width select,
-       with the lead readout beside it. */
+    /* Model run of a forecast layer: its label over the picked run, with the
+       lead beside it. Text sized and toned like the marks above, and held
+       apart from the legend below. */
     &__run {
         display: flex;
-        align-items: flex-end;
-        gap: var(--theme-spacing-1, 0.5rem);
-        padding-left: $legend-content-indent;
-        padding-top: var(--theme-spacing-1, 0.5rem);
-        border-top: 1px solid var(--theme-color-base-lighter, #dfe1e2);
-    }
-
-    &__run-field {
-        display: flex;
-        flex: 1 1 auto;
-        min-width: 0;
         flex-direction: column;
-        gap: var(--theme-spacing-05, 0.25rem);
+        padding-left: $legend-content-indent;
+        margin-bottom: var(--theme-spacing-05, 0.25rem);
         font-size: var(--theme-font-size-3xs, 0.75rem);
+        line-height: 1.6;
         color: var(--theme-color-base-dark, #565c65);
     }
 
-    &__run-select {
-        width: 100%;
+    &__run-row {
+        display: flex;
+        align-items: center;
+        gap: var(--theme-spacing-1, 0.5rem);
         min-width: 0;
+    }
+
+    /* Reads as text with a chevron rather than a boxed field. Sized to its
+       run, so a longer lead beside it never squeezes it. */
+    &__run-select {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        flex: 0 1 auto;
+        min-width: 0;
+        padding: 0;
         font: inherit;
-        font-weight: var(--theme-font-weight-semibold, 600);
-        color: var(--theme-color-base-darkest, #1b1b1b);
-        background: var(--theme-color-white, #ffffff);
-        border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
-        border-radius: var(--theme-radius-md, 4px);
-        padding: var(--theme-spacing-1, 0.5rem) var(--theme-spacing-105, 0.75rem);
+        color: var(--theme-color-ink, #1c1d1f);
+        background: transparent;
+        border: none;
         cursor: pointer;
+        transition: color 0.15s ease;
+
+        &:hover,
+        &--active {
+            color: var(--theme-color-primary, #1c67e3);
+        }
 
         &:focus-visible {
-            outline: 2px solid var(--theme-color-primary, #005ea2);
-            outline-offset: 0;
+            outline: 2px solid var(--theme-color-primary, #1c67e3);
+            outline-offset: 1px;
         }
     }
 
+    &__run-value {
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    &__run-chevron {
+        flex-shrink: 0;
+        font-size: 14px;
+        line-height: 1;
+        color: var(--theme-color-base, #77777a);
+    }
+
+    &__run-select:hover &__run-chevron,
+    &__run-select--active &__run-chevron {
+        color: inherit;
+    }
+
+    /* Pinned to the row's right edge, clear of the run beside it. */
     &__run-lead {
         flex: 0 0 auto;
-        padding-bottom: var(--theme-spacing-1, 0.5rem);
-        font-size: var(--theme-font-size-3xs, 0.75rem);
-        font-weight: var(--theme-font-weight-semibold, 600);
-        color: var(--theme-color-base-dark, #565c65);
+        margin-left: auto;
         white-space: nowrap;
     }
 
@@ -454,6 +471,37 @@ $legend-hover-surface: var(--theme-color-base-lightest, #f1f3f6);
     background: var(--theme-color-white, #ffffff);
     border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
     box-shadow: 0 4px 12px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
+}
+
+/* Model Run Popover
+   Portaled like the other row popovers. The surface carries the chrome and a
+   heading, so the menu inside drops its own and sets its choices at the size
+   of the row they came from. */
+.blocks-layer-legend__run-popover {
+    padding: var(--theme-spacing-05, 0.25rem);
+    background: var(--theme-color-white, #ffffff);
+    border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    box-shadow: 0 4px 12px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
+    font-family: var(--theme-font-body, 'Public Sans Web', sans-serif);
+}
+
+.blocks-layer-legend__run-popover-heading {
+    padding: var(--theme-spacing-05, 0.25rem) var(--theme-spacing-1, 0.5rem);
+    font-size: var(--theme-font-size-3xs, 0.75rem);
+    font-weight: var(--theme-font-weight-semibold, 600);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--theme-color-base-dark, #565c65);
+}
+
+.blocks-layer-legend__run-menu.blocks-popover-menu {
+    padding: 0;
+    border: none;
+    box-shadow: none;
+
+    .blocks-popover-menu__item {
+        font-size: var(--theme-font-size-3xs, 0.75rem);
+    }
 }
 
 /* Layer Info Popover

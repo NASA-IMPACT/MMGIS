@@ -200,7 +200,32 @@ const OLDER = '2026-09-21T06:00:00'
 
 describe('MMGISLayerManagerAdapter model runs', () => {
     const runSelect = () =>
-        mounted!.container.querySelector<HTMLSelectElement>('.blocks-layer-legend__run-select')
+        mounted!.container.querySelector<HTMLButtonElement>('.blocks-layer-legend__run-select')
+    const openRuns = async () => {
+        await act(async () => {
+            runSelect()!.click()
+        })
+        return Array.from(
+            document.body.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'),
+        )
+    }
+    const checkedRun = () =>
+        document.body.querySelector('[role="menuitemradio"][aria-checked="true"]')
+    // The pinned run, read off the picker; the picker is left closed.
+    const pinnedRun = async () => {
+        const options = await openRuns()
+        const pinned = [NEWEST, OLDER][options.indexOf(checkedRun() as HTMLButtonElement)]
+        await act(async () => {
+            runSelect()!.click()
+        })
+        return pinned
+    }
+    const pickOlder = async () => {
+        const [, older] = await openRuns()
+        await act(async () => {
+            older.click()
+        })
+    }
     const leadReadout = () =>
         mounted!.container.querySelector('.blocks-layer-legend__run-lead')
 
@@ -214,18 +239,18 @@ describe('MMGISLayerManagerAdapter model runs', () => {
 
     test('offers the runs core reports, pinned where core pinned them, with the lead', async () => {
         await mountAdapter()
-        expect(Array.from(runSelect()!.options).map((o) => o.value)).toEqual([NEWEST, OLDER])
-        expect(runSelect()!.value).toBe(NEWEST)
         expect(leadReadout()!.textContent).toBe('+12 h')
+        const options = await openRuns()
+        expect(options).toHaveLength(2)
+        expect(checkedRun()).toBe(options[0])
         expect(configWrites).toEqual([])
     })
 
     test('a pick is one request to core', async () => {
         await mountAdapter()
-        const select = runSelect()!
-        select.value = OLDER
+        const [, older] = await openRuns()
         await act(async () => {
-            select.dispatchEvent(new Event('change', { bubbles: true }))
+            older.click()
         })
         expect(runRequests).toEqual([{ layerUUID: FORECAST, run: OLDER }])
         expect(configWrites).toEqual([])
@@ -235,14 +260,10 @@ describe('MMGISLayerManagerAdapter model runs', () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
         setRunAnswer = false
         await mountAdapter()
-        const select = runSelect()!
-        select.value = OLDER
-        await act(async () => {
-            select.dispatchEvent(new Event('change', { bubbles: true }))
-        })
+        await pickOlder()
         await settle()
         expect(runRequests).toEqual([{ layerUUID: FORECAST, run: OLDER }])
-        expect(runSelect()!.value).toBe(NEWEST)
+        expect(await pinnedRun()).toBe(NEWEST)
         expect(warn).toHaveBeenCalledWith(expect.stringContaining('refused run'))
         expect(configWrites).toEqual([])
         warn.mockRestore()
@@ -252,17 +273,13 @@ describe('MMGISLayerManagerAdapter model runs', () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => {})
         setRunAnswer = new Error('engine refresh rejected')
         await mountAdapter()
-        const select = runSelect()!
         // Core pinned the run and moved the lead before it threw, and
         // announced nothing; only a re-read can bring the rows along.
         runsAnswer[FORECAST] = { ...runsAnswer[FORECAST], selected: OLDER, lead: 30 }
-        select.value = OLDER
-        await act(async () => {
-            select.dispatchEvent(new Event('change', { bubbles: true }))
-        })
+        await pickOlder()
         await settle()
         expect(error).toHaveBeenCalledWith('LayerManager: selectRun failed', expect.any(Error))
-        expect(runSelect()!.value).toBe(OLDER)
+        expect(await pinnedRun()).toBe(OLDER)
         expect(leadReadout()!.textContent).toBe('+30 h')
         error.mockRestore()
     })
@@ -272,7 +289,8 @@ describe('MMGISLayerManagerAdapter model runs', () => {
         runsAnswer[FORECAST] = { ...runsAnswer[FORECAST], selected: OLDER }
         await emit('layer:runChange', { layerName: FORECAST, run: OLDER })
         await settle()
-        expect(runSelect()!.value).toBe(OLDER)
+        const [, older] = await openRuns()
+        expect(checkedRun()).toBe(older)
     })
 
     test('re-reads the lead when the clock moves, without rebuilding the rows', async () => {
@@ -323,12 +341,12 @@ describe('MMGISLayerManagerAdapter model runs', () => {
     test('a runs read that fails later keeps the runs last known', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
         await mountAdapter()
-        expect(runSelect()!.value).toBe(NEWEST)
+        expect(await pinnedRun()).toBe(NEWEST)
         runsFailure = new Error('transient')
         await emit('layers:listChanged')
         await settle()
         expect(titlesIn()).toEqual(['Sparse', 'Continuous', 'NAQFC O3'])
-        expect(runSelect()!.value).toBe(NEWEST)
+        expect(await pinnedRun()).toBe(NEWEST)
         warn.mockRestore()
     })
 })

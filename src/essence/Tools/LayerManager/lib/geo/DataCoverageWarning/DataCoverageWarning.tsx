@@ -29,16 +29,12 @@ export function DataCoverageWarning({
 
     return (
         <span
-            className="blocks-layer-legend__coverage-warning"
+            className="blocks-layer-legend__badge blocks-layer-legend__coverage-warning"
             role="img"
             aria-label={`${layerTitle}: ${message}`}
             title={message}
         >
-            <span
-                className="blocks-layer-legend__icon blocks-layer-legend__icon--no-data blocks-layer-legend__mark-icon"
-                aria-hidden="true"
-            />
-            No data at this time
+            No data
         </span>
     )
 }
