@@ -195,32 +195,3 @@ describe('layers:setRun', () => {
         expect(clock.setTime).not.toHaveBeenCalled()
     })
 })
-
-describe('layers:refreshRuns', () => {
-    beforeEach(() => {
-        L_.layers.data = {}
-        L_.layers.layer = {}
-        L_.layers.on = {}
-        registerProviders()
-    })
-
-    test('re-reads the source, pins, and announces; false for a layer without one', async () => {
-        const layer = forecastLayer(false)
-        layer.time.current = clock.current
-        layer.time.runs = { url: 'https://svc/runs', path: 'data', step: 'PT1H' }
-        vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ data: [OLDER, NEWEST] }) })))
-        try {
-            expect(await providers['layers:refreshRuns']('fc')).toBe(true)
-        } finally {
-            vi.unstubAllGlobals()
-        }
-        expect(layer.time.runs.list).toEqual([NEWEST, OLDER])
-        expect(layer.time.runs.selected).toBe(NEWEST)
-        expect(emits.map((e) => e.event)).toEqual(['layers:configChanged', 'layer:runChange'])
-        expect(reloadLayer).toHaveBeenCalledWith(layer)
-        expect(layer.time.current).toBeNull()
-
-        L_.layers.data.plain = { name: 'plain', time: { enabled: true } }
-        expect(await providers['layers:refreshRuns']('plain')).toBe(false)
-    })
-})

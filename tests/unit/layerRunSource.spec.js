@@ -61,6 +61,11 @@ describe('run source helpers', () => {
         expect(leadAt(null, '2026-09-22T00:00:00Z')).toBeNull()
     })
 
+    test('leadAt counts a zero lead step as the default hourly step', () => {
+        expect(leadAt({ selected: OLDER, step: 'PT0H' }, '2026-09-22T00:00:00Z')).toBe(18)
+        expect(leadAt({ selected: OLDER, step: 'P0D' }, '2026-09-22T00:00:00Z')).toBe(18)
+    })
+
     test('applyRunSelection pins a listed run and derives the window; refuses an unlisted one', () => {
         const time = { enabled: true, runs: { list: [NEWEST, OLDER], step: 'PT1H', leadRange: [1, 72] } }
         expect(applyRunSelection(time, OLDER)).toBe(true)
@@ -97,13 +102,6 @@ describe('fetchLayerRunSource', () => {
         expect(await fetchLayerRunSource(layer, { fetchImpl })).toBe(true)
         expect(layer.time.runs.list).toEqual([NEWEST, OLDER])
         expect(layer.time.runs.leadRange).toEqual([3, 4])
-    })
-
-    test('keeps an existing selection that is still listed', async () => {
-        const fetchImpl = answering({ [RUNS_URL]: { data: [OLDER, NEWEST] }, [LEAD_URL]: { data: [1, 2] } })
-        const layer = layerWith({ selected: OLDER })
-        await fetchLayerRunSource(layer, { fetchImpl })
-        expect(layer.time.runs.selected).toBe(OLDER)
     })
 
     test('pins the run alone when there is no lead source', async () => {

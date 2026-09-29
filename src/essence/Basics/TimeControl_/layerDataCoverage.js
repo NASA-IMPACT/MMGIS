@@ -151,7 +151,8 @@ function requestsPeriod(layer) {
 // from has no run or lead for its tile URL, so nothing it requests holds data.
 function awaitsRun(time) {
     const runs = time?.runs
-    if (time?.enabled !== true || !runs?.url) return false
+    if (time?.enabled !== true || String(runs?.url ?? '').trim() === '')
+        return false
     return !runs.selected
 }
 

@@ -634,32 +634,6 @@ const L_ = {
                     })
                     return true
                 }),
-                // Re-reads a layer's runs from its source, for a mission kept
-                // open across a run boundary. Announces like a pick when the
-                // layer ends up pinned, and reloads like one: a newer run
-                // moves the data window, which may no longer hold the
-                // current time.
-                window.mmgisAPI.provide('layers:refreshRuns', async (layerUUID) => {
-                    const uuid = L_.asLayerUUID(layerUUID)
-                    const layer = uuid == null ? null : L_.layers.data[uuid]
-                    if (!layer?.time?.runs) return false
-                    const pinned = await fetchLayerRunSource(layer, {
-                        missionPath: L_.missionPath,
-                    })
-                    if (!pinned) return false
-                    await reloadRepinnedLayer(layer)
-                    window.mmgisAPI.emit('layers:configChanged', {
-                        layerName: uuid,
-                        keys: ['time'],
-                    })
-                    window.mmgisAPI.emit('layer:runChange', {
-                        layerName: uuid,
-                        run: layer.time.runs.selected,
-                        start: layer.time.dataStartTime,
-                        end: layer.time.dataEndTime,
-                    })
-                    return true
-                }),
                 // Where each layer sits, for moving the map to it. Called with
                 // a layer identifier it answers for that one layer, resolving a
                 // name the way every other layer-keyed provider does; called
@@ -4777,26 +4751,7 @@ async function parseConfig(configData, urlOnLayers) {
 
     //Begin recursively going through those layers
     await expandLayers(layers, 0, null)
-    const sourceOutcomes = await Promise.allSettled(extentSourceFetches)
-    // Neither fetcher is meant to reject, so a rejection is a bug in one of
-    // them; named here rather than swallowed, or a layer silently never pins.
-    sourceOutcomes.forEach((outcome) => {
-        if (outcome.status === 'rejected')
-            console.error('[Layers] a time source fetch threw:', outcome.reason)
-    })
-    if (window.mmgisAPI) {
-        Object.keys(L_.layers.data).forEach((uuid) => {
-            const time = L_.layers.data[uuid]?.time
-            if (time?.runs?.selected) {
-                window.mmgisAPI.emit('layer:runChange', {
-                    layerName: uuid,
-                    run: time.runs.selected,
-                    start: time.dataStartTime,
-                    end: time.dataEndTime,
-                })
-            }
-        })
-    }
+    await Promise.allSettled(extentSourceFetches)
 
     async function expandLayers(d, level, prevName) {
         const stacRegex = /^stac(-((item)|(catalog)|(collection)))?:/i
@@ -4836,13 +4791,20 @@ async function parseConfig(configData, urlOnLayers) {
             // layer carries the fetched data times once it resolves.
             // fetchLayerExtentSource resolves null, never rejects, for a
             // layer with no source or a failed fetch.
+            //
+            // A layer's model runs are read after its extent source, and pin
+            // the newest before any reader sees the layer. Both write
+            // `dataStartTime` and `dataEndTime`, so the run source goes second
+            // and the pinned run's window is the one a layer with both keeps.
+            const layerForSources = d[i]
             extentSourceFetches.push(
-                fetchLayerExtentSource(d[i], { missionPath: L_.missionPath })
-            )
-            // A layer's model runs are read the same way, and pin the newest
-            // before any reader sees the layer.
-            extentSourceFetches.push(
-                fetchLayerRunSource(d[i], { missionPath: L_.missionPath })
+                fetchLayerExtentSource(layerForSources, {
+                    missionPath: L_.missionPath,
+                }).then(() =>
+                    fetchLayerRunSource(layerForSources, {
+                        missionPath: L_.missionPath,
+                    })
+                )
             )
 
             if (d[i].display_name === 'TimeCogs') {

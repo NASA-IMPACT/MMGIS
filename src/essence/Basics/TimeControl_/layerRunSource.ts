@@ -77,9 +77,16 @@ export const leadRangeOf = (list: unknown): [number, number] | null => {
     return [Math.min(...leads), Math.max(...leads)]
 }
 
-const stepOf = (runs: RunSource) =>
-    parseISODuration(String(runs.step ?? DEFAULT_RUN_STEP).trim()) ??
-    parseISODuration(DEFAULT_RUN_STEP)!
+// A zero duration ("PT0H", "P0D") parses but cannot count leads, so it falls
+// back to the default like an unparseable one.
+const stepOf = (runs: RunSource) => {
+    const step = parseISODuration(String(runs.step ?? DEFAULT_RUN_STEP).trim())
+    const nonZero =
+        step != null &&
+        (step.years || step.months || step.weeks || step.days ||
+            step.hours || step.minutes || step.seconds) > 0
+    return nonZero ? step! : parseISODuration(DEFAULT_RUN_STEP)!
+}
 
 /**
  * The window a run covers: run + first lead through run + last lead, in
@@ -226,6 +233,5 @@ export async function fetchLayerRunSource(
     }
     runs.list = list
     runs.leadRange = leadRange
-    const keep = runs.selected && list.includes(runs.selected) ? runs.selected : list[0]
-    return applyRunSelection(time, keep)
+    return applyRunSelection(time, list[0])
 }

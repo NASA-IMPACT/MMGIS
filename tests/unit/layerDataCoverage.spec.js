@@ -748,6 +748,12 @@ describe('evaluateLayerDataCoverage for a layer with a run source', () => {
         const layer = forecast({ selected: '2026-09-21T12:00:00' })
         expect(evaluateLayerDataCoverage(layer).outOfDataRange).toBe(false)
     })
+
+    test('is not held back by a blank run source', () => {
+        const layer = forecast({})
+        layer.time.runs.url = '   '
+        expect(evaluateLayerDataCoverage(layer).outOfDataRange).toBe(false)
+    })
 })
 
 describe('isSameCoverage', () => {
