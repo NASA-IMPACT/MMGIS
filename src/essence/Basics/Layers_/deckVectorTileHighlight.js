@@ -1,5 +1,5 @@
 import { hexToRgba } from '../MapEngines/Adapters/DeckGLHelpers'
-import HighlightWidthPathLayer from '../MapEngines/Adapters/HighlightWidthPathLayer'
+import HighlightLineWidthExtension from '../MapEngines/Adapters/HighlightLineWidthExtension'
 
 // Black at a tenth darkens any hue; deck's default navy clashes with warm palettes.
 const DEFAULT_HIGHLIGHT = [0, 0, 0, 26]
@@ -21,16 +21,18 @@ export function vectorTileHighlightOptions(style) {
         highlightColor: highlightColor(style),
         _subLayerProps: {
             'polygons-fill': { highlightColor: [0, 0, 0, 0] },
-            ...strokeWidthOverrides(style),
         },
+        ...strokeWidthOptions(style),
     }
 }
 
-function strokeWidthOverrides(style) {
+function strokeWidthOptions(style) {
     const width = Number(style?.hoverHighlightWidth)
     if (!(width > 0)) return {}
-    const stroke = { type: HighlightWidthPathLayer, highlightLineWidth: width }
-    return { 'polygons-stroke': stroke, linestrings: stroke }
+    return {
+        extensions: [new HighlightLineWidthExtension()],
+        highlightLineWidth: width,
+    }
 }
 
 // The picker writes opacity into the colour as rgba(), so it needs no field of its own.

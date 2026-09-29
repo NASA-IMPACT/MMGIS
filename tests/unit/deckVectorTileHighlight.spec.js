@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest'
 
 import { vectorTileHighlightOptions } from '../../src/essence/Basics/Layers_/deckVectorTileHighlight'
-import HighlightWidthPathLayer from '../../src/essence/Basics/MapEngines/Adapters/HighlightWidthPathLayer'
+import HighlightLineWidthExtension from '../../src/essence/Basics/MapEngines/Adapters/HighlightLineWidthExtension'
 
 /**
  * deck's MVTLayer does its own highlighting: it disables autoHighlight on the
@@ -103,19 +103,19 @@ describe('vectorTileHighlightOptions strokes only', () => {
         expect(o._subLayerProps['polygons-fill'].highlightColor).toEqual([0, 0, 0, 0])
     })
 
-    test('swaps in the width-aware path layer for outlines and lines', () => {
+    test('adds the line width extension with the configured width', () => {
         const o = vectorTileHighlightOptions({ hoverHighlightWidth: '2.5' })
-        const stroke = { type: HighlightWidthPathLayer, highlightLineWidth: 2.5 }
-        expect(o._subLayerProps['polygons-stroke']).toEqual(stroke)
-        expect(o._subLayerProps.linestrings).toEqual(stroke)
+        expect(o.extensions).toHaveLength(1)
+        expect(o.extensions[0]).toBeInstanceOf(HighlightLineWidthExtension)
+        expect(o.highlightLineWidth).toBe(2.5)
     })
 
     test.each([undefined, '', 'wide', 0, -3])(
-        'keeps the stock path layers for a width of %p',
+        'adds no extension for a width of %p',
         (hoverHighlightWidth) => {
             const o = vectorTileHighlightOptions({ hoverHighlightWidth })
-            expect(o._subLayerProps['polygons-stroke']).toBeUndefined()
-            expect(o._subLayerProps.linestrings).toBeUndefined()
+            expect(o.extensions).toBeUndefined()
+            expect(o.highlightLineWidth).toBeUndefined()
         }
     )
 })

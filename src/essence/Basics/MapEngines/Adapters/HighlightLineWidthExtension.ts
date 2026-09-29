@@ -1,9 +1,8 @@
-import { _mergeShaders as mergeShaders } from '@deck.gl/core'
+import { LayerExtension } from '@deck.gl/core'
 import { PathLayer } from '@deck.gl/layers'
-import type { PathLayerProps } from '@deck.gl/layers'
-import type { DefaultProps } from '@deck.gl/core'
+import type { Layer } from '@deck.gl/core'
 
-type HighlightWidthProps = { highlightLineWidth: number }
+type HighlightLineWidthProps = { highlightLineWidth?: number }
 
 const highlightLineWidthModule = {
     name: 'highlightLineWidth',
@@ -30,32 +29,28 @@ const injectSize = /* glsl */ `
 `
 
 /**
- * A PathLayer that draws the highlighted path `highlightLineWidth` pixels wide.
- *
- * A subclass rather than a LayerExtension: it is swapped in through
- * `_subLayerProps`, where setting `extensions` would drop the ClipExtension
- * MVTLayer adds to each tile.
+ * Draws the highlighted path `highlightLineWidth` pixels wide. Applies to
+ * PathLayers only; on a composite layer it reaches them as sub-layers, and
+ * other primitive layers are left untouched.
  */
-export default class HighlightWidthPathLayer<DataT = unknown> extends PathLayer<
-    DataT,
-    HighlightWidthProps
-> {
-    static layerName = 'HighlightWidthPathLayer'
-    static defaultProps: DefaultProps<PathLayerProps & HighlightWidthProps> = {
+export default class HighlightLineWidthExtension extends LayerExtension {
+    static extensionName = 'HighlightLineWidthExtension'
+    static defaultProps = {
         highlightLineWidth: { type: 'number', value: 0, min: 0 },
     }
 
-    getShaders() {
-        return mergeShaders(super.getShaders(), {
+    getShaders(this: Layer) {
+        if (!(this instanceof PathLayer)) return null
+        return {
             modules: [highlightLineWidthModule],
             inject: { 'vs:DECKGL_FILTER_SIZE': injectSize },
-        })
+        }
     }
 
-    draw(opts: Parameters<PathLayer['draw']>[0]) {
+    draw(this: Layer<HighlightLineWidthProps>) {
+        if (!(this instanceof PathLayer)) return
         this.setShaderModuleProps({
             highlightLineWidth: { widthPixels: this.props.highlightLineWidth },
         })
-        super.draw(opts)
     }
 }
