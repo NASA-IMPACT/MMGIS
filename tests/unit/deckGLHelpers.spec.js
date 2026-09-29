@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { test, expect } from 'vitest'
+import { test, expect, beforeEach, afterEach } from 'vitest'
 import { cacheControlForKey } from '../../scripts/lib/aws-provision.js'
 import {
     resolveLatLng,
@@ -295,6 +295,57 @@ test.describe('DeckGLHelpers', () => {
                 url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
             })
             expect(layer.props.loadOptions?.mvt?.workerUrl).toBeUndefined()
+        })
+
+        test.describe('in a build that serves the MVT worker', () => {
+            // The two globals webpack defines; Vitest has neither.
+            beforeEach(() => {
+                globalThis.__webpack_public_path__ = './build/'
+                globalThis.MVT_WORKER_PATH = 'static/loaders/mvt@4.4.4/mvt-worker.js'
+            })
+            afterEach(() => {
+                delete globalThis.__webpack_public_path__
+                delete globalThis.MVT_WORKER_PATH
+            })
+
+            const workerUrl = () =>
+                new URL('./build/static/loaders/mvt@4.4.4/mvt-worker.js', document.baseURI).href
+            const url = 'https://example.com/tiles/{z}/{x}/{y}.mvt'
+
+            test('points the MVT layer at it', () => {
+                const layer = buildDeckLayer('mvt-served', { type: 'vectortile', url })
+                expect(layer.props.loadOptions.mvt.workerUrl).toBe(workerUrl())
+            })
+
+            test("keeps the worker when native options bring their own loader options", () => {
+                const layer = buildDeckLayer('mvt-native', {
+                    type: 'vectortile',
+                    url,
+                    nativeOptions: {
+                        loadOptions: {
+                            fetch: { headers: { Authorization: 'Bearer x' } },
+                            mvt: { layers: ['smoke'] },
+                        },
+                    },
+                })
+                expect(layer.props.loadOptions).toEqual({
+                    fetch: { headers: { Authorization: 'Bearer x' } },
+                    mvt: { layers: ['smoke'], workerUrl: workerUrl() },
+                })
+            })
+
+            test("lets native options choose their own worker", () => {
+                const layer = buildDeckLayer('mvt-own-worker', {
+                    type: 'vectortile',
+                    url,
+                    nativeOptions: {
+                        loadOptions: { mvt: { workerUrl: 'https://example.com/mvt-worker.js' } },
+                    },
+                })
+                expect(layer.props.loadOptions.mvt.workerUrl).toBe(
+                    'https://example.com/mvt-worker.js'
+                )
+            })
         })
 
         test('creates an MVTLayer via MVTLayer alias', () => {
