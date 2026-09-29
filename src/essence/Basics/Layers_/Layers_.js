@@ -7,8 +7,12 @@ import Search from '../../Ancillary/Search'
 import Attributions from '../../Ancillary/Attributions'
 import CursorInfo from '../../Ancillary/CursorInfo'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
-import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
+import {
+    fetchLayerRunSource,
+    applyRunSelection,
+    leadAt,
+} from '../TimeControl_/layerRunSource'
 import {
     resolveTemporalExtent,
     parseISODuration,
@@ -55,6 +59,19 @@ const temporalExtentFor = (uuid) => {
             ? parseISODuration(String(time.interval).trim())
             : null
     return { ...resolveTemporalExtent(time), interval }
+}
+
+const runsFor = (uuid) => {
+    const time = L_.layers.data[uuid]?.time
+    const runs = time?.runs
+    if (!runs || !Array.isArray(runs.list) || runs.list.length === 0) return null
+    return {
+        runs: [...runs.list],
+        selected: runs.selected ?? null,
+        step: runs.step || 'PT1H',
+        leadRange: runs.leadRange ?? null,
+        lead: leadAt(runs, time.end),
+    }
 }
 
 /**
@@ -293,6 +310,23 @@ async function catchUpLayerTime(s) {
     await L_.TimeControl_.reloadLayer(s, true)
 }
 
+/**
+ * Redraws a layer whose run pin has just moved.
+ *
+ * The pin changes what the layer draws without moving the clock, so the
+ * `time.current` stamp — the time the layer was last reloaded at — no longer
+ * describes what it holds. It is cleared first: `reloadLayer` stamps it again
+ * for a layer it refreshes, and one that is off keeps it cleared, which is
+ * what makes catchUpLayerTime reload it when it is next switched on rather
+ * than show the previous run's tiles.
+ *
+ * @param {object} layer - Layer config, already pinned.
+ */
+async function reloadRepinnedLayer(layer) {
+    layer.time.current = null
+    await L_.TimeControl_.reloadLayer(layer)
+}
+
 const L_ = {
     url: window.location.href,
     mission: null,
@@ -497,8 +531,12 @@ const L_ = {
                 window.mmgisAPI.provide('layers:updateConfig', ({ layerUUID, updates }) => {
                     const uuid = L_.asLayerUUID(layerUUID)
                     const layerConfig = L_.layers.data[uuid]
-                    if (layerConfig) {
+                    if (layerConfig && updates && typeof updates === 'object') {
                         Object.assign(layerConfig, updates)
+                        window.mmgisAPI.emit('layers:configChanged', {
+                            layerName: uuid,
+                            keys: Object.keys(updates),
+                        })
                         return true
                     }
                     return false
@@ -553,6 +591,48 @@ const L_ = {
                         extents[uuid] = temporalExtentFor(uuid)
                     })
                     return extents
+                }),
+                // A layer's model runs, for a picker: the runs offered, the
+                // one it is pinned to, the lead step, the lead range, and the
+                // lead its tiles are requested at, counted to the layer's end
+                // time as the tile URL is. Null for a layer with no run
+                // source. Same call shapes as the extent above.
+                window.mmgisAPI.provide('layers:getRuns', (layerUUID) => {
+                    if (layerUUID != null) {
+                        const uuid = L_.asLayerUUID(layerUUID)
+                        return uuid == null ? null : runsFor(uuid)
+                    }
+                    const all = {}
+                    Object.keys(L_.layers.data).forEach((uuid) => {
+                        const runs = runsFor(uuid)
+                        if (runs) all[uuid] = runs
+                    })
+                    return all
+                }),
+                // Pins a layer to one of its listed runs: the data window
+                // follows and the layer redraws if it is on. The clock and the
+                // global time window are left where they are, so the new
+                // window alone decides whether the layer has data at the
+                // current time; reloadLayer asks the coverage gate before it
+                // requests anything, hiding or restoring the layer to match.
+                window.mmgisAPI.provide('layers:setRun', async (payload) => {
+                    const uuid = L_.asLayerUUID(payload?.layerUUID)
+                    const layer = uuid == null ? null : L_.layers.data[uuid]
+                    if (!layer?.time?.runs || typeof payload?.run !== 'string')
+                        return false
+                    if (!applyRunSelection(layer.time, payload.run)) return false
+                    await reloadRepinnedLayer(layer)
+                    window.mmgisAPI.emit('layers:configChanged', {
+                        layerName: uuid,
+                        keys: ['time'],
+                    })
+                    window.mmgisAPI.emit('layer:runChange', {
+                        layerName: uuid,
+                        run: payload.run,
+                        start: layer.time.dataStartTime,
+                        end: layer.time.dataEndTime,
+                    })
+                    return true
                 }),
                 // Where each layer sits, for moving the map to it. Called with
                 // a layer identifier it answers for that one layer, resolving a
@@ -4712,8 +4792,20 @@ async function parseConfig(configData, urlOnLayers) {
             // layer carries the fetched data times once it resolves.
             // fetchLayerExtentSource resolves null, never rejects, for a
             // layer with no source or a failed fetch.
+            //
+            // A layer's model runs are read after its extent source, and pin
+            // the newest before any reader sees the layer. Both write
+            // `dataStartTime` and `dataEndTime`, so the run source goes second
+            // and the pinned run's window is the one a layer with both keeps.
+            const layerForSources = d[i]
             extentSourceFetches.push(
-                fetchLayerExtentSource(d[i], { missionPath: L_.missionPath })
+                fetchLayerExtentSource(layerForSources, {
+                    missionPath: L_.missionPath,
+                }).then(() =>
+                    fetchLayerRunSource(layerForSources, {
+                        missionPath: L_.missionPath,
+                    })
+                )
             )
 
             if (d[i].display_name === 'TimeCogs') {

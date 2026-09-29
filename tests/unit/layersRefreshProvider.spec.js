@@ -271,3 +271,47 @@ describe('layers:refresh provider', () => {
         consoleError.mockRestore()
     })
 })
+
+describe('layers:updateConfig provider', () => {
+    let emit
+
+    beforeEach(() => {
+        L_.layers.data = {}
+        L_.layers.layer = {}
+        L_.layers.on = {}
+        registerProviders()
+        emit = vi.fn()
+        window.mmgisAPI.emit = emit
+    })
+
+    test('applies the updates and announces which keys changed', () => {
+        L_.layers.data.fc = { name: 'fc', url: 'a', time: { enabled: true } }
+
+        const ok = providers['layers:updateConfig']({
+            layerUUID: 'fc',
+            updates: { url: 'b', time: { enabled: true, dataStartTime: '2026-09-21T07:00:00Z' } },
+        })
+
+        expect(ok).toBe(true)
+        expect(L_.layers.data.fc.url).toBe('b')
+        expect(L_.layers.data.fc.time.dataStartTime).toBe('2026-09-21T07:00:00Z')
+        expect(emit).toHaveBeenCalledWith('layers:configChanged', {
+            layerName: 'fc',
+            keys: ['url', 'time'],
+        })
+    })
+
+    test('refuses an unknown layer and announces nothing', () => {
+        const ok = providers['layers:updateConfig']({ layerUUID: 'nope', updates: { url: 'b' } })
+        expect(ok).toBe(false)
+        expect(emit).not.toHaveBeenCalled()
+    })
+
+    test('refuses updates that are not an object and announces nothing', () => {
+        L_.layers.data.fc = { name: 'fc', url: 'a' }
+        const ok = providers['layers:updateConfig']({ layerUUID: 'fc', updates: null })
+        expect(ok).toBe(false)
+        expect(L_.layers.data.fc.url).toBe('a')
+        expect(emit).not.toHaveBeenCalled()
+    })
+})
