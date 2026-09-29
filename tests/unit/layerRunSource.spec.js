@@ -53,10 +53,10 @@ describe('run source helpers', () => {
         })
     })
 
-    test('leadAt counts whole steps from the pin to an instant', () => {
+    test('leadAt counts whole steps from the pin to an instant, rounded down', () => {
         const runs = { selected: OLDER, step: 'PT1H' }
         expect(leadAt(runs, '2026-09-22T00:00:00Z')).toBe(18)
-        expect(leadAt(runs, '2026-09-21T11:40:00Z')).toBe(6)
+        expect(leadAt(runs, '2026-09-21T11:40:00Z')).toBe(5)
         expect(leadAt({ step: 'PT1H' }, '2026-09-22T00:00:00Z')).toBeNull()
         expect(leadAt(null, '2026-09-22T00:00:00Z')).toBeNull()
     })
@@ -113,6 +113,15 @@ describe('fetchLayerRunSource', () => {
         expect(layer.time.runs.leadRange).toBeNull()
         expect(layer.time.dataStartTime).toBe('2026-09-21T12:00:00Z')
         expect(layer.time.dataEndTime).toBe('2026-09-21T12:00:00Z')
+    })
+
+    test('leaves the layer unpinned when its leads cannot be read', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const fetchImpl = answering({ [RUNS_URL]: { data: [OLDER, NEWEST] } })
+        const layer = layerWith({})
+        expect(await fetchLayerRunSource(layer, { fetchImpl })).toBe(false)
+        expect(layer.time.runs.selected).toBeUndefined()
+        warn.mockRestore()
     })
 
     test('a source that fails leaves the layer as configured and warns once', async () => {

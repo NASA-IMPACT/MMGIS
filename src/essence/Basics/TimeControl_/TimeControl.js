@@ -704,19 +704,25 @@ var TimeControl = {
         const layerTimeFormat = formatLayerTime(layer.time?.format)
 
         let nextUrl = url
-        // A layer pinned to a model run fills its two placeholders from the
-        // pin: the run itself, and the whole lead steps from it to the
-        // layer's end time. Filled here so a refresh and a time step take the
-        // same path as every other placeholder.
+        // A layer with model runs fills its two placeholders from its pin:
+        // the run itself, and the whole lead steps from it to the layer's end
+        // time, the same lead layers:getRuns reports. A value that is
+        // missing becomes the unresolved marker, since Leaflet's URL
+        // template throws on an unfilled key.
         const runs = layer.time?.runs
-        if (runs?.selected) {
-            nextUrl = nextUrl.replace(
-                /{reftime}/g,
-                encodeURIComponent(runs.selected)
-            )
-            const lead = leadAt(runs, layer.time?.end)
-            if (lead != null)
-                nextUrl = nextUrl.replace(/{lead}/g, String(lead))
+        if (runs) {
+            const lead = leadAt(runs, layer.time.end)
+            nextUrl = nextUrl
+                .replace(
+                    /{reftime}/g,
+                    encodeURIComponent(
+                        runs.selected || UNRESOLVED_URL_REPLACEMENT
+                    )
+                )
+                .replace(
+                    /{lead}/g,
+                    lead != null ? String(lead) : UNRESOLVED_URL_REPLACEMENT
+                )
         }
         if (layer.variables?.urlReplacements) {
             const keys = Object.keys(layer.variables.urlReplacements)

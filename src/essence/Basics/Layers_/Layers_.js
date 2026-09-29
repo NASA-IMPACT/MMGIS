@@ -7,12 +7,10 @@ import Search from '../../Ancillary/Search'
 import Attributions from '../../Ancillary/Attributions'
 import CursorInfo from '../../Ancillary/CursorInfo'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
-import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
 import {
     fetchLayerRunSource,
     applyRunSelection,
-    runWindow,
     leadAt,
 } from '../TimeControl_/layerRunSource'
 import {
@@ -72,7 +70,7 @@ const runsFor = (uuid) => {
         selected: runs.selected ?? null,
         step: runs.step || 'PT1H',
         leadRange: runs.leadRange ?? null,
-        lead: leadAt(runs, L_.TimeControl_?.getTime?.()),
+        lead: leadAt(runs, time.end),
     }
 }
 
@@ -596,7 +594,8 @@ const L_ = {
                 }),
                 // A layer's model runs, for a picker: the runs offered, the
                 // one it is pinned to, the lead step, the lead range, and the
-                // lead the current time sits at. Null for a layer with no run
+                // lead its tiles are requested at, counted to the layer's end
+                // time as the tile URL is. Null for a layer with no run
                 // source. Same call shapes as the extent above.
                 window.mmgisAPI.provide('layers:getRuns', (layerUUID) => {
                     if (layerUUID != null) {

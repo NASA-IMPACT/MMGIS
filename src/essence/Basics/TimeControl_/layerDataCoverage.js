@@ -147,6 +147,14 @@ function requestsPeriod(layer) {
     )
 }
 
+// A layer with a run source (`time.runs.url`) that no run could be pinned
+// from has no run or lead for its tile URL, so nothing it requests holds data.
+function awaitsRun(time) {
+    const runs = time?.runs
+    if (time?.enabled !== true || !runs?.url) return false
+    return !runs.selected
+}
+
 /**
  * The full coverage record for a layer: what it declares, what it would
  * request, and the verdict.
@@ -166,6 +174,9 @@ function requestsPeriod(layer) {
  * that lists Data Dates is never periodic, so its listed entries are always
  * tested at the current time.
  *
+ * A layer with a run source but no pinned run is out of range whatever the
+ * time.
+ *
  * `outOfDataRange` is false whenever the question cannot be answered — no
  * coverage declared, no readable window, no `time` at all. The gate may
  * only suppress on positive evidence of absence; a bug here must cost a
@@ -177,7 +188,8 @@ export function evaluateLayerDataCoverage(layer) {
     const periodic = requestedWindow != null && requestsPeriod(layer)
 
     const outOfDataRange =
-        coverage != null &&
+        awaitsRun(layer?.time) ||
+        (coverage != null &&
         requestedWindow != null &&
         !(periodic
             ? spansOverlap(
@@ -185,7 +197,7 @@ export function evaluateLayerDataCoverage(layer) {
                   requestedWindow.start,
                   requestedWindow.end
               )
-            : spansContain(coverage.spans, requestedWindow.end))
+            : spansContain(coverage.spans, requestedWindow.end)))
 
     return {
         outOfDataRange,

@@ -99,7 +99,7 @@ export const runWindow = (
     }
 }
 
-/** Whole steps from the pinned run to `at`; null without a pin. */
+/** Whole steps from the pinned run to `at`, rounded down; null without a pin. */
 export const leadAt = (runs: RunSource | null | undefined, at: unknown): number | null => {
     const from = parseUtc(runs?.selected)
     const to = parseUtc(at)
@@ -164,6 +164,8 @@ async function readList(
  * Reads a layer's runs and leads and pins the newest run. Never rejects: a
  * source that cannot be read leaves the layer as configured, with no runs,
  * and says so once in the console. Nothing for a layer with no `runs.url`.
+ * A layer with a lead source whose leads cannot be read is left as it was,
+ * rather than pinned to a window of one instant.
  */
 export async function fetchLayerRunSource(
     layer: RunLayer,
@@ -217,8 +219,13 @@ export async function fetchLayerRunSource(
         console.warn(`[Layers] ${label}: run source listed no runs; the layer is not pinned.`)
         return false
     }
+    const leadRange = leadRangeOf(leadList)
+    if (leadUrl !== '' && leadRange == null) {
+        console.warn(`[Layers] ${label}: lead source listed no leads; the layer is not pinned.`)
+        return false
+    }
     runs.list = list
-    runs.leadRange = leadRangeOf(leadList)
+    runs.leadRange = leadRange
     const keep = runs.selected && list.includes(runs.selected) ? runs.selected : list[0]
     return applyRunSelection(time, keep)
 }

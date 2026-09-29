@@ -74,6 +74,8 @@ const forecastLayer = (on = false) => {
             runs: { list: [NEWEST, OLDER], selected: NEWEST, step: 'PT1H', leadRange: [1, 72] },
             dataStartTime: '2026-09-21T13:00:00Z',
             dataEndTime: '2026-09-24T12:00:00Z',
+            start: '2026-09-21T00:00:00Z',
+            end: '2026-09-22T00:00:00Z',
         },
     }
     L_.layers.data.fc = layer
