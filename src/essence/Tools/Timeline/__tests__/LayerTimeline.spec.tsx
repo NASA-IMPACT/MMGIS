@@ -171,6 +171,100 @@ describe('LayerTimeline', () => {
         expect(height).toBe(9)
         expect(Number(rect.getAttribute('y'))).toBeCloseTo(100 + (20 - height) / 2)
     })
+
+    /** A span over one hour of 2020, the hour `n` hours into the year. */
+    const hour = (n: number) => {
+        const start = new Date(YEAR_START.getTime() + n * 3600_000)
+        return {
+            start,
+            end: new Date(start.getTime() + 3600_000 - 1),
+            label: start.toISOString().slice(0, 13),
+        }
+    }
+
+    /**
+     * A sparse layer can list thousands of hours. Zoomed out, their floored
+     * boxes land on top of each other, and each stacked pair would read
+     * darker than its neighbours through the shared opacity.
+     */
+    test('draws spans whose boxes overlap as one box', () => {
+        const rects = render(layerWith([hour(0), hour(3), hour(7)]))
+
+        expect(rects).toHaveLength(1)
+        const x = Number(rects[0].getAttribute('x'))
+        const width = Number(rects[0].getAttribute('width'))
+        expect(x).toBeCloseTo(0)
+        expect(x + width).toBeGreaterThanOrEqual(xScale(hour(7).end))
+    })
+
+    test('joins back-to-back periods into one box', () => {
+        // Zoomed in far enough that each hour is wider than the floor, so
+        // the three only meet end to end.
+        const zoomed = scaleTime()
+            .domain([YEAR_START, new Date(YEAR_START.getTime() + 6 * 3600_000)])
+            .range([0, 800])
+        act(() => {
+            root.render(
+                <svg>
+                    <LayerTimeline
+                        layer={layerWith([hour(0), hour(1), hour(2)])}
+                        xScale={zoomed}
+                        bounds={{ start: YEAR_START, end: YEAR_END }}
+                        y={0}
+                        height={20}
+                    />
+                </svg>
+            )
+        })
+        const rects = Array.from(container.querySelectorAll('rect'))
+
+        expect(rects).toHaveLength(1)
+        expect(Number(rects[0].getAttribute('width'))).toBeCloseTo(
+            zoomed(hour(2).end) - zoomed(hour(0).start),
+            3
+        )
+    })
+
+    test('names a joined box from its first period to its last', () => {
+        const [rect] = render(layerWith([hour(0), hour(3), hour(7)]))
+
+        expect(rect.querySelector('title')?.textContent).toBe(
+            'Sparse Layer\n2020-01-01T00 to 2020-01-01T07'
+        )
+    })
+
+    test('keeps spans with a visible gap between them apart', () => {
+        const rects = render(
+            layerWith([
+                hour(0),
+                // A week on, a dozen pixels clear of the first box.
+                hour(24 * 7),
+            ])
+        )
+
+        expect(rects).toHaveLength(2)
+    })
+
+    test('joins spans listed out of order', () => {
+        const rects = render(layerWith([hour(7), hour(0), hour(3)]))
+
+        expect(rects).toHaveLength(1)
+        expect(rects[0].querySelector('title')?.textContent).toBe(
+            'Sparse Layer\n2020-01-01T00 to 2020-01-01T07'
+        )
+    })
+
+    test('draws thousands of listed hours as the few boxes they read as', () => {
+        // Daylight hours only, every day of the year: over 4000 spans, with
+        // each night a gap too narrow to see at this zoom.
+        const spans = []
+        for (let day = 0; day < 365; day++)
+            for (let h = 12; h < 24; h++) spans.push(hour(day * 24 + h))
+
+        const rects = render(layerWith(spans))
+
+        expect(rects).toHaveLength(1)
+    })
 })
 
 describe('LayerTimeline divisions and edges', () => {
