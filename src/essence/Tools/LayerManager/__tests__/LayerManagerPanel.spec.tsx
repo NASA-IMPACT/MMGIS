@@ -33,15 +33,8 @@ const editableCogLayer = (): Layer => ({
     title: 'Editable',
     stops: null,
     cog: {
-        isCog: true,
         editable: true,
         colormap: 'viridis',
-        min: 0,
-        max: 10,
-        defaultMin: 0,
-        defaultMax: 10,
-        defaultColormap: 'viridis',
-        units: 'm',
         titilerUrl: null,
     },
 })
@@ -377,6 +370,39 @@ describe('LayerManagerPanel forecast runs', () => {
         expect(onRunChange).toHaveBeenCalledWith('Forecast_00aa11bb22cc33dd', '2026-09-21T12:00:00')
         expect(select(container)!.textContent).toBe('Sep 21, 12Z · Latest')
         expect(document.body.querySelector('[role="menuitemradio"]')).toBeNull()
+        await unmount()
+    })
+
+    const pickThenSettle = async (container: HTMLElement) => {
+        const [latest] = await openRuns(container)
+        await click(latest)
+        // The callback's promise settles on the microtask queue.
+        await act(async () => {
+            await Promise.resolve()
+            await Promise.resolve()
+        })
+        return select(container)!
+    }
+
+    test('a refused pick puts the dropdown back on the pinned run', async () => {
+        const onRunChange = vi.fn(async () => false)
+        const { container, unmount } = await mount(
+            <LayerManagerPanel layers={[forecastLayer()]} onRunChange={onRunChange} />,
+        )
+        const el = await pickThenSettle(container)
+        expect(el.textContent).toMatch(/^Sep 21, 06Z · /)
+        await unmount()
+    })
+
+    test('a pick whose callback throws goes back too', async () => {
+        const onRunChange = vi.fn(async () => {
+            throw new Error('bus down')
+        })
+        const { container, unmount } = await mount(
+            <LayerManagerPanel layers={[forecastLayer()]} onRunChange={onRunChange} />,
+        )
+        const el = await pickThenSettle(container)
+        expect(el.textContent).toMatch(/^Sep 21, 06Z · /)
         await unmount()
     })
 

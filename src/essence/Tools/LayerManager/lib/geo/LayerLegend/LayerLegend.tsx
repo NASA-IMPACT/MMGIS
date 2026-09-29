@@ -52,7 +52,7 @@ export type LayerLegendProps = {
     /** Wires the grip button to a sortable list; no handle without it. */
     dragHandle?: DragHandleProps
     /** The user picked a model run for a forecast layer. */
-    onRunChange?: (layerId: string, run: string) => void
+    onRunChange?: (layerId: string, run: string) => void | Promise<boolean>
 }
 
 export type DragHandleProps = {
@@ -94,8 +94,8 @@ export function LayerLegend({
         forecast,
     } = layer
 
-    // Follows the pinned run from the host; a pick shows at once and the
-    // host's next refresh confirms it.
+    // Follows the pinned run from the host; a pick shows at once, and snaps
+    // back when the host reports that core refused it.
     const pinnedRun = forecast?.selectedRun ?? forecast?.runs[0]?.datetime ?? ''
     const [selectedRun, setSelectedRun] = useState(pinnedRun)
     useEffect(() => setSelectedRun(pinnedRun), [pinnedRun])
@@ -245,7 +245,12 @@ export function LayerLegend({
             checked: run.datetime === selectedRun,
             onSelect: () => {
                 setSelectedRun(run.datetime)
-                onRunChange?.(id, run.datetime)
+                Promise.resolve(onRunChange?.(id, run.datetime)).then(
+                    (pinned) => {
+                        if (pinned === false) setSelectedRun(pinnedRun)
+                    },
+                    () => setSelectedRun(pinnedRun),
+                )
             },
         }),
     )
@@ -275,10 +280,9 @@ export function LayerLegend({
                 return (
                     <GradientGraphic
                         stops={stops}
-                        min={min ?? 0}
-                        max={max ?? 0}
+                        min={min ?? null}
+                        max={max ?? null}
                         unit={unit}
-                        cog={cog}
                     />
                 )
             case 'categorical':
@@ -565,9 +569,9 @@ export function LayerLegend({
                     <ColorRampPicker
                         layerId={id}
                         colormap={cog.colormap}
-                        min={cog.min}
-                        max={cog.max}
-                        units={cog.units}
+                        min={min ?? null}
+                        max={max ?? null}
+                        units={unit?.label ?? null}
                         titilerUrl={cog.titilerUrl}
                         onColormapChange={onColormapChange}
                         onRescaleChange={onRescaleChange}

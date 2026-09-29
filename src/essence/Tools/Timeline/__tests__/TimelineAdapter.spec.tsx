@@ -3,11 +3,8 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 import { zoomTransform } from 'd3-zoom'
 import { TimelineAdapter } from '../TimelineAdapter'
-import {
-    EDGE_INSET,
-    transformToWindow,
-    type ViewWindow,
-} from '../lib/utils/zoomWindow'
+import { transformToWindow, type ViewWindow } from '../lib/utils/zoomWindow'
+import { EDGE_MARGIN } from '../lib/geo/TimelineView/TimelineView'
 import { stubReducedMotion } from './support/motion'
 
 /**
@@ -243,14 +240,15 @@ class NoopResizeObserver {
     disconnect() {}
 }
 
-// Three scattered days — one before the window, one inside, one past its end
-// — so first/next/last each land differently against it.
-const BEFORE_WINDOW = '2023-11-05T23:59:59.999Z'
-// The window opens on the whole of the day a backwards stop names, so the bar
-// drawn over that day sits inside the chart rather than against its left edge.
-const BEFORE_WINDOW_DAY_START = '2023-11-05T00:00:00.000Z'
-const INSIDE_WINDOW = '2024-06-20T23:59:59.999Z'
-const PAST_WINDOW = '2025-03-20T23:59:59.999Z'
+// Three scattered entries — a day before the window, an exact time inside it
+// and a month past its end — so first/next/last each land differently against
+// it. Each stop is the first instant its entry names.
+const BEFORE_WINDOW = '2023-11-05T00:00:00.000Z'
+const INSIDE_WINDOW = '2024-06-20T14:30:00.000Z'
+const PAST_WINDOW = '2025-03-01T00:00:00.000Z'
+// The window closes on the whole of the month a forwards stop opens, so the
+// bar drawn over that month sits inside the chart rather than past its edge.
+const PAST_WINDOW_MONTH_END = '2025-03-31T23:59:59.999Z'
 
 const LAYER_CONFIGS = {
     sparse: {
@@ -258,7 +256,7 @@ const LAYER_CONFIGS = {
         display_name: 'Rover Images',
         time: {
             enabled: true,
-            dataDates: ['2023-11-05', '2024-06-20', '2025-03-20'],
+            dataDates: ['2023-11-05', '2024-06-20T14:30:00Z', '2025-03'],
         },
     },
     basemap: {
@@ -411,31 +409,31 @@ describe('TimelineAdapter layer navigation', () => {
         })
     })
 
-    test('a target past the end widens the end onto it, and only the end', () => {
+    test('a target past the end widens the end onto its whole month, and only the end', () => {
         act(() => {
             navButton('last date')!.click()
         })
 
         expect(requests()[0].payload).toEqual({
             startTime: new Date(START).toISOString(),
-            endTime: PAST_WINDOW,
+            endTime: PAST_WINDOW_MONTH_END,
             currentTime: PAST_WINDOW,
         })
     })
 
-    test('a target before the start opens the start onto its whole day, and only the start', () => {
+    test('a target before the start opens the start onto it, and only the start', () => {
         act(() => {
             navButton('first date')!.click()
         })
 
         expect(requests()[0].payload).toEqual({
-            startTime: BEFORE_WINDOW_DAY_START,
+            startTime: BEFORE_WINDOW,
             endTime: new Date(END).toISOString(),
             currentTime: BEFORE_WINDOW,
         })
     })
 
-    test('a step back onto an earlier stop opens the window past that day\'s midnight', () => {
+    test('a step back onto an earlier stop opens the window onto that day\'s midnight', () => {
         // The stop the current time steps back to is the one before the
         // window, so the press both moves and widens.
         act(() => {
@@ -448,7 +446,7 @@ describe('TimelineAdapter layer navigation', () => {
         }
         expect(currentTime).toBe(BEFORE_WINDOW)
         expect(new Date(startTime).getTime()).toBeLessThanOrEqual(
-            new Date(BEFORE_WINDOW_DAY_START).getTime()
+            new Date(BEFORE_WINDOW).getTime()
         )
     })
 
@@ -492,7 +490,7 @@ describe('TimelineAdapter following the scrubber', () => {
 
     /** The visible window, as d3 holds it for the chart. */
     const viewOn = (bounds: ViewWindow): ViewWindow =>
-        transformToWindow(zoomTransform(chart()), bounds, WIDTH, EDGE_INSET)
+        transformToWindow(zoomTransform(chart()), bounds, WIDTH, EDGE_MARGIN)
 
     const SEEDED: ViewWindow = { start: new Date(START), end: new Date(END) }
 
@@ -604,11 +602,12 @@ describe('TimelineAdapter following the scrubber', () => {
         // Committed locally at once, alongside the reveal.
         const widened: ViewWindow = {
             start: new Date(START),
-            end: new Date(PAST_WINDOW),
+            end: new Date(PAST_WINDOW_MONTH_END),
         }
         const followed = viewOn(widened)
-        expect(followed.end.toISOString()).toBe(PAST_WINDOW)
-        expect(followed.start.getTime()).toBeLessThan(new Date(PAST_WINDOW).getTime())
+        const target = new Date(PAST_WINDOW).getTime()
+        expect(followed.start.getTime()).toBeLessThan(target)
+        expect(followed.end.getTime()).toBeGreaterThan(target)
     })
 
     test('a drag released past the edge of the chart commits there and leaves the view be', () => {
@@ -745,15 +744,14 @@ describe('TimelineAdapter zoom wiring', () => {
         )
     })
 
-    test('a fit reaching outside the global window widens it once, onto the whole of its first day, leaving the scrubber be', () => {
-        // The widen opens on the first instant of the earliest day, the
-        // same instant a row's backwards control opens the window to, so
-        // the box drawn over that day is inside the chart. The end needs no
-        // such allowance: a box ends on the instant its day does.
+    test('a fit reaching outside the global window widens it once, onto the whole of its boxes, leaving the scrubber be', () => {
+        // The widen closes on the last instant of the latest month, the
+        // same instant a row's forwards control closes the window on, so
+        // the box drawn over that month is inside the chart.
         expect(requests()).toHaveLength(1)
         expect(requests()[0].payload).toEqual({
-            startTime: BEFORE_WINDOW_DAY_START,
-            endTime: PAST_WINDOW,
+            startTime: BEFORE_WINDOW,
+            endTime: PAST_WINDOW_MONTH_END,
             currentTime: new Date(CURRENT).toISOString(),
         })
     })
@@ -880,11 +878,11 @@ describe('TimelineAdapter zoom before and at the seed', () => {
         await act(async () => {})
 
         // The one widen frames the layer against the seeded window, never
-        // the placeholder, and opens on the whole of the layer's first day.
+        // the placeholder, and closes on the whole of the layer's last month.
         expect(requests()).toHaveLength(1)
         expect(requests()[0].payload).toEqual({
-            startTime: BEFORE_WINDOW_DAY_START,
-            endTime: PAST_WINDOW,
+            startTime: BEFORE_WINDOW,
+            endTime: PAST_WINDOW_MONTH_END,
             currentTime: new Date(CURRENT).toISOString(),
         })
     })
@@ -947,8 +945,8 @@ describe('TimelineAdapter zoom before and at the seed', () => {
         // The fit's one widen, framing the layer, and nothing moved after it.
         expect(requests()).toHaveLength(1)
         expect(requests()[0].payload).toMatchObject({
-            startTime: BEFORE_WINDOW_DAY_START,
-            endTime: PAST_WINDOW,
+            startTime: BEFORE_WINDOW,
+            endTime: PAST_WINDOW_MONTH_END,
         })
     })
 
@@ -1064,81 +1062,6 @@ describe('TimelineAdapter open-ended layer time', () => {
             endTime: new Date(END).toISOString(),
             currentTime: FLOORED_END,
         })
-    })
-})
-
-describe('TimelineAdapter config changes', () => {
-    let container: HTMLElement
-    let root: Root
-    let listeners: Map<string, Set<(payload?: unknown) => void>>
-    let configReads: number
-    let originalResizeObserver: unknown
-
-    beforeEach(async () => {
-        listeners = new Map()
-        configReads = 0
-        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
-            .ResizeObserver
-        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
-            NoopResizeObserver
-        ;(window as unknown as { mmgisAPI: unknown }).mmgisAPI = {
-            request: async (name: string) => {
-                if (name === 'time:isEnabled') return true
-                if (name === 'time:getStart') return START
-                if (name === 'time:getEnd') return END
-                if (name === 'time:getCurrent') return CURRENT
-                if (name === 'tool:getVars') return {}
-                if (name === 'layers:getAllConfigs') {
-                    configReads++
-                    return LAYER_CONFIGS
-                }
-                if (name === 'layers:getVisible')
-                    return { sparse: true, basemap: true }
-                return null
-            },
-            hasHandler: () => true,
-            on: (event: string, handler: (payload?: unknown) => void) => {
-                if (!listeners.has(event)) listeners.set(event, new Set())
-                listeners.get(event)!.add(handler)
-                return () => listeners.get(event)?.delete(handler)
-            },
-            emit: () => {},
-        }
-
-        container = document.createElement('div')
-        document.body.appendChild(container)
-        root = createRoot(container)
-        await act(async () => {
-            root.render(<TimelineAdapter />)
-        })
-        await act(async () => {})
-    })
-
-    afterEach(() => {
-        act(() => root.unmount())
-        container.remove()
-        delete (window as { mmgisAPI?: unknown }).mmgisAPI
-        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
-            originalResizeObserver
-    })
-
-    const fire = (event: string) =>
-        act(async () => {
-            for (const handler of [...(listeners.get(event) ?? [])]) handler({})
-        })
-
-    test('rebuilds its rows when a layer config changes', async () => {
-        const before = configReads
-        await fire('layers:configChanged')
-        expect(configReads).toBe(before + 1)
-    })
-
-    test('drops the config subscription on unmount', async () => {
-        expect(listeners.get('layers:configChanged')?.size).toBe(1)
-        act(() => root.unmount())
-        expect(listeners.get('layers:configChanged')?.size ?? 0).toBe(0)
-        // afterEach unmounts again; a second unmount on a fresh root is safe.
-        root = createRoot(document.createElement('div'))
     })
 })
 
@@ -1356,5 +1279,80 @@ describe('TimelineAdapter without the tool vars', () => {
         expect(container.querySelector('.timeline-loading')).toBeNull()
         expect(container.querySelector('.timeline')).not.toBeNull()
         expect(container.querySelector('.timeline-zoom-slider')).not.toBeNull()
+    })
+})
+
+describe('TimelineAdapter config changes', () => {
+    let container: HTMLElement
+    let root: Root
+    let listeners: Map<string, Set<(payload?: unknown) => void>>
+    let configReads: number
+    let originalResizeObserver: unknown
+
+    beforeEach(async () => {
+        listeners = new Map()
+        configReads = 0
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+        ;(window as unknown as { mmgisAPI: unknown }).mmgisAPI = {
+            request: async (name: string) => {
+                if (name === 'time:isEnabled') return true
+                if (name === 'time:getStart') return START
+                if (name === 'time:getEnd') return END
+                if (name === 'time:getCurrent') return CURRENT
+                if (name === 'tool:getVars') return {}
+                if (name === 'layers:getAllConfigs') {
+                    configReads++
+                    return LAYER_CONFIGS
+                }
+                if (name === 'layers:getVisible')
+                    return { sparse: true, basemap: true }
+                return null
+            },
+            hasHandler: () => true,
+            on: (event: string, handler: (payload?: unknown) => void) => {
+                if (!listeners.has(event)) listeners.set(event, new Set())
+                listeners.get(event)!.add(handler)
+                return () => listeners.get(event)?.delete(handler)
+            },
+            emit: () => {},
+        }
+
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+        await act(async () => {
+            root.render(<TimelineAdapter />)
+        })
+        await act(async () => {})
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        delete (window as { mmgisAPI?: unknown }).mmgisAPI
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver
+    })
+
+    const fire = (event: string) =>
+        act(async () => {
+            for (const handler of [...(listeners.get(event) ?? [])]) handler({})
+        })
+
+    test('rebuilds its rows when a layer config changes', async () => {
+        const before = configReads
+        await fire('layers:configChanged')
+        expect(configReads).toBe(before + 1)
+    })
+
+    test('drops the config subscription on unmount', async () => {
+        expect(listeners.get('layers:configChanged')?.size).toBe(1)
+        act(() => root.unmount())
+        expect(listeners.get('layers:configChanged')?.size ?? 0).toBe(0)
+        // afterEach unmounts again; a second unmount on a fresh root is safe.
+        root = createRoot(document.createElement('div'))
     })
 })

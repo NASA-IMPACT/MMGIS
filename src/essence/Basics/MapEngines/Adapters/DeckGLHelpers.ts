@@ -23,6 +23,7 @@ import { WMSImageSource } from '@loaders.gl/wms'
 import { color as parseColor } from 'd3'
 
 import { compileLegendStyle, resolveLegendStyle } from '../../Layers_/LegendStyle'
+import { FLAT_LAYER_PARAMETERS } from './flatLayerParameters'
 
 import type { LatLng, LatLngLike, BoundsLike, PointLike, PaddingLike } from '../types/geometry'
 import type { LayerOptions, TileLayerOptions, GeoJSONLayerOptions, VectorTileLayerOptions, PointCloudLayerOptions } from '../types/layers'
@@ -231,6 +232,42 @@ async function fetchImageTile(
     })
 }
 
+// Set by webpack to the bundle's public path; absent outside a webpack build.
+declare const __webpack_public_path__: string | undefined
+// Where the build copies loaders.gl's vector tile worker, relative to the
+// public path, versioned (`static/loaders/mvt@<version>/mvt-worker.js`).
+// Defined by the webpack config, which does the copy; absent outside a
+// webpack build.
+declare const MVT_WORKER_PATH: string | undefined
+
+/**
+ * Absolute URL of the vector tile worker the build serves, or undefined when
+ * the build serves none or there is no page to resolve it against.
+ *
+ * loaders.gl otherwise fetches the worker from unpkg.com, which the server's
+ * Content-Security-Policy refuses. The URL must be absolute: loaders.gl
+ * starts the worker from a blob that imports this URL, and a relative URL
+ * would resolve against the blob rather than the page. Resolving against
+ * `document.baseURI` keeps a dashboard served under a path prefix working.
+ */
+export function resolveMvtWorkerUrl(
+    publicPath: string | undefined,
+    workerPath: string | undefined,
+    baseURI: string | undefined
+): string | undefined {
+    if (typeof publicPath !== 'string' || !workerPath || !baseURI) return undefined
+    return new URL(publicPath + workerPath, baseURI).href
+}
+
+function mvtWorkerUrl(): string | undefined {
+    return resolveMvtWorkerUrl(
+        typeof __webpack_public_path__ !== 'undefined'
+            ? __webpack_public_path__
+            : undefined,
+        typeof MVT_WORKER_PATH !== 'undefined' ? MVT_WORKER_PATH : undefined,
+        typeof document !== 'undefined' ? document.baseURI : undefined
+    )
+}
 /**
  * Split a full WMS url into its service endpoint and LAYERS list. Mirrors the
  * param parsing Leaflet's WMSColorFilter does, so a single layer url renders
@@ -474,6 +511,7 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                     layers,
                     srs: 'EPSG:3857',
                     opacity: o.opacity ?? 1,
+                    parameters: FLAT_LAYER_PARAMETERS,
                     ...(o.nativeOptions ?? {}),
                 }) as unknown as Layer
             }
@@ -485,6 +523,8 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 minZoom: o.minZoom,
                 maxZoom: o.maxNativeZoom ?? o.maxZoom,
                 opacity: o.opacity ?? 1,
+                // A tile raised to an elevation has height of its own.
+                ...(Number.isFinite(tileElevation) ? {} : { parameters: FLAT_LAYER_PARAMETERS }),
                 getTileData: (tile: { url?: string | null; signal?: AbortSignal }) =>
                     fetchImageTile(tile.url, tile.signal),
                 onTileError: (error: Error) => {
@@ -541,6 +581,7 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 filled: o.filled ?? true,
                 stroked: o.stroked ?? true,
                 extruded: o.extruded ?? false,
+                ...(o.extruded ? {} : { parameters: FLAT_LAYER_PARAMETERS }),
                 getFillColor,
                 getLineColor,
                 getLineWidth,
@@ -583,6 +624,11 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 readsFeatureProperties,
                 legendFingerprint,
             } = resolveStyleAccessors(style, o.legend, o.legendConfigured)
+            const workerUrl = mvtWorkerUrl()
+            const nativeOptions = o.nativeOptions ?? {}
+            const nativeLoadOptions = nativeOptions.loadOptions as
+                | { mvt?: object }
+                | undefined
 
             return new MVTLayer({
                 id,
@@ -591,6 +637,7 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 maxZoom: o.maxNativeZoom ?? o.maxZoom,
                 opacity: o.opacity ?? 1,
                 pickable: o.interactive ?? true,
+                parameters: FLAT_LAYER_PARAMETERS,
                 // deck.gl decodes vector tiles into a binary form by default,
                 // which hoists every numeric property into one tile-wide typed
                 // array covering every feature in the tile. A feature that
@@ -636,7 +683,19 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                     getFillColor: legendFingerprint,
                     getLineColor: legendFingerprint,
                 },
-                ...(o.nativeOptions ?? {}),
+                ...nativeOptions,
+                // After the native options and merged into their loader
+                // options, so a caller's own loadOptions keep the worker
+                // (replacing it would fall back to unpkg.com, which the CSP
+                // blocks). A workerUrl of their own still wins.
+                ...(workerUrl
+                    ? {
+                          loadOptions: {
+                              ...nativeLoadOptions,
+                              mvt: { workerUrl, ...nativeLoadOptions?.mvt },
+                          },
+                      }
+                    : {}),
             } as ConstructorParameters<typeof MVTLayer>[0]) as unknown as Layer
         }
 
@@ -700,6 +759,7 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 getLineWidth: style.weight !== undefined ? Number(style.weight) : 1,
                 radiusUnits: 'pixels',
                 lineWidthUnits: 'pixels',
+                parameters: FLAT_LAYER_PARAMETERS,
                 ...(o.nativeOptions ?? {}),
             } as ConstructorParameters<typeof ScatterplotLayer>[0]) as unknown as Layer
         }

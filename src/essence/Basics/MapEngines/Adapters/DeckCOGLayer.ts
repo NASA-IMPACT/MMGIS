@@ -44,6 +44,7 @@ import { Colormap, LinearRescale, FilterNoDataVal, CreateTexture, createColormap
 import type { Device, Texture, TextureFormat } from '@luma.gl/core'
 import type { SampleFormat } from '@cogeotiff/core'
 import { buildColormapLUT } from './colormapLUT'
+import { FLAT_LAYER_PARAMETERS } from './flatLayerParameters'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -435,6 +436,7 @@ export function deckCOGProps(
         id,
         geotiff: options.rawCogUrl,
         opacity: options.opacity ?? 1,
+        parameters: FLAT_LAYER_PARAMETERS,
         ...(Number.isFinite(minZoom) ? { minZoom } : {}),
         ...(Number.isFinite(maxZoom) ? { maxZoom } : {}),
         // Supplying getTileData + renderTile together makes COGLayer._parseGeoTIFF

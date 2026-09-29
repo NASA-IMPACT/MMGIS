@@ -1,10 +1,10 @@
 import { describe, test, expect, vi } from 'vitest'
 
 /**
- * A sparse layer — one with data on a handful of scattered days rather than
- * continuously across its extent — is configured by listing those days. The
- * timeline then draws one box per listed day instead of a single bar spanning
- * the whole extent.
+ * A sparse layer — one with data at a handful of scattered times rather than
+ * continuously across its extent — is configured by listing those times. The
+ * timeline then draws one box per listed period — the year, month, day or
+ * hour an entry names — instead of a single bar spanning the whole extent.
  *
  * The process timezone is pinned behind UTC so that a resolver which snapped
  * days in local time would surface as a wrong day here, rather than passing on
@@ -38,21 +38,42 @@ describe('resolveLayerTimeRanges', () => {
         expect(ranges).toHaveLength(2)
     })
 
-    test('draws a day listed more than once as one box', () => {
-        // Two boxes on one day would stack, and the pair would read darker
-        // than its neighbours through the bars' shared opacity.
+    test('draws a period listed more than once as one box', () => {
+        // Two boxes over one period would stack, and the pair would read
+        // darker than its neighbours through the bars' shared opacity.
         const ranges = resolve({
             enabled: true,
             dataDates: [
-                '2020-03-04T01:00:00Z',
+                '2020-03-04T18:10:00Z',
                 '2020-03-04T18:30:00Z',
+                '2020-07-19',
                 '2020-07-19',
             ],
         })
 
         expect(ranges.map((range) => range.label)).toEqual([
-            '2020-03-04',
+            '2020-03-04 18:00',
             '2020-07-19',
+        ])
+    })
+
+    test('covers the whole year, month, day or hour an entry names, the hour at finest', () => {
+        const ranges = resolve({
+            enabled: true,
+            dataDates: ['2021', '2020-03', '2020-05-06', '2020-07-08T14:30:15Z'],
+        })
+
+        expect(
+            ranges.map((range) => [
+                range.label,
+                range.start.toISOString(),
+                range.end.toISOString(),
+            ])
+        ).toEqual([
+            ['2020-03', '2020-03-01T00:00:00.000Z', '2020-03-31T23:59:59.999Z'],
+            ['2020-05-06', '2020-05-06T00:00:00.000Z', '2020-05-06T23:59:59.999Z'],
+            ['2020-07-08 14:00', '2020-07-08T14:00:00.000Z', '2020-07-08T14:59:59.999Z'],
+            ['2021', '2021-01-01T00:00:00.000Z', '2021-12-31T23:59:59.999Z'],
         ])
     })
 

@@ -85,44 +85,95 @@ export function MMGISLayerManagerAdapter() {
     // overwritten by that older read until the layer next changes.
     const inFlight = useRef(new Set<Map<string, boolean>>())
 
+    // Core answers the lead for the clock as it stands when asked, so an
+    // older answer must never land over a newer one. One request covers
+    // every layer, so a failure is logged and the last answer kept: the
+    // layers still list, without run info, rather than the panel emptying.
+    const latestRuns = useRef<RunsAnswer | null>(null)
+    const runsAsked = useRef(0)
+    const runsHeld = useRef(0)
+    const readRuns = useCallback(async () => {
+        const seq = ++runsAsked.current
+        try {
+            const runs = await mmgisRequestIfProvided<RunsAnswer>('layers:getRuns')
+            if (seq > runsHeld.current) {
+                runsHeld.current = seq
+                latestRuns.current = runs
+            }
+        } catch (err) {
+            console.warn('LayerManager: runs unavailable', err)
+        }
+        return latestRuns.current
+    }, [])
+
+    // Ticks on every refresh, so a call can tell whether it is still the most
+    // recent one once its await returns. Without this, an older refresh (a
+    // slow custom colormap fetch, say) that resolves after a newer one has
+    // already landed would overwrite the newer rows with stale ones.
+    const refreshSeq = useRef(0)
+
     const refresh = useCallback(async () => {
+        const seq = ++refreshSeq.current
         const announced = new Map<string, boolean>()
         inFlight.current.add(announced)
         try {
-            const [data, leftOut, runs] = await Promise.all([
+            const [data, leftOut] = await Promise.all([
                 getVisibleLayersWithLegends({
                     showOnlyVisible: toolVars.showOnlyVisible === true,
                 }),
                 getFilteredOutLayers(),
-                mmgisRequestIfProvided<RunsAnswer>('layers:getRuns'),
+                readRuns(),
             ])
-            setLayers(withOutOfRange(withRuns(data, runs), announced))
+            // A newer refresh already landed while this one was reading —
+            // its answer is stale, so drop it.
+            if (seq !== refreshSeq.current) return
+            // Read again once the rows are in: the runs answered at the
+            // start may have been overtaken while the layers loaded.
+            setLayers(
+                withOutOfRange(withRuns(data, latestRuns.current), announced),
+            )
             setFilteredOut(leftOut.map((layer) => layer.title))
         } catch (err) {
             console.error('LayerManager: refresh failed', err)
-            setLayers([])
-            setFilteredOut([])
+            if (seq === refreshSeq.current) {
+                setLayers([])
+                setFilteredOut([])
+            }
         } finally {
             inFlight.current.delete(announced)
-            setLoading(false)
+            if (seq === refreshSeq.current) setLoading(false)
         }
-    }, [toolVars.showOnlyVisible])
+    }, [toolVars.showOnlyVisible, readRuns])
 
-    const onRunChange = useCallback((layerId: string, run: string) => {
-        report('selectRun', selectRun(layerId, run))
-    }, [])
+    // A refusal resolves false and core announces nothing; a throw can land
+    // after core has already pinned. Either way the rows re-read core's
+    // truth, and the legend hears false so its dropdown snaps back.
+    const onRunChange = useCallback(
+        async (layerId: string, run: string): Promise<boolean> => {
+            let pinned = false
+            try {
+                pinned = await selectRun(layerId, run)
+                if (!pinned) console.warn(`LayerManager: core refused run ${run} for ${layerId}`)
+            } catch (err) {
+                console.error('LayerManager: selectRun failed', err)
+            }
+            if (!pinned) void refresh()
+            return pinned
+        },
+        [refresh],
+    )
 
     // The lead readout follows the scrubber. Core answers the lead for the
     // current time, so a time change re-reads the runs and patches the rows
     // rather than rebuilding every legend.
     const refreshLeads = useCallback(() => {
-        mmgisRequestIfProvided<RunsAnswer>('layers:getRuns').then(
+        readRuns().then(
             (runs) => {
                 if (runs) setLayers((rows) => withRuns(rows, runs))
             },
             () => {},
         )
-    }, [])
+    }, [readRuns])
 
     // Core announces a layer's record whenever its verdict or coverage
     // changes, so this keeps each row's warning current between refreshes.

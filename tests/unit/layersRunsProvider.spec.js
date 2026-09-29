@@ -8,7 +8,8 @@ const { default: L_ } = await import('../../src/essence/Basics/Layers_/Layers_.j
 /**
  * `layers:getRuns` and `layers:setRun`: the bus surface a picker uses over a
  * layer core has pinned to a model run. Core owns the list, the pin, the
- * derived data window, the redraw and the clock; the picker only asks.
+ * derived data window and the redraw; the picker only asks. The clock is
+ * never touched.
  */
 
 const NEWEST = '2026-09-21T12:00:00'
@@ -17,6 +18,7 @@ const OLDER = '2026-09-21T06:00:00'
 let providers
 let emits
 let refreshLayer
+let reloadLayer
 let clock
 
 const registerProviders = () => {
@@ -30,6 +32,12 @@ const registerProviders = () => {
         emit: (event, payload) => emits.push({ event, payload }),
     }
     refreshLayer = vi.fn(() => true)
+    // Faithful to TimeControl.reloadLayer, which stamps the time it refreshed
+    // a layer at, and refreshes only a layer that is on.
+    reloadLayer = vi.fn(async (layer) => {
+        if (L_.layers.on[layer.name]) layer.time.current = clock.current
+        return true
+    })
     clock = {
         current: '2026-09-22T00:00:00Z',
         start: '2020-01-01T00:00:00Z',
@@ -51,6 +59,7 @@ const registerProviders = () => {
             getStartTime: () => clock.start,
             getEndTime: () => clock.end,
             setTime: (...args) => clock.setTime(...args),
+            reloadLayer: (...args) => reloadLayer(...args),
         }
     )
 }
@@ -65,6 +74,8 @@ const forecastLayer = (on = false) => {
             runs: { list: [NEWEST, OLDER], selected: NEWEST, step: 'PT1H', leadRange: [1, 72] },
             dataStartTime: '2026-09-21T13:00:00Z',
             dataEndTime: '2026-09-24T12:00:00Z',
+            start: '2026-09-21T00:00:00Z',
+            end: '2026-09-22T00:00:00Z',
         },
     }
     L_.layers.data.fc = layer
@@ -122,14 +133,48 @@ describe('layers:setRun', () => {
                 payload: { layerName: 'fc', run: OLDER, start: '2026-09-21T07:00:00Z', end: '2026-09-24T06:00:00Z' },
             },
         ])
-        expect(refreshLayer).not.toHaveBeenCalled()
     })
 
-    test('redraws a layer that is on', async () => {
-        forecastLayer(true)
+    test('reloads the layer after the pin moves, so coverage is re-decided against the new window', async () => {
+        const layer = forecastLayer(true)
+        reloadLayer.mockImplementation(async (l) => {
+            expect(l.time.runs.selected).toBe(OLDER)
+            expect(l.time.dataEndTime).toBe('2026-09-24T06:00:00Z')
+            return true
+        })
         await providers['layers:setRun']({ layerUUID: 'fc', run: OLDER })
-        expect(refreshLayer).toHaveBeenCalledTimes(1)
-        expect(refreshLayer.mock.calls[0][0]).toBe('fc')
+        expect(reloadLayer).toHaveBeenCalledTimes(1)
+        expect(reloadLayer.mock.calls[0][0]).toBe(layer)
+    })
+
+    test('reloads a layer that is off too, leaving the on/off decision to reloadLayer', async () => {
+        const layer = forecastLayer(false)
+        await providers['layers:setRun']({ layerUUID: 'fc', run: OLDER })
+        expect(reloadLayer).toHaveBeenCalledWith(layer)
+    })
+
+    // The clock does not move on a pick, so a layer that is off would still
+    // read as current when switched on and bring back the previous run's
+    // tiles. Clearing the stamp is what sends it through catchUpLayerTime.
+    test('leaves a layer that is off marked behind, so it reloads when next shown', async () => {
+        const layer = forecastLayer(false)
+        layer.time.current = clock.current
+        await providers['layers:setRun']({ layerUUID: 'fc', run: OLDER })
+        expect(layer.time.current).toBeNull()
+    })
+
+    test('leaves a layer that is on stamped current once it has redrawn', async () => {
+        const layer = forecastLayer(true)
+        layer.time.current = clock.current
+        await providers['layers:setRun']({ layerUUID: 'fc', run: OLDER })
+        expect(layer.time.current).toBe(clock.current)
+    })
+
+    test('leaves the stamp alone on a refused pick', async () => {
+        const layer = forecastLayer(false)
+        layer.time.current = clock.current
+        await providers['layers:setRun']({ layerUUID: 'fc', run: '2020-01-01T00:00:00' })
+        expect(layer.time.current).toBe(clock.current)
     })
 
     test('refuses an unlisted run, an unknown layer, and a layer without runs', async () => {
@@ -140,68 +185,13 @@ describe('layers:setRun', () => {
         expect(await providers['layers:setRun']({ layerUUID: 'plain', run: OLDER })).toBe(false)
         expect(layer.time.runs.selected).toBe(NEWEST)
         expect(emits).toEqual([])
+        expect(reloadLayer).not.toHaveBeenCalled()
     })
 
-    test('leaves the clock alone when it already sits inside the run window', async () => {
+    test('never moves the clock or the global window, even when the clock sits outside the run window', async () => {
         forecastLayer()
-        clock.current = '2026-09-22T00:00:00Z'
+        clock.current = '2026-08-01T00:00:00Z'
         await providers['layers:setRun']({ layerUUID: 'fc', run: OLDER })
         expect(clock.setTime).not.toHaveBeenCalled()
-    })
-
-    test('moves the clock to now when now is inside the window', async () => {
-        forecastLayer()
-        clock.current = '2026-08-01T00:00:00Z'
-        vi.useFakeTimers({ now: new Date('2026-09-22T03:30:00Z') })
-        try {
-            await providers['layers:setRun']({ layerUUID: 'fc', run: OLDER })
-        } finally {
-            vi.useRealTimers()
-        }
-        expect(clock.setTime).toHaveBeenCalledWith(
-            '2020-01-01T00:00:00Z', '2027-01-01T00:00:00Z', false, undefined, '2026-09-22T03:30:00Z'
-        )
-    })
-
-    test('moves the clock to the window start otherwise, widening the window to hold it', async () => {
-        forecastLayer()
-        clock.current = '2026-08-01T00:00:00Z'
-        clock.start = '2026-01-01T00:00:00Z'
-        clock.end = '2026-09-22T00:00:00Z'
-        vi.useFakeTimers({ now: new Date('2026-12-01T00:00:00Z') })
-        try {
-            await providers['layers:setRun']({ layerUUID: 'fc', run: OLDER })
-        } finally {
-            vi.useRealTimers()
-        }
-        expect(clock.setTime).toHaveBeenCalledWith(
-            '2026-01-01T00:00:00Z', '2026-09-24T06:00:00Z', false, undefined, '2026-09-21T07:00:00Z'
-        )
-    })
-})
-
-describe('layers:refreshRuns', () => {
-    beforeEach(() => {
-        L_.layers.data = {}
-        L_.layers.layer = {}
-        L_.layers.on = {}
-        registerProviders()
-    })
-
-    test('re-reads the source, pins, and announces; false for a layer without one', async () => {
-        const layer = forecastLayer(false)
-        layer.time.runs = { url: 'https://svc/runs', path: 'data', step: 'PT1H' }
-        vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ data: [OLDER, NEWEST] }) })))
-        try {
-            expect(await providers['layers:refreshRuns']('fc')).toBe(true)
-        } finally {
-            vi.unstubAllGlobals()
-        }
-        expect(layer.time.runs.list).toEqual([NEWEST, OLDER])
-        expect(layer.time.runs.selected).toBe(NEWEST)
-        expect(emits.map((e) => e.event)).toEqual(['layers:configChanged', 'layer:runChange'])
-
-        L_.layers.data.plain = { name: 'plain', time: { enabled: true } }
-        expect(await providers['layers:refreshRuns']('plain')).toBe(false)
     })
 })

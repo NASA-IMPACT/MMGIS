@@ -279,10 +279,18 @@
             {
               "field": "style.hoverHighlight",
               "name": "DeckGL Hover Highlight",
-              "description": "When enabled, DeckGL vector tile features change color on hover. The hover tooltip still uses Vector Tile Use Key as Name when this is off.",
+              "description": "When enabled, DeckGL vector tile features change color on hover. Needs Vector Tile Feature Unique Id Key set, which is what identifies the feature under the cursor; without it nothing highlights. The hover tooltip still uses Vector Tile Use Key as Name when this is off.",
               "type": "checkbox",
               "width": 4,
               "defaultChecked": false
+            },
+            {
+              "field": "style.hoverHighlightColor",
+              "name": "Hover Highlight Color",
+              "description": "The color a feature takes under the cursor, opacity included — the picker writes it into the color. Leave empty for a light black wash, which darkens a feature of any hue without recoloring it.",
+              "type": "colorpicker",
+              "width": 4,
+              "default": "rgba(0, 0, 0, 0.1)"
             }
           ]
         },

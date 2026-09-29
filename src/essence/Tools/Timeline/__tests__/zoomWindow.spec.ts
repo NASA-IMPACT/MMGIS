@@ -1,4 +1,5 @@
 import { describe, test, expect, vi } from 'vitest'
+import { zoomIdentity } from 'd3-zoom'
 
 /**
  * The window arithmetic behind the zoom controls.
@@ -460,6 +461,34 @@ describe('the d3 transform conversions', () => {
 
     test('fall back to the identity transform with no width to scale into', () => {
         expect(windowToTransform(bounds, bounds, 0).k).toBe(1)
+    })
+
+    test('round-trip a window across a track inset by margins', () => {
+        const twentyYears = win('2005-01-01T00:00:00Z', '2025-01-01T00:00:00Z')
+        const windows = [
+            win('2005-01-01T00:00:00Z', '2005-01-02T00:00:00Z'),
+            win('2024-12-31T00:00:00Z', '2025-01-01T00:00:00Z'),
+            twentyYears,
+            win('2019-03-07T13:41:07.123Z', '2019-08-22T04:02:59.999Z'),
+        ]
+
+        for (const width of [37, 960, 3840]) {
+            for (const held of windows) {
+                const transform = windowToTransform(held, twentyYears, width, 18)
+                expect(
+                    iso(transformToWindow(transform, twentyYears, width, 18))
+                ).toEqual(iso(held))
+            }
+        }
+    })
+
+    test('carry the view onto the track between the margins', () => {
+        // The full window at identity: its ends sit on the track's ends.
+        expect(windowToTransform(bounds, bounds, 960, 18).k).toBe(1)
+        expect(windowToTransform(bounds, bounds, 960, 18).x).toBe(0)
+        expect(iso(transformToWindow(zoomIdentity, bounds, 960, 18))).toEqual(
+            iso(bounds)
+        )
     })
 })
 

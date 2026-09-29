@@ -59,8 +59,10 @@ export const hideFilteredOutLayers = async (): Promise<void> => {
 }
 
 // A pick is one request; core pins the run, redraws, and moves the clock.
-export const selectRun = async (layerId: string, run: string): Promise<void> => {
-    await mmgisRequest('layers:setRun', { layerUUID: layerId, run })
+// False means core refused the run: unknown layer, no runs, or not listed.
+export const selectRun = async (layerId: string, run: string): Promise<boolean> => {
+    const pinned = await mmgisRequest<boolean>('layers:setRun', { layerUUID: layerId, run })
+    return pinned === true
 }
 
 export const setOpacity = async (layerId: string, opacity: number): Promise<void> => {

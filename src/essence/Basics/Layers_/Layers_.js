@@ -7,15 +7,16 @@ import Search from '../../Ancillary/Search'
 import Attributions from '../../Ancillary/Attributions'
 import CursorInfo from '../../Ancillary/CursorInfo'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
-import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
-import { resolveTemporalExtent } from '../TimeControl_/layerTimePolicy'
 import {
     fetchLayerRunSource,
     applyRunSelection,
-    runWindow,
     leadAt,
 } from '../TimeControl_/layerRunSource'
+import {
+    resolveTemporalExtent,
+    parseISODuration,
+} from '../TimeControl_/layerTimePolicy'
 import { fetchLayerExtentSource } from '../TimeControl_/layerExtentSource'
 import {
     isRasterTileLayerType,
@@ -39,6 +40,8 @@ import {
     isCoverageGated,
     isSameCoverage,
 } from '../TimeControl_/layerDataCoverage'
+import { buildLayerLegend } from './legend/buildLayerLegend'
+import { NO_LEGEND } from './legend/types'
 import { bbox } from '@turf/turf'
 import $ from 'jquery'
 
@@ -46,8 +49,17 @@ import $ from 'jquery'
 let _providerCleanups = []
 
 // Resolved at call time so an open-ended "now" is fresh on every ask.
-const temporalExtentFor = (uuid) =>
-    resolveTemporalExtent(L_.layers.data[uuid]?.time)
+// `interval` is the layer's parsed `time.interval` (a Duration), or null
+// when it declares none or an unparseable one — a plugin reads the cadence
+// without parsing ISO-8601 durations itself.
+const temporalExtentFor = (uuid) => {
+    const time = L_.layers.data[uuid]?.time
+    const interval =
+        time?.interval != null && time.interval !== ''
+            ? parseISODuration(String(time.interval).trim())
+            : null
+    return { ...resolveTemporalExtent(time), interval }
+}
 
 const runsFor = (uuid) => {
     const time = L_.layers.data[uuid]?.time
@@ -58,32 +70,8 @@ const runsFor = (uuid) => {
         selected: runs.selected ?? null,
         step: runs.step || 'PT1H',
         leadRange: runs.leadRange ?? null,
-        lead: leadAt(runs, L_.TimeControl_?.getTime?.()),
+        lead: leadAt(runs, time.end),
     }
-}
-
-// The scrubber is moved into [start, end] only when it sits outside: to now
-// when now is inside, else to the window's start. The global window is
-// widened only as far as it must be to hold the span.
-const clampClockInto = (start, end) => {
-    const tc = L_.TimeControl_
-    if (!tc?.getTime || !tc.setTime || !start || !end) return
-    const spanStart = new Date(start).getTime()
-    const spanEnd = new Date(end).getTime()
-    const at = new Date(tc.getTime()).getTime()
-    if (!Number.isNaN(at) && at >= spanStart && at <= spanEnd) return
-    const now = Date.now()
-    const next = now >= spanStart && now <= spanEnd ? now : spanStart
-    const windowStart = new Date(tc.getStartTime()).getTime()
-    const windowEnd = new Date(tc.getEndTime()).getTime()
-    const iso = (ms) => new Date(ms).toISOString().split('.')[0] + 'Z'
-    tc.setTime(
-        iso(Number.isNaN(windowStart) ? spanStart : Math.min(windowStart, spanStart)),
-        iso(Number.isNaN(windowEnd) ? spanEnd : Math.max(windowEnd, spanEnd)),
-        false,
-        undefined,
-        iso(next)
-    )
 }
 
 /**
@@ -142,6 +130,32 @@ function titilerUrlFor(layerConfig) {
     if (url == null) return null
     if (ServiceUrls.hasExternalServiceUrl('titiler', layerConfig)) return url
     return window.mmgisglobal?.WITH_TITILER === 'true' ? url : null
+}
+
+/**
+ * What a layer's legend is, resolved against the layer as it stands right now
+ * — including the colormap and rescale a user has changed since load.
+ *
+ * Async because a colormap the bundled ramps do not hold has to be looked up
+ * from the layer's tiling service.
+ *
+ * A layer nothing can be built from reports nothing to draw. Missions carry
+ * hand-written legends, and one malformed entry must cost that layer its
+ * legend and no more — the bulk answer would otherwise take the whole
+ * mission's legends down with it.
+ *
+ * @param {string} uuid - A key of `L_.layers.data`.
+ * @returns {Promise<import('./legend/types').LayerLegend|null>}
+ */
+async function legendFor(uuid) {
+    const layerObj = L_.layers.data[uuid]
+    if (layerObj == null) return null
+    try {
+        return await buildLayerLegend(layerObj, titilerUrlFor(layerObj))
+    } catch (err) {
+        console.warn(`Layers_: could not build a legend for '${uuid}'`, err)
+        return NO_LEGEND
+    }
 }
 
 /**
@@ -294,6 +308,23 @@ async function catchUpLayerTime(s) {
 
     // evenIfOff: the layer is still recorded as off while the toggle runs.
     await L_.TimeControl_.reloadLayer(s, true)
+}
+
+/**
+ * Redraws a layer whose run pin has just moved.
+ *
+ * The pin changes what the layer draws without moving the clock, so the
+ * `time.current` stamp — the time the layer was last reloaded at — no longer
+ * describes what it holds. It is cleared first: `reloadLayer` stamps it again
+ * for a layer it refreshes, and one that is off keeps it cleared, which is
+ * what makes catchUpLayerTime reload it when it is next switched on rather
+ * than show the previous run's tiles.
+ *
+ * @param {object} layer - Layer config, already pinned.
+ */
+async function reloadRepinnedLayer(layer) {
+    layer.time.current = null
+    await L_.TimeControl_.reloadLayer(layer)
 }
 
 const L_ = {
@@ -527,8 +558,27 @@ const L_ = {
                     })
                     return capabilities
                 }),
-                // When each layer has data, as ISO datetimes or null. The
-                // config's dataStartTime/dataEndTime may be a policy ("now",
+                // What each layer's legend is: a gradient's resolved colors
+                // and bounds, a categorical legend's swatches, or nothing to
+                // draw. Answered from the layer's live state, so a colormap or
+                // rescale changed in the running dashboard is reflected here
+                // before anything redraws. Same call shapes as above.
+                window.mmgisAPI.provide('layers:getLegend', async (layerUUID) => {
+                    if (layerUUID != null) {
+                        const uuid = L_.asLayerUUID(layerUUID)
+                        return uuid == null ? null : legendFor(uuid)
+                    }
+                    const uuids = Object.keys(L_.layers.data)
+                    const resolved = await Promise.all(uuids.map(legendFor))
+                    const legends = {}
+                    uuids.forEach((uuid, i) => {
+                        legends[uuid] = resolved[i]
+                    })
+                    return legends
+                }),
+                // When each layer has data, as ISO datetimes or null, and its
+                // parsed cadence (`interval`, or null). The config's
+                // dataStartTime/dataEndTime may be a policy ("now",
                 // "now - P1D"); this is where it is resolved, so a plugin
                 // never sees the policy string. Same call shapes as above.
                 window.mmgisAPI.provide('layers:getTemporalExtent', (layerUUID) => {
@@ -544,7 +594,8 @@ const L_ = {
                 }),
                 // A layer's model runs, for a picker: the runs offered, the
                 // one it is pinned to, the lead step, the lead range, and the
-                // lead the current time sits at. Null for a layer with no run
+                // lead its tiles are requested at, counted to the layer's end
+                // time as the tile URL is. Null for a layer with no run
                 // source. Same call shapes as the extent above.
                 window.mmgisAPI.provide('layers:getRuns', (layerUUID) => {
                     if (layerUUID != null) {
@@ -559,15 +610,18 @@ const L_ = {
                     return all
                 }),
                 // Pins a layer to one of its listed runs: the data window
-                // follows, the layer redraws if it is on, and the clock is
-                // moved into the window when it sits outside it.
+                // follows and the layer redraws if it is on. The clock and the
+                // global time window are left where they are, so the new
+                // window alone decides whether the layer has data at the
+                // current time; reloadLayer asks the coverage gate before it
+                // requests anything, hiding or restoring the layer to match.
                 window.mmgisAPI.provide('layers:setRun', async (payload) => {
                     const uuid = L_.asLayerUUID(payload?.layerUUID)
                     const layer = uuid == null ? null : L_.layers.data[uuid]
                     if (!layer?.time?.runs || typeof payload?.run !== 'string')
                         return false
                     if (!applyRunSelection(layer.time, payload.run)) return false
-                    if (L_.layers.on[uuid]) await refreshTileLayer(uuid)
+                    await reloadRepinnedLayer(layer)
                     window.mmgisAPI.emit('layers:configChanged', {
                         layerName: uuid,
                         keys: ['time'],
@@ -575,31 +629,6 @@ const L_ = {
                     window.mmgisAPI.emit('layer:runChange', {
                         layerName: uuid,
                         run: payload.run,
-                        start: layer.time.dataStartTime,
-                        end: layer.time.dataEndTime,
-                    })
-                    clampClockInto(layer.time.dataStartTime, layer.time.dataEndTime)
-                    return true
-                }),
-                // Re-reads a layer's runs from its source, for a mission kept
-                // open across a run boundary. Announces like a pick when the
-                // layer ends up pinned.
-                window.mmgisAPI.provide('layers:refreshRuns', async (layerUUID) => {
-                    const uuid = L_.asLayerUUID(layerUUID)
-                    const layer = uuid == null ? null : L_.layers.data[uuid]
-                    if (!layer?.time?.runs) return false
-                    const pinned = await fetchLayerRunSource(layer, {
-                        missionPath: L_.missionPath,
-                    })
-                    if (!pinned) return false
-                    if (L_.layers.on[uuid]) await refreshTileLayer(uuid)
-                    window.mmgisAPI.emit('layers:configChanged', {
-                        layerName: uuid,
-                        keys: ['time'],
-                    })
-                    window.mmgisAPI.emit('layer:runChange', {
-                        layerName: uuid,
-                        run: layer.time.runs.selected,
                         start: layer.time.dataStartTime,
                         end: layer.time.dataEndTime,
                     })
@@ -4723,26 +4752,7 @@ async function parseConfig(configData, urlOnLayers) {
 
     //Begin recursively going through those layers
     await expandLayers(layers, 0, null)
-    const sourceOutcomes = await Promise.allSettled(extentSourceFetches)
-    // Neither fetcher is meant to reject, so a rejection is a bug in one of
-    // them; named here rather than swallowed, or a layer silently never pins.
-    sourceOutcomes.forEach((outcome) => {
-        if (outcome.status === 'rejected')
-            console.error('[Layers] a time source fetch threw:', outcome.reason)
-    })
-    if (window.mmgisAPI) {
-        Object.keys(L_.layers.data).forEach((uuid) => {
-            const time = L_.layers.data[uuid]?.time
-            if (time?.runs?.selected) {
-                window.mmgisAPI.emit('layer:runChange', {
-                    layerName: uuid,
-                    run: time.runs.selected,
-                    start: time.dataStartTime,
-                    end: time.dataEndTime,
-                })
-            }
-        })
-    }
+    await Promise.allSettled(extentSourceFetches)
 
     async function expandLayers(d, level, prevName) {
         const stacRegex = /^stac(-((item)|(catalog)|(collection)))?:/i
@@ -4782,13 +4792,20 @@ async function parseConfig(configData, urlOnLayers) {
             // layer carries the fetched data times once it resolves.
             // fetchLayerExtentSource resolves null, never rejects, for a
             // layer with no source or a failed fetch.
+            //
+            // A layer's model runs are read after its extent source, and pin
+            // the newest before any reader sees the layer. Both write
+            // `dataStartTime` and `dataEndTime`, so the run source goes second
+            // and the pinned run's window is the one a layer with both keeps.
+            const layerForSources = d[i]
             extentSourceFetches.push(
-                fetchLayerExtentSource(d[i], { missionPath: L_.missionPath })
-            )
-            // A layer's model runs are read the same way, and pin the newest
-            // before any reader sees the layer.
-            extentSourceFetches.push(
-                fetchLayerRunSource(d[i], { missionPath: L_.missionPath })
+                fetchLayerExtentSource(layerForSources, {
+                    missionPath: L_.missionPath,
+                }).then(() =>
+                    fetchLayerRunSource(layerForSources, {
+                        missionPath: L_.missionPath,
+                    })
+                )
             )
 
             if (d[i].display_name === 'TimeCogs') {
