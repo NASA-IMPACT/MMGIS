@@ -51,6 +51,7 @@ import {
     featureTitle,
     buildPayload,
     seedRange,
+    parseSpan,
     pageInfo,
     mergePages,
     TemplateError,
@@ -188,19 +189,26 @@ const FetchTimeseriesTool = {
         this._render()
     },
 
-    /** The layer's own data range, its last year when longer, else the
-     *  mission window, else the past year; a future end is capped at today.
-     *  Seeded once per layer: the viewer owns the range after that, until a
-     *  feature on another layer is picked. */
-    async _ensureRange(layerName: string): Promise<DateRange> {
+    /** The last Default Range of the layer's own data (a year unless the
+     *  layer says otherwise), else of the mission window, else of today; a
+     *  future end is capped at today. Seeded once per layer: the viewer
+     *  owns the range after that, until a feature on another layer is
+     *  picked. */
+    async _ensureRange({ layerName, config }: Selection): Promise<DateRange> {
         if (this._range && this._rangeLayer === layerName) return this._range
+        const span = parseSpan(config.defaultSpan)
+        if (span == null && config.defaultSpan != null && config.defaultSpan !== '') {
+            console.warn(
+                `[FetchTimeseries] unreadable defaultSpan ${JSON.stringify(config.defaultSpan)} on layer ${layerName}; using a year`,
+            )
+        }
         const extent = await mmgisGetLayerTemporalExtent(layerName)
         let window: { start: string | null; end: string | null } | null = null
         if ((await mmgisIsTimeEnabled()) === true) {
             const [start, end] = await Promise.all([mmgisGetTimeStart(), mmgisGetTimeEnd()])
             window = { start, end }
         }
-        this._range = seedRange({ extent, window, now: new Date() })
+        this._range = seedRange({ extent, window, now: new Date(), span })
         this._rangeLayer = layerName
         return this._range
     },
@@ -284,7 +292,7 @@ const FetchTimeseriesTool = {
             title: featureTitle(feature, config, layerDisplayName),
             layerDisplayName,
         }
-        await this._ensureRange(layerName)
+        await this._ensureRange(this._selection)
         if (seq !== this._fetchSeq) return
         this._render()
         mmgisShowPlugin(TOOL_ID)
@@ -295,7 +303,7 @@ const FetchTimeseriesTool = {
 
     async _fetchFor(selection: Selection) {
         const { feature, layerName, latlng, config, title, layerDisplayName } = selection
-        const range = await this._ensureRange(layerName)
+        const range = await this._ensureRange(selection)
 
         this._abort?.abort()
         const abort = new AbortController()

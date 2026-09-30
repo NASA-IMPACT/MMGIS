@@ -36,6 +36,10 @@ export interface TimeseriesConfig {
     /** Dot-path to a point's measurement unit (e.g.
      *  'properties.units_of_measure'); carried onto each series. */
     unitKey?: string
+    /** How far back from the latest data the card's range opens: '1 hour',
+     *  '1 day', '1 week', '1 month' or '1 year' (default), or an ISO
+     *  duration such as P7D. */
+    defaultSpan?: string
 }
 
 export interface FeatureLike {
@@ -66,9 +70,44 @@ export interface DateRange {
 }
 
 export const DAY_MS = 24 * 60 * 60 * 1000
-/** The most the card seeds: a year, in whole UTC days, so a date-only row
- *  on either end is inside the range. */
-export const DEFAULT_SPAN_DAYS = 365
+const HOUR_MS = 60 * 60 * 1000
+
+export type SpanUnit = 'hour' | 'day' | 'week' | 'month' | 'year'
+/** How far back from the latest data the card's range opens. */
+export interface Span {
+    amount: number
+    unit: SpanUnit
+}
+export const DEFAULT_SPAN: Span = { amount: 1, unit: 'year' }
+
+const UNIT_WORDS: Record<string, SpanUnit> = {
+    hour: 'hour', hours: 'hour', h: 'hour',
+    day: 'day', days: 'day', d: 'day',
+    week: 'week', weeks: 'week', w: 'week',
+    month: 'month', months: 'month',
+    year: 'year', years: 'year', y: 'year',
+}
+
+/** Reads a configured span: the Configure options ('1 day', plurals
+ *  tolerated) or an ISO duration in one unit (PT6H, P7D, P2W, P1M, P1Y).
+ *  Anything else is null, and the caller falls back to a year. */
+export function parseSpan(value: unknown): Span | null {
+    if (typeof value !== 'string') return null
+    const v = value.trim()
+    let m = v.toLowerCase().match(/^(\d+)\s*([a-z]+)$/)
+    if (m && UNIT_WORDS[m[2]] && Number(m[1]) >= 1) {
+        return { amount: Number(m[1]), unit: UNIT_WORDS[m[2]] }
+    }
+    m = v.toUpperCase().match(/^P(?:T(\d+)H|(\d+)D|(\d+)W|(\d+)M|(\d+)Y)$/)
+    if (m) {
+        const [h, d, w, mo, y] = m.slice(1)
+        const pick: Array<[string | undefined, SpanUnit]> = [
+            [h, 'hour'], [d, 'day'], [w, 'week'], [mo, 'month'], [y, 'year'],
+        ]
+        for (const [n, unit] of pick) if (n && Number(n) >= 1) return { amount: Number(n), unit }
+    }
+    return null
+}
 
 /** UTC, to the second, without the zone suffix: what datetime-local holds. */
 export const isoInstant = (d: Date) => d.toISOString().slice(0, 19)
@@ -89,21 +128,44 @@ export interface RangeSource {
     end: string | null
 }
 
-const yearBefore = (end: Date) =>
-    startOfUtcDay(new Date(end.getTime() - DEFAULT_SPAN_DAYS * DAY_MS))
+/**
+ * `end` minus the span. Hours keep the clock; days and weeks land on the
+ * start of their UTC day; months and years step the calendar with the day
+ * clamped to the target month's length, so Mar 31 minus a month is Feb 28.
+ */
+export function subtractSpan(end: Date, span: Span): Date {
+    const { amount, unit } = span
+    if (unit === 'hour') return new Date(end.getTime() - amount * HOUR_MS)
+    if (unit === 'day' || unit === 'week') {
+        const days = unit === 'week' ? amount * 7 : amount
+        return startOfUtcDay(new Date(end.getTime() - days * DAY_MS))
+    }
+    const year = end.getUTCFullYear() - (unit === 'year' ? amount : 0)
+    const month = end.getUTCMonth() - (unit === 'month' ? amount : 0)
+    const first = new Date(Date.UTC(year, month, 1))
+    const monthEnd = new Date(
+        Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0),
+    ).getUTCDate()
+    return new Date(
+        Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(end.getUTCDate(), monthEnd)),
+    )
+}
 
 /**
  * The range the card opens with. The layer's own data extent comes first,
  * side by side; a side it leaves open comes from the mission window, and
- * failing that from today and the year before it. An end in the future is
- * capped at the end of today, and a span longer than a year is clipped to
- * the year ending at its end.
+ * failing that from today. An end in the future is capped at the end of
+ * today. The start is the later of the extent's start and `end` minus the
+ * span (a year unless the layer says otherwise): the whole extent when it
+ * is shorter than the span, the last span of it when longer.
  */
 export function seedRange(args: {
     extent?: RangeSource | null
     window?: RangeSource | null
     now: Date
+    span?: Span | null
 }): DateRange {
+    const span = args.span ?? DEFAULT_SPAN
     const today = endOfUtcDay(args.now)
     let start = parseInstant(args.extent?.start)
     let end = parseInstant(args.extent?.end)
@@ -117,9 +179,8 @@ export function seedRange(args: {
         }
     }
     if (!end) end = today
-    if (!start || start > end || end.getTime() - start.getTime() > DEFAULT_SPAN_DAYS * DAY_MS) {
-        start = yearBefore(end)
-    }
+    const floor = subtractSpan(end, span)
+    if (!start || start > end || start < floor) start = floor
     return { start: isoInstant(start), end: isoInstant(end) }
 }
 

@@ -205,6 +205,31 @@ describe('FetchTimeseriesTool', () => {
         expect(valueOf('End')).toBe('2026-09-24T23:59:59')
     })
 
+    test("the layer's Default Range sets how far back the card opens", async () => {
+        extents[LAYER] = { start: '2023-06-01T00:00:00Z', end: '2023-06-30T23:59:59Z', interval: null }
+        layerConfigs[LAYER].variables.timeseries.defaultSpan = '1 day'
+        await request()
+        expect(valueOf('Start')).toBe('2023-06-29T00:00:00')
+        expect(valueOf('End')).toBe('2023-06-30T23:59:59')
+    })
+
+    test('an hour-long Default Range keeps the clock', async () => {
+        extents[LAYER] = { start: '2023-06-01T00:00:00Z', end: '2023-06-30T23:59:59Z', interval: null }
+        layerConfigs[LAYER].variables.timeseries.defaultSpan = '1 hour'
+        await request()
+        expect(valueOf('Start')).toBe('2023-06-30T22:59:59')
+    })
+
+    test('an unreadable Default Range warns and seeds a year', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        extents[LAYER] = { start: '2020-01-01T00:00:00Z', end: '2023-06-30T23:59:59Z', interval: null }
+        layerConfigs[LAYER].variables.timeseries.defaultSpan = 'a while'
+        await request()
+        expect(valueOf('Start')).toBe('2022-06-30T00:00:00')
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('unreadable defaultSpan'))
+        warn.mockRestore()
+    })
+
     test('an extent with an open start seeds the year before its end', async () => {
         extents[LAYER] = { start: null, end: '2023-06-30T23:59:59Z', interval: null }
         await request()

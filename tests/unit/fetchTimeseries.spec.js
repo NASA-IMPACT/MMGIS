@@ -3,6 +3,8 @@ import {
     getTimeseriesConfig,
     templateUrl,
     seedRange,
+    parseSpan,
+    subtractSpan,
     pageInfo,
     mergePages,
     featureTitle,
@@ -178,6 +180,75 @@ describe('fetchTimeseries lib', () => {
         test('a range placeholder with no range is a TemplateError naming it', () => {
             expect(() => templateUrl('https://api/items?start={start}', FEATURE)).toThrow(TemplateError)
             expect(() => templateUrl('https://api/items?start={start}', FEATURE)).toThrow(/\{start\}/)
+        })
+    })
+
+    describe('parseSpan', () => {
+        test.each([
+            ['1 hour', { amount: 1, unit: 'hour' }],
+            ['1 day', { amount: 1, unit: 'day' }],
+            ['1 week', { amount: 1, unit: 'week' }],
+            ['1 month', { amount: 1, unit: 'month' }],
+            ['1 year', { amount: 1, unit: 'year' }],
+            ['3 days', { amount: 3, unit: 'day' }],
+            ['  2 Weeks ', { amount: 2, unit: 'week' }],
+            ['PT6H', { amount: 6, unit: 'hour' }],
+            ['P7D', { amount: 7, unit: 'day' }],
+            ['P2W', { amount: 2, unit: 'week' }],
+            ['P1M', { amount: 1, unit: 'month' }],
+            ['P1Y', { amount: 1, unit: 'year' }],
+        ])('reads %s', (value, span) => {
+            expect(parseSpan(value)).toEqual(span)
+        })
+
+        test.each(['', 'yesterday', '0 days', 'P1DT6H', 'P1S', 12, null, undefined])(
+            'rejects %s',
+            (value) => {
+                expect(parseSpan(value)).toBeNull()
+            },
+        )
+    })
+
+    describe('subtractSpan', () => {
+        const at = (iso) => new Date(iso)
+        const iso = (d) => d.toISOString().slice(0, 19)
+
+        test('hours keep the clock', () => {
+            expect(iso(subtractSpan(at('2023-06-30T23:59:59Z'), { amount: 1, unit: 'hour' }))).toBe('2023-06-30T22:59:59')
+        })
+
+        test('days and weeks land on the start of their UTC day', () => {
+            expect(iso(subtractSpan(at('2023-06-30T23:59:59Z'), { amount: 1, unit: 'day' }))).toBe('2023-06-29T00:00:00')
+            expect(iso(subtractSpan(at('2023-06-30T23:59:59Z'), { amount: 1, unit: 'week' }))).toBe('2023-06-23T00:00:00')
+        })
+
+        test('months and years step the calendar, clamping the day to the month', () => {
+            expect(iso(subtractSpan(at('2023-03-31T12:00:00Z'), { amount: 1, unit: 'month' }))).toBe('2023-02-28T00:00:00')
+            expect(iso(subtractSpan(at('2024-03-31T12:00:00Z'), { amount: 1, unit: 'month' }))).toBe('2024-02-29T00:00:00')
+            expect(iso(subtractSpan(at('2023-01-31T12:00:00Z'), { amount: 1, unit: 'month' }))).toBe('2022-12-31T00:00:00')
+            expect(iso(subtractSpan(at('2024-02-29T12:00:00Z'), { amount: 1, unit: 'year' }))).toBe('2023-02-28T00:00:00')
+        })
+    })
+
+    describe('seedRange with a span', () => {
+        const NOW = new Date('2026-09-24T12:00:00Z')
+        const JUNE = { start: '2023-06-01T00:00:00Z', end: '2023-06-30T23:59:59Z' }
+        const seed = (span, extent = JUNE) => seedRange({ extent, window: null, now: NOW, span })
+
+        test('a span shorter than the extent seeds its last span', () => {
+            expect(seed({ amount: 1, unit: 'day' })).toEqual({ start: '2023-06-29T00:00:00', end: '2023-06-30T23:59:59' })
+            expect(seed({ amount: 1, unit: 'hour' })).toEqual({ start: '2023-06-30T22:59:59', end: '2023-06-30T23:59:59' })
+        })
+
+        test('a span longer than the extent seeds the whole extent', () => {
+            expect(seed({ amount: 1, unit: 'month' })).toEqual({ start: '2023-06-01T00:00:00', end: '2023-06-30T23:59:59' })
+        })
+
+        test('with no extent start, the span alone sets the start', () => {
+            expect(seed({ amount: 1, unit: 'week' }, { start: null, end: JUNE.end })).toEqual({
+                start: '2023-06-23T00:00:00',
+                end: '2023-06-30T23:59:59',
+            })
         })
     })
 

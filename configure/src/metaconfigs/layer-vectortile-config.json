@@ -575,6 +575,21 @@
               "description": "The property of each point holding the number to chart. Default 'value'. Numbers written as text are read as numbers.",
               "type": "text",
               "width": 4
+            },
+            {
+              "field": "variables.timeseries.defaultSpan",
+              "name": "Default Range",
+              "description": "How far back from the latest data the card's range starts when it opens. The viewer can widen or narrow it afterwards. Default '1 year'.",
+              "type": "dropdown",
+              "width": 4,
+              "default": "1 year",
+              "options": [
+                "1 hour",
+                "1 day",
+                "1 week",
+                "1 month",
+                "1 year"
+              ]
             }
           ]
         }
