@@ -10,8 +10,6 @@ export interface RangeCardProps {
     /** ISO instants, YYYY-MM-DDTHH:MM:SS, read as UTC. */
     start: string
     end: string
-    /** False when the layer's URL has no {start}/{end}: no inputs to show. */
-    hasRange: boolean
     status: RangeStatus
     onRangeChange: (start: string, end: string) => void
     /** Closes this card and the chart it feeds. */
@@ -35,7 +33,6 @@ const isComplete = (value: string) => value >= MIN_INSTANT
 export function RangeCard({
     start,
     end,
-    hasRange,
     status,
     onRangeChange,
     onExit,
@@ -48,39 +45,37 @@ export function RangeCard({
                     EXIT
                 </button>
             </header>
-            {hasRange && (
-                <div className="range-card__fields">
-                    <label className="range-card__field">
-                        <span className="range-card__label">Start</span>
-                        <input
-                            type="datetime-local"
-                            step={1}
-                            className="range-card__input"
-                            value={start}
-                            min={MIN_INSTANT}
-                            max={end}
-                            onChange={(e) => {
-                                const next = toSeconds(e.target.value)
-                                if (isComplete(next)) onRangeChange(next, next > end ? next : end)
-                            }}
-                        />
-                    </label>
-                    <label className="range-card__field">
-                        <span className="range-card__label">End</span>
-                        <input
-                            type="datetime-local"
-                            step={1}
-                            className="range-card__input"
-                            value={end}
-                            min={start}
-                            onChange={(e) => {
-                                const next = toSeconds(e.target.value)
-                                if (isComplete(next)) onRangeChange(next < start ? next : start, next)
-                            }}
-                        />
-                    </label>
-                </div>
-            )}
+            <div className="range-card__fields">
+                <label className="range-card__field">
+                    <span className="range-card__label">Start</span>
+                    <input
+                        type="datetime-local"
+                        step={1}
+                        className="range-card__input"
+                        value={start}
+                        min={MIN_INSTANT}
+                        max={end}
+                        onChange={(e) => {
+                            const next = toSeconds(e.target.value)
+                            if (isComplete(next)) onRangeChange(next, next > end ? next : end)
+                        }}
+                    />
+                </label>
+                <label className="range-card__field">
+                    <span className="range-card__label">End</span>
+                    <input
+                        type="datetime-local"
+                        step={1}
+                        className="range-card__input"
+                        value={end}
+                        min={start}
+                        onChange={(e) => {
+                            const next = toSeconds(e.target.value)
+                            if (isComplete(next)) onRangeChange(next < start ? next : start, next)
+                        }}
+                    />
+                </label>
+            </div>
             {status.kind === 'loading' && (
                 <div className="range-card__status" aria-live="polite">
                     <span className="range-card__spinner" aria-hidden="true" />

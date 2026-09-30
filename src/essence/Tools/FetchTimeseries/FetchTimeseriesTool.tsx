@@ -27,8 +27,7 @@
  * request for a feature of a layer without that block does nothing. The
  * card appears with the first request and stays: changing the range
  * refetches the same feature, and the chart replaces its card. The range
- * reaches the service through `{start}`/`{end}` in the layer's URL; a URL
- * without them gets a card with no inputs.
+ * reaches the service through `{start}`/`{end}` in the layer's URL.
  */
 
 import React from 'react'
@@ -49,7 +48,6 @@ import { seriesEvents } from '../_shared/types/chartSeries'
 import {
     getTimeseriesConfig,
     templateUrl,
-    usesRange,
     featureTitle,
     buildPayload,
     seedRange,
@@ -99,8 +97,6 @@ interface Selection {
     layerName: string
     latlng: { lat: number; lng: number } | null | undefined
     config: TimeseriesConfig
-    /** Whether the URL takes {start}/{end}; without them the card has no inputs. */
-    hasRange: boolean
     title: string
     layerDisplayName: string
 }
@@ -180,7 +176,6 @@ const FetchTimeseriesTool = {
             <RangeCard
                 start={range?.start ?? ''}
                 end={range?.end ?? ''}
-                hasRange={this._selection?.hasRange ?? true}
                 status={this._status}
                 onRangeChange={(start, end) => this._onRangeChange(start, end)}
                 onExit={() => this._onExit()}
@@ -245,7 +240,7 @@ const FetchTimeseriesTool = {
     _onRangeChange(start: string, end: string) {
         this._range = { start, end }
         this._render()
-        if (!this._selection?.hasRange) return
+        if (!this._selection) return
         this._cancelRefetch()
         this._refetchTimer = window.setTimeout(() => {
             this._refetchTimer = null
@@ -286,7 +281,6 @@ const FetchTimeseriesTool = {
             layerName,
             latlng: payload?.latlng,
             config,
-            hasRange: usesRange(config.url),
             title: featureTitle(feature, config, layerDisplayName),
             layerDisplayName,
         }

@@ -65,12 +65,6 @@ export interface DateRange {
     end: string
 }
 
-/** Whether the template asks for the range at all. A layer whose URL has
- *  neither placeholder gets no Start/End inputs on the card. */
-export function usesRange(template: string): boolean {
-    return /{\s*(start|end)\s*}/.test(template)
-}
-
 export const DAY_MS = 24 * 60 * 60 * 1000
 /** The most the card seeds: a year, in whole UTC days, so a date-only row
  *  on either end is inside the range. */

@@ -29,8 +29,7 @@ Bus-only — no core imports.
   emits `seriesCleared`, so the previous chart never sits under an error.
 - Changing the range refetches the same feature, 400 ms after the last
   change, and emits `seriesReady` again, so the chart replaces its card. A
-  start past the end drags the end along, and the reverse. A layer whose URL
-  takes no range gets the card with EXIT only.
+  start past the end drags the end along, and the reverse.
 - A new request aborts any in-flight fetch and replaces the chart (single
   `chartId: 'vector-timeseries'`). The chart stays until the next request
   replaces it, EXIT clears it, or a fetch fails. Fetches time out after 30
@@ -63,8 +62,8 @@ The VEDA dev features API, whose date columns are text and refuse
 ...&filter=datetime >= '{start}' AND datetime <= '{end}'&filter-lang=cql2-text
 ```
 
-A URL with neither placeholder fetches whatever the service returns, and the
-card shows no Start/End inputs.
+The URL is expected to take the range. Without `{start}`/`{end}` the pickers
+still show, and changing them refetches the same URL.
 
 ## Paging
 

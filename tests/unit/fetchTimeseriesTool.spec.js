@@ -236,16 +236,15 @@ describe('FetchTimeseriesTool', () => {
         )
     })
 
-    test('a URL without range placeholders gets a card without inputs, and a range change fetches nothing', async () => {
+    test('a URL without range placeholders still shows the pickers, and a range change refetches it unchanged', async () => {
         layerConfigs[LAYER].variables.timeseries.url = 'https://api/x?s={properties.code}'
         await request()
         expect(fetchMock.mock.calls[0][0]).toBe('https://api/x?s=A1')
-        expect(host.querySelector('input')).toBeNull()
-        expect(host.querySelector('.range-card__exit')).not.toBeNull()
-        await act(async () => {
-            FetchTimeseriesTool._onRangeChange('2026-01-01T00:00:00', '2026-02-01T00:00:00')
-        })
-        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expect(host.querySelectorAll('input')).toHaveLength(2)
+        await setDate('Start', '2026-01-01T00:00:00')
+        await settle()
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+        expect(fetchMock.mock.calls[1][0]).toBe('https://api/x?s=A1')
     })
 
     /** An OGC Features page: points under `features`, the standard counters,

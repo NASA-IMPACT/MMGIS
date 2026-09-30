@@ -2,7 +2,6 @@ import { describe, test, expect } from 'vitest'
 import {
     getTimeseriesConfig,
     templateUrl,
-    usesRange,
     seedRange,
     pageInfo,
     mergePages,
@@ -282,14 +281,6 @@ describe('fetchTimeseries lib', () => {
 
         test('a page without the point array is the usual MappingError', () => {
             expect(() => mergePages({ features: [] }, [{ nope: [] }], { url: 'x' })).toThrow(MappingError)
-        })
-    })
-
-    describe('usesRange', () => {
-        test('true when the template names {start} or {end}, false otherwise', () => {
-            expect(usesRange('https://x?a={start}')).toBe(true)
-            expect(usesRange('https://x?a={ end }')).toBe(true)
-            expect(usesRange('https://x/{properties.code}?limit=10')).toBe(false)
         })
     })
 
