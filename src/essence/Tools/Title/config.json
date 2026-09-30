@@ -26,8 +26,8 @@
     "separatedTool": false,
     "metadata": {
         "icon": "information-variant",
-        "requiredOrientation": "horizontal",
-        "compatiblePositions": ["top"],
+        "requiredOrientation": "any",
+        "compatiblePositions": ["top", "left", "right"],
         "preferredPosition": "top",
         "modernLayoutSupport": true,
         "width": 300,
