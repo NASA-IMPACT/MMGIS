@@ -1,5 +1,5 @@
 import React, { act } from 'react'
-import { describe, test, expect, beforeEach, afterEach } from 'vitest'
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { MMGISLayerManagerAdapter } from '../MMGISLayerManagerAdapter'
 import { mount, type Mounted } from '../../_shared/__tests__/reactHarness'
 
@@ -14,14 +14,33 @@ const EVENT = 'layers:dataCoverageChanged'
 
 let outOfRange: Record<string, boolean>
 let listed: Record<string, boolean>
+let configs: Record<string, Record<string, unknown>>
+let configWrites: unknown[]
+let visible: Record<string, boolean>
+let runsAnswer: Record<string, { runs: string[]; selected: string | null; step: string; lead: number | null }>
+let runRequests: unknown[]
+let configReads: number
 let listeners: Map<string, Set<(payload?: unknown) => void>>
 let gate: Promise<void> | null
 let mounted: Mounted | null
 let sparseTitle: string
+let setRunAnswer: unknown
+let runsFailure: Error | null
 
 beforeEach(() => {
     outOfRange = {}
     listed = {}
+    configs = {
+        [SPARSE]: { display_name: 'Sparse' },
+        [CONTINUOUS]: { display_name: 'Continuous' },
+    }
+    configWrites = []
+    visible = { [SPARSE]: true, [CONTINUOUS]: true }
+    runsAnswer = {}
+    runRequests = []
+    setRunAnswer = true
+    runsFailure = null
+    configReads = 0
     listeners = new Map()
     gate = null
     mounted = null
@@ -29,17 +48,27 @@ beforeEach(() => {
     const handlers: Record<string, () => unknown> = {
         'layers:getAll': () => ({}),
         'tool:getVars': () => ({}),
-        // Reads sparseTitle synchronously at call time (not after any await),
-        // so a test can tell two overlapping refreshes' rows apart.
-        'layers:getAllConfigs': () => ({
-            [SPARSE]: { display_name: sparseTitle },
-            [CONTINUOUS]: { display_name: 'Continuous' },
-        }),
+        'layers:getAllConfigs': () => {
+            configReads++
+            // Reads sparseTitle synchronously at call time (not after any await),
+            // so a test can tell two overlapping refreshes' rows apart.
+            return { ...configs, [SPARSE]: { ...configs[SPARSE], display_name: sparseTitle } }
+        },
+        'layers:updateConfig': () => true,
+        'layers:refresh': () => true,
+        'layers:getRuns': () => {
+            if (runsFailure) throw runsFailure
+            return runsAnswer
+        },
+        'layers:setRun': () => {
+            if (setRunAnswer instanceof Error) throw setRunAnswer
+            return setRunAnswer
+        },
         // Read after coverage, so a held gate stands for a refresh that has
         // already read coverage but not yet landed.
         'layers:getVisible': async () => {
             if (gate) await gate
-            return { [SPARSE]: true, [CONTINUOUS]: true }
+            return visible
         },
         'layers:getAllOpacities': () => ({}),
         'layers:getListed': () => listed,
@@ -52,8 +81,10 @@ beforeEach(() => {
             ),
     }
     ;(window as any).mmgisAPI = {
-        request: async (name: string) => {
+        request: async (name: string, params?: unknown) => {
             if (!handlers[name]) throw new Error(`No handler for ${name}`)
+            if (name === 'layers:updateConfig') configWrites.push(params)
+            if (name === 'layers:setRun') runRequests.push(params)
             return handlers[name]()
         },
         hasHandler: (name: string) => name in handlers,
@@ -160,6 +191,163 @@ describe('MMGISLayerManagerAdapter filtered-out layers', () => {
         await emit('layer:listedChange')
         await settle()
         expect(hideButton()).toBeNull()
+    })
+})
+
+const FORECAST = 'Forecast_0011223344556677'
+const NEWEST = '2026-09-21T12:00:00'
+const OLDER = '2026-09-21T06:00:00'
+
+describe('MMGISLayerManagerAdapter model runs', () => {
+    const runSelect = () =>
+        mounted!.container.querySelector<HTMLButtonElement>('.blocks-layer-legend__run-select')
+    const openRuns = async () => {
+        await act(async () => {
+            runSelect()!.click()
+        })
+        return Array.from(
+            document.body.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'),
+        )
+    }
+    const checkedRun = () =>
+        document.body.querySelector('[role="menuitemradio"][aria-checked="true"]')
+    // The pinned run, read off the picker; the picker is left closed.
+    const pinnedRun = async () => {
+        const options = await openRuns()
+        const pinned = [NEWEST, OLDER][options.indexOf(checkedRun() as HTMLButtonElement)]
+        await act(async () => {
+            runSelect()!.click()
+        })
+        return pinned
+    }
+    const pickOlder = async () => {
+        const [, older] = await openRuns()
+        await act(async () => {
+            older.click()
+        })
+    }
+    const leadReadout = () =>
+        mounted!.container.querySelector('.blocks-layer-legend__run-lead')
+
+    beforeEach(() => {
+        configs[FORECAST] = { display_name: 'NAQFC O3', time: { enabled: true } }
+        visible[FORECAST] = true
+        runsAnswer = {
+            [FORECAST]: { runs: [NEWEST, OLDER], selected: NEWEST, step: 'PT1H', lead: 12 },
+        }
+    })
+
+    test('offers the runs core reports, pinned where core pinned them, with the lead', async () => {
+        await mountAdapter()
+        expect(leadReadout()!.textContent).toBe('+12 h')
+        const options = await openRuns()
+        expect(options).toHaveLength(2)
+        expect(checkedRun()).toBe(options[0])
+        expect(configWrites).toEqual([])
+    })
+
+    test('a pick is one request to core', async () => {
+        await mountAdapter()
+        const [, older] = await openRuns()
+        await act(async () => {
+            older.click()
+        })
+        expect(runRequests).toEqual([{ layerUUID: FORECAST, run: OLDER }])
+        expect(configWrites).toEqual([])
+    })
+
+    test('a refused pick is warned about and the dropdown returns to the pinned run', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        setRunAnswer = false
+        await mountAdapter()
+        await pickOlder()
+        await settle()
+        expect(runRequests).toEqual([{ layerUUID: FORECAST, run: OLDER }])
+        expect(await pinnedRun()).toBe(NEWEST)
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('refused run'))
+        expect(configWrites).toEqual([])
+        warn.mockRestore()
+    })
+
+    test('a pick core fails after pinning resyncs the rows to what core holds', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+        setRunAnswer = new Error('engine refresh rejected')
+        await mountAdapter()
+        // Core pinned the run and moved the lead before it threw, and
+        // announced nothing; only a re-read can bring the rows along.
+        runsAnswer[FORECAST] = { ...runsAnswer[FORECAST], selected: OLDER, lead: 30 }
+        await pickOlder()
+        await settle()
+        expect(error).toHaveBeenCalledWith('LayerManager: selectRun failed', expect.any(Error))
+        expect(await pinnedRun()).toBe(OLDER)
+        expect(leadReadout()!.textContent).toBe('+30 h')
+        error.mockRestore()
+    })
+
+    test('follows a run change core announces', async () => {
+        await mountAdapter()
+        runsAnswer[FORECAST] = { ...runsAnswer[FORECAST], selected: OLDER }
+        await emit('layer:runChange', { layerName: FORECAST, run: OLDER })
+        await settle()
+        const [, older] = await openRuns()
+        expect(checkedRun()).toBe(older)
+    })
+
+    test('re-reads the lead when the clock moves, without rebuilding the rows', async () => {
+        await mountAdapter()
+        const before = configReads
+        runsAnswer[FORECAST] = { ...runsAnswer[FORECAST], lead: 30 }
+        await emit('time:changed', { currentTime: '2026-09-22T18:00:00Z' })
+        await settle()
+        expect(leadReadout()!.textContent).toBe('+30 h')
+        expect(configReads).toBe(before)
+    })
+
+    test('a refresh that read the lead before the clock moved lands with the lead read since', async () => {
+        await mountAdapter()
+
+        // A run change starts a full refresh, which reads the lead at once
+        // and then waits on the layers; the clock moves meanwhile.
+        let release!: () => void
+        gate = new Promise((resolve) => (release = resolve))
+        await emit('layer:runChange', { layerName: FORECAST, run: OLDER })
+        runsAnswer = { [FORECAST]: { ...runsAnswer[FORECAST], lead: 30 } }
+        await emit('time:changed', { currentTime: '2026-09-22T18:00:00Z' })
+        await settle()
+        expect(leadReadout()!.textContent).toBe('+30 h')
+
+        gate = null
+        release()
+        await settle()
+        expect(leadReadout()!.textContent).toBe('+30 h')
+    })
+
+    test('a layer core reports no runs for has no run control', async () => {
+        runsAnswer = {}
+        await mountAdapter()
+        expect(runSelect()).toBeNull()
+    })
+
+    test('a failing runs read keeps every layer listed, just without run info', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        runsFailure = new Error('one bad forecast layer')
+        await mountAdapter()
+        expect(titlesIn()).toEqual(['Sparse', 'Continuous', 'NAQFC O3'])
+        expect(runSelect()).toBeNull()
+        expect(warn).toHaveBeenCalledWith('LayerManager: runs unavailable', expect.any(Error))
+        warn.mockRestore()
+    })
+
+    test('a runs read that fails later keeps the runs last known', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        await mountAdapter()
+        expect(await pinnedRun()).toBe(NEWEST)
+        runsFailure = new Error('transient')
+        await emit('layers:listChanged')
+        await settle()
+        expect(titlesIn()).toEqual(['Sparse', 'Continuous', 'NAQFC O3'])
+        expect(await pinnedRun()).toBe(NEWEST)
+        warn.mockRestore()
     })
 })
 

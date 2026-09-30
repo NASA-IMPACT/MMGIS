@@ -27,6 +27,17 @@ describe('buildDeckCOGLayer', () => {
         expect(Number.isNaN(layer.props.maxZoom)).toBe(false)
     })
 
+    test('draws over a terrain basemap instead of depth-testing against it', () => {
+        const layer = buildDeckCOGLayer('l-depth', {
+            rawCogUrl: 'https://example.com/a.tif',
+            layerObj: {},
+        })
+        expect(layer.props.parameters).toEqual({
+            depthCompare: 'always',
+            depthWriteEnabled: false,
+        })
+    })
+
     test('supplies getTileData and renderTile together (skips float-unsupported inference)', () => {
         const layer = buildDeckCOGLayer('l3', {
             rawCogUrl: 'https://example.com/a.tif',
