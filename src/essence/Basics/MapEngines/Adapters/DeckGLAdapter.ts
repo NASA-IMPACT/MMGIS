@@ -169,6 +169,8 @@ interface BasemapInstance {
     getStyle?():
         | { layers?: Array<{ id: string; type: string; layout?: Record<string, unknown> }> }
         | undefined
+    /** Set a layout property of a style layer, `visibility` included (mapbox-gl + maplibre-gl). */
+    setLayoutProperty?(layerId: string, name: string, value: unknown): unknown
     /** Return the WebGL canvas element the base map renders into. */
     getCanvas(): HTMLCanvasElement
     /** Schedule a re-render on the next animation frame (mapbox-gl + maplibre-gl). */
@@ -524,6 +526,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     private _onBasemapLoad = (): void => {
         this._styleSwapping = false
+        this._applyLabelVisibility(this._basemap)
         this._syncLayers()
     }
 
@@ -683,6 +686,45 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._basemapStyle = styleUrl
         this._sbsPanes?.forEach((pane) => pane.map?.setStyle(styleUrl))
         return true
+    }
+
+    /**
+     * Show or hide the basemap's labels: every `symbol` layer of the style,
+     * which is the place names, road shields and POI glyphs. A hidden layer
+     * stays in the style, so the label anchor the data sits under still
+     * resolves. The choice outlives a style switch (see {@link _onBasemapLoad}).
+     */
+    setBasemapLabelsVisible(visible: boolean): boolean {
+        if (!this._basemap?.setLayoutProperty) return false
+        this._labelsVisible = visible
+        this._applyLabelVisibility(this._basemap)
+        this._sbsPanes?.forEach((pane) => this._applyLabelVisibility(pane.map))
+        return true
+    }
+
+    getBasemapLabelsVisible(): boolean {
+        return this._labelsVisible
+    }
+
+    /** Hides the style's symbol layers, or shows the ones this adapter hid.
+     *  Only those: a style may hide a symbol layer of its own (an alternate
+     *  language's names, say), and labels coming back must not reveal it. */
+    private _applyLabelVisibility(map: BasemapInstance | null): void {
+        if (!map?.setLayoutProperty || this._styleSwapping) return
+        if (this._labelsVisible) {
+            for (const id of this._hiddenLabels.get(map) ?? []) {
+                if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'visible')
+            }
+            this._hiddenLabels.delete(map)
+            return
+        }
+        const hidden: string[] = []
+        for (const layer of map.getStyle?.()?.layers ?? []) {
+            if (layer.type !== 'symbol' || layer.layout?.visibility === 'none') continue
+            map.setLayoutProperty(layer.id, 'visibility', 'none')
+            hidden.push(layer.id)
+        }
+        this._hiddenLabels.set(map, hidden)
     }
 
     getContainer(): HTMLElement {
@@ -2138,7 +2180,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const onMoveEnd = () => this._onPaneCameraChange(pane, true)
         // The interleaved overlay drops layers set before the style loads (see
         // `_onBasemapLoad`), so a pane re-sends its own once it is ready.
-        const onLoad = () => this._renderComparisonLayers()
+        const onLoad = () => {
+            this._applyLabelVisibility(map)
+            this._renderComparisonLayers()
+        }
 
         map.on('move', onMove)
         map.on('moveend', onMoveEnd)
@@ -2423,6 +2468,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /** True from a style swap until the new style has loaded. */
     private _styleSwapping = false
+    private _labelsVisible = true
+    /** Per map, the symbol layers hidden by {@link setBasemapLabelsVisible}. */
+    private _hiddenLabels = new WeakMap<BasemapInstance, string[]>()
 
     /**
      * The style layer the deck layers are inserted before, so the basemap's

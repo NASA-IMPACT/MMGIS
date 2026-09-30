@@ -871,6 +871,23 @@ var mmgisAPI = {
      */
     getBasemapStyles: () => mmgisAPI.request('map:getBasemapStyles'),
 
+    /** supportsBasemapLabels - whether the active engine can show or hide the
+     * basemap's labels (vector-style basemaps only).
+     * @returns {Promise<boolean>}
+     */
+    supportsBasemapLabels: () => mmgisAPI.request('map:supportsBasemapLabels'),
+
+    /** setBasemapLabelsVisible - shows or hides the basemap's labels.
+     * @param {boolean} visible
+     * @returns {Promise<boolean>} - true if applied, false if the engine cannot
+     */
+    setBasemapLabelsVisible: (visible) => mmgisAPI.request('map:setBasemapLabelsVisible', visible),
+
+    /** getBasemapLabelsVisible - whether the basemap's labels are showing.
+     * @returns {Promise<boolean>}
+     */
+    getBasemapLabelsVisible: () => mmgisAPI.request('map:getBasemapLabelsVisible'),
+
     /** zoomIn - increments the map zoom by 1 level, clamped to the max zoom.
      * @returns {Promise<boolean>} - true if zoom changed, false if already at max
      */
