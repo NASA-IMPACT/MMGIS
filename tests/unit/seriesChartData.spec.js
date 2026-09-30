@@ -126,7 +126,8 @@ describe('seriesChart chartData', () => {
 
         test('time cards format axis, slider labels, and tooltip as UTC', () => {
             const opt = card(series())
-            expect(opt.xAxis.type).toBe('value')
+            expect(opt.xAxis.type).toBe('time')
+            expect(opt.useUTC).toBe(true)
             expect(typeof opt.xAxis.axisLabel.formatter).toBe('function')
             const slider = opt.dataZoom.find((z) => z.type === 'slider')
             expect(typeof slider.labelFormatter).toBe('function')
@@ -168,6 +169,18 @@ describe('seriesChart chartData', () => {
             ])
             expect(html).toContain('Jan 1, 2026')
             expect(html).toContain('S1: 1')
+        })
+
+        test('a series name from the wire is escaped before it reaches the tooltip HTML', () => {
+            const html = card(series()).tooltip.formatter([
+                {
+                    marker: '·',
+                    seriesName: '<img src=x onerror="alert(1)">',
+                    value: [Date.parse('2026-01-01T00:00:00Z'), 1],
+                },
+            ])
+            expect(html).not.toContain('<img')
+            expect(html).toContain('&lt;img src=x onerror=&quot;alert(1)&quot;&gt;: 1')
         })
 
         test('no in-canvas toolbox or legend: the dropdown picks, the strip resets', () => {

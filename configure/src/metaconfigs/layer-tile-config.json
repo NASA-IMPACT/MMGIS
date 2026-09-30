@@ -539,6 +539,54 @@
               "width": 3
             }
           ]
+        },
+        {
+          "subname": "Model runs",
+          "components": [
+            {
+              "field": "time.runs.url",
+              "name": "Runs URL",
+              "description": "Where a model's run times are listed, answering JSON with an array of ISO datetimes at Runs Path. Setting it makes this a forecast layer: core reads the runs while the mission loads, pins the layer to the newest, derives the data window from it, and offers the runs to pickers such as the Layer Manager. Write {reftime} where the Source URL takes the run time and {lead} where it takes the lead, e.g. sel=reference_time=nearest::{reftime}&sel=lead=nearest::{lead}. For titiler-multidim: <service>/dataset/coordinates/reference_time?url=<store>. Time Enabled must be on.",
+              "type": "text",
+              "width": 8
+            },
+            {
+              "field": "time.runs.path",
+              "name": "Runs Path",
+              "description": "Dotted path to the run list inside the response. Default data.",
+              "type": "text",
+              "width": 2
+            },
+            {
+              "field": "time.runs.step",
+              "name": "Lead Step",
+              "description": "One lead unit as an ISO 8601 duration: PT1H hourly, P1D daily, P1M monthly. The lead written into the URL is the number of these steps from the run to the timeline's current time. Default PT1H.",
+              "type": "text",
+              "width": 2
+            },
+            {
+              "field": "time.runs.leadUrl",
+              "name": "Leads URL",
+              "description": "Where the lead indices are listed, answering JSON with an array of numbers at Leads Path; the smallest and largest bound the run's data window. Leave empty for a window of the run instant alone. For titiler-multidim: <service>/dataset/coordinates/lead?url=<store>.",
+              "type": "text",
+              "width": 8
+            },
+            {
+              "field": "time.runs.leadPath",
+              "name": "Leads Path",
+              "description": "Dotted path to the lead list inside the response. Default data.",
+              "type": "text",
+              "width": 2
+            },
+            {
+              "field": "time.runs.offer",
+              "name": "Runs To Offer",
+              "description": "How many of the newest runs pickers list. Default 10.",
+              "type": "number",
+              "min": 1,
+              "width": 2
+            }
+          ]
         }
       ]
     },

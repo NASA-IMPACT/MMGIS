@@ -8,6 +8,7 @@ import Map_ from '../Map_/Map_'
 import TimeUI from './TimeUI'
 import { parseTimeWithOffset, parseTimeToSeconds } from './timeUtils'
 import { evaluateLayerDataCoverage } from './layerDataCoverage'
+import { leadAt } from './layerRunSource'
 import { layerRequestWindow } from './layerTimePolicy'
 import { formatLayerTime, buildTileUrlOptions } from '../Layers_/tileUrlUtils'
 import { resolveTileLayerSource } from '../Layers_/tileLayerSource'
@@ -703,6 +704,26 @@ var TimeControl = {
         const layerTimeFormat = formatLayerTime(layer.time?.format)
 
         let nextUrl = url
+        // A layer with model runs fills its two placeholders from its pin:
+        // the run itself, and the whole lead steps from it to the layer's end
+        // time, the same lead layers:getRuns reports. A value that is
+        // missing becomes the unresolved marker, since Leaflet's URL
+        // template throws on an unfilled key.
+        const runs = layer.time?.runs
+        if (runs) {
+            const lead = leadAt(runs, layer.time.end)
+            nextUrl = nextUrl
+                .replace(
+                    /{reftime}/g,
+                    encodeURIComponent(
+                        runs.selected || UNRESOLVED_URL_REPLACEMENT
+                    )
+                )
+                .replace(
+                    /{lead}/g,
+                    lead != null ? String(lead) : UNRESOLVED_URL_REPLACEMENT
+                )
+        }
         if (layer.variables?.urlReplacements) {
             const keys = Object.keys(layer.variables.urlReplacements)
             for (let i = 0; i < keys.length; i++) {
@@ -989,6 +1010,11 @@ function timeInputChange(startTime, endTime, currentTime, skipUpdate) {
     TimeControl.currentTime = currentTime == null ? endTime : currentTime
     TimeControl.endTime = endTime
 
+    // Layer windows are stamped before anyone hears of the change, so a
+    // listener reading a layer's window, or the lead counted from it, reads
+    // the one for the new time.
+    if (skipUpdate !== true) TimeControl.updateLayersTime()
+
     // Emit event for external listeners via Event Bus
     if (window.mmgisAPI) {
         window.mmgisAPI.emit('time:changed', {
@@ -1012,11 +1038,7 @@ function timeInputChange(startTime, endTime, currentTime, skipUpdate) {
         })
     })
 
-    if (skipUpdate !== true) {
-        // Update layer times and reload
-        TimeControl.updateLayersTime()
-        TimeControl.reloadTimeLayers()
-    }
+    if (skipUpdate !== true) TimeControl.reloadTimeLayers()
 }
 
 export default TimeControl

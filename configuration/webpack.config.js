@@ -51,6 +51,16 @@ const shouldInlineRuntimeChunk = process.env.INLINE_RUNTIME_CHUNK !== "false";
 
 const isExtendingEslintConfig = process.env.EXTEND_ESLINT === "true";
 
+// loaders.gl's vector tile worker, served from our own origin (see the
+// CopyWebpackPlugin entry below). The path carries the installed version so
+// an upgrade publishes the worker under a new URL: a cache still holding the
+// old worker can never pair it with a newer bundle.
+const loadersMvtDir = path.join(__dirname, "../node_modules/@loaders.gl/mvt");
+const loadersMvtVersion = JSON.parse(
+  fs.readFileSync(path.join(loadersMvtDir, "package.json"), "utf8")
+).version;
+const mvtWorkerPath = `static/loaders/mvt@${loadersMvtVersion}/mvt-worker.js`;
+
 const imageInlineSizeLimit = parseInt(
   process.env.IMAGE_INLINE_SIZE_LIMIT || "10000"
 );
@@ -640,6 +650,26 @@ module.exports = function (webpackEnv) {
             to: path.join("static", "cesium", "Widgets"),
           },
         ],
+      }),
+      // Serve loaders.gl's vector tile worker from our own origin. Left to
+      // itself loaders.gl loads it from unpkg.com, which the server's
+      // Content-Security-Policy blocks, so deck.gl vector tile layers never
+      // decode. Copying from node_modules on every build keeps the worker at
+      // the version of the loader in the bundle.
+      new CopyWebpackPlugin({
+        patterns: [
+          {
+            from: path.join(loadersMvtDir, "dist", "mvt-worker.js"),
+            to: mvtWorkerPath,
+            // Already minified upstream; ship loaders.gl's file unchanged.
+            info: { minimized: true },
+          },
+        ],
+      }),
+      // Where the copy above lands, relative to the public path, for
+      // DeckGLHelpers.ts to point the MVT layer at.
+      new webpack.DefinePlugin({
+        MVT_WORKER_PATH: JSON.stringify(mvtWorkerPath),
       }),
       // Define Cesium base URL for static assets (must match publicPath)
       new webpack.DefinePlugin({

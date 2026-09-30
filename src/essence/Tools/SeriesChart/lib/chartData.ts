@@ -2,10 +2,10 @@
 // the output is a plain option object the rendering component hands to
 // `chart.setOption(...)`, which keeps everything here unit-testable.
 //
-// Time axes deliberately use a VALUE axis over epoch milliseconds with our
-// own tick/tooltip formatting: echarts' native 'time' axis renders labels in
-// the viewer's local zone, and epoch-value with UTC formatters keeps every
-// viewer seeing the same timestamps.
+// The x axis is echarts' own 'time' axis, so ticks land on calendar
+// boundaries (whole hours, days, months) rather than on round millisecond
+// counts; `useUTC` keeps those boundaries UTC, and our formatters own the
+// label text so every viewer reads the same timestamps.
 
 import type { ChartPoint, ChartSeries } from '../../_shared/types/chartSeries'
 import type { ChartTheme } from './types'
@@ -160,12 +160,24 @@ type TooltipParam = {
     value: [number, number | null]
 }
 
-/** Axis tooltip whose title is the hovered UTC datetime, not raw epoch ms. */
+const HTML_ESCAPES: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+}
+const escapeHtml = (text: string) =>
+    text.replace(/[&<>"']/g, (c) => HTML_ESCAPES[c])
+
+/** Axis tooltip whose title is the hovered UTC datetime, not raw epoch ms.
+ *  echarts writes this string with innerHTML, and the series name comes
+ *  off the wire (a groupBy value from the remote API), so it is escaped. */
 function timeTooltipFormatter(params: TooltipParam[] | TooltipParam): string {
     const list = Array.isArray(params) ? params : [params]
     if (list.length === 0) return ''
     const rows = list.map(
-        (p) => `${p.marker}${p.seriesName}: ${p.value[1] ?? '—'}`,
+        (p) => `${p.marker}${escapeHtml(p.seriesName)}: ${p.value[1] ?? '—'}`,
     )
     return [formatTooltipTime(list[0].value[0]), ...rows].join('<br/>')
 }
@@ -194,6 +206,7 @@ export function buildChartOption(
         : null
 
     return {
+        useUTC: true,
         tooltip: {
             trigger: 'axis' as const,
             axisPointer: { type: 'cross' as const, label: { show: false } },
@@ -202,7 +215,7 @@ export function buildChartOption(
         // Bottom band holds the x labels and the preview strip.
         grid: { left: 44, right: 8, top: 8, bottom: 64 },
         xAxis: {
-            type: 'value' as const,
+            type: 'time' as const,
             min: 'dataMin' as const,
             max: 'dataMax' as const,
             splitLine: { show: false },

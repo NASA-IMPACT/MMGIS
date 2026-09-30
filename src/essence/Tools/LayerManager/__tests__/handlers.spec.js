@@ -3,6 +3,7 @@ import {
     toggleVisibility,
     getFilteredOutLayers,
     hideFilteredOutLayers,
+    selectRun,
     setOpacity,
     setColormap,
     setRescale,
@@ -420,5 +421,22 @@ test.describe('dropLayer', () => {
         await Promise.all([first, second])
 
         expect(writes).toEqual([['c', 'a', 'b']])
+    })
+})
+
+test.describe('selectRun', () => {
+    test('asks core to pin the run and nothing else', async () => {
+        const { requests, emitCalls } = setupMock({ 'layers:setRun': true })
+        expect(await selectRun('fc', '2026-09-21T06:00:00')).toBe(true)
+        expect(requests).toEqual([
+            { name: 'layers:setRun', params: { layerUUID: 'fc', run: '2026-09-21T06:00:00' } },
+        ])
+        expect(emitCalls).toEqual([])
+    })
+
+    test('reports a refusal as false, still emitting nothing', async () => {
+        const { emitCalls } = setupMock({ 'layers:setRun': false })
+        expect(await selectRun('fc', 'nope')).toBe(false)
+        expect(emitCalls).toEqual([])
     })
 })

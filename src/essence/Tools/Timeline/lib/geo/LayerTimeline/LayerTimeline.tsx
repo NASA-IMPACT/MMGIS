@@ -1,6 +1,6 @@
 import React from 'react'
 import type { ScaleTime } from 'd3-scale'
-import type { LayerTimeData } from '../../types'
+import type { LayerTimeData, TimeRange } from '../../types'
 import type { ViewWindow } from '../../utils/zoomWindow'
 import {
     addSteps,
@@ -115,6 +115,98 @@ export function divisionXs(
     return xs
 }
 
+// Boxes closer than this, in pixels, are drawn as one. A gap narrower than a
+// pixel does not read as a gap, and would only leave a notch between two
+// boxes' rounded ends.
+const JOIN_TOLERANCE = 1
+
+/** A box on the chart, standing for one or more of a layer's spans. */
+interface DrawnBar {
+    x: number
+    width: number
+    fromMs: number
+    toMs: number
+    first: TimeRange
+    // The span reaching furthest right, which names the box's end.
+    last: TimeRange
+}
+
+/**
+ * The boxes a layer's spans are drawn as. Spans whose boxes would overlap or
+ * touch at the current zoom are drawn as one box, so a sparse layer listing
+ * thousands of periods costs the boxes that can be told apart, not a box a
+ * period, and no stacked pair reads darker than its neighbours through the
+ * bars' shared opacity. A box wholly off the chart is not drawn.
+ */
+function drawnBars(
+    ranges: TimeRange[],
+    xScale: ScaleTime<number, number>,
+    bounds: ViewWindow
+): DrawnBar[] {
+    const boundsStartMs = bounds.start.getTime()
+    const boundsEndMs = bounds.end.getTime()
+    const leftEdge = xScale(bounds.start)
+    const rightEdge = xScale(bounds.end)
+    // The chart's full width, margins included. Its margins are equal, so the
+    // two ends of the scale's range sum to that width.
+    const [r0, r1] = xScale.range()
+    const chartWidth = r0 + r1
+
+    const sorted = [...ranges].sort(
+        (a, b) => a.start.getTime() - b.start.getTime()
+    )
+
+    const bars: DrawnBar[] = []
+    sorted.forEach((range) => {
+        const fromMs = Math.max(range.start.getTime(), boundsStartMs)
+        const toMs = Math.min(range.end.getTime(), boundsEndMs)
+        // A span wholly outside the global window has nothing to draw.
+        if (toMs < fromMs) return
+
+        const x1 = xScale(fromMs)
+        const x2 = xScale(toMs)
+        const width = Math.max(x2 - x1, MIN_BAR_WIDTH)
+        // A bar widened to the minimum is centred on its span, so it stays
+        // over its own time rather than trailing to the right, and held
+        // inside the global window's edges.
+        const centred = width > x2 - x1 ? (x1 + x2 - width) / 2 : x1
+        const x = Math.max(leftEdge, Math.min(centred, rightEdge - width))
+        const clippedWidth = Math.max(0, Math.min(width, rightEdge - x))
+        if (x + clippedWidth < 0 || x > chartWidth) return
+
+        const prev = bars[bars.length - 1]
+        if (prev && x <= prev.x + prev.width + JOIN_TOLERANCE) {
+            const right = Math.max(prev.x + prev.width, x + clippedWidth)
+            prev.width = right - prev.x
+            if (toMs >= prev.toMs) {
+                prev.toMs = toMs
+                prev.last = range
+            }
+            return
+        }
+        bars.push({
+            x,
+            width: clippedWidth,
+            fromMs,
+            toMs,
+            first: range,
+            last: range,
+        })
+    })
+    return bars
+}
+
+/** What a box's tooltip names it: its period, or the periods it runs across. */
+function barLabel(bar: DrawnBar): string {
+    if (bar.first === bar.last)
+        return bar.first.label
+            ? bar.first.label
+            : `${bar.first.start.toISOString()} to ${bar.first.end.toISOString()}`
+    const from = bar.first.label ?? bar.first.start.toISOString()
+    const to = bar.last.label ?? bar.last.end.toISOString()
+    return `${from} to ${to}`
+}
+
 /**
  * One layer's row of bars. Memoized, so a scrubber drag, which re-renders the
  * chart on every move, leaves the rows and their divisions alone.
@@ -127,42 +219,21 @@ export const LayerTimeline: React.FC<LayerTimelineProps> = React.memo(({
     height,
 }) => {
     const barY = y + (height - BAR_THICKNESS) / 2
-    const boundsStartMs = bounds.start.getTime()
-    const boundsEndMs = bounds.end.getTime()
-    const leftEdge = xScale(bounds.start)
-    const rightEdge = xScale(bounds.end)
 
     return (
         <g className="layer-timeline">
-            {/* Time range bars */}
-            {layer.timeRanges.map((range, index) => {
-                const fromMs = Math.max(range.start.getTime(), boundsStartMs)
-                const toMs = Math.min(range.end.getTime(), boundsEndMs)
-                // A span wholly outside the global window has nothing to draw.
-                if (toMs < fromMs) return null
-
-                const x1 = xScale(fromMs)
-                const x2 = xScale(toMs)
-                const width = Math.max(x2 - x1, MIN_BAR_WIDTH)
-                // A bar widened to the minimum is centred on its span, so it
-                // stays over its own time rather than trailing to the right,
-                // and held inside the global window's edges.
-                const centred = width > x2 - x1 ? (x1 + x2 - width) / 2 : x1
-                const x = Math.max(
-                    leftEdge,
-                    Math.min(centred, rightEdge - width)
-                )
-                const clippedWidth = Math.min(width, rightEdge - x)
+            {drawnBars(layer.timeRanges, xScale, bounds).map((bar, index) => {
+                const { x, width } = bar
 
                 // Each pinch narrows to fit between its neighbours, and one
                 // too close to an end of the bar to fit is left out.
-                const divisions = divisionXs(layer, xScale, fromMs, toMs)
+                const divisions = divisionXs(layer, xScale, bar.fromMs, bar.toMs)
                 let spacing = Infinity
                 for (let i = 1; i < divisions.length; i++)
                     spacing = Math.min(spacing, divisions[i] - divisions[i - 1])
                 const half = Math.min(PINCH_HALF_WIDTH, spacing * 0.35)
                 const pinched = divisions.filter(
-                    (dx) => dx - half > x && dx + half < x + clippedWidth
+                    (dx) => dx - half > x && dx + half < x + width
                 )
 
                 return (
@@ -170,7 +241,7 @@ export const LayerTimeline: React.FC<LayerTimelineProps> = React.memo(({
                         <rect
                             x={x}
                             y={barY}
-                            width={Math.max(0, clippedWidth)}
+                            width={width}
                             height={BAR_THICKNESS}
                             /* Set as a style, not a fill attribute, so a var() colour resolves */
                             style={{ fill: layer.color }}
@@ -181,9 +252,7 @@ export const LayerTimeline: React.FC<LayerTimelineProps> = React.memo(({
                             <title>
                                 {layer.displayName}
                                 {'\n'}
-                                {range.label
-                                    ? range.label
-                                    : `${range.start.toISOString()} to ${range.end.toISOString()}`}
+                                {barLabel(bar)}
                             </title>
                         </rect>
                         {pinched.length > 0 && (
