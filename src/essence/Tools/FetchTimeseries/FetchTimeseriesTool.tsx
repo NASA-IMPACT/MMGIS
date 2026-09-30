@@ -250,6 +250,9 @@ const FetchTimeseriesTool = {
         this._render()
         if (!this._selection) return
         this._cancelRefetch()
+        // Reversed while a field is being typed into; the card reports the
+        // clamped range once the field is left.
+        if (start > end) return
         this._refetchTimer = window.setTimeout(() => {
             this._refetchTimer = null
             if (!this._selection) return

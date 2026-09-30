@@ -303,6 +303,24 @@ describe('fetchTimeseries lib', () => {
                 end: '2026-09-24T23:59:59',
             })
         })
+
+        test('a mission window ending in the future is capped at today like an extent', () => {
+            expect(seed(null, { start: '2020-01-01T00:00:00Z', end: '2027-12-31T00:00:00Z' })).toEqual({
+                start: '2025-09-24T00:00:00',
+                end: '2026-09-24T23:59:59',
+            })
+            expect(seed({ start: '2024-01-01T00:00:00Z', end: null }, { start: '2020-01-01T00:00:00Z', end: '2027-12-31T00:00:00Z' })).toEqual({
+                start: '2025-09-24T00:00:00',
+                end: '2026-09-24T23:59:59',
+            })
+        })
+
+        test('a window entirely in the future seeds today and the year before it', () => {
+            expect(seed(null, { start: '2027-01-01T00:00:00Z', end: '2027-12-31T00:00:00Z' })).toEqual({
+                start: '2025-09-24T00:00:00',
+                end: '2026-09-24T23:59:59',
+            })
+        })
     })
 
     describe('pageInfo', () => {

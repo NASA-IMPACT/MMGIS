@@ -15,7 +15,9 @@ import {
 export interface TimeseriesConfig {
     /** Set false to turn the block off without deleting it (default true). */
     enabled?: boolean
-    /** Fetch URL template; placeholders: {id}, {properties.<key>}, {lon}, {lat}. */
+    /** Fetch URL template; placeholders: {id}, {properties.<key>}, {lon},
+     *  {lat}, and {start}/{end} for the card's range, in the service's own
+     *  syntax. */
     url: string
     /** Feature property used as the chart title (default: name → title → id). */
     titleProp?: string
@@ -154,10 +156,11 @@ export function subtractSpan(end: Date, span: Span): Date {
 /**
  * The range the card opens with. The layer's own data extent comes first,
  * side by side; a side it leaves open comes from the mission window, and
- * failing that from today. An end in the future is capped at the end of
- * today. The start is the later of the extent's start and `end` minus the
- * span (a year unless the layer says otherwise): the whole extent when it
- * is shorter than the span, the last span of it when longer.
+ * failing that from today. Either source may reach into the future: the
+ * end is capped at the end of today, and a start past that end falls to
+ * the span. The start is otherwise the later of the extent's start and
+ * `end` minus the span (a year unless the layer says otherwise): the whole
+ * extent when it is shorter than the span, the last span of it when longer.
  */
 export function seedRange(args: {
     extent?: RangeSource | null
@@ -169,7 +172,6 @@ export function seedRange(args: {
     const today = endOfUtcDay(args.now)
     let start = parseInstant(args.extent?.start)
     let end = parseInstant(args.extent?.end)
-    if (end && end > today) end = today
     if (!start || !end) {
         const ws = parseInstant(args.window?.start)
         const we = parseInstant(args.window?.end)
@@ -178,7 +180,7 @@ export function seedRange(args: {
             end = end ?? we
         }
     }
-    if (!end) end = today
+    if (!end || end > today) end = today
     const floor = subtractSpan(end, span)
     if (!start || start > end || start < floor) start = floor
     return { start: isoInstant(start), end: isoInstant(end) }

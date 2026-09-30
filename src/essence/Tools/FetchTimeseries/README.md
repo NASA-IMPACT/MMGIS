@@ -29,7 +29,8 @@ Bus-only — no core imports.
   emits `seriesCleared`, so the previous chart never sits under an error.
 - Changing the range refetches the same feature, 400 ms after the last
   change, and emits `seriesReady` again, so the chart replaces its card. A
-  start past the end drags the end along, and the reverse.
+  range left reversed (an end before the start) fetches nothing; leaving
+  the field snaps the other bound to it.
 - A new request aborts any in-flight fetch and replaces the chart (single
   `chartId: 'vector-timeseries'`). The chart stays until the next request
   replaces it, EXIT clears it, or a fetch fails. Fetches time out after 30

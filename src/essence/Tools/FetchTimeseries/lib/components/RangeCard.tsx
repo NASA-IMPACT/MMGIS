@@ -27,9 +27,10 @@ const MIN_INSTANT = '1000-01-01T00:00:00'
 const isComplete = (value: string) => value >= MIN_INSTANT
 
 /** Start and End inputs over a status line. Props only; the tool owns the
- *  state and the fetch. Each input is bounded by the other, so the range can
- *  never be reversed. The chart below names the feature; this card does not
- *  repeat it. */
+ *  state and the fetch. A value is reported as typed; only leaving a field
+ *  with the range reversed snaps the other bound to it, since a change
+ *  event fires for every partial day typed ("2" on the way to "25"). The
+ *  chart below names the feature; this card does not repeat it. */
 export function RangeCard({
     start,
     end,
@@ -57,7 +58,10 @@ export function RangeCard({
                         max={end}
                         onChange={(e) => {
                             const next = toSeconds(e.target.value)
-                            if (isComplete(next)) onRangeChange(next, next > end ? next : end)
+                            if (isComplete(next)) onRangeChange(next, end)
+                        }}
+                        onBlur={() => {
+                            if (start > end) onRangeChange(start, start)
                         }}
                     />
                 </label>
@@ -71,7 +75,10 @@ export function RangeCard({
                         min={start}
                         onChange={(e) => {
                             const next = toSeconds(e.target.value)
-                            if (isComplete(next)) onRangeChange(next < start ? next : start, next)
+                            if (isComplete(next)) onRangeChange(start, next)
+                        }}
+                        onBlur={() => {
+                            if (end < start) onRangeChange(end, end)
                         }}
                     />
                 </label>

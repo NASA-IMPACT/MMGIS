@@ -66,6 +66,11 @@ describe('FetchTimeseriesTool', () => {
         return v.length === 16 ? `${v}:00` : v
     }
 
+    const blur = (label) =>
+        act(() => {
+            input(label).dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+        })
+
     const setDate = (label, value) =>
         act(() => {
             const el = input(label)
@@ -471,21 +476,53 @@ describe('FetchTimeseriesTool', () => {
         expect(fetchMock).toHaveBeenCalledTimes(1)
     })
 
-    test('a start after the end drags the end along, and the reverse; the refetch uses the clamped range', async () => {
+    test('an end typed before the start leaves the start alone and fetches nothing until the field is left', async () => {
         await request()
-        await setDate('Start', '2026-12-01T00:00:00')
-        expect(valueOf('End')).toBe('2026-12-01T00:00:00')
+        await setDate('Start', '2026-03-15T00:00:00')
+        await settle()
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+        // Typing "25" into the day of End passes through 02 on the way.
+        await setDate('End', '2026-03-02T00:00:00')
+        expect(valueOf('Start')).toBe('2026-03-15T00:00:00')
+        expect(valueOf('End')).toBe('2026-03-02T00:00:00')
+        await settle()
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+        await setDate('End', '2026-03-25T00:00:00')
+        await settle()
+        expect(fetchMock).toHaveBeenCalledTimes(3)
+        expect(filterOf(fetchMock.mock.calls[2][0])).toBe(
+            "datetime >= '2026-03-15T00:00:00' AND datetime <= '2026-03-25T00:00:00'",
+        )
+    })
+
+    test('leaving a field with the range reversed snaps the other bound to it; the refetch uses the clamped range', async () => {
+        await request()
+        await setDate('End', '2025-02-01T00:00:00')
+        await settle()
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        await blur('End')
+        expect(valueOf('Start')).toBe('2025-02-01T00:00:00')
         await settle()
         expect(filterOf(fetchMock.mock.calls[1][0])).toBe(
-            "datetime >= '2026-12-01T00:00:00' AND datetime <= '2026-12-01T00:00:00'",
+            "datetime >= '2025-02-01T00:00:00' AND datetime <= '2025-02-01T00:00:00'",
         )
-        await setDate('End', '2026-02-01T00:00:00')
-        expect(valueOf('Start')).toBe('2026-02-01T00:00:00')
+        await setDate('Start', '2025-12-01T00:00:00')
+        await blur('Start')
+        expect(valueOf('End')).toBe('2025-12-01T00:00:00')
         await settle()
         expect(filterOf(fetchMock.mock.calls[2][0])).toBe(
-            "datetime >= '2026-02-01T00:00:00' AND datetime <= '2026-02-01T00:00:00'",
+            "datetime >= '2025-12-01T00:00:00' AND datetime <= '2025-12-01T00:00:00'",
         )
         expect(emittedFor(READY)).toHaveLength(3)
+    })
+
+    test('leaving a field with the range in order changes nothing', async () => {
+        await request()
+        await blur('End')
+        await blur('Start')
+        await settle()
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expect(valueOf('Start')).toBe('2025-09-24T00:00:00')
     })
 
     test('EXIT clears the chart, hides this card, and leaves the next request working', async () => {
