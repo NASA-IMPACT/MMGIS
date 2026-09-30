@@ -204,4 +204,20 @@ describe('PopoverMenu', () => {
         press(first, 'ArrowDown')
         expect(document.activeElement).toBe(second)
     })
+
+    test('a menu of choices marks the current pick and holds its tab stop there', () => {
+        render([
+            item('first', { checked: false }),
+            item('second', { checked: true }),
+        ])
+
+        const choices = Array.from(
+            container.querySelectorAll('[role="menuitemradio"]'),
+        )
+        expect(choices.map((el) => el.getAttribute('aria-checked'))).toEqual([
+            'false',
+            'true',
+        ])
+        expect(choices.map((el) => el.tabIndex)).toEqual([-1, 0])
+    })
 })
