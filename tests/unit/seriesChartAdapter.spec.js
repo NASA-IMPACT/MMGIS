@@ -136,7 +136,7 @@ describe('MMGISSeriesChartAdapter', () => {
         ).toContain('O₃')
     })
 
-    test('the tool is shown when the first chart arrives and hidden when the last clears', async () => {
+    test('every chart that arrives shows the tool; the last one clearing hides it', async () => {
         bus.hasHandler = () => true
         bus.request = vi.fn(async () => ({ ok: true, state: 'visible', changed: true }))
         const commands = () =>
@@ -147,17 +147,27 @@ describe('MMGISSeriesChartAdapter', () => {
         await act(async () => bus.emit(READY, validPayload()))
         expect(commands()).toEqual([['plugins:show', 'SeriesChartTool']])
 
-        // A second card while shown asks nothing more.
-        await act(async () => bus.emit(READY, { ...validPayload(), chartId: 'c2' }))
-        expect(commands()).toHaveLength(1)
-
-        await act(async () => bus.emit(CLEARED, { chartId: 'c1' }))
-        expect(commands()).toHaveLength(1)
-        await act(async () => bus.emit(CLEARED, { chartId: 'c2' }))
+        // The same chartId again — a fetcher replacing its chart — shows
+        // again, so a panel hidden meanwhile comes back with the new data.
+        await act(async () => bus.emit(READY, validPayload()))
         expect(commands()).toEqual([
             ['plugins:show', 'SeriesChartTool'],
-            ['plugins:hide', 'SeriesChartTool'],
+            ['plugins:show', 'SeriesChartTool'],
         ])
+
+        await act(async () => bus.emit(READY, { ...validPayload(), chartId: 'c2' }))
+        expect(commands()).toHaveLength(3)
+
+        // Clearing one of two cards hides nothing.
+        await act(async () => bus.emit(CLEARED, { chartId: 'c1' }))
+        expect(commands()).toHaveLength(3)
+        await act(async () => bus.emit(CLEARED, { chartId: 'c2' }))
+        expect(commands().at(-1)).toEqual(['plugins:hide', 'SeriesChartTool'])
+        expect(commands()).toHaveLength(4)
+
+        // Clearing an unknown chartId asks nothing.
+        await act(async () => bus.emit(CLEARED, { chartId: 'c9' }))
+        expect(commands()).toHaveLength(4)
     })
 
     test('a single series gets no dropdown', () => {

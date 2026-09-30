@@ -31,6 +31,24 @@ function chartIdOf(payload: unknown): string | null {
     return typeof id === 'string' && id !== '' ? id : null
 }
 
+/** The tool starts hidden (config metadata) and is on screen only while it
+ *  has something to show. Asking for a state the tool already holds is a
+ *  no-op in the layout, so every chart may ask to be seen: a panel hidden
+ *  meanwhile comes back with the new data instead of updating unseen. No
+ *  layout means nothing to show or hide, not a failure. */
+function setShown(shown: boolean) {
+    const command = shown ? mmgisShowPlugin : mmgisHidePlugin
+    command(TOOL_ID)
+        .then((result: CommandResult) => {
+            if (result.ok === true) return
+            if (result.reason === 'layout-inactive') return
+            console.warn(
+                `[SeriesChart] ${shown ? 'show' : 'hide'} refused: ${result.reason}`,
+            )
+        })
+        .catch((err) => console.warn('[SeriesChart] show/hide failed:', err))
+}
+
 /**
  * Bridges the bus to the presentational panel: subscribes to each source
  * plugin's `seriesReady` and `seriesCleared` and keeps one card per chartId.
@@ -42,6 +60,9 @@ export function MMGISSeriesChartAdapter() {
     const [sources, setSources] = useState<string[]>(DEFAULT_SOURCES)
     const [layout, setLayout] = useState<ChartLayout>('dropdown')
     const [cards, setCards] = useState<Record<string, ChartSeriesPayload>>({})
+    // The live card map; state is a snapshot of it, so the handlers can
+    // decide about show and hide without a side effect inside an updater.
+    const cardsRef = useRef<Record<string, ChartSeriesPayload>>({})
 
     const refresh = useCallback(async () => {
         try {
@@ -83,17 +104,18 @@ export function MMGISSeriesChartAdapter() {
                         )
                         return
                     }
-                    setCards((prev) => ({ ...prev, [p.chartId]: p }))
+                    cardsRef.current = { ...cardsRef.current, [p.chartId]: p }
+                    setCards(cardsRef.current)
+                    setShown(true)
                 }),
                 mmgisOn(events.cleared, (p) => {
                     const chartId = chartIdOf(p)
-                    if (!chartId) return
-                    setCards((prev) => {
-                        if (!(chartId in prev)) return prev
-                        const next = { ...prev }
-                        delete next[chartId]
-                        return next
-                    })
+                    if (!chartId || !(chartId in cardsRef.current)) return
+                    const next = { ...cardsRef.current }
+                    delete next[chartId]
+                    cardsRef.current = next
+                    setCards(next)
+                    if (Object.keys(next).length === 0) setShown(false)
                 }),
             ]
         })
@@ -104,30 +126,6 @@ export function MMGISSeriesChartAdapter() {
         chartId,
         payload,
     }))
-
-    // The tool starts hidden (config metadata) and is only on screen while
-    // it has something to show: the first card brings it up, the last card
-    // clearing takes it down again. The mount itself, with no cards yet,
-    // changes nothing.
-    const hasCards = cardList.length > 0
-    const shownRef = useRef(false)
-    useEffect(() => {
-        if (hasCards === shownRef.current) return
-        shownRef.current = hasCards
-        const command = hasCards ? mmgisShowPlugin : mmgisHidePlugin
-        command(TOOL_ID)
-            .then((result: CommandResult) => {
-                if (result.ok === true) return
-                // No layout means nothing to show or hide, not a failure.
-                if (result.reason === 'layout-inactive') return
-                console.warn(
-                    `[SeriesChart] ${hasCards ? 'show' : 'hide'} refused: ${result.reason}`,
-                )
-            })
-            .catch((err) =>
-                console.warn('[SeriesChart] show/hide failed:', err),
-            )
-    }, [hasCards])
 
     return <SeriesChartPanel cards={cardList} layout={layout} />
 }
