@@ -46,7 +46,9 @@ vi.mock('maplibre-gl', async (importOriginal) => {
         }
         addControl() {}
         removeControl() {}
-        on() {}
+        on(type, handler) {
+            ;(this._on ||= []).push([type, handler])
+        }
         off() {}
         once() {}
         setMaxBounds() {}
@@ -106,7 +108,9 @@ vi.mock('maplibre-gl', async (importOriginal) => {
 vi.mock('mapbox-gl', () => {
     class MapboxMapWithoutPopup {
         addControl() {}
-        on() {}
+        on(type, handler) {
+            ;(this._on ||= []).push([type, handler])
+        }
     }
     return { default: { Map: MapboxMapWithoutPopup } }
 })
@@ -622,6 +626,88 @@ test.describe('DeckGLAdapter', () => {
             adapter.emit('ping')
             adapter.emit('ping')
             expect(count).toBe(1)
+        })
+    })
+
+    test.describe('label stacking', () => {
+        const LABELS_ID = 'place-labels'
+
+        function lastSyncedLayers(adapter) {
+            const calls = adapter._overlay.setProps.mock.calls
+            return calls[calls.length - 1][0].layers
+        }
+
+        // A style whose first symbol layer is the place names, with the
+        // fills below it, registered so getLayer answers for them.
+        function withLabelledStyle(adapter, layers = [
+            { id: 'water', type: 'fill' },
+            { id: LABELS_ID, type: 'symbol' },
+            { id: 'road-labels', type: 'symbol' },
+        ]) {
+            adapter._basemap.getStyle = () => ({ layers })
+            layers.forEach((layer) => adapter._basemap.addLayer({ id: layer.id }))
+        }
+
+        test("every deck layer is inserted below the style's first symbol layer", () => {
+            const adapter = makeOverlayDrawingAdapter()
+            withLabelledStyle(adapter)
+            adapter.addLayer(makeLayer('raster'))
+            adapter.addLayer(makeLayer('vector'))
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([LABELS_ID, LABELS_ID])
+        })
+
+        test('a label layer drawn before the roads is passed over for the first label above them', () => {
+            const adapter = makeOverlayDrawingAdapter()
+            // Carto Voyager's shape: water names, then the roads, then the
+            // place names. Liberty's: an icon layer, then buildings, then text.
+            withLabelledStyle(adapter, [
+                { id: 'waterway_label', type: 'symbol', layout: { 'text-field': '{name}' } },
+                { id: 'road_motorway', type: 'line' },
+                { id: 'road_one_way_arrow', type: 'symbol', layout: { 'icon-image': 'arrow' } },
+                { id: 'building', type: 'fill' },
+                { id: 'place_city', type: 'symbol', layout: { 'text-field': '{name}' } },
+            ])
+            adapter.addLayer(makeLayer('raster'))
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual(['place_city'])
+        })
+
+        test('an icon-only symbol layer above the ground is the anchor when no text label follows', () => {
+            const adapter = makeOverlayDrawingAdapter()
+            withLabelledStyle(adapter, [
+                { id: 'water', type: 'fill' },
+                { id: 'poi_icons', type: 'symbol', layout: { 'icon-image': 'pin' } },
+            ])
+            adapter.addLayer(makeLayer('raster'))
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual(['poi_icons'])
+        })
+
+        test('a style with no symbol layers leaves the deck layers on top, as before', () => {
+            const adapter = makeOverlayDrawingAdapter()
+            withLabelledStyle(adapter, [{ id: 'water', type: 'fill' }, { id: 'imagery', type: 'raster' }])
+            adapter.addLayer(makeLayer('raster'))
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([undefined])
+        })
+
+        test('the labels anchor still holds while a shape is drawn', () => {
+            const adapter = makeOverlayDrawingAdapter()
+            withLabelledStyle(adapter)
+            adapter.addLayer(makeLayer('raster'))
+            adapter.enableDrawing('polygon')
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([LABELS_ID])
+        })
+
+        test('a style swap drops the anchor until the new style loads, then anchors on its labels', () => {
+            const adapter = makeOverlayDrawingAdapter()
+            withLabelledStyle(adapter)
+            adapter.addLayer(makeLayer('raster'))
+            adapter.setBasemapStyle('https://example.com/other.json')
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([undefined])
+            expect(adapter._overlay.setProps.mock.invocationCallOrder.at(-1)).toBeLessThan(
+                adapter._basemap.setStyle.mock.invocationCallOrder[0]
+            )
+            withLabelledStyle(adapter, [{ id: 'land', type: 'fill' }, { id: 'city-names', type: 'symbol' }])
+            adapter._onBasemapLoad()
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual(['city-names'])
         })
     })
 
@@ -1427,6 +1513,33 @@ test.describe('DeckGLAdapter', () => {
                 props: basemap ? constructed.overlay[0] : constructed.deck[0],
             }
         }
+
+        test("overlay mode re-anchors on the new style's labels when style.load fires after a swap", () => {
+            const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
+            const map = adapter._basemap
+            map.getLayer = (id) => ({ id })
+            map.setStyle = vi.fn()
+            map.getStyle = () => ({
+                layers: [{ id: 'water', type: 'fill' }, { id: 'place-labels', type: 'symbol' }],
+            })
+            adapter._overlay.setProps = vi.fn()
+            const anchors = () =>
+                adapter._overlay.setProps.mock.calls.at(-1)[0].layers.map((l) => l.beforeId)
+
+            adapter.addLayer(makeLayer('raster'))
+            expect(anchors()).toEqual(['place-labels'])
+
+            adapter.setBasemapStyle('https://example.com/other.json')
+            expect(anchors()).toEqual([undefined])
+
+            // The new style has its own label layer; the map announces it
+            // with style.load, not load, which fired once at start.
+            map.getStyle = () => ({
+                layers: [{ id: 'land', type: 'fill' }, { id: 'city-names', type: 'symbol' }],
+            })
+            map._on.filter(([type]) => type === 'style.load').forEach(([, handler]) => handler())
+            expect(anchors()).toEqual(['city-names'])
+        })
 
         for (const [mode, basemap] of [
             ['standalone', null],
