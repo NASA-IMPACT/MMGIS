@@ -19,6 +19,9 @@ export type MapControlBarProps = {
     basemapStyles?: BasemapStyle[]
     activeBasemap?: BasemapStyle | null
     onSelectBasemap?: (style: BasemapStyle) => void
+    /** Basemap labels on or off; null or undefined hides the control. */
+    basemapLabelsVisible?: boolean | null
+    onToggleBasemapLabels?: (visible: boolean) => void
 
     // Zoom
     onZoomIn?: () => void
@@ -90,6 +93,8 @@ export function MapControlBar({
     basemapStyles = [],
     activeBasemap = null,
     onSelectBasemap,
+    basemapLabelsVisible = null,
+    onToggleBasemapLabels,
     onZoomIn,
     onZoomOut,
     subscribeToMap,
@@ -269,6 +274,8 @@ export function MapControlBar({
                             onSelectBasemap?.(entry)
                             setBasemapOpen(false)
                         }}
+                        labelsVisible={basemapLabelsVisible}
+                        onToggleLabels={onToggleBasemapLabels}
                     />
                 </FloatingPopover>
             )}

@@ -2,7 +2,7 @@ import React from 'react'
 import { describe, test, expect, afterEach } from 'vitest'
 import { MapControlBar } from '../lib/geo/MapControlBar/MapControlBar'
 import type { ActionIcon } from '../lib/types'
-import { mount } from '../../_shared/__tests__/reactHarness'
+import { mount, click } from '../../_shared/__tests__/reactHarness'
 
 /**
  * The action button driven from props alone — no host, no `window.mmgisAPI` —
@@ -188,6 +188,75 @@ describe('MapControlBar action button', () => {
         expect(zoom).toBeGreaterThanOrEqual(0)
         expect(endSlot).toBeGreaterThan(zoom)
         expect(action).toBeGreaterThan(endSlot)
+
+        await unmount()
+    })
+})
+
+/** The basemap popover portals to <body>; open it through the bar's button. */
+const STYLES = [{ name: 'Light' }, { name: 'Dark' }]
+const openBasemapPopover = async (container: HTMLElement) => {
+    const btn = Array.from(container.querySelectorAll('.blocks-map-control__btn')).find((b) =>
+        b.getAttribute('title')?.startsWith('Basemap'),
+    )!
+    await click(btn)
+}
+const labelsCheckbox = () =>
+    document.body.querySelector<HTMLInputElement>('.blocks-basemap-panel__labels input')
+const basemapPanel = () => document.body.querySelector('.blocks-basemap-panel')
+
+describe('MapControlBar basemap labels', () => {
+    test('is a checked checkbox beside the heading when the labels show', async () => {
+        const { container, unmount } = await mount(
+            <MapControlBar basemapStyles={STYLES} basemapLabelsVisible onToggleBasemapLabels={() => {}} />,
+        )
+        await openBasemapPopover(container)
+
+        const box = labelsCheckbox()!
+        expect(box.checked).toBe(true)
+        expect(box.closest('.blocks-basemap-panel__header')).not.toBeNull()
+        expect(box.closest('label')!.textContent).toBe('Labels')
+
+        await unmount()
+    })
+
+    test('is unchecked when the labels are hidden', async () => {
+        const { container, unmount } = await mount(
+            <MapControlBar
+                basemapStyles={STYLES}
+                basemapLabelsVisible={false}
+                onToggleBasemapLabels={() => {}}
+            />,
+        )
+        await openBasemapPopover(container)
+        expect(labelsCheckbox()!.checked).toBe(false)
+        await unmount()
+    })
+
+    test('is left out when the map cannot toggle labels, and the styles still list', async () => {
+        const { container, unmount } = await mount(
+            <MapControlBar basemapStyles={STYLES} basemapLabelsVisible={null} onToggleBasemapLabels={() => {}} />,
+        )
+        await openBasemapPopover(container)
+        expect(labelsCheckbox()).toBeNull()
+        expect(basemapPanel()!.querySelectorAll('.blocks-basemap-panel__row')).toHaveLength(2)
+        await unmount()
+    })
+
+    test('reports the new state and keeps the popover open', async () => {
+        const toggled: boolean[] = []
+        const { container, unmount } = await mount(
+            <MapControlBar
+                basemapStyles={STYLES}
+                basemapLabelsVisible
+                onToggleBasemapLabels={(v) => toggled.push(v)}
+            />,
+        )
+        await openBasemapPopover(container)
+        await click(labelsCheckbox()!)
+
+        expect(toggled).toEqual([false])
+        expect(basemapPanel()).not.toBeNull()
 
         await unmount()
     })
