@@ -243,10 +243,6 @@ const TERRA_DRAW_PREFIX = 'td'
  * fill layer first.
  */
 const TERRA_DRAW_BOTTOM_LAYER_ID = `${TERRA_DRAW_PREFIX}-polygon`
-/** Style layer types that paint the ground: everything a label sits over. */
-const GROUND_LAYER_TYPES = new Set([
-    'background', 'fill', 'line', 'fill-extrusion', 'raster', 'hillshade', 'heatmap', 'circle',
-])
 
 /**
  * Sort rank for a layer that was never given an explicit z-index.
@@ -2436,20 +2432,22 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * Carto's Voyager names its water before it draws its roads, and
      * OpenFreeMap's Liberty draws buildings after its one-way arrows, so
      * "the first symbol layer" would sink the data under the roads in one and
-     * under the buildings in the other. Past the last fill or line, only
-     * labels remain. A symbol without text (an icon layer) is taken only when
-     * no text label follows the ground. Null when the style has no labels,
-     * while a swap is in flight, or when the id is not in the style yet,
-     * since `addLayer` refuses an anchor it cannot find.
+     * under the buildings in the other. The style spec has one layer type
+     * that writes labels, `symbol`; every other type paints the map, so the
+     * ground ends at the last layer that is not a symbol. A symbol without
+     * text (an icon layer) is taken only when no text label follows. Null
+     * when the style has no labels, while a swap is in flight, or when the
+     * id is not in the style yet, since `addLayer` refuses an anchor it
+     * cannot find.
      */
     private _labelAnchorId(map: BasemapInstance | null): string | null {
         if (!map || this._styleSwapping) return null
         const layers = map.getStyle?.()?.layers ?? []
         let lastGround = -1
         layers.forEach((layer, i) => {
-            if (GROUND_LAYER_TYPES.has(layer.type)) lastGround = i
+            if (layer.type !== 'symbol') lastGround = i
         })
-        const above = layers.slice(lastGround + 1).filter((layer) => layer.type === 'symbol')
+        const above = layers.slice(lastGround + 1)
         const anchor =
             above.find((layer) => layer.layout?.['text-field'] != null) ?? above[0]
         if (!anchor || !map.getLayer(anchor.id)) return null
