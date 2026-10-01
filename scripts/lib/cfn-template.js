@@ -3,18 +3,18 @@
  * Renders the CloudFormation template for a single published dashboard:
  * a private S3 bucket fronted by a CloudFront distribution with a
  * viewer-request CloudFront Function. The Function handles path prefixes
- * always, and — where the environment asks for it — enforces a shared
- * password (HTTP Basic auth).
+ * always, and — where gated — enforces the dashboard's own credential,
+ * else the shared password (HTTP Basic auth).
  *
- * The shared password is baked into the Function source as a base64
+ * The credential is baked into the Function source as a base64
  * constant. It is deliberately NOT a CloudFormation Parameter — parameters
  * surface in DescribeStacks output, which the Deployments list reads.
  *
- * Whether dashboards are gated is a per-environment choice
- * (Terraform's dashboards_require_auth, reaching the publish task as
- * MMGIS_DASHBOARDS_REQUIRE_AUTH). The Function itself is the same either
- * way — a boolean baked into its body at publish decides whether the
- * password check runs — and so is everything else about the stack.
+ * A dashboard with its own credential is always gated; otherwise the gate is
+ * the environment's choice (Terraform's dashboards_require_auth, reaching the
+ * publish task as MMGIS_DASHBOARDS_REQUIRE_AUTH). The Function itself is the
+ * same either way — a boolean baked into its body at publish decides whether
+ * the password check runs — and so is everything else about the stack.
  */
 
 const fs = require("fs");
@@ -42,7 +42,7 @@ const BASIC_AUTH_CREDENTIALS_PLACEHOLDER = "<BASE64_BASIC_CREDENTIALS>";
 const REQUIRE_AUTH_GATED_LINE = "var REQUIRE_AUTH = true;";
 const REQUIRE_AUTH_UNGATED_LINE = "var REQUIRE_AUTH = false;";
 
-// Basic-auth username paired with the shared password.
+// Default Basic-auth username, paired with the shared password.
 const BASIC_AUTH_USER = "mmgis";
 
 /**
@@ -114,7 +114,7 @@ function stackNameForDeployment(deploymentId) {
  * for what the function itself does (auth gate, X-Forwarded-Prefix handling).
  *
  * The source is already the gated shape, so gating only substitutes
- * <BASE64_BASIC_CREDENTIALS> with base64("mmgis:" + password). Ungating
+ * <BASE64_BASIC_CREDENTIALS> with base64(username + ":" + password). Ungating
  * flips the source's `var REQUIRE_AUTH = true;` line to `false` — the value
  * the Function's own gate condition reads — and leaves the credential empty,
  * so an ungated dashboard ships nothing for its (unreachable) 401 branch to
@@ -124,7 +124,11 @@ function stackNameForDeployment(deploymentId) {
  * "" — gates and so demands the password, because a caller that mangles the
  * flag must fail toward the gate, never away from it.
  */
-function renderAuthFunctionCode(password, requireAuth = true) {
+function renderAuthFunctionCode(
+  password,
+  requireAuth = true,
+  username = BASIC_AUTH_USER
+) {
   const source = fs.readFileSync(AUTH_FUNCTION_SOURCE_PATH, "utf8");
 
   const body = source.replace(/^\/\*[\s\S]*?\*\/\s*/, "").trimEnd();
@@ -147,7 +151,7 @@ function renderAuthFunctionCode(password, requireAuth = true) {
     );
 
   const expected = gated
-    ? Buffer.from(`${BASIC_AUTH_USER}:${password}`).toString("base64")
+    ? Buffer.from(`${username}:${password}`).toString("base64")
     : "";
 
   const withGate = gated
@@ -166,7 +170,11 @@ function renderAuthFunctionCode(password, requireAuth = true) {
  * Only requireAuth === false ungates the dashboard; any other value gates it
  * and requires the password.
  */
-function renderCfnTemplate({ password, requireAuth = true } = {}) {
+function renderCfnTemplate({
+  password,
+  requireAuth = true,
+  username = BASIC_AUTH_USER,
+} = {}) {
   const gated = requireAuth !== false;
 
   if (gated && (password == null || password === ""))
@@ -260,7 +268,7 @@ function renderCfnTemplate({ password, requireAuth = true } = {}) {
               : "Path-prefix handler for the dashboard",
             Runtime: "cloudfront-js-1.0",
           },
-          FunctionCode: renderAuthFunctionCode(password, gated),
+          FunctionCode: renderAuthFunctionCode(password, gated, username),
         },
       },
       DashboardDistribution: {
