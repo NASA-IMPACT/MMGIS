@@ -31,6 +31,10 @@ function chartIdOf(payload: unknown): string | null {
     return typeof id === 'string' && id !== '' ? id : null
 }
 
+// A card belongs to the plugin that sent it, so two sources reusing a
+// chartId each keep their own card.
+const cardKey = (sourceId: string, chartId: string) => `${sourceId}:${chartId}`
+
 /** The tool starts hidden (config metadata) and is on screen only while it
  *  has something to show. Asking for a state the tool already holds is a
  *  no-op in the layout, so every chart may ask to be seen: a panel hidden
@@ -51,7 +55,8 @@ function setShown(shown: boolean) {
 
 /**
  * Bridges the bus to the presentational panel: subscribes to each source
- * plugin's `seriesReady` and `seriesCleared` and keeps one card per chartId.
+ * plugin's `seriesReady` and `seriesCleared` and keeps one card per source
+ * and chartId.
  * Loading and failure are the fetcher's to show on its own surface. All
  * payloads are treated as untrusted (other plugins emit them) — malformed
  * ones warn and are dropped rather than crashing the panel.
@@ -74,11 +79,12 @@ export function MMGISSeriesChartAdapter() {
             // list means "listen to nothing"; only an unset config keeps the
             // built-in default.
             if (Array.isArray(vars?.sources)) {
-                setSources(
-                    vars.sources.filter(
-                        (s): s is string => typeof s === 'string' && s !== '',
-                    ),
-                )
+                // The configure field splits on commas and keeps the spaces.
+                const ids = vars.sources
+                    .filter((s): s is string => typeof s === 'string')
+                    .map((s) => s.trim())
+                    .filter((s) => s !== '')
+                setSources([...new Set(ids)])
             }
             if (vars?.layout === 'dropdown' || vars?.layout === 'list')
                 setLayout(vars.layout)
@@ -104,15 +110,20 @@ export function MMGISSeriesChartAdapter() {
                         )
                         return
                     }
-                    cardsRef.current = { ...cardsRef.current, [p.chartId]: p }
+                    cardsRef.current = {
+                        ...cardsRef.current,
+                        [cardKey(sourceId, p.chartId)]: p,
+                    }
                     setCards(cardsRef.current)
                     setShown(true)
                 }),
                 mmgisOn(events.cleared, (p) => {
                     const chartId = chartIdOf(p)
-                    if (!chartId || !(chartId in cardsRef.current)) return
+                    if (!chartId) return
+                    const key = cardKey(sourceId, chartId)
+                    if (!(key in cardsRef.current)) return
                     const next = { ...cardsRef.current }
-                    delete next[chartId]
+                    delete next[key]
                     cardsRef.current = next
                     setCards(next)
                     if (Object.keys(next).length === 0) setShown(false)
@@ -122,8 +133,8 @@ export function MMGISSeriesChartAdapter() {
         return () => offs.forEach((off) => off())
     }, [sources])
 
-    const cardList = Object.entries(cards).map(([chartId, payload]) => ({
-        chartId,
+    const cardList = Object.entries(cards).map(([key, payload]) => ({
+        chartId: key,
         payload,
     }))
 

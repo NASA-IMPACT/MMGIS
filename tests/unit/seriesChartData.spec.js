@@ -191,7 +191,7 @@ describe('seriesChart chartData', () => {
     })
 
     describe('seriesToCsv', () => {
-        test('two columns headed x and the series label; gaps are empty cells', () => {
+        test('two columns headed timestamp and the series label; gaps are empty cells', () => {
             const csv = seriesToCsv({
                 id: 'o3',
                 label: 'O3',
@@ -201,7 +201,7 @@ describe('seriesChart chartData', () => {
                 ],
             })
             expect(csv.split('\n')).toEqual([
-                'x,O3',
+                'timestamp,O3',
                 '2026-01-01T00:00:00Z,0.04',
                 '2026-01-02T00:00:00Z,',
             ])
@@ -214,7 +214,7 @@ describe('seriesChart chartData', () => {
                 points: [{ x: 'a,b', y: 1 }],
             })
             expect(csv.split('\n')).toEqual([
-                'x,"PM2.5, ""fine"""',
+                'timestamp,"PM2.5, ""fine"""',
                 '"a,b",1',
             ])
         })
@@ -225,7 +225,7 @@ describe('seriesChart chartData', () => {
                 label: 'a\rb',
                 points: [{ x: 1, y: 1 }],
             })
-            expect(csv.split('\n')[0]).toBe('x,"a\rb"')
+            expect(csv.split('\n')[0]).toBe('timestamp,"a\rb"')
         })
     })
 

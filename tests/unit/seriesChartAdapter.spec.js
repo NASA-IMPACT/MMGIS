@@ -193,19 +193,53 @@ describe('MMGISSeriesChartAdapter', () => {
         expect(host.textContent).toContain('Select something on the map')
     })
 
-    test('an explicitly empty sources config disables all subscriptions', async () => {
+    async function remountWithVars(vars) {
         act(() => root.unmount())
         bus = makeBus()
         bus.hasHandler = () => true
-        bus.request = async (name) =>
-            name === 'tool:getVars' ? { sources: [] } : null
+        bus.request = async (name) => (name === 'tool:getVars' ? vars : null)
         window.mmgisAPI = bus
         root = createRoot(host)
         await act(async () =>
             root.render(React.createElement(MMGISSeriesChartAdapter)),
         )
+    }
+
+    test('an explicitly empty sources config disables all subscriptions', async () => {
+        await remountWithVars({ sources: [] })
         act(() => bus.emit(READY, validPayload()))
         expect(host.textContent).toContain('Select something on the map')
+    })
+
+    test('source ids typed with spaces around the commas still subscribe', async () => {
+        await remountWithVars({ sources: [' fetch-timeseries', 'other ', ''] })
+        act(() => bus.emit(READY, validPayload()))
+        expect(host.textContent).toContain('Station 42')
+        act(() =>
+            bus.emit('plugin:other:seriesReady', {
+                ...validPayload(),
+                chartId: 'c2',
+                title: 'Buoy 7',
+            }),
+        )
+        expect(host.textContent).toContain('Buoy 7')
+    })
+
+    test('two sources using the same chartId each keep their own card', async () => {
+        await remountWithVars({ sources: ['fetch-timeseries', 'other'] })
+        act(() => bus.emit(READY, validPayload()))
+        act(() =>
+            bus.emit('plugin:other:seriesReady', {
+                ...validPayload(),
+                title: 'Buoy 7',
+            }),
+        )
+        expect(host.querySelectorAll('.series-chart__card')).toHaveLength(2)
+
+        // One source clearing its chart leaves the other's on screen.
+        act(() => bus.emit('plugin:other:seriesCleared', { chartId: 'c1' }))
+        expect(host.textContent).toContain('Station 42')
+        expect(host.textContent).not.toContain('Buoy 7')
     })
 
     test('a refetch over the same chartId keeps the picked variable', () => {
