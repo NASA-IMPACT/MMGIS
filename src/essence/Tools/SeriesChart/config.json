@@ -8,9 +8,9 @@
         }
     },
     "defaultIcon": "chart-line",
-    "description": "Generic chart panel: renders time/line charts published by fetcher plugins over the mmgisAPI Event Bus.",
+    "description": "Shows time series charts from other plugins in a panel.",
     "descriptionFull": {
-        "title": "Subscribes to plugin:<source>:seriesReady and seriesCleared for each plugin id listed in variables.sources and renders one chart card per chartId; loading and failure are the fetcher's to show. Knows nothing about data sources — any plugin emitting the shared chart-series payload (src/essence/Tools/_shared/types/chartSeries.ts) can drive it, e.g. FetchTimeseries for vector feature time series.",
+        "title": "Shows a chart for each time series another plugin provides, such as Fetch Timeseries. List those plugins under Source plugins.",
         "example": {
             "sources": [
                 "fetch-timeseries"
@@ -39,11 +39,10 @@
                 "components": [
                     {
                         "field": "variables.sources",
-                        "name": "Source plugins (JSON array)",
-                        "description": "Plugin ids whose series events this chart renders, e.g. [\"fetch-timeseries\"]. Adding a new fetcher plugin here wires it to this chart with no code change.",
-                        "type": "json",
-                        "width": 8,
-                        "height": "120px"
+                        "name": "Source plugins",
+                        "description": "Plugins whose time series this panel charts, separated by commas. Leave empty for fetch-timeseries.",
+                        "type": "textarray",
+                        "width": 8
                     },
                     {
                         "field": "variables.layout",

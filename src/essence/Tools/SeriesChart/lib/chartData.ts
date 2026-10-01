@@ -250,12 +250,13 @@ export function buildChartOption(
 }
 
 /**
- * A variable's points as a two-column CSV, `x` then the series label.
- * `y: null` gaps become empty cells; fields with commas/quotes are quoted.
+ * A variable's points as a two-column CSV, `timestamp` then the series
+ * label. `y: null` gaps become empty cells; fields with commas/quotes are
+ * quoted.
  */
 export function seriesToCsv(s: ChartSeries): string {
     const esc = (v: string) =>
         /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
     const rows = s.points.map((p) => `${esc(String(p.x))},${p.y ?? ''}`)
-    return [`x,${esc(s.label)}`, ...rows].join('\n')
+    return [`timestamp,${esc(s.label)}`, ...rows].join('\n')
 }
