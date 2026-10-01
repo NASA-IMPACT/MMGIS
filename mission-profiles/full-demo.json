@@ -27,6 +27,7 @@
     "Card",
     "Chart",
     "FetchStats",
+    "FetchTimeseries",
     "SeriesChart",
     "ShareExport",
     "LayerFilterThemes",
