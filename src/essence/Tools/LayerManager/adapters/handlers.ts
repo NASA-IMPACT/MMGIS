@@ -7,12 +7,16 @@ import {
     mmgisFitBounds,
     mmgisGetLayerOrder,
     mmgisSetLayerOrder,
+    mmgisGetVisibleLayers,
+    mmgisGetListedLayers,
+    mmgisGetLayerConfigs,
 } from '../../_shared/adapters/mmgisAPI'
 import {
     ZOOM_TO_LAYER_PADDING,
     ZOOM_TO_LAYER_POINT_MAX_ZOOM,
 } from '../lib/utils/constants'
 import { placeInOrder } from '../lib/utils/layerOrder'
+import { filteredOutLayers } from '../lib/utils/filteredOut'
 
 type Refresh = () => Promise<void> | void
 
@@ -31,6 +35,34 @@ export const toggleVisibility = async (layerId: string): Promise<void> => {
     if (newVisibility !== null) {
         mmgisEmit('layer:visibilityChange', { layerName: layerId, visible: newVisibility })
     }
+}
+
+export type FilteredOutLayer = { id: string; title: string }
+
+export const getFilteredOutLayers = async (): Promise<FilteredOutLayer[]> => {
+    const [visible, listed, configs] = await Promise.all([
+        mmgisGetVisibleLayers(),
+        mmgisGetListedLayers(),
+        mmgisGetLayerConfigs(),
+    ])
+    return filteredOutLayers(visible, listed).map((id) => ({
+        id,
+        title: configs?.[id]?.display_name || id,
+    }))
+}
+
+// Toggle flips state, so only layers currently on are sent.
+export const hideFilteredOutLayers = async (): Promise<void> => {
+    for (const { id } of await getFilteredOutLayers()) {
+        await toggleVisibility(id)
+    }
+}
+
+// A pick is one request; core pins the run, redraws, and moves the clock.
+// False means core refused the run: unknown layer, no runs, or not listed.
+export const selectRun = async (layerId: string, run: string): Promise<boolean> => {
+    const pinned = await mmgisRequest<boolean>('layers:setRun', { layerUUID: layerId, run })
+    return pinned === true
 }
 
 export const setOpacity = async (layerId: string, opacity: number): Promise<void> => {

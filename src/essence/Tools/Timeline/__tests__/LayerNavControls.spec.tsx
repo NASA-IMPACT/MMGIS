@@ -29,6 +29,8 @@ const sparseNav = (...days: string[]): LayerNavigation => {
         stops,
         start: stops[0],
         end: stops[stops.length - 1],
+        hasOwnStart: true,
+        hasOwnEnd: true,
     }
 }
 
@@ -36,6 +38,8 @@ const periodicNav = (start: string, end: string): LayerNavigation => ({
     kind: 'periodic',
     start: new Date(start),
     end: new Date(end),
+    hasOwnStart: true,
+    hasOwnEnd: true,
 })
 
 const SPARSE = sparseNav('2020-01-02', '2020-03-04', '2020-11-02')

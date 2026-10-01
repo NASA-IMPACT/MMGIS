@@ -1,6 +1,9 @@
 import { test, expect, vi } from 'vitest'
 import {
     toggleVisibility,
+    getFilteredOutLayers,
+    hideFilteredOutLayers,
+    selectRun,
     setOpacity,
     setColormap,
     setRescale,
@@ -57,6 +60,57 @@ test.describe('handlers', () => {
             event: 'layer:visibilityChange',
             payload: { layerName: 'layerA', visible: true },
         })
+    })
+
+    test('getFilteredOutLayers names the layers on the map but filtered out of the list', async () => {
+        setupMock({
+            'layers:getVisible': { a: true, b: true, c: false, d: true },
+            'layers:getListed': { b: false, c: false, d: false },
+            'layers:getAllConfigs': { a: { display_name: 'A' }, b: { display_name: 'Bravo' }, d: {} },
+        })
+        expect(await getFilteredOutLayers()).toEqual([
+            { id: 'b', title: 'Bravo' },
+            { id: 'd', title: 'd' },
+        ])
+    })
+
+    test('hideFilteredOutLayers toggles only those layers and emits for each', async () => {
+        const { emitCalls, requests } = setupMock({
+            'layers:getVisible': { a: true, b: true, c: false, d: true },
+            'layers:getListed': { b: false, c: false, d: false },
+            'layers:getAllConfigs': {},
+            'layers:toggle': false,
+        })
+        await hideFilteredOutLayers()
+
+        const toggled = requests.filter((r) => r.name === 'layers:toggle').map((r) => r.params)
+        expect(toggled).toEqual(['b', 'd'])
+        expect(emitCalls).toEqual([
+            { event: 'layer:visibilityChange', payload: { layerName: 'b', visible: false } },
+            { event: 'layer:visibilityChange', payload: { layerName: 'd', visible: false } },
+        ])
+    })
+
+    test('hideFilteredOutLayers sends nothing when no layer is filtered out', async () => {
+        const { emitCalls, requests } = setupMock({
+            'layers:getVisible': { a: true, b: false },
+            'layers:getListed': { b: false },
+            'layers:getAllConfigs': {},
+            'layers:toggle': false,
+        })
+        await hideFilteredOutLayers()
+
+        expect(requests.some((r) => r.name === 'layers:toggle')).toBe(false)
+        expect(emitCalls).toEqual([])
+    })
+
+    test('hideFilteredOutLayers is a no-op against a core without the listed handler', async () => {
+        const { requests } = setupMock({
+            'layers:getVisible': { a: true },
+            'layers:toggle': false,
+        })
+        await hideFilteredOutLayers()
+        expect(requests.some((r) => r.name === 'layers:toggle')).toBe(false)
     })
 
     test('setOpacity issues layers:setOpacity and emits opacityChange', async () => {
@@ -367,5 +421,22 @@ test.describe('dropLayer', () => {
         await Promise.all([first, second])
 
         expect(writes).toEqual([['c', 'a', 'b']])
+    })
+})
+
+test.describe('selectRun', () => {
+    test('asks core to pin the run and nothing else', async () => {
+        const { requests, emitCalls } = setupMock({ 'layers:setRun': true })
+        expect(await selectRun('fc', '2026-09-21T06:00:00')).toBe(true)
+        expect(requests).toEqual([
+            { name: 'layers:setRun', params: { layerUUID: 'fc', run: '2026-09-21T06:00:00' } },
+        ])
+        expect(emitCalls).toEqual([])
+    })
+
+    test('reports a refusal as false, still emitting nothing', async () => {
+        const { emitCalls } = setupMock({ 'layers:setRun': false })
+        expect(await selectRun('fc', 'nope')).toBe(false)
+        expect(emitCalls).toEqual([])
     })
 })

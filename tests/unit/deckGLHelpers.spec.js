@@ -1,4 +1,7 @@
-import { test, expect } from 'vitest'
+import fs from 'fs'
+import path from 'path'
+import { test, expect, beforeEach, afterEach } from 'vitest'
+import { cacheControlForKey } from '../../scripts/lib/aws-provision.js'
 import {
     resolveLatLng,
     resolveBounds,
@@ -9,6 +12,7 @@ import {
     buildDeckLayer,
     hexToRgba,
     isImageTileResponse,
+    resolveMvtWorkerUrl,
 } from '../../src/essence/Basics/MapEngines/Adapters/DeckGLHelpers.ts'
 
 const tileResponse = (ok, status, contentType) => ({
@@ -138,6 +142,51 @@ test.describe('DeckGLHelpers', () => {
         })
     })
 
+    test.describe('resolveMvtWorkerUrl', () => {
+        const workerPath = 'static/loaders/mvt@4.4.4/mvt-worker.js'
+
+        test('resolves a relative public path against the page', () => {
+            expect(
+                resolveMvtWorkerUrl('./build/', workerPath, 'https://example.com/?mission=Air4US')
+            ).toBe('https://example.com/build/static/loaders/mvt@4.4.4/mvt-worker.js')
+        })
+
+        test('keeps a path prefix the page is served under', () => {
+            expect(
+                resolveMvtWorkerUrl('./build/', workerPath, 'https://example.com/customer/dash/')
+            ).toBe('https://example.com/customer/dash/build/static/loaders/mvt@4.4.4/mvt-worker.js')
+        })
+
+        test('resolves a rooted public path against the origin', () => {
+            expect(
+                resolveMvtWorkerUrl('/', workerPath, 'http://localhost:8889/?mission=Air4US')
+            ).toBe('http://localhost:8889/static/loaders/mvt@4.4.4/mvt-worker.js')
+        })
+
+        test('is undefined without a public path, a worker path or a page', () => {
+            expect(resolveMvtWorkerUrl(undefined, workerPath, 'https://example.com/')).toBeUndefined()
+            expect(resolveMvtWorkerUrl('./build/', undefined, 'https://example.com/')).toBeUndefined()
+            expect(resolveMvtWorkerUrl('./build/', workerPath, undefined)).toBeUndefined()
+        })
+
+        test('a published worker gets the short cache tier, not the immutable one', () => {
+            // Its file name carries no content hash, so a fronting cache must
+            // not hold it as immutable; the version in its path is what moves
+            // an upgrade to a new URL.
+            expect(cacheControlForKey(`build/${workerPath}`)).toBe('public, max-age=300')
+        })
+
+        test('the worker the build copies exists in the installed loader', () => {
+            // The webpack config copies this file; a loaders.gl upgrade that
+            // moves or renames it would otherwise drop the worker silently.
+            const worker = path.join(
+                __dirname,
+                '../../node_modules/@loaders.gl/mvt/dist/mvt-worker.js'
+            )
+            expect(fs.existsSync(worker)).toBe(true)
+        })
+    })
+
     test.describe('buildDeckLayer', () => {
         test('throws for unsupported layer type', () => {
             expect(() => buildDeckLayer('id', { type: 'unsupported' })).toThrow(
@@ -239,12 +288,82 @@ test.describe('DeckGLHelpers', () => {
             expect(layer.id).toBe('mvt-1')
         })
 
+        test('leaves the MVT worker to loaders.gl when there is no public path', () => {
+            // Outside a webpack build there is nowhere the worker is served.
+            const layer = buildDeckLayer('mvt-worker', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+            })
+            expect(layer.props.loadOptions?.mvt?.workerUrl).toBeUndefined()
+        })
+
+        test.describe('in a build that serves the MVT worker', () => {
+            // The two globals webpack defines; Vitest has neither.
+            beforeEach(() => {
+                globalThis.__webpack_public_path__ = './build/'
+                globalThis.MVT_WORKER_PATH = 'static/loaders/mvt@4.4.4/mvt-worker.js'
+            })
+            afterEach(() => {
+                delete globalThis.__webpack_public_path__
+                delete globalThis.MVT_WORKER_PATH
+            })
+
+            const workerUrl = () =>
+                new URL('./build/static/loaders/mvt@4.4.4/mvt-worker.js', document.baseURI).href
+            const url = 'https://example.com/tiles/{z}/{x}/{y}.mvt'
+
+            test('points the MVT layer at it', () => {
+                const layer = buildDeckLayer('mvt-served', { type: 'vectortile', url })
+                expect(layer.props.loadOptions.mvt.workerUrl).toBe(workerUrl())
+            })
+
+            test("keeps the worker when native options bring their own loader options", () => {
+                const layer = buildDeckLayer('mvt-native', {
+                    type: 'vectortile',
+                    url,
+                    nativeOptions: {
+                        loadOptions: {
+                            fetch: { headers: { Authorization: 'Bearer x' } },
+                            mvt: { layers: ['smoke'] },
+                        },
+                    },
+                })
+                expect(layer.props.loadOptions).toEqual({
+                    fetch: { headers: { Authorization: 'Bearer x' } },
+                    mvt: { layers: ['smoke'], workerUrl: workerUrl() },
+                })
+            })
+
+            test("lets native options choose their own worker", () => {
+                const layer = buildDeckLayer('mvt-own-worker', {
+                    type: 'vectortile',
+                    url,
+                    nativeOptions: {
+                        loadOptions: { mvt: { workerUrl: 'https://example.com/mvt-worker.js' } },
+                    },
+                })
+                expect(layer.props.loadOptions.mvt.workerUrl).toBe(
+                    'https://example.com/mvt-worker.js'
+                )
+            })
+        })
+
         test('creates an MVTLayer via MVTLayer alias', () => {
             const layer = buildDeckLayer('mvt-2', {
                 type: 'MVTLayer',
                 url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
             })
             expect(layer.id).toBe('mvt-2')
+        })
+
+        test('hands the unique id key on to the MVT layer, which highlights by it', () => {
+            const layer = buildDeckLayer('mvt-3', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                nativeOptions: { autoHighlight: true, uniqueIdProperty: 'fid' },
+            })
+            expect(layer.props.uniqueIdProperty).toBe('fid')
+            expect(layer.props.autoHighlight).toBe(true)
         })
 
         test('gives vectortile points a pixel radius from style.radius', () => {
@@ -706,6 +825,43 @@ test.describe('DeckGLHelpers', () => {
             })
             expect(layer.props.opacity).toBe(0.5)
             expect(layer.props.getLineColor).toEqual([255, 0, 0, 255])
+        })
+    })
+
+    test.describe('depth against a terrain basemap', () => {
+        // A basemap with 3D terrain writes the terrain into the depth buffer
+        // deck.gl shares; a flat layer that depth-tests against it loses every
+        // pixel the terrain stands in front of.
+        const flat = { depthCompare: 'always', depthWriteEnabled: false }
+        const url = 'https://example.com/{z}/{x}/{y}'
+
+        test.each([
+            ['raster tiles', { type: 'tile', url }],
+            ['WMS', { type: 'tile', tileformat: 'wms', url: 'https://example.com/wms?LAYERS=a' }],
+            ['GeoJSON', { type: 'vector', geojson: { type: 'FeatureCollection', features: [] } }],
+            ['vector tiles', { type: 'vectortile', url }],
+            ['point markers', { type: 'scatterplot', data: [] }],
+        ])('%s ignore depth', (_, options) => {
+            expect(buildDeckLayer('flat', options).props.parameters).toEqual(flat)
+        })
+
+        test.each([
+            ['raised raster tiles', { type: 'tile', url, tileElevation: 1000 }],
+            ['extruded GeoJSON', { type: 'vector', extruded: true, geojson: { type: 'FeatureCollection', features: [] } }],
+            ['3D tiles', { type: 'tile3d', url: 'https://example.com/tileset.json' }],
+            ['point clouds', { type: 'pointcloud', data: [] }],
+        ])('%s keep the depth test', (_, options) => {
+            expect(buildDeckLayer('solid', options).props.parameters).not.toEqual(flat)
+        })
+
+        test("a mission's native options still win", () => {
+            const parameters = { depthCompare: 'less-equal' }
+            const layer = buildDeckLayer('native', {
+                type: 'vectortile',
+                url,
+                nativeOptions: { parameters },
+            })
+            expect(layer.props.parameters).toEqual(parameters)
         })
     })
 

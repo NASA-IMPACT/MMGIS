@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { act } from 'react'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { LayerManagerPanel } from '../lib/geo/LayerManagerPanel/LayerManagerPanel'
 import type { Layer } from '../lib/types'
@@ -33,15 +33,8 @@ const editableCogLayer = (): Layer => ({
     title: 'Editable',
     stops: null,
     cog: {
-        isCog: true,
         editable: true,
         colormap: 'viridis',
-        min: 0,
-        max: 10,
-        defaultMin: 0,
-        defaultMax: 10,
-        defaultColormap: 'viridis',
-        units: 'm',
         titilerUrl: null,
     },
 })
@@ -134,6 +127,57 @@ describe('LayerManagerPanel without a host', () => {
         await unmount()
     })
 
+    test('omits the hide-filtered button without a handler or with nothing to hide', async () => {
+        const noHandler = await mount(
+            <LayerManagerPanel layers={[GRADIENT_LAYER]} filteredOutLayers={['Quakes', 'Faults']} />,
+        )
+        expect(noHandler.container.querySelector('.blocks-layer-manager__hide-filtered')).toBeNull()
+        await noHandler.unmount()
+
+        const nothingToHide = await mount(
+            <LayerManagerPanel
+                layers={[GRADIENT_LAYER]}
+                onHideFilteredLayers={vi.fn()}
+                filteredOutLayers={[]}
+            />,
+        )
+        expect(nothingToHide.container.querySelector('.blocks-layer-manager__hide-filtered')).toBeNull()
+        await nothingToHide.unmount()
+    })
+
+    test('shows the hide-filtered button with its count, names the layers on hover, and reports clicks', async () => {
+        const onHideFilteredLayers = vi.fn()
+        const { container, unmount } = await mount(
+            <LayerManagerPanel
+                layers={[GRADIENT_LAYER]}
+                onHideFilteredLayers={onHideFilteredLayers}
+                filteredOutLayers={['Quakes', 'Faults', 'Aftershocks']}
+            />,
+        )
+
+        const button = container.querySelector('.blocks-layer-manager__hide-filtered')!
+        expect(button.textContent).toBe('Hide 3 filtered-out layers')
+        expect(button.getAttribute('title')).toBe('Switch off: Quakes, Faults, Aftershocks')
+        await click(button)
+
+        expect(onHideFilteredLayers).toHaveBeenCalledTimes(1)
+        await unmount()
+    })
+
+    test('singularises the hide-filtered label for one layer', async () => {
+        const { container, unmount } = await mount(
+            <LayerManagerPanel
+                layers={[GRADIENT_LAYER]}
+                onHideFilteredLayers={vi.fn()}
+                filteredOutLayers={['Quakes']}
+            />,
+        )
+        expect(
+            container.querySelector('.blocks-layer-manager__hide-filtered')!.textContent,
+        ).toBe('Hide 1 filtered-out layer')
+        await unmount()
+    })
+
     test('reports visibility changes through its callback', async () => {
         const onVisibilityChange = vi.fn()
         const { container, unmount } = await mount(
@@ -220,6 +264,33 @@ describe('LayerManagerPanel without a host', () => {
         await unmount()
     })
 
+    // A capability, not a state: a layer carries the mark whether or not it is
+    // currently drawn.
+    test('marks only the layers that support area analysis', async () => {
+        const { container, unmount } = await mount(
+            <LayerManagerPanel
+                layers={[
+                    { ...GRADIENT_LAYER, analysisSupported: true, visible: false },
+                    {
+                        ...GRADIENT_LAYER,
+                        id: 'Plain_0123456789abcdef',
+                        title: 'Plain',
+                    },
+                ]}
+            />,
+        )
+
+        const marked = container.querySelectorAll(
+            '.blocks-layer-legend__analysis-marker',
+        )
+        expect(marked).toHaveLength(1)
+        expect(
+            marked[0].closest('[data-legend-id]')?.getAttribute('data-legend-id'),
+        ).toBe(GRADIENT_LAYER.id)
+        expect(marked[0].getAttribute('aria-label')).toBe('Supports area analysis')
+        await unmount()
+    })
+
     test('renders without any callbacks wired', async () => {
         const { container, unmount } = await mount(
             <LayerManagerPanel layers={[GRADIENT_LAYER]} />,
@@ -228,5 +299,140 @@ describe('LayerManagerPanel without a host', () => {
         const checkbox = container.querySelector('.blocks-layer-legend__checkbox')!
         await expect(click(checkbox)).resolves.toBeUndefined()
         await unmount()
+    })
+})
+
+describe('LayerManagerPanel forecast runs', () => {
+    const forecastLayer = (overrides: Partial<Layer['forecast']> = {}): Layer => ({
+        ...GRADIENT_LAYER,
+        id: 'Forecast_00aa11bb22cc33dd',
+        title: 'NAQFC O3',
+        forecast: {
+            runs: [{ datetime: '2026-09-21T12:00:00' }, { datetime: '2026-09-21T06:00:00' }],
+            selectedRun: '2026-09-21T06:00:00',
+            step: 'PT1H',
+            lead: null,
+            ...overrides,
+        },
+    })
+
+    const select = (container: HTMLElement) =>
+        container.querySelector<HTMLButtonElement>('.blocks-layer-legend__run-select')
+
+    // The picker is portaled to the body, away from the row.
+    const openRuns = async (container: HTMLElement) => {
+        await click(select(container)!)
+        return Array.from(
+            document.body.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'),
+        )
+    }
+
+    test('a layer without a forecast has no run control', async () => {
+        const { container, unmount } = await mount(<LayerManagerPanel layers={[GRADIENT_LAYER]} />)
+        expect(select(container)).toBeNull()
+        await unmount()
+    })
+
+    test('offers the runs newest first, named by hour for an hourly step, on the pinned run', async () => {
+        const { container, unmount } = await mount(<LayerManagerPanel layers={[forecastLayer()]} />)
+        expect(select(container)!.textContent).toMatch(/^Sep 21, 06Z · \d+ [hd] ago$/)
+        const options = await openRuns(container)
+        expect(
+            document.body.querySelector('.blocks-layer-legend__run-popover-heading')!.textContent,
+        ).toBe('Model run')
+        expect(options.map((o) => o.textContent)).toEqual([
+            'Sep 21, 12Z · Latest',
+            expect.stringMatching(/^Sep 21, 06Z · \d+ [hd] ago$/),
+        ])
+        expect(options.map((o) => o.getAttribute('aria-checked'))).toEqual(['false', 'true'])
+        expect(document.activeElement).toBe(options[1])
+        await unmount()
+    })
+
+    test('names daily runs by day', async () => {
+        const layer = forecastLayer({
+            step: 'P1D',
+            runs: [{ datetime: '2026-09-21T00:00:00' }],
+            selectedRun: '2026-09-21T00:00:00',
+        })
+        const { container, unmount } = await mount(<LayerManagerPanel layers={[layer]} />)
+        expect(select(container)!.textContent).toBe('Sep 21 · Latest')
+        await unmount()
+    })
+
+    test('reports a pick through its callback and closes the picker', async () => {
+        const onRunChange = vi.fn()
+        const { container, unmount } = await mount(
+            <LayerManagerPanel layers={[forecastLayer()]} onRunChange={onRunChange} />,
+        )
+        const [latest] = await openRuns(container)
+        await click(latest)
+        expect(onRunChange).toHaveBeenCalledWith('Forecast_00aa11bb22cc33dd', '2026-09-21T12:00:00')
+        expect(select(container)!.textContent).toBe('Sep 21, 12Z · Latest')
+        expect(document.body.querySelector('[role="menuitemradio"]')).toBeNull()
+        await unmount()
+    })
+
+    const pickThenSettle = async (container: HTMLElement) => {
+        const [latest] = await openRuns(container)
+        await click(latest)
+        // The callback's promise settles on the microtask queue.
+        await act(async () => {
+            await Promise.resolve()
+            await Promise.resolve()
+        })
+        return select(container)!
+    }
+
+    test('a refused pick puts the dropdown back on the pinned run', async () => {
+        const onRunChange = vi.fn(async () => false)
+        const { container, unmount } = await mount(
+            <LayerManagerPanel layers={[forecastLayer()]} onRunChange={onRunChange} />,
+        )
+        const el = await pickThenSettle(container)
+        expect(el.textContent).toMatch(/^Sep 21, 06Z · /)
+        await unmount()
+    })
+
+    test('a pick whose callback throws goes back too', async () => {
+        const onRunChange = vi.fn(async () => {
+            throw new Error('bus down')
+        })
+        const { container, unmount } = await mount(
+            <LayerManagerPanel layers={[forecastLayer()]} onRunChange={onRunChange} />,
+        )
+        const el = await pickThenSettle(container)
+        expect(el.textContent).toMatch(/^Sep 21, 06Z · /)
+        await unmount()
+    })
+
+    test('shows the lead core reports, in step units, and nothing before core knows it', async () => {
+        const known = await mount(<LayerManagerPanel layers={[forecastLayer({ lead: 18 })]} />)
+        expect(known.container.querySelector('.blocks-layer-legend__run-lead')!.textContent).toBe('+18 h')
+        await known.unmount()
+
+        const unknown = await mount(<LayerManagerPanel layers={[forecastLayer({ lead: null })]} />)
+        expect(unknown.container.querySelector('.blocks-layer-legend__run-lead')).toBeNull()
+        await unknown.unmount()
+    })
+
+    test('names no lead where the run has no data, leaving that to the no-data badge', async () => {
+        const { container, unmount } = await mount(
+            <LayerManagerPanel layers={[{ ...forecastLayer({ lead: 90 }), outOfDataRange: true }]} />,
+        )
+        expect(container.querySelector('.blocks-layer-legend__run-lead')).toBeNull()
+        expect(container.querySelectorAll('.blocks-layer-legend__coverage-warning')).toHaveLength(1)
+        expect(select(container)).not.toBeNull()
+        await unmount()
+    })
+
+    test('hides the run control while the layer is off or before runs are known', async () => {
+        const off = await mount(<LayerManagerPanel layers={[{ ...forecastLayer(), visible: false }]} />)
+        expect(select(off.container)).toBeNull()
+        await off.unmount()
+
+        const unknown = await mount(<LayerManagerPanel layers={[forecastLayer({ runs: [] })]} />)
+        expect(select(unknown.container)).toBeNull()
+        await unknown.unmount()
     })
 })

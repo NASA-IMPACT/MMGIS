@@ -105,6 +105,10 @@ _type:_ boolean
 
 When using MMGIS-served time tiles (time enabled, `{t}` in the url, tiles served under /Missions in the format described in Time_Tiles), whether to composite/merge each tile with with the other tiles are the same location across the time query. This is useful when Time Tile data is sparse. It is a more expensive operation. If your Time Tiles are complete (no alpha in a tile), leave this False as merging tiles historically would have no effect.
 
+#### Model runs
+
+For a forecast: a layer whose service publishes model runs and indexes each run's data by lead. Set **Runs URL** to where the run times are listed (JSON with an array of ISO datetimes at **Runs Path**, default `data`) and write `{reftime}` and `{lead}` into the Source URL where it takes the run time and the lead, for example `sel=reference_time=nearest::{reftime}&sel=lead=nearest::{lead}`. Core reads the runs while the mission loads, pins the layer to the newest, derives `dataStartTime` and `dataEndTime` from the run and the lead range, and fills both placeholders as the timeline scrubs, so the coverage gate, the Timeline band and every other reader follow without knowing about runs. Pickers such as the Layer Manager's "Model run" dropdown read the runs and change the pin over `layers:getRuns` and `layers:setRun`. **Lead Step** is one lead unit as an ISO 8601 duration (`PT1H`, `P1D`, `P1M`). **Leads URL** and **Leads Path** name the lead indices whose first and last bound the window; empty means the run instant alone. **Runs To Offer** caps what pickers list, default 10. Stored under `time.runs`.
+
 #### Raw Variables
 
 Clicking "Set Default Variables" will add a template of all possible raw variables (without overwriting ones that are already set). All raw variables are optional.

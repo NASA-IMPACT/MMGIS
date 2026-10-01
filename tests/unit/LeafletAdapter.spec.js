@@ -71,6 +71,13 @@ function makeMockLeafletMap() {
 // test runs — the specs that need a live DOM node build it from this.
 const domDocument = globalThis.document
 
+/** A DOM event stamped as the browser would stamp one made at `timeStamp`. */
+function stamped(type, timeStamp) {
+    const event = new Event(type)
+    Object.defineProperty(event, 'timeStamp', { value: timeStamp })
+    return event
+}
+
 function setup() {
     const fakeContainer = { querySelector: () => null }
     const mockMap = makeMockLeafletMap()
@@ -906,13 +913,6 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
         return element
     }
 
-    /** A DOM event stamped as the browser would stamp one made at `timeStamp`. */
-    function stamped(type, timeStamp) {
-        const event = new Event(type)
-        Object.defineProperty(event, 'timeStamp', { value: timeStamp })
-        return event
-    }
-
     /** The map's double-click zoom handler, reporting the state it is left in. */
     function makeDoubleClickZoom(initial = true) {
         let enabled = initial
@@ -1542,5 +1542,196 @@ test.describe('LeafletAdapter - setLayerOrder', () => {
     test('does nothing before init', () => {
         const adapter = new LeafletAdapter()
         expect(() => adapter.setLayerOrder(['a'])).not.toThrow()
+    })
+})
+
+// ─── popups ───────────────────────────────────────────────────────────────────
+
+test.describe('LeafletAdapter - popups', () => {
+
+    /**
+     * An initialised adapter, plus a stand-in for L.popup that records what it
+     * was built with and fires the `remove` Leaflet fires whenever a popup
+     * leaves the map, however it left. `closed` is every popup the map was
+     * asked to close, in order.
+     */
+    function setupPopups() {
+        const { mockMap } = setup()
+        const built = []
+        const closed = []
+
+        global.L.popup = (options) => {
+            const removeHandlers = []
+            const popup = {
+                options,
+                latlng: null,
+                content: null,
+                openedOn: null,
+                opens: 0,
+                setLatLng(latlng) { popup.latlng = latlng; return popup },
+                setContent(element) { popup.content = element; return popup },
+                on(name, handler) {
+                    if (name === 'remove') removeHandlers.push(handler)
+                    return popup
+                },
+                fireRemove() { removeHandlers.forEach((handler) => handler()) },
+                openOn(map) {
+                    popup.opens++
+                    popup.openedOn = map
+                    map.openPopup(popup)
+                    return popup
+                },
+            }
+            built.push(popup)
+            return popup
+        }
+
+        mockMap.openPopup = function (popup) { this._popup = popup }
+        // Every close Leaflet makes comes through here: its ×, its
+        // click-on-the-map and another popup opening all call closePopup.
+        mockMap.closePopup = function (popup) {
+            const open = this._popup
+            if (!open || (popup && popup !== open)) return
+            this._popup = null
+            closed.push(open)
+            open.fireRemove()
+        }
+        // Tearing the map down takes its popup with it, as Leaflet's does.
+        mockMap.remove = function () { this.closePopup() }
+
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+        return { adapter, mockMap, built, closed }
+    }
+
+    const makeCard = () => domDocument.createElement('div')
+
+    /**
+     * Put the draw-end click guard into the hold it takes after a drawing's
+     * last gesture, when the click that ended the drawing is still to come.
+     */
+    function holdDrawEndClick(adapter) {
+        const element = domDocument.createElement('div')
+        domDocument.body.appendChild(element)
+        adapter._drawEndClick.arm(stamped('pointerup', 1000), element)
+    }
+
+    test('an open asked for while the draw-end click is still coming waits for it', () => {
+        vi.useFakeTimers()
+        try {
+            const { adapter, mockMap, built } = setupPopups()
+            holdDrawEndClick(adapter)
+
+            adapter.showPopup({ lat: 40, lng: -120 }, makeCard())
+            expect(built[0].openedOn).toBeNull()
+
+            vi.runAllTimers()
+
+            expect(built[0].openedOn).toBe(mockMap)
+            expect(built[0].opens).toBe(1)
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    test('hiding while an open is waiting cancels it', () => {
+        vi.useFakeTimers()
+        try {
+            const { adapter, built } = setupPopups()
+            const onClose = vi.fn()
+            holdDrawEndClick(adapter)
+
+            adapter.showPopup({ lat: 40, lng: -120 }, makeCard(), onClose)
+            adapter.hidePopup()
+            vi.runAllTimers()
+
+            expect(built[0].opens).toBe(0)
+            expect(onClose).not.toHaveBeenCalled()
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    test('opens a popup on the map holding the element, className its only option', () => {
+        const { adapter, mockMap, built } = setupPopups()
+        const card = makeCard()
+
+        adapter.showPopup({ lat: 40, lng: -120 }, card)
+
+        expect(built[0].options).toEqual({ className: 'mmgis-map-popup' })
+        expect(built[0].latlng).toEqual([40, -120])
+        expect(built[0].content).toBe(card)
+        expect(built[0].openedOn).toBe(mockMap)
+    })
+
+    test('anchors a [lat, lng] tuple at [lat, lng]', () => {
+        const { adapter, built } = setupPopups()
+
+        adapter.showPopup([40, -120], makeCard())
+
+        expect(built[0].latlng).toEqual([40, -120])
+    })
+
+    test('showing before init refuses, saying a map is needed', () => {
+        setup()
+        const adapter = new LeafletAdapter()
+
+        expect(() => adapter.showPopup({ lat: 40, lng: -120 }, domDocument.createElement('div')))
+            .toThrow(/requires a map/)
+    })
+
+    test('hiding closes the popup and is not reported as a close', () => {
+        const { adapter, built, closed } = setupPopups()
+        const onClose = vi.fn()
+
+        adapter.showPopup({ lat: 40, lng: -120 }, makeCard(), onClose)
+        adapter.hidePopup()
+
+        expect(closed).toEqual([built[0]])
+        expect(onClose).not.toHaveBeenCalled()
+    })
+
+    test('a second card replaces the first, whose close is not reported', () => {
+        const { adapter, mockMap, built, closed } = setupPopups()
+        const onFirstClose = vi.fn()
+
+        adapter.showPopup({ lat: 40, lng: -120 }, makeCard(), onFirstClose)
+        adapter.showPopup({ lat: 41, lng: -121 }, makeCard(), vi.fn())
+
+        expect(closed).toEqual([built[0]])
+        expect(built[1].openedOn).toBe(mockMap)
+        expect(onFirstClose).not.toHaveBeenCalled()
+    })
+
+    test('a close Leaflet made is reported once', () => {
+        const { adapter, mockMap } = setupPopups()
+        const onClose = vi.fn()
+
+        adapter.showPopup({ lat: 40, lng: -120 }, makeCard(), onClose)
+        mockMap.closePopup()
+
+        expect(onClose).toHaveBeenCalledTimes(1)
+    })
+
+    test('a close arriving from a popup already let go is not reported', () => {
+        const { adapter, built } = setupPopups()
+        const onFirstClose = vi.fn()
+
+        adapter.showPopup({ lat: 40, lng: -120 }, makeCard(), onFirstClose)
+        adapter.showPopup({ lat: 41, lng: -121 }, makeCard(), vi.fn())
+        built[0].fireRemove()
+
+        expect(onFirstClose).not.toHaveBeenCalled()
+    })
+
+    test('destroying the engine is not reported as a close', () => {
+        const { adapter, built, closed } = setupPopups()
+        const onClose = vi.fn()
+
+        adapter.showPopup({ lat: 40, lng: -120 }, makeCard(), onClose)
+        adapter.destroy()
+
+        expect(closed).toEqual([built[0]])
+        expect(onClose).not.toHaveBeenCalled()
     })
 })

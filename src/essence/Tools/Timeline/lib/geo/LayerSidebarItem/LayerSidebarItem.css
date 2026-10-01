@@ -1,0 +1,105 @@
+/* The magnifier takes the colour dot's slot rather than a slot of its own: the
+   sidebar is 240px, 150px when narrow, and four navigation buttons already
+   leave the name little room. The slot keeps the dot's 8px footprint, and the
+   button overflows it symmetrically so the target is comfortable without the
+   row giving up any width. */
+.layer-fit-slot {
+    position: relative;
+    width: 8px;
+    height: 8px;
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+
+.layer-fit-slot .layer-color-dot {
+    display: block;
+    margin-right: 0;
+    /* Opacity rather than visibility: the dot and the button cross-fade in
+       one slot, and visibility is discrete, so it cannot be transitioned. */
+    transition: opacity 0.15s ease;
+}
+
+/* Styled after the row's navigation buttons, in the row's own text colour:
+   the icon sits where the layer's swatch sits and reads as part of that row
+   rather than as a header control. */
+.layer-fit-btn {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    height: 16px;
+    width: 16px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--theme-color-base-darker, #3d4551);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* Opacity, not visibility or display: those would drop the button out of
+       the tab order, leaving the control reachable by mouse alone. */
+    opacity: 0;
+    pointer-events: none;
+    transition:
+        opacity 0.15s ease,
+        background 0.2s ease;
+}
+
+/* Hover shows the rectangle only; the icon keeps its colour. */
+.layer-fit-btn:hover {
+    background: var(--theme-color-primary-lightest, #e6f4f6);
+}
+
+/* Revealed by a pointer over the row, or by focus reaching any control in it
+   — how a keyboard tabbing through the sidebar sees it. */
+.layer-item:hover .layer-fit-btn,
+.layer-item:focus-within .layer-fit-btn {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.layer-item:hover .layer-fit-slot .layer-color-dot,
+.layer-item:focus-within .layer-fit-slot .layer-color-dot {
+    opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .layer-fit-btn,
+    .layer-fit-slot .layer-color-dot {
+        transition: none;
+    }
+}
+
+/* A pointer that cannot hover has no way to reveal the button: there is no
+   :hover, and a tap cannot raise :focus-within while it is still
+   pointer-events: none. It stays out on such a device, covering the dot.
+   So that the row does not lose its swatch, the glyph takes the layer's
+   colour and stands in for the dot; its contrast against the row is the
+   same the 8px dot already carried. */
+@media (hover: none) {
+    .layer-fit-btn {
+        opacity: 1;
+        pointer-events: auto;
+        color: var(--layer-color);
+    }
+
+    .layer-fit-slot .layer-color-dot {
+        opacity: 0;
+    }
+}
+
+/* The button costs the row no width at any size; it shrinks here only to
+   match the navigation buttons, which tighten at the same width, so the
+   controls on one row stay one size. */
+@media (max-width: 768px) {
+    .layer-fit-btn {
+        height: 14px;
+        width: 14px;
+    }
+
+    .layer-fit-btn svg {
+        width: 12px;
+        height: 12px;
+    }
+}

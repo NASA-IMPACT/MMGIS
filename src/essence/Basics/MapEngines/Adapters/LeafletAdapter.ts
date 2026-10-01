@@ -109,6 +109,19 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     private _overlays: Map<string, () => void> = new Map()
 
     /**
+     * The open popup. Leaflet fires the same `remove` however a popup leaves
+     * the map, so checking a close against this is what separates the
+     * library's own close from ours.
+     */
+    private _popup: any = null
+
+    /**
+     * Cancels an open still waiting out the draw-end click guard's hold. Null
+     * whenever nothing is waiting — see {@link showPopup}.
+     */
+    private _cancelPopupOpen: (() => void) | null = null
+
+    /**
      * Registry of event handlers for cleanup, keyed by event name and the
      * subscriber's source so {@link off} can find the wrapper it made. The
      * event name is kept alongside the wrapper because the key is not one.
@@ -332,6 +345,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         // attached, so its initiator hears `drawcancel` and stops driving a
         // session that is about to have no engine.
         this.disableDrawing()
+
+        // Taken down here rather than left to the map, whose own teardown
+        // removes the popup and so would report the library closing it. Ahead
+        // of the guard, whose dispose settles a deferred open.
+        this.hidePopup()
 
         this._removeBasemapLayer()
 
@@ -1474,6 +1492,59 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         if (!teardown) return
         teardown()
         this._overlays.delete(id)
+    }
+
+    /**
+     * See {@link IMapEngine.showPopup}. `className` is the only option set:
+     * the close button, the close-on-map-click, the auto-pan and the width all
+     * stay at Leaflet's defaults. `openOn` hands the popup to the map's own
+     * popup machinery, which is what makes a click on the map close it — and,
+     * by the same defaults, what closes it when anything else on the map opens
+     * a popup of its own.
+     *
+     * A card asked for in response to a finished drawing would be closed by
+     * the very click that finished it: Leaflet closes popups from `preclick`,
+     * ahead of any adapter listener. So the open waits out the draw-end click
+     * guard's hold on that click, and the call stays synchronous either way.
+     */
+    showPopup(latlng: LatLngLike, element: HTMLElement, onClose?: () => void): void {
+        if (!this._map) {
+            throw new Error(
+                '[LeafletAdapter] showPopup requires a map. ' +
+                'Call init() before placing a popup.'
+            )
+        }
+
+        this.hidePopup()
+
+        const ll = this._normalizeLatLng(latlng)
+        const popup = L.popup({ className: 'mmgis-map-popup' })
+            .setLatLng([ll.lat, ll.lng])
+            .setContent(element)
+
+        popup.on('remove', () => {
+            // `_popup` is let go before Leaflet is asked to close, so a close
+            // whose popup is no longer the open one is either ours or a
+            // straggler from a card already replaced.
+            if (this._popup !== popup) return
+            this._popup = null
+            onClose?.()
+        })
+
+        this._popup = popup
+        this._cancelPopupOpen = this._drawEndClick.whenSettled(() => {
+            this._cancelPopupOpen = null
+            popup.openOn(this._map)
+        })
+    }
+
+    hidePopup(): void {
+        this._cancelPopupOpen?.()
+        this._cancelPopupOpen = null
+        const popup = this._popup
+        if (!popup) return
+        this._popup = null
+        this._map?.closePopup(popup)
     }
 
     updateMarker(marker: any | string, updates: Partial<MarkerOptions>): any {

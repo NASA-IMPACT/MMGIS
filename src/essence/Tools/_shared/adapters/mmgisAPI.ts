@@ -1,3 +1,5 @@
+import type { LayerLegend } from '../../../Basics/Layers_/legend/types'
+
 type EventCleanup = () => void
 
 type MMGISAPI = {
@@ -6,6 +8,16 @@ type MMGISAPI = {
     emit: (event: string, payload?: unknown) => void
     provide?: (name: string, handler: (...args: unknown[]) => unknown) => EventCleanup
     hasHandler?: (name: string) => boolean
+}
+
+/**
+ * A plugin's own handle on the bus: what it emits and provides is published
+ * under `plugin:<pluginId>:`, so a plugin names its events without repeating
+ * its address.
+ */
+export type ScopedMMGISAPI = {
+    emit: (event: string, payload?: unknown) => void
+    provide: (name: string, handler: (...args: unknown[]) => unknown) => EventCleanup
 }
 
 export type MapScreenshotResult = {
@@ -20,16 +32,32 @@ export type MapScreenshotResult = {
 export type LayerConfig = {
     name?: string
     display_name?: string
+    description?: string
+    /** The layer's kind: 'tile', 'vector', 'header', and so on. */
+    type?: string
     time?: {
         enabled?: boolean
+        /**
+         * 'global' and 'requery' are re-requested as the time cursor moves;
+         * 'local' is fetched once and filtered on the client.
+         */
+        type?: string
+        /**
+         * The window core stamped on the layer at the last time step: one
+         * whole period for a periodic raster layer, otherwise the Time
+         * Control window start to the cursor. Runtime state, not config.
+         */
+        start?: string | null
+        end?: string | null
         /** As authored: a concrete ISO datetime or a policy string ("now",
          *  "now - P1D"). A periodic layer may also carry an `interval`
          *  cadence, already folded into the resolved extent. Ask
          *  mmgisGetTemporalExtents for the dates. */
         dataStartTime?: string
         dataEndTime?: string
-        // The days a sparse layer holds data on, when it holds data on a
-        // scattered few rather than continuously across its extent.
+        // The times a sparse layer holds data at, when it holds data at a
+        // scattered few rather than continuously across its extent. Each
+        // entry covers the year, month, day or hour it names.
         dataDates?: string[] | string
         [key: string]: unknown
     }
@@ -61,6 +89,26 @@ export const mmgisOn = (event: string, handler: (payload?: unknown) => void): Ev
     return window.mmgisAPI.on(event, handler)
 }
 
+/**
+ * The plugin-scoped handle, or a handle that does nothing when there is no bus
+ * — a plugin emitting into a missing core should go quiet, not throw.
+ *
+ * Read through a local widening rather than declared on MMGISAPI: another tool
+ * declares `window.mmgisAPI` too, and TypeScript requires every declaration of
+ * one global to agree, so a property added here alone stops the build.
+ */
+export const mmgisForPlugin = (pluginId: string): ScopedMMGISAPI => {
+    const api = window.mmgisAPI as
+        | (MMGISAPI & { forPlugin?: (id: string) => ScopedMMGISAPI })
+        | undefined
+    return (
+        api?.forPlugin?.(pluginId) ?? {
+            emit: () => {},
+            provide: () => () => {},
+        }
+    )
+}
+
 export const mmgisEmit = (event: string, payload?: unknown): void => {
     window.mmgisAPI?.emit?.(event, payload)
 }
@@ -88,7 +136,7 @@ export const mmgisHasHandler = (name: string): boolean => {
 // register the handler; errors thrown by a registered handler still
 // propagate (they are real failures, not version skew).
 
-const mmgisRequestIfProvided = async <T = unknown>(
+export const mmgisRequestIfProvided = async <T = unknown>(
     name: string,
     params?: unknown,
 ): Promise<T | null> => {
@@ -200,6 +248,37 @@ export const mmgisGetLayerCogCapabilities = (
     )
 }
 
+/**
+ * A layer's legend as core resolves it. Core owns this answer because it is
+ * layer truth, not presentation: which ramp the layer paints through, what
+ * bounds it is scaled to, what its classes are. Plugins draw it.
+ *
+ * Re-exported from core rather than restated, so the wire contract is written
+ * once and a change to it cannot pass unnoticed on this side.
+ */
+export type {
+    LayerLegend,
+    LegendSwatch,
+    LegendType,
+} from '../../../Basics/Layers_/legend/types'
+
+/**
+ * Every layer's legend, keyed by layer UUID.
+ *
+ * Resolved at the moment of asking, against the colormap and rescale the layer
+ * currently paints through — so re-requesting after a change is what refreshes
+ * a legend. Registered as late as mmgisGetLayerConfigs; the same readiness
+ * caveat applies. Null against a core without the handler.
+ */
+export const mmgisGetLayerLegends = (): Promise<Record<
+    string,
+    LayerLegend
+> | null> => {
+    return mmgisRequestIfProvided<Record<string, LayerLegend>>(
+        'layers:getLegend',
+    )
+}
+
 /** The unit a listed Data Dates entry names; nothing finer than the hour. */
 export type CoverageUnit = 'year' | 'month' | 'day' | 'hour'
 
@@ -233,10 +312,18 @@ export type LayerDataCoverage = {
      */
     spans: CoverageSpan[] | null
     /**
-     * The window the layer would request. The verdict tests its end, the
-     * current time, against the spans; its start plays no part.
+     * The window core stamped on the layer and requests with, epoch
+     * milliseconds: one whole period, start to its last inclusive second,
+     * when `periodic`; otherwise the Time Control window start to the cursor.
+     * Null when the layer carries no readable window.
      */
-    requestedWindow: CoverageSpan | null
+    requestedWindow: { start: number; end: number } | null
+    /**
+     * Whether core requested one period for the layer rather than the Time
+     * Control window. A periodic verdict tests the whole period against the
+     * spans; any other tests the window's end, the current time, alone.
+     */
+    periodic: boolean
 }
 
 /** The wire shape of 'layers:dataCoverageChanged'. */
@@ -274,10 +361,30 @@ export const mmgisGetLayerDataCoverage = (
     )
 }
 
-/** When a layer has data, as ISO datetimes; null where unset or unreadable. */
+/**
+ * An ISO-8601 duration as core parses it: each unit's count, zero where the
+ * duration leaves it out. Declared here rather than imported, since it is the
+ * shape of a bus answer, not core code.
+ */
+export type Duration = {
+    years: number
+    months: number
+    weeks: number
+    days: number
+    hours: number
+    minutes: number
+    seconds: number
+}
+
+/**
+ * When a layer has data, as ISO datetimes; null where unset or unreadable.
+ * `interval` is the layer's `time.interval` as core parsed it, or null when
+ * the layer declares none or core cannot read it.
+ */
 export type TemporalExtent = {
     start: string | null
     end: string | null
+    interval: Duration | null
 }
 
 /**
@@ -522,6 +629,17 @@ export const mmgisGetTimeStart = (): Promise<string | null> => {
     return mmgisRequestIfProvided<string>('time:getStart')
 }
 
+/**
+ * Which mode the Time UI bar is in: 'range', or 'point', where core pins the
+ * window start to the epoch, so the window has no meaningful start. Null when
+ * time is disabled or not yet seeded, when the bar is not mounted (mobile and
+ * the modern layout drive time without it), and against a core that predates
+ * the handler.
+ */
+export const mmgisGetTimeMode = (): Promise<'range' | 'point' | null> => {
+    return mmgisRequestIfProvided<'range' | 'point'>('time:getMode')
+}
+
 /** The time window's closing instant; same null cases as mmgisGetTimeStart. */
 export const mmgisGetTimeEnd = (): Promise<string | null> => {
     return mmgisRequestIfProvided<string>('time:getEnd')
@@ -530,6 +648,30 @@ export const mmgisGetTimeEnd = (): Promise<string | null> => {
 /** Where the timeline currently sits; same null cases as mmgisGetTimeStart. */
 export const mmgisGetTimeCurrent = (): Promise<string | null> => {
     return mmgisRequestIfProvided<string>('time:getCurrent')
+}
+
+/**
+ * The current time already rendered through the mission's configured time
+ * format (`L_.configData.time.format`), so a header displaying it prints the
+ * mission's way rather than a raw ISO string. Null when time is disabled, not
+ * yet seeded, or against a core that predates the handler — callers fall back
+ * to their own raw time string in that case.
+ */
+export const mmgisGetTimeCurrentFormatted = (): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('time:getCurrentFormatted')
+}
+
+/**
+ * A caller-supplied time rendered through that same mission format, for
+ * displaying a time the caller holds itself rather than the cursor's. Null
+ * for a missing or unparseable time, and against a core that predates the
+ * handler — callers show no time at all rather than one formatted their own
+ * way, which would disagree with the mission's.
+ */
+export const mmgisFormatTime = (
+    time: string | number | null | undefined,
+): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('time:formatTime', time)
 }
 
 /**

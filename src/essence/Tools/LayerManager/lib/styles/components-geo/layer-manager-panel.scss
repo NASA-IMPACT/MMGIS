@@ -8,9 +8,12 @@
     color: var(--theme-color-ink, #1b1b1b);
     font-family: 'Lato', sans-serif;
 
-    /* "Add layer from URL" trigger, pinned above the scrolling legend list */
+    /* List-wide actions, pinned above the scrolling legend list */
     &__header {
+        display: flex;
         flex: 0 0 auto;
+        flex-direction: column;
+        gap: var(--theme-spacing-05, 0.25rem);
         padding: var(--theme-spacing-1, 0.5rem);
     }
 
@@ -39,6 +42,41 @@
             outline: 2px solid var(--theme-color-primary, #137480);
             outline-offset: 1px;
         }
+    }
+
+    /* Sits to the side rather than filling the width, as the lesser of the
+       two actions above the list. */
+    &__hide-filtered {
+        display: flex;
+        align-items: center;
+        align-self: flex-end;
+        gap: var(--theme-spacing-05, 0.25rem);
+        padding: var(--theme-spacing-05, 0.25rem);
+        background: transparent;
+        border: none;
+        border-radius: var(--theme-radius-md, 4px);
+        color: var(--theme-color-base-dark, #565c65);
+        font-family: inherit;
+        font-size: var(--theme-font-size-3xs, 0.75rem);
+        font-weight: var(--theme-font-weight-normal, 400);
+        cursor: pointer;
+        transition: background 0.12s ease, color 0.12s ease;
+
+        &:hover {
+            background: var(--theme-color-base-lightest, #f1f3f6);
+            color: var(--theme-color-ink, #1b1b1b);
+        }
+
+        &:focus-visible {
+            outline: 2px solid var(--theme-color-primary, #137480);
+            outline-offset: 1px;
+        }
+    }
+
+    &__hide-filtered-icon {
+        flex: 0 0 auto;
+        font-size: 14px;
+        line-height: 1;
     }
 
     &__add-layer-icon {

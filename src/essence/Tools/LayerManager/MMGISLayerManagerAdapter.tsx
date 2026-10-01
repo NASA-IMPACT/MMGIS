@@ -1,5 +1,5 @@
 import React from 'react'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { LayerManagerPanel } from './lib'
 import type { Layer } from './lib/types'
 import { useMMGISEvent } from '../_shared/adapters/useMMGISEvent'
@@ -16,10 +16,41 @@ import {
     compareLayer,
     showAddLayer,
     dropLayer,
+    getFilteredOutLayers,
+    hideFilteredOutLayers,
+    selectRun,
 } from './adapters/handlers'
-import { mmgisGetLayerBounds } from '../_shared/adapters/mmgisAPI'
+import {
+    mmgisGetLayerBounds,
+    mmgisGetTimeCurrent,
+    mmgisRequestIfProvided,
+    mmgisOnDataCoverageChanged,
+    type LayerDataCoverageChange,
+} from '../_shared/adapters/mmgisAPI'
 
 type ToolVars = { showOnlyVisible?: boolean; width?: number }
+
+type RunsAnswer = Record<
+    string,
+    { runs: string[]; selected: string | null; step: string; lead: number | null }
+>
+
+// Rows core reports model runs for carry them for the card. Core owns the
+// list, the pin and the lead; this only asks.
+const withRuns = (rows: Layer[], answer: RunsAnswer | null): Layer[] =>
+    rows.map((row) => {
+        const found = answer?.[row.id]
+        if (!found) return row
+        return {
+            ...row,
+            forecast: {
+                runs: found.runs.map((datetime) => ({ datetime })),
+                selectedRun: found.selected,
+                step: found.step,
+                lead: found.lead,
+            },
+        }
+    })
 
 // Panel controls are event callbacks and cannot await the requests they fire,
 // so a rejected one would surface only as an unhandled rejection. Log it
@@ -30,30 +61,138 @@ const report = (action: string, result: Promise<void>): void => {
     })
 }
 
-// Module scope keeps the handler stable, so the subscription is made once.
-const zoomWhenShown = (payload?: unknown): void => {
-    const { layerName, visible } = (payload ?? {}) as { layerName?: string; visible?: boolean }
-    if (visible === true && layerName) report('zoomToLayer', zoomToLayer(layerName))
+/**
+ * The rows with the given layers' no-data flags swapped in, keyed by layer
+ * UUID, which both row ids and core's announcements use. The same array when
+ * no row is named, so an announcement for another layer re-renders nothing.
+ */
+const withOutOfRange = (rows: Layer[], flags: Map<string, boolean>): Layer[] => {
+    if (!rows.some((row) => flags.has(row.id))) return rows
+    return rows.map((row) =>
+        flags.has(row.id) ? { ...row, outOfDataRange: flags.get(row.id) } : row,
+    )
 }
 
 export function MMGISLayerManagerAdapter() {
     const [layers, setLayers] = useState<Layer[]>([])
+    const [filteredOut, setFilteredOut] = useState<string[]>([])
     const [loading, setLoading] = useState(true)
     const toolVars = useMMGISToolVars<ToolVars>('layermanager')
 
-    const refresh = useCallback(async () => {
+    // Coverage changes announced while a refresh is reading, one collection
+    // per refresh in flight. A refresh reads every layer's coverage before its
+    // rows land, and a change announced in between would otherwise be
+    // overwritten by that older read until the layer next changes.
+    const inFlight = useRef(new Set<Map<string, boolean>>())
+
+    // Core answers the lead for the clock as it stands when asked, so an
+    // older answer must never land over a newer one. One request covers
+    // every layer, so a failure is logged and the last answer kept: the
+    // layers still list, without run info, rather than the panel emptying.
+    const latestRuns = useRef<RunsAnswer | null>(null)
+    const runsAsked = useRef(0)
+    const runsHeld = useRef(0)
+    const readRuns = useCallback(async () => {
+        const seq = ++runsAsked.current
         try {
-            const data = await getVisibleLayersWithLegends({
-                showOnlyVisible: toolVars.showOnlyVisible === true,
-            })
-            setLayers(data)
+            const runs = await mmgisRequestIfProvided<RunsAnswer>('layers:getRuns')
+            if (seq > runsHeld.current) {
+                runsHeld.current = seq
+                latestRuns.current = runs
+            }
+        } catch (err) {
+            console.warn('LayerManager: runs unavailable', err)
+        }
+        return latestRuns.current
+    }, [])
+
+    // Ticks on every refresh, so a call can tell whether it is still the most
+    // recent one once its await returns. Without this, an older refresh (a
+    // slow custom colormap fetch, say) that resolves after a newer one has
+    // already landed would overwrite the newer rows with stale ones.
+    const refreshSeq = useRef(0)
+
+    const refresh = useCallback(async () => {
+        const seq = ++refreshSeq.current
+        const announced = new Map<string, boolean>()
+        inFlight.current.add(announced)
+        try {
+            const [data, leftOut] = await Promise.all([
+                getVisibleLayersWithLegends({
+                    showOnlyVisible: toolVars.showOnlyVisible === true,
+                }),
+                getFilteredOutLayers(),
+                readRuns(),
+            ])
+            // A newer refresh already landed while this one was reading —
+            // its answer is stale, so drop it.
+            if (seq !== refreshSeq.current) return
+            // Read again once the rows are in: the runs answered at the
+            // start may have been overtaken while the layers loaded.
+            setLayers(
+                withOutOfRange(withRuns(data, latestRuns.current), announced),
+            )
+            setFilteredOut(leftOut.map((layer) => layer.title))
         } catch (err) {
             console.error('LayerManager: refresh failed', err)
-            setLayers([])
+            if (seq === refreshSeq.current) {
+                setLayers([])
+                setFilteredOut([])
+            }
         } finally {
-            setLoading(false)
+            inFlight.current.delete(announced)
+            if (seq === refreshSeq.current) setLoading(false)
         }
-    }, [toolVars.showOnlyVisible])
+    }, [toolVars.showOnlyVisible, readRuns])
+
+    // A refusal resolves false and core announces nothing; a throw can land
+    // after core has already pinned. Either way the rows re-read core's
+    // truth, and the legend hears false so its dropdown snaps back.
+    const onRunChange = useCallback(
+        async (layerId: string, run: string): Promise<boolean> => {
+            let pinned = false
+            try {
+                pinned = await selectRun(layerId, run)
+                if (!pinned) console.warn(`LayerManager: core refused run ${run} for ${layerId}`)
+            } catch (err) {
+                console.error('LayerManager: selectRun failed', err)
+            }
+            if (!pinned) void refresh()
+            return pinned
+        },
+        [refresh],
+    )
+
+    // The lead readout follows the scrubber. Core answers the lead for the
+    // current time, so a time change re-reads the runs and patches the rows
+    // rather than rebuilding every legend.
+    const refreshLeads = useCallback(() => {
+        readRuns().then(
+            (runs) => {
+                if (runs) setLayers((rows) => withRuns(rows, runs))
+            },
+            () => {},
+        )
+    }, [readRuns])
+
+    // Core announces a layer's record whenever its verdict or coverage
+    // changes, so this keeps each row's warning current between refreshes.
+    const applyCoverageChange = useCallback(
+        ({ layerName, outOfDataRange }: LayerDataCoverageChange) => {
+            if (!layerName) return
+            for (const announced of inFlight.current) {
+                announced.set(layerName, outOfDataRange)
+            }
+            setLayers((rows) =>
+                withOutOfRange(rows, new Map([[layerName, outOfDataRange]])),
+            )
+        },
+        [],
+    )
+    useEffect(
+        () => mmgisOnDataCoverageChanged(applyCoverageChange),
+        [applyCoverageChange],
+    )
 
     // Whether the layer has somewhere to zoom to. Core answers null both for a
     // layer with no extent and for a core too old to know the question, and
@@ -63,10 +202,12 @@ export function MMGISLayerManagerAdapter() {
     }, [])
 
     useMMGISEvent('layer:visibilityChange', refresh)
-    useMMGISEvent('layer:visibilityChange', zoomWhenShown)
     useMMGISEvent('layer:refreshStatusChange', refresh)
     useMMGISEvent('layer:opacityChange', refresh)
     useMMGISEvent('layer:listedChange', refresh)
+    useMMGISEvent('layers:configChanged', refresh)
+    useMMGISEvent('layer:runChange', refresh)
+    useMMGISEvent('time:changed', refreshLeads)
     useMMGISEvent('layers:listChanged', refresh)
     useMMGISEvent('layers:orderChanged', refresh)
 
@@ -84,6 +225,18 @@ export function MMGISLayerManagerAdapter() {
     // mission's layers first become available).
     useMMGISHandlerReady('layers:getAll', refresh)
 
+    // The timeline's current time, named by the no-data warning.
+    const [selectedTime, setSelectedTime] = useState<string | null>(null)
+    const readSelectedTime = useCallback(() => {
+        mmgisGetTimeCurrent().then(setSelectedTime, () => {})
+    }, [])
+    useMMGISHandlerReady('time:getCurrent', readSelectedTime)
+    const followSelectedTime = useCallback((payload?: unknown) => {
+        const { currentTime } = (payload ?? {}) as { currentTime?: string }
+        if (currentTime) setSelectedTime(currentTime)
+    }, [])
+    useMMGISEvent('time:changed', followSelectedTime)
+
     return (
         <LayerManagerPanel
             layers={layers}
@@ -95,9 +248,13 @@ export function MMGISLayerManagerAdapter() {
             onRescaleChange={(id, mn, mx) => { report('setRescale', setRescale(id, mn, mx, refresh)) }}
             onZoomToLayer={(id) => { report('zoomToLayer', zoomToLayer(id)) }}
             canZoomToLayer={canZoomToLayer}
+            selectedTime={selectedTime}
             onCompareLayer={compareLayer}
             onReorder={onReorder}
             onAddLayer={showAddLayer}
+            onHideFilteredLayers={() => { report('hideFilteredOutLayers', hideFilteredOutLayers()) }}
+            filteredOutLayers={filteredOut}
+            onRunChange={onRunChange}
         />
     )
 }
