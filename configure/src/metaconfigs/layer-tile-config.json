@@ -173,6 +173,13 @@
               "action": "tile-populate-from-x",
               "requiresCapability": "localSidecars",
               "width": 6
+            },
+            {
+              "name": "VEDA STAC Source",
+              "description": "Look up a VEDA STAC collection, see its available renders and temporal coverage, choose how to use them, and fill this layer's fields from the collection's metadata. An ongoing collection's end time is written as 'now' so the layer never goes stale. Everything stays editable afterwards.",
+              "type": "button",
+              "action": "tile-veda-stac-source",
+              "width": 6
             }
           ]
         }
