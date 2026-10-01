@@ -15,7 +15,9 @@ import {
 export interface TimeseriesConfig {
     /** Set false to turn the block off without deleting it (default true). */
     enabled?: boolean
-    /** Fetch URL template; placeholders: {id}, {properties.<key>}, {lon}, {lat}. */
+    /** Fetch URL template; placeholders: {id}, {properties.<key>}, {lon},
+     *  {lat}, and {start}/{end} for the card's range, in the service's own
+     *  syntax. */
     url: string
     /** Feature property used as the chart title (default: name → title → id). */
     titleProp?: string
@@ -36,6 +38,10 @@ export interface TimeseriesConfig {
     /** Dot-path to a point's measurement unit (e.g.
      *  'properties.units_of_measure'); carried onto each series. */
     unitKey?: string
+    /** How far back from the latest data the card's range opens: '1 hour',
+     *  '1 day', '1 week', '1 month' or '1 year' (default), or an ISO
+     *  duration such as P7D. */
+    defaultSpan?: string
 }
 
 export interface FeatureLike {
@@ -59,28 +65,157 @@ export function getTimeseriesConfig(layer: unknown): TimeseriesConfig | null {
 
 export class TemplateError extends Error {}
 
+/** The viewer's range, two ISO instants `YYYY-MM-DDTHH:MM:SS` read as UTC. */
+export interface DateRange {
+    start: string
+    end: string
+}
+
+export const DAY_MS = 24 * 60 * 60 * 1000
+const HOUR_MS = 60 * 60 * 1000
+
+export type SpanUnit = 'hour' | 'day' | 'week' | 'month' | 'year'
+/** How far back from the latest data the card's range opens. */
+export interface Span {
+    amount: number
+    unit: SpanUnit
+}
+export const DEFAULT_SPAN: Span = { amount: 1, unit: 'year' }
+
+const UNIT_WORDS: Record<string, SpanUnit> = {
+    hour: 'hour', hours: 'hour', h: 'hour',
+    day: 'day', days: 'day', d: 'day',
+    week: 'week', weeks: 'week', w: 'week',
+    month: 'month', months: 'month',
+    year: 'year', years: 'year', y: 'year',
+}
+
+/** Reads a configured span: the Configure options ('1 day', plurals
+ *  tolerated) or an ISO duration in one unit (PT6H, P7D, P2W, P1M, P1Y).
+ *  Anything else is null, and the caller falls back to a year. */
+export function parseSpan(value: unknown): Span | null {
+    if (typeof value !== 'string') return null
+    const v = value.trim()
+    let m = v.toLowerCase().match(/^(\d+)\s*([a-z]+)$/)
+    if (m && UNIT_WORDS[m[2]] && Number(m[1]) >= 1) {
+        return { amount: Number(m[1]), unit: UNIT_WORDS[m[2]] }
+    }
+    m = v.toUpperCase().match(/^P(?:T(\d+)H|(\d+)D|(\d+)W|(\d+)M|(\d+)Y)$/)
+    if (m) {
+        const [h, d, w, mo, y] = m.slice(1)
+        const pick: Array<[string | undefined, SpanUnit]> = [
+            [h, 'hour'], [d, 'day'], [w, 'week'], [mo, 'month'], [y, 'year'],
+        ]
+        for (const [n, unit] of pick) if (n && Number(n) >= 1) return { amount: Number(n), unit }
+    }
+    return null
+}
+
+/** UTC, to the second, without the zone suffix: what datetime-local holds. */
+export const isoInstant = (d: Date) => d.toISOString().slice(0, 19)
+export const startOfUtcDay = (d: Date) =>
+    new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+export const endOfUtcDay = (d: Date) =>
+    new Date(startOfUtcDay(d).getTime() + DAY_MS - 1000)
+
+const parseInstant = (value: string | null | undefined): Date | null => {
+    if (!value) return null
+    const d = new Date(value)
+    return Number.isNaN(d.getTime()) ? null : d
+}
+
+/** One side of a seeded range, from the layer's extent or the mission window. */
+export interface RangeSource {
+    start: string | null
+    end: string | null
+}
+
+/**
+ * `end` minus the span. Hours keep the clock; days and weeks land on the
+ * start of their UTC day; months and years step the calendar with the day
+ * clamped to the target month's length, so Mar 31 minus a month is Feb 28.
+ */
+export function subtractSpan(end: Date, span: Span): Date {
+    const { amount, unit } = span
+    if (unit === 'hour') return new Date(end.getTime() - amount * HOUR_MS)
+    if (unit === 'day' || unit === 'week') {
+        const days = unit === 'week' ? amount * 7 : amount
+        return startOfUtcDay(new Date(end.getTime() - days * DAY_MS))
+    }
+    const year = end.getUTCFullYear() - (unit === 'year' ? amount : 0)
+    const month = end.getUTCMonth() - (unit === 'month' ? amount : 0)
+    const first = new Date(Date.UTC(year, month, 1))
+    const monthEnd = new Date(
+        Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0),
+    ).getUTCDate()
+    return new Date(
+        Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(end.getUTCDate(), monthEnd)),
+    )
+}
+
+/**
+ * The range the card opens with. The layer's own data extent comes first,
+ * side by side; a side it leaves open comes from the mission window, and
+ * failing that from today. Either source may reach into the future: the
+ * end is capped at the end of today, and a start past that end falls to
+ * the span. The start is otherwise the later of the extent's start and
+ * `end` minus the span (a year unless the layer says otherwise): the whole
+ * extent when it is shorter than the span, the last span of it when longer.
+ */
+export function seedRange(args: {
+    extent?: RangeSource | null
+    window?: RangeSource | null
+    now: Date
+    span?: Span | null
+}): DateRange {
+    const span = args.span ?? DEFAULT_SPAN
+    const today = endOfUtcDay(args.now)
+    let start = parseInstant(args.extent?.start)
+    let end = parseInstant(args.extent?.end)
+    if (!start || !end) {
+        const ws = parseInstant(args.window?.start)
+        const we = parseInstant(args.window?.end)
+        if (ws && we && ws <= we) {
+            start = start ?? ws
+            end = end ?? we
+        }
+    }
+    if (!end || end > today) end = today
+    const floor = subtractSpan(end, span)
+    if (!start || start > end || start < floor) start = floor
+    return { start: isoInstant(start), end: isoInstant(end) }
+}
+
 /**
  * Substitutes feature values into the URL template. Values are URL-encoded.
  * An unresolvable placeholder throws TemplateError naming it — an eligible
  * layer with a bad template is a visible error, not a silent no-op.
- * Braces are placeholder syntax; a literal `{`/`}` in the URL (e.g. CQL2
- * filters) is not supported.
+ * Braces are placeholder syntax; a literal `{`/`}` in the URL is not
+ * supported.
  *
  * `{lon}`/`{lat}` prefer the feature's own Point coordinates but fall back
  * to the click location — the vector-tile and deck.gl click paths hand over
  * features with empty geometry, so the event's latlng is the coordinate
  * source that always exists.
+ *
+ * `{start}`/`{end}` are the card's instants, exactly as held: the layer
+ * author writes the service's own range syntax around them (a `datetime=`
+ * parameter, a CQL2 comparison, custom parameters), so the plugin never
+ * assumes one.
  */
 export function templateUrl(
     template: string,
     feature: FeatureLike,
     latlng?: { lat: number; lng: number } | null,
+    range?: DateRange | null,
 ): string {
     return template.replace(/{([^}]+)}/g, (whole, rawKey: string) => {
         const key = rawKey.trim()
         let value: unknown
         if (key === 'id') {
             value = feature.id
+        } else if (key === 'start' || key === 'end') {
+            value = range?.[key]
         } else if (key === 'lon' || key === 'lat') {
             const coords =
                 feature.geometry?.type === 'Point'
@@ -188,6 +323,60 @@ function toY(value: unknown): number | null {
 }
 
 export class MappingError extends Error {}
+
+/** What an OGC Features page says about the rest of the answer. All null
+ *  for a bare array or an object without the standard members. */
+export interface PageInfo {
+    next: string | null
+    matched: number | null
+    returned: number | null
+}
+
+export function pageInfo(response: unknown): PageInfo {
+    if (!isRecord(response)) return { next: null, matched: null, returned: null }
+    const links = Array.isArray(response.links) ? response.links : []
+    const next = links.find(
+        (l) => isRecord(l) && l.rel === 'next' && typeof l.href === 'string',
+    ) as { href: string } | undefined
+    const count = (v: unknown) =>
+        typeof v === 'number' && Number.isFinite(v) ? v : null
+    return {
+        next: next?.href ?? null,
+        matched: count(response.numberMatched),
+        returned: count(response.numberReturned),
+    }
+}
+
+function withArrayAt(
+    obj: Record<string, unknown>,
+    path: string,
+    points: unknown[],
+): Record<string, unknown> {
+    const [head, ...tail] = path.split('.')
+    if (tail.length === 0) return { ...obj, [head]: points }
+    const child = obj[head]
+    return {
+        ...obj,
+        [head]: withArrayAt(isRecord(child) ? child : {}, tail.join('.'), points),
+    }
+}
+
+/** The first page with every page's points concatenated into its point
+ *  array, so the mapper sees one response, and numberReturned raised to the
+ *  merged count so the truncation notice knows the walk completed. A page
+ *  without the array is the same MappingError a single response would raise. */
+export function mergePages(
+    first: unknown,
+    rest: unknown[],
+    config: TimeseriesConfig,
+): unknown {
+    if (rest.length === 0) return first
+    const seriesPath = config.seriesPath || DEFAULT_SERIES_PATH
+    const points = [first, ...rest].flatMap((page) => pointsOf(page, seriesPath))
+    if (Array.isArray(first) || !isRecord(first)) return points
+    const merged = withArrayAt(first, seriesPath, points)
+    return 'numberReturned' in merged ? { ...merged, numberReturned: points.length } : merged
+}
 
 export interface MappedSeries {
     /** Distinct groupBy value; '' for the ungrouped single series. */

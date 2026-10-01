@@ -1,9 +1,11 @@
 # FetchTimeseries plugin
 
-No-UI background plugin: when asked for a vector feature whose layer opts
-in, it fetches that feature's time series and publishes it as chart-series
-events for the [SeriesChart plugin](../SeriesChart/README.md). Bus-only — no
-core imports, no rendering.
+A small card holding a Start and End instant, over the fetch that charts a
+vector feature's time series. When asked for a feature whose layer opts in,
+the card appears, the feature's series is fetched over the chosen range and
+published as a chart-series payload for the
+[SeriesChart plugin](../SeriesChart/README.md). Changing the range refetches.
+Bus-only — no core imports.
 
 ## Behavior
 
@@ -11,21 +13,68 @@ core imports, no rendering.
   Anything may emit it; the shipped emitter is a
   [Feature Popup](../FeaturePopup/) card action, see below.
 - Layer has no `variables.timeseries` block → the request does **nothing**
-  chart-wise (no fetch, no empty chart).
-- Eligible request → fetches, then emits `seriesReady` with the
-  `ChartSeriesPayload` itself as the (flat, unenveloped) event payload
-  (see [`_shared/types/chartSeries.ts`](../_shared/types/chartSeries.ts)).
-- A failure (HTTP failure, timeout, bad URL template, unusable response
-  shape) is logged to the console and emits nothing. Loading and failure are
-  the fetcher's own to show, and this plugin has no surface of its own yet.
+  (no card, no fetch, no empty chart).
+- Eligible request → the tool shows its card (it starts hidden) with Start
+  and End instants: End is the end of the layer's own data range (its Data
+  Time Extent, as core resolves it), capped at the end of today, UTC; Start
+  is End minus the layer's **Default Range** (1 hour, 1 day, 1 week, 1 month
+  or 1 year; a year unless set), never earlier than the range's start. A side
+  the layer leaves open comes from the mission time window, else from today.
+  The range is seeded once per layer; a pick on another layer reseeds it. The chart below names the feature; the card
+  does not. It fetches the feature's series over that range and emits `seriesReady` with the
+  `ChartSeriesPayload` itself as the (flat, unenveloped) event payload (see
+  [`_shared/types/chartSeries.ts`](../_shared/types/chartSeries.ts)).
+  Loading and failure (HTTP error, timeout, bad URL template, unusable
+  response shape) show on the card; neither is an event. A failure also
+  emits `seriesCleared`, so the previous chart never sits under an error.
+- Changing the range refetches the same feature, 400 ms after the last
+  change, and emits `seriesReady` again, so the chart replaces its card. A
+  range left reversed (an end before the start) fetches nothing; leaving
+  the field snaps the other bound to it.
 - A new request aborts any in-flight fetch and replaces the chart (single
-  `chartId: 'vector-timeseries'`); charts persist until replaced. Fetches
-  time out after 30 seconds so a stalled connection cannot hang the tool.
+  `chartId: 'vector-timeseries'`). The chart stays until the next request
+  replaces it, EXIT clears it, or a fetch fails. Fetches time out after 30
+  seconds.
+- EXIT on the card closes both surfaces: it emits `seriesCleared`, which
+  takes the chart down, and hides this card. The next Timeseries press opens
+  them again.
 - Tool teardown (`destroy`) aborts any in-flight fetch and emits
-  `seriesCleared` so no card is left behind.
+  `seriesCleared` so no chart is left behind.
 
-Events (all under `plugin:fetch-timeseries:`): `seriesReady`,
-`seriesCleared`.
+Events (under `plugin:fetch-timeseries:`): `seriesReady`, `seriesCleared`.
+
+## The range on the URL
+
+Services disagree on how a range is asked for, so the layer's URL says it.
+The card's instants fill `{start}` and `{end}`, as `YYYY-MM-DDTHH:MM:SS` in
+UTC with no zone suffix, wherever the URL puts them; the author writes the
+service's own syntax around them. Two working forms:
+
+OGC Features / STAC, a `datetime` interval:
+
+```
+...&datetime={start}Z/{end}Z
+```
+
+The VEDA dev features API, whose date columns are text and refuse
+`datetime=` ("Must have timestamp typed column"), as a CQL2 text comparison:
+
+```
+...&filter=datetime >= '{start}' AND datetime <= '{end}'&filter-lang=cql2-text
+```
+
+The URL is expected to take the range. Without `{start}`/`{end}` the pickers
+still show, and changing them refetches the same URL.
+
+## Paging
+
+OGC Features services page their answers. The URL's `limit` is the page
+size; the plugin follows the standard `next` link (`links[rel=next]`) until
+it is gone or the rows gathered reach `numberMatched`, then charts every page
+as one response. The card counts pages while it walks ("Fetching data… page
+3 of 12"). More than 100 pages is a failure shown on the card: narrow the
+range. A response without those members (a bare array, a service that does
+not page) is one request, as before.
 
 ## Triggering it from the Feature Popup
 
@@ -50,6 +99,9 @@ fetch event; the card gets a button and pressing it charts the feature:
 The popup runs on the deck.gl engine. Under Leaflet, or from another plugin,
 emit `plugin:fetch-timeseries:fetch` with `{ feature, layerId, latlng }`
 yourself; this plugin does not care who sent it.
+
+Place FetchTimeseries in the same panel as SeriesChart, listed just before
+it, so the date card sits above the chart. Both start hidden.
 
 ## Layer configuration (`layer.variables.timeseries`)
 
@@ -99,15 +151,16 @@ Notes:
 
 - The observation features carry `datetime`/`value` under `properties`, so
   `xKey`/`yKey` need no configuration.
-- Keep the `limit=1000` on the timeseries URL: the API defaults to 10 items
-  per page and this plugin does not follow `rel: next` pagination links.
-  When a response reports more matches than it returned
-  (`numberMatched`/`numberReturned`), the chart title carries a
-  "first N of M points" notice instead of presenting a page as the record.
+- Keep a `limit` on the timeseries URL: the API defaults to 10 items per
+  page. The plugin follows `rel: next` links (see Paging above), so the
+  `limit` sets the page size, not the ceiling. Should a response still
+  report more matches than the plugin ended up with, the chart title carries
+  a "first N of M points" notice instead of presenting a page as the record.
 - `groupBy` yields one series per parameter (e.g. PM2.5 + Ozone); the
   SeriesChart's Variable dropdown picks which one is visible and the card footer shows
   its unit.
 
-Place SeriesChart in a panel (its default `sources` already includes
-`fetch-timeseries`), add FetchTimeseries and FeaturePopup to the mission's
-tools, click a station, press Timeseries on its card.
+Place FetchTimeseries and SeriesChart in a panel in that order (the chart's
+default `sources` already includes `fetch-timeseries`), add FeaturePopup to
+the mission's tools, click a station, press Timeseries on its card, then
+narrow the dates to 2018–2019 and watch the chart redraw.

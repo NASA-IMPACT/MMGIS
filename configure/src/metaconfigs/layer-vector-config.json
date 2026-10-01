@@ -576,7 +576,7 @@
             {
               "field": "variables.timeseries.url",
               "name": "Timeseries URL",
-              "description": "Where a clicked feature's time series is fetched from, read by the FetchTimeseries plugin and charted by SeriesChart. Leave empty to turn this off. Write the feature's values into the URL as placeholders: '{properties.<key>}' (dot notation reaches nested ones), '{lon}' and '{lat}' (the feature's point, or the click location for features without geometry), and '{id}' when the source data carries feature ids. Values are URL-encoded. Trigger it from the Feature Popup (Interface tab): add a Card Action whose Event Name is 'plugin:fetch-timeseries:fetch'.",
+              "description": "Where a clicked feature's time series is fetched from, read by the FetchTimeseries plugin and charted by SeriesChart. Leave empty to turn this off. Write the feature's values into the URL as placeholders: '{properties.<key>}' (dot notation reaches nested ones), '{lon}' and '{lat}' (the feature's point, or the click location for features without geometry), '{id}' when the source data carries feature ids, and '{start}' and '{end}' (the Start and End instants picked on the Timeseries card, YYYY-MM-DDTHH:MM:SS in UTC) written in whatever range syntax the service takes, e.g. datetime={start}Z/{end}Z. Values are URL-encoded. Trigger it from the Feature Popup (Interface tab): add a Card Action whose Event Name is 'plugin:fetch-timeseries:fetch'.",
               "type": "text",
               "width": 12
             },
@@ -621,6 +621,21 @@
               "description": "The property of each point holding the number to chart. Default 'value'. Numbers written as text are read as numbers.",
               "type": "text",
               "width": 4
+            },
+            {
+              "field": "variables.timeseries.defaultSpan",
+              "name": "Default Range",
+              "description": "How far back from the latest data the card's range starts when it opens. The viewer can widen or narrow it afterwards. Default '1 year'.",
+              "type": "dropdown",
+              "width": 4,
+              "default": "1 year",
+              "options": [
+                "1 hour",
+                "1 day",
+                "1 week",
+                "1 month",
+                "1 year"
+              ]
             }
           ]
         }

@@ -2,6 +2,11 @@ import { describe, test, expect } from 'vitest'
 import {
     getTimeseriesConfig,
     templateUrl,
+    seedRange,
+    parseSpan,
+    subtractSpan,
+    pageInfo,
+    mergePages,
     featureTitle,
     mapResponseSeries,
     buildPayload,
@@ -148,6 +153,223 @@ describe('fetchTimeseries lib', () => {
             expect(() => templateUrl('https://x/{bogus}', FEATURE)).toThrow(
                 /Unsupported placeholder/,
             )
+        })
+    })
+
+    describe('templateUrl with a range', () => {
+        const RANGE = { start: '2018-01-01T00:00:00', end: '2019-12-31T23:59:59' }
+
+        test('{start}/{end} fill an OGC datetime parameter, URL-encoded', () => {
+            expect(
+                templateUrl('https://api/items?datetime={start}Z/{end}Z', FEATURE, null, RANGE),
+            ).toBe('https://api/items?datetime=2018-01-01T00%3A00%3A00Z/2019-12-31T23%3A59%3A59Z')
+        })
+
+        test('{start}/{end} fill a CQL2 text comparison the author wrote', () => {
+            const url = templateUrl(
+                "https://api/items?filter=datetime >= '{start}' AND datetime <= '{end}'&filter-lang=cql2-text",
+                FEATURE,
+                null,
+                RANGE,
+            )
+            expect(new URL(url).searchParams.get('filter')).toBe(
+                "datetime >= '2018-01-01T00:00:00' AND datetime <= '2019-12-31T23:59:59'",
+            )
+        })
+
+        test('a range placeholder with no range is a TemplateError naming it', () => {
+            expect(() => templateUrl('https://api/items?start={start}', FEATURE)).toThrow(TemplateError)
+            expect(() => templateUrl('https://api/items?start={start}', FEATURE)).toThrow(/\{start\}/)
+        })
+    })
+
+    describe('parseSpan', () => {
+        test.each([
+            ['1 hour', { amount: 1, unit: 'hour' }],
+            ['1 day', { amount: 1, unit: 'day' }],
+            ['1 week', { amount: 1, unit: 'week' }],
+            ['1 month', { amount: 1, unit: 'month' }],
+            ['1 year', { amount: 1, unit: 'year' }],
+            ['3 days', { amount: 3, unit: 'day' }],
+            ['  2 Weeks ', { amount: 2, unit: 'week' }],
+            ['PT6H', { amount: 6, unit: 'hour' }],
+            ['P7D', { amount: 7, unit: 'day' }],
+            ['P2W', { amount: 2, unit: 'week' }],
+            ['P1M', { amount: 1, unit: 'month' }],
+            ['P1Y', { amount: 1, unit: 'year' }],
+        ])('reads %s', (value, span) => {
+            expect(parseSpan(value)).toEqual(span)
+        })
+
+        test.each(['', 'yesterday', '0 days', 'P1DT6H', 'P1S', 12, null, undefined])(
+            'rejects %s',
+            (value) => {
+                expect(parseSpan(value)).toBeNull()
+            },
+        )
+    })
+
+    describe('subtractSpan', () => {
+        const at = (iso) => new Date(iso)
+        const iso = (d) => d.toISOString().slice(0, 19)
+
+        test('hours keep the clock', () => {
+            expect(iso(subtractSpan(at('2023-06-30T23:59:59Z'), { amount: 1, unit: 'hour' }))).toBe('2023-06-30T22:59:59')
+        })
+
+        test('days and weeks land on the start of their UTC day', () => {
+            expect(iso(subtractSpan(at('2023-06-30T23:59:59Z'), { amount: 1, unit: 'day' }))).toBe('2023-06-29T00:00:00')
+            expect(iso(subtractSpan(at('2023-06-30T23:59:59Z'), { amount: 1, unit: 'week' }))).toBe('2023-06-23T00:00:00')
+        })
+
+        test('months and years step the calendar, clamping the day to the month', () => {
+            expect(iso(subtractSpan(at('2023-03-31T12:00:00Z'), { amount: 1, unit: 'month' }))).toBe('2023-02-28T00:00:00')
+            expect(iso(subtractSpan(at('2024-03-31T12:00:00Z'), { amount: 1, unit: 'month' }))).toBe('2024-02-29T00:00:00')
+            expect(iso(subtractSpan(at('2023-01-31T12:00:00Z'), { amount: 1, unit: 'month' }))).toBe('2022-12-31T00:00:00')
+            expect(iso(subtractSpan(at('2024-02-29T12:00:00Z'), { amount: 1, unit: 'year' }))).toBe('2023-02-28T00:00:00')
+        })
+    })
+
+    describe('seedRange with a span', () => {
+        const NOW = new Date('2026-09-24T12:00:00Z')
+        const JUNE = { start: '2023-06-01T00:00:00Z', end: '2023-06-30T23:59:59Z' }
+        const seed = (span, extent = JUNE) => seedRange({ extent, window: null, now: NOW, span })
+
+        test('a span shorter than the extent seeds its last span', () => {
+            expect(seed({ amount: 1, unit: 'day' })).toEqual({ start: '2023-06-29T00:00:00', end: '2023-06-30T23:59:59' })
+            expect(seed({ amount: 1, unit: 'hour' })).toEqual({ start: '2023-06-30T22:59:59', end: '2023-06-30T23:59:59' })
+        })
+
+        test('a span longer than the extent seeds the whole extent', () => {
+            expect(seed({ amount: 1, unit: 'month' })).toEqual({ start: '2023-06-01T00:00:00', end: '2023-06-30T23:59:59' })
+        })
+
+        test('with no extent start, the span alone sets the start', () => {
+            expect(seed({ amount: 1, unit: 'week' }, { start: null, end: JUNE.end })).toEqual({
+                start: '2023-06-23T00:00:00',
+                end: '2023-06-30T23:59:59',
+            })
+        })
+    })
+
+    describe('seedRange', () => {
+        const NOW = new Date('2026-09-24T12:00:00Z')
+        const seed = (extent, window = null) => seedRange({ extent, window, now: NOW })
+
+        test('an extent under a year is taken whole', () => {
+            expect(seed({ start: '2023-06-01T00:00:00Z', end: '2023-06-30T23:59:59Z' })).toEqual({
+                start: '2023-06-01T00:00:00',
+                end: '2023-06-30T23:59:59',
+            })
+        })
+
+        test('an extent over a year is clipped to the year ending at its end', () => {
+            expect(seed({ start: '2020-01-01T00:00:00Z', end: '2023-06-30T23:59:59Z' })).toEqual({
+                start: '2022-06-30T00:00:00',
+                end: '2023-06-30T23:59:59',
+            })
+        })
+
+        test('an end in the future is capped at the end of today', () => {
+            expect(seed({ start: '2020-01-01T00:00:00Z', end: '2026-12-31T23:59:59Z' })).toEqual({
+                start: '2025-09-24T00:00:00',
+                end: '2026-09-24T23:59:59',
+            })
+        })
+
+        test('an open side comes from the mission window', () => {
+            const window = { start: '2018-01-01T00:00:00Z', end: '2019-12-31T00:00:00Z' }
+            expect(seed({ start: null, end: '2019-06-30T00:00:00Z' }, window)).toEqual({
+                start: '2018-06-30T00:00:00',
+                end: '2019-06-30T00:00:00',
+            })
+            expect(seed({ start: '2019-06-01T00:00:00Z', end: null }, window)).toEqual({
+                start: '2019-06-01T00:00:00',
+                end: '2019-12-31T00:00:00',
+            })
+        })
+
+        test('no extent and no window means today and the year before it', () => {
+            expect(seed(null)).toEqual({ start: '2025-09-24T00:00:00', end: '2026-09-24T23:59:59' })
+            expect(seed({ start: null, end: null }, { start: null, end: null })).toEqual({
+                start: '2025-09-24T00:00:00',
+                end: '2026-09-24T23:59:59',
+            })
+        })
+
+        test('an extent start after a capped end gives the year before the end', () => {
+            expect(seed({ start: '2027-01-01T00:00:00Z', end: '2027-12-31T00:00:00Z' })).toEqual({
+                start: '2025-09-24T00:00:00',
+                end: '2026-09-24T23:59:59',
+            })
+        })
+
+        test('a mission window ending in the future is capped at today like an extent', () => {
+            expect(seed(null, { start: '2020-01-01T00:00:00Z', end: '2027-12-31T00:00:00Z' })).toEqual({
+                start: '2025-09-24T00:00:00',
+                end: '2026-09-24T23:59:59',
+            })
+            expect(seed({ start: '2024-01-01T00:00:00Z', end: null }, { start: '2020-01-01T00:00:00Z', end: '2027-12-31T00:00:00Z' })).toEqual({
+                start: '2025-09-24T00:00:00',
+                end: '2026-09-24T23:59:59',
+            })
+        })
+
+        test('a window entirely in the future seeds today and the year before it', () => {
+            expect(seed(null, { start: '2027-01-01T00:00:00Z', end: '2027-12-31T00:00:00Z' })).toEqual({
+                start: '2025-09-24T00:00:00',
+                end: '2026-09-24T23:59:59',
+            })
+        })
+    })
+
+    describe('pageInfo', () => {
+        test('reads the counters and the next link from an OGC Features page', () => {
+            expect(
+                pageInfo({
+                    numberMatched: 30,
+                    numberReturned: 10,
+                    links: [
+                        { rel: 'self', href: 'https://x/items' },
+                        { rel: 'next', href: 'https://x/items?offset=10' },
+                    ],
+                    features: [],
+                }),
+            ).toEqual({ next: 'https://x/items?offset=10', matched: 30, returned: 10 })
+        })
+
+        test('is empty for a bare array, an object without the members, or a malformed link', () => {
+            const none = { next: null, matched: null, returned: null }
+            expect(pageInfo([{ datetime: 'x', value: 1 }])).toEqual(none)
+            expect(pageInfo({ features: [] })).toEqual(none)
+            expect(pageInfo({ links: [{ rel: 'next' }], numberMatched: '30' })).toEqual(none)
+        })
+    })
+
+    describe('mergePages', () => {
+        test('concatenates every page into the first one under the default path', () => {
+            const first = { type: 'FeatureCollection', numberMatched: 3, numberReturned: 1, features: [{ a: 1 }] }
+            const merged = mergePages(first, [{ features: [{ a: 2 }, { a: 3 }] }], { url: 'x' })
+            expect(merged).toEqual({
+                type: 'FeatureCollection',
+                numberMatched: 3,
+                numberReturned: 3,
+                features: [{ a: 1 }, { a: 2 }, { a: 3 }],
+            })
+            expect(first.features).toHaveLength(1)
+            expect(first.numberReturned).toBe(1)
+        })
+
+        test('follows a custom seriesPath and keeps a bare array bare', () => {
+            expect(
+                mergePages({ data: { rows: [1] } }, [{ data: { rows: [2] } }], { url: 'x', seriesPath: 'data.rows' }),
+            ).toEqual({ data: { rows: [1, 2] } })
+            expect(mergePages([1], [[2], [3]], { url: 'x' })).toEqual([1, 2, 3])
+            expect(mergePages({ features: [1] }, [], { url: 'x' })).toEqual({ features: [1] })
+        })
+
+        test('a page without the point array is the usual MappingError', () => {
+            expect(() => mergePages({ features: [] }, [{ nope: [] }], { url: 'x' })).toThrow(MappingError)
         })
     })
 
