@@ -17,8 +17,8 @@ payload is the `ChartSeriesPayload` itself, not wrapped in an envelope.
 Loading and failure are the fetcher's to show on its own surface; the chart
 hears only data arriving and data going away.
 
-One card per `chartId`; a new payload with the same `chartId` replaces the
-previous chart. Malformed payloads are dropped with a console warning
+One card per `chartId` per source plugin; a new payload from the same plugin
+with the same `chartId` replaces the previous chart. Malformed payloads are dropped with a console warning
 (`isChartSeriesPayload` guard) — they never crash the panel. Series `id`s
 and `label`s must be unique within a payload; duplicates count as malformed
 (the label is what the Variable dropdown, footer, and CSV key on).
@@ -44,6 +44,10 @@ config entry, not a code change:
 ```json
 { "sources": ["fetch-timeseries", "fetch-raster-timeseries"] }
 ```
+
+In the Configure page this is the Source plugins field: the same ids
+separated by commas. With several sources the panel shows every plugin's
+charts, each plugin's cards kept apart even when two reuse a `chartId`.
 
 `variables.layout` — how the variable picker renders when a payload carries
 several variables. `"dropdown"` (default) puts a select above the chart, for
