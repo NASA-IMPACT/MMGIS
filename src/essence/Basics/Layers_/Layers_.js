@@ -42,6 +42,7 @@ import {
 } from '../TimeControl_/layerDataCoverage'
 import { buildLayerLegend } from './legend/buildLayerLegend'
 import { NO_LEGEND } from './legend/types'
+import { detached } from '../../mmgisAPI/providers/_shared'
 import { bbox } from '@turf/turf'
 import $ from 'jquery'
 
@@ -498,10 +499,12 @@ const L_ = {
             _providerCleanups.forEach((cleanup) => cleanup())
             _providerCleanups = [
                 window.mmgisAPI.provide('layers:getAll', () => Object.keys(L_.layers.data)),
-                window.mmgisAPI.provide('layers:getVisible', () => L_.layers.on),
+                // Reads of layer state answer with a copy; a plugin changes
+                // a layer through the set and update requests below.
+                window.mmgisAPI.provide('layers:getVisible', () => detached(L_.layers.on)),
                 window.mmgisAPI.provide('layers:getConfig', (layerUUID) => {
                     const uuid = L_.asLayerUUID(layerUUID)
-                    return L_.layers.data[uuid] || null
+                    return detached(L_.layers.data[uuid] || null)
                 }),
                 window.mmgisAPI.provide('layers:toggle', async (layerUUID) => {
                     const uuid = L_.asLayerUUID(layerUUID)
@@ -541,8 +544,8 @@ const L_ = {
                     }
                     return false
                 }),
-                window.mmgisAPI.provide('layers:getAllConfigs', () => L_.layers.data),
-                window.mmgisAPI.provide('layers:getAllOpacities', () => L_.layers.opacity),
+                window.mmgisAPI.provide('layers:getAllConfigs', () => detached(L_.layers.data)),
+                window.mmgisAPI.provide('layers:getAllOpacities', () => detached(L_.layers.opacity)),
                 // What each layer's COG colormap supports. Called with a layer
                 // identifier it answers for that one layer, resolving a name
                 // the way every other layer-keyed provider does; called with
@@ -683,7 +686,7 @@ const L_ = {
                 // lives outside configData so resetConfig re-parses don't
                 // wipe it. `source` is accepted but unused — reserved for
                 // arbitrating between multiple writers later.
-                window.mmgisAPI.provide('layers:getListed', () => L_.layers.listed),
+                window.mmgisAPI.provide('layers:getListed', () => detached(L_.layers.listed)),
                 window.mmgisAPI.provide('layers:setListed', (payload) => {
                     const updates = payload?.updates
                     if (updates == null || typeof updates !== 'object')
@@ -695,7 +698,7 @@ const L_ = {
                         else L_.layers.listed[uuid] = false
                     })
                     window.mmgisAPI.emit('layer:listedChange', {
-                        listed: L_.layers.listed,
+                        listed: detached(L_.layers.listed),
                     })
                     return true
                 }),
@@ -724,10 +727,12 @@ const L_ = {
                 // without, the whole name-keyed map. Live updates broadcast
                 // as 'layers:loadStatusChanged'.
                 window.mmgisAPI.provide('layers:getLoadStatus', (layerUUID) =>
-                    layerUUID != null
-                        ? L_.layers.loadStatus[L_.asLayerUUID(layerUUID)] ??
-                          null
-                        : L_.layers.loadStatus
+                    detached(
+                        layerUUID != null
+                            ? L_.layers.loadStatus[L_.asLayerUUID(layerUUID)] ??
+                                  null
+                            : L_.layers.loadStatus
+                    )
                 ),
                 // Whether each layer's requests are being suppressed for
                 // lack of data at the current time, with the coverage that
@@ -741,9 +746,9 @@ const L_ = {
                         const uuid = L_.asLayerUUID(layerUUID)
                         return uuid == null
                             ? null
-                            : L_.layers.dataCoverage[uuid] ?? null
+                            : detached(L_.layers.dataCoverage[uuid] ?? null)
                     }
-                    return L_.layers.dataCoverage
+                    return detached(L_.layers.dataCoverage)
                 }),
                 window.mmgisAPI.provide('tool:getVars', (toolName) => L_.getToolVars(toolName)),
                 window.mmgisAPI.provide('app:isMobile', () => L_.UserInterface_?.isMobile === true),
