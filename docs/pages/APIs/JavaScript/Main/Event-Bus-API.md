@@ -438,8 +438,8 @@ window.mmgisAPI.request('map:showPopup', {
 | Provider | Params | Returns | Description |
 |----------|--------|---------|-------------|
 | `layers:getAll` | none | `string[]` | Get all layer names |
-| `layers:getVisible` | none | `object` | Get visibility state of all layers |
-| `layers:getConfig` | `layerUUID` | `object \| null` | Get layer configuration |
+| `layers:getVisible` | none | `object` | Get visibility state of all layers. The answer is a copy: writing to it changes nothing |
+| `layers:getConfig` | `layerUUID` | `object \| null` | Get layer configuration. The answer is a copy: to change a layer, use `layers:updateConfig` |
 | `layers:toggle` | `layerUUID` | `boolean \| null` | Toggle layer visibility |
 | `layers:getOrder` | none | `string[]` | Draw order as layer UUIDs, top first, headers excluded |
 | `layers:setOrder` | `{ order }` | `boolean` | Apply a full permutation of the draw order (UUIDs, or display names where the name is unique). Returns `false` and changes nothing if `order` is not an array or a layer is missing, unknown, or repeated. On Leaflet, vectors always draw above rasters whatever the order says |
