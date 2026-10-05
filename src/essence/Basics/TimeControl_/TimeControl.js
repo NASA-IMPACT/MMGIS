@@ -30,6 +30,13 @@ const UNRESOLVED_URL_REPLACEMENT = 'MMGIS_UNRESOLVED'
 // a time step or a colormap pick waits for the rest of the session.
 const URL_REPLACEMENT_TIMEOUT_MS = 15000
 
+// How long the time must hold still before time-enabled layers reload. Every
+// reload rebuilds each such layer under a new URL and refetches all of its
+// visible tiles, so scrubbing the timeline would fire one burst per slider
+// step when only the position the user stops on is wanted.
+const TIME_RELOAD_DEBOUNCE_MS = 200
+let _timeReloadTimer = null
+
 /**
  * Asks a urlReplacement's service for the value that fills its `{key}`.
  * Throws whenever there is no usable value — a failed request, a silence
@@ -119,6 +126,7 @@ var TimeControl = {
         // (e.g. mission swap) can't accumulate stale providers/listeners.
         _providerCleanups.forEach((cleanup) => cleanup())
         _providerCleanups = []
+        clearTimeout(_timeReloadTimer)
 
         // Register bus handlers before any UI or plugin can emit, so a
         // time:changeRequested is never lost to registration order.
@@ -1038,7 +1046,24 @@ function timeInputChange(startTime, endTime, currentTime, skipUpdate) {
         })
     })
 
-    if (skipUpdate !== true) TimeControl.reloadTimeLayers()
+    if (skipUpdate !== true) scheduleTimeLayerReload()
+}
+
+// Reloads time-enabled layers once the time has held still for
+// TIME_RELOAD_DEBOUNCE_MS. Playback and live mode step on their own clock,
+// as often as every 100 ms, which would hold a trailing reload off for as
+// long as they run, so they keep reloading on every step.
+function scheduleTimeLayerReload() {
+    clearTimeout(_timeReloadTimer)
+    _timeReloadTimer = null
+    if (TimeUI.play === true || TimeUI.now === true) {
+        TimeControl.reloadTimeLayers()
+        return
+    }
+    _timeReloadTimer = setTimeout(() => {
+        _timeReloadTimer = null
+        TimeControl.reloadTimeLayers()
+    }, TIME_RELOAD_DEBOUNCE_MS)
 }
 
 export default TimeControl
