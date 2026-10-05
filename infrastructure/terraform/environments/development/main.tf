@@ -26,10 +26,11 @@ module "mmgis" {
   # Re-seed the demo mission on every admin boot. Development only.
   overwrite_demo_mission = true
 
-  # Dashboards published here sit behind the shared HTTP Basic password
-  # (mmgis/development/dashboards-password), baked into each dashboard's
-  # CloudFront Function. Production publishes them open.
-  dashboards_require_auth = true
+  # Dashboards published here are open to anyone holding the URL: no shared
+  # password baked into their CloudFront Function, and the publish task does
+  # not carry the dashboards-password secret. Production publishes them open
+  # too.
+  dashboards_require_auth = false
 
   # No recovery window: deleted secret names free immediately, so a
   # destroy/re-apply never collides with a name still held in recovery.

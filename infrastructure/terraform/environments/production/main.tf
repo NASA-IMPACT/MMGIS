@@ -30,8 +30,8 @@ module "mmgis" {
 
   # Dashboards published here are open to anyone holding the URL: no shared
   # password baked into their CloudFront Function, and the publish task does
-  # not carry the dashboards-password secret. Development gates its
-  # dashboards.
+  # not carry the dashboards-password secret. Development publishes its
+  # dashboards open too.
   dashboards_require_auth = false
 
   # No recovery window, production included: deleted secret names free

@@ -206,8 +206,8 @@ test.describe('infrastructure/ recipes (JSON and Terraform)', () => {
         ).toBeGreaterThanOrEqual(9)
     })
 
-    test('production publishes dashboards ungated and development gated (policy lock)', () => {
-        // Which environment gates is a decision, not an implementation
+    test('both environments publish dashboards ungated (policy lock)', () => {
+        // Whether an environment gates is a decision, not an implementation
         // detail — this pins the two roots' answers so neither flips by
         // accident. That the flag then reaches the publish task is the
         // task-definition cross-check below.
@@ -225,7 +225,7 @@ test.describe('infrastructure/ recipes (JSON and Terraform)', () => {
             /^\s*dashboards_require_auth\s*=\s*false\s*$/m
         )
         expect(readEnvRoot('development')).toMatch(
-            /^\s*dashboards_require_auth\s*=\s*true\s*$/m
+            /^\s*dashboards_require_auth\s*=\s*false\s*$/m
         )
     })
 
