@@ -24,6 +24,7 @@ var QueryURL = {
         var urlGlobeCamera = this.getSingleQueryVariable('globeCamera')
         var urlPanePercents = this.getSingleQueryVariable('panePercents')
         var urlToolsObj = this.getSingleQueryVariable('tools')
+        var urlBasemap = this.getSingleQueryVariable('basemap')
 
         var urlCenterPin = this.getSingleQueryVariable('centerPin')
 
@@ -96,6 +97,10 @@ var QueryURL = {
 
         if (urlToolsObj !== false) {
             L_.FUTURES.tools = urlToolsObj.split(',')
+        }
+
+        if (urlBasemap !== false && urlBasemap !== '') {
+            L_.FUTURES.basemap = urlBasemap
         }
 
         if (urlCenterPin !== false) {
@@ -447,6 +452,11 @@ var QueryURL = {
         //tools
         var urlTools = T_.getToolsUrl()
         if (urlTools !== false) urlAppendage += '&tools=' + urlTools
+
+        //basemap
+        const activeBasemap = L_.Map_?.getActiveBasemap?.()
+        if (activeBasemap?.name)
+            urlAppendage += '&basemap=' + activeBasemap.name
 
         //time
         if (L_.configData.time && L_.configData.time.enabled === true) {

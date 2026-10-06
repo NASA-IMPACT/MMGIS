@@ -145,6 +145,44 @@ test.describe('QueryURL.writeCoordinateURL time cursor', () => {
     })
 })
 
+// The share link names the active basemap style, so a link opened later boots
+// on the style that was showing rather than the mission's configured default.
+test.describe('QueryURL.writeCoordinateURL basemap', () => {
+    beforeEach(() => {
+        L_.UserInterface_ = {}
+    })
+
+    test('carries the active basemap style by name', () => {
+        L_.Map_.getActiveBasemap = () => ({
+            name: 'Dark',
+            style: 'mapbox://styles/mapbox/dark-v11',
+        })
+
+        expect(QueryURL.writeCoordinateURL()).toContain('&basemap=Dark')
+    })
+
+    test('percent-encodes a name with spaces', () => {
+        L_.Map_.getActiveBasemap = () => ({
+            name: 'Satellite Streets',
+            style: 'mapbox://styles/mapbox/satellite-streets-v12',
+        })
+
+        expect(QueryURL.writeCoordinateURL()).toContain(
+            '&basemap=Satellite%20Streets'
+        )
+    })
+
+    test('writes no basemap when the mission has none', () => {
+        L_.Map_.getActiveBasemap = () => null
+
+        expect(QueryURL.writeCoordinateURL()).not.toContain('basemap=')
+    })
+
+    test('writes no basemap against a core without the getter', () => {
+        expect(QueryURL.writeCoordinateURL()).not.toContain('basemap=')
+    })
+})
+
 test.describe('QueryURL.getShareURL (issue #143)', () => {
     test('resolves with the long URL without shortening in static builds', async () => {
         vi.mocked(isStaticBuild).mockReturnValue(true)
