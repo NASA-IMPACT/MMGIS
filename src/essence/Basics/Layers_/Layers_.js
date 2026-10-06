@@ -17,6 +17,7 @@ import {
     resolveTemporalExtent,
     parseISODuration,
     periodAnchorOf,
+    hasPeriodCadence,
     takesPeriodWindow,
 } from '../TimeControl_/layerTimePolicy'
 import { fetchLayerExtentSource } from '../TimeControl_/layerExtentSource'
@@ -54,10 +55,13 @@ let _providerCleanups = []
 // Resolved at call time so an open-ended "now" is fresh on every ask.
 // `interval` is the layer's parsed `time.interval` (a Duration), or null
 // when it declares none or an unparseable one — a plugin reads the cadence
-// without parsing ISO-8601 durations itself. `periodAnchor` is the instant
-// the layer's periods step from when it requests one period at a time, or
-// null when it requests the Time Control window, so a timeline draws the
-// boundaries the map actually fetches by.
+// without parsing ISO-8601 durations itself. `periodAnchor` is present only
+// for a layer that requests one period at a time — a type that takes
+// periods, with a cadence of an hour or more and no readable Data Dates —
+// and is then the instant its periods step from, or null when they cannot
+// be placed and the layer requests the window after all. A layer whose
+// cadence shapes nothing carries no such key, so a timeline anchors its
+// row as it would for any layer.
 const temporalExtentFor = (uuid) => {
     const layer = L_.layers.data[uuid]
     const time = layer?.time
@@ -65,8 +69,12 @@ const temporalExtentFor = (uuid) => {
         time?.interval != null && time.interval !== ''
             ? parseISODuration(String(time.interval).trim())
             : null
-    const periodAnchor = takesPeriodWindow(layer) ? periodAnchorOf(time) : null
-    return { ...resolveTemporalExtent(time), interval, periodAnchor }
+    const periodic = takesPeriodWindow(layer) && hasPeriodCadence(time)
+    return {
+        ...resolveTemporalExtent(time),
+        interval,
+        ...(periodic ? { periodAnchor: periodAnchorOf(time) } : {}),
+    }
 }
 
 const runsFor = (uuid) => {
@@ -587,8 +595,9 @@ const L_ = {
                     return legends
                 }),
                 // When each layer has data, as ISO datetimes or null, its
-                // parsed cadence (`interval`, or null) and the instant its
-                // periods step from (`periodAnchor`, or null). The config's
+                // parsed cadence (`interval`, or null) and, for a layer that
+                // requests one period at a time, the instant its periods
+                // step from (`periodAnchor`, null when unplaceable). The config's
                 // dataStartTime/dataEndTime may be a policy ("now",
                 // "now - P1D"); this is where it is resolved, so a plugin
                 // never sees the policy string. Same call shapes as above.

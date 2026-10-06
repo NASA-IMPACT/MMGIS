@@ -331,24 +331,41 @@ const PERIOD_WINDOW_TYPES = new Set(['tile', 'vector', 'vectortile'])
 /**
  * Whether a layer's type takes one period at a time when it is periodic:
  * a tile, vector or vector tile layer, under either engine's type name. A
- * `local` layer is fetched once and filtered on the client, and only a
- * vector layer has such a filter (L_.timeFilterVectorLayer), so a local
- * vector layer takes the period and a local tile or vector tile layer keeps
- * the window. Whether the layer is periodic at all — its interval, Data
- * Dates, and where its periods fall — is `layerRequestWindow`'s question.
+ * `local` layer is fetched once and filtered on the client, and the only
+ * such filter (L_.timeFilterVectorLayer) runs for a layer whose raw type is
+ * `vector` and that names an End Time Property; that layer takes the
+ * period, and any other local layer is refreshed whole and keeps the
+ * window. Whether the layer is periodic at all — its interval, Data Dates,
+ * and where its periods fall — is `layerRequestWindow`'s question.
  *
  * Takes a loose shape because callers pass raw mission-config objects.
  */
 export function takesPeriodWindow(
     layer:
-        | { type?: string | null; time?: RequestTimeConfig | null }
+        | {
+              type?: string | null
+              time?: (RequestTimeConfig & { endProp?: string | null }) | null
+          }
         | null
         | undefined
 ): boolean {
     const type = toCanonicalLayerType(layer?.type ?? undefined)
     if (type == null || !PERIOD_WINDOW_TYPES.has(type)) return false
-    if (layer?.time?.type === 'local') return type === 'vector'
+    if (layer?.time?.type === 'local')
+        return layer.type === 'vector' && layer.time.endProp != null
     return true
+}
+
+/**
+ * Whether a layer's time block names a cadence core treats as a period:
+ * an interval of an hour or more that parses, with no readable Data Dates.
+ * Says nothing about where the periods fall — `periodAnchorOf` does — or
+ * whether the layer's type takes them — `takesPeriodWindow` does.
+ */
+export function hasPeriodCadence(
+    time: RequestTimeConfig | null | undefined
+): boolean {
+    return requestCadenceOf(time) != null
 }
 
 // Period boundaries for a calendar cadence are UTC year, month, day or hour

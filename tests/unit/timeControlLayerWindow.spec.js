@@ -35,6 +35,15 @@ const makeLayers = () => ({
         type: 'local',
         endProp: 'when',
     }),
+    dailyLocalVectorNoProp: layer('dailyLocalVectorNoProp', 'vector', {
+        interval: 'P1D',
+        type: 'local',
+    }),
+    dailyLocalGeoJson: layer('dailyLocalGeoJson', 'GeoJsonLayer', {
+        interval: 'P1D',
+        type: 'local',
+        endProp: 'when',
+    }),
     dailyLocalTile: layer('dailyLocalTile', 'tile', { interval: 'P1D', type: 'local' }),
     dailyLocalVectorTile: layer('dailyLocalVectorTile', 'vectortile', {
         interval: 'P1D',
@@ -101,6 +110,8 @@ describe('TimeControl layer window stamping', () => {
         for (const name of [
             'plainTile',
             'plainVector',
+            'dailyLocalVectorNoProp',
+            'dailyLocalGeoJson',
             'dailyLocalTile',
             'dailyLocalVectorTile',
             'dailyQuery',

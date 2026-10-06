@@ -325,6 +325,40 @@ describe('TimeControl.reloadLayer with the deck.gl engine', () => {
         expect(Map_.refreshLayer).toHaveBeenCalled()
     })
 
+    // A requery vector or vector tile layer fills {starttime}/{endtime} from
+    // the window TimeControl stamped on it, which for a periodic layer is the
+    // one period holding the cursor, and puts the template back afterwards.
+    test.each([['vector'], ['MVTLayer']])(
+        'requeries a periodic %s layer for the period holding the cursor',
+        async (type) => {
+            const template =
+                'https://example.com/items?datetime={starttime}/{endtime}'
+            const layer = {
+                name: 'Daily Items',
+                type,
+                url: template,
+                controlled: false,
+                time: { enabled: true, type: 'requery', interval: 'P1D' },
+            }
+            registerDeckLayer(layer)
+            TimeControl.startTime = '2022-01-15T00:00:00Z'
+            TimeControl.currentTime = '2022-06-15T13:30:00Z'
+            TimeControl.updateLayersTime()
+            const seenUrls = []
+            Map_.refreshLayer.mockImplementationOnce(async (l) => {
+                seenUrls.push(l.url)
+                return true
+            })
+
+            await TimeControl.reloadLayer(layer)
+
+            expect(seenUrls).toEqual([
+                'https://example.com/items?datetime=2022-06-15T00:00:00Z/2022-06-15T23:59:59Z',
+            ])
+            expect(layer.url).toBe(template)
+        }
+    )
+
     // A local vector layer is filtered on the client against the window
     // TimeControl stamped on it; a periodic one is stamped with the one
     // period holding the cursor, so the filter keeps that period's features.
