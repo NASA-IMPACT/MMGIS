@@ -30,7 +30,8 @@ const isComplete = (value: string) => value >= MIN_INSTANT
  *  state and the fetch. A value is reported as typed; only leaving a field
  *  with the range reversed snaps the other bound to it, since a change
  *  event fires for every partial day typed ("2" on the way to "25"). The
- *  chart below names the feature; this card does not repeat it. */
+ *  chart below names the feature; this card does not repeat it. Values
+ *  are UTC; datetime-local does no conversion, hence the labels. */
 export function RangeCard({
     start,
     end,
@@ -48,7 +49,7 @@ export function RangeCard({
             </header>
             <div className="range-card__fields">
                 <label className="range-card__field">
-                    <span className="range-card__label">Start</span>
+                    <span className="range-card__label">Start (UTC)</span>
                     <input
                         type="datetime-local"
                         step={1}
@@ -66,7 +67,7 @@ export function RangeCard({
                     />
                 </label>
                 <label className="range-card__field">
-                    <span className="range-card__label">End</span>
+                    <span className="range-card__label">End (UTC)</span>
                     <input
                         type="datetime-local"
                         step={1}

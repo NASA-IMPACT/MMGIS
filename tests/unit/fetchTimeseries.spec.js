@@ -6,6 +6,7 @@ import {
     parseSpan,
     subtractSpan,
     pageInfo,
+    resolvePageUrl,
     mergePages,
     featureTitle,
     mapResponseSeries,
@@ -217,16 +218,28 @@ describe('fetchTimeseries lib', () => {
             expect(iso(subtractSpan(at('2023-06-30T23:59:59Z'), { amount: 1, unit: 'hour' }))).toBe('2023-06-30T22:59:59')
         })
 
-        test('days and weeks land on the start of their UTC day', () => {
-            expect(iso(subtractSpan(at('2023-06-30T23:59:59Z'), { amount: 1, unit: 'day' }))).toBe('2023-06-29T00:00:00')
-            expect(iso(subtractSpan(at('2023-06-30T23:59:59Z'), { amount: 1, unit: 'week' }))).toBe('2023-06-23T00:00:00')
+        test('days and weeks cover whole UTC days ending with the end\'s day', () => {
+            expect(iso(subtractSpan(at('2023-06-30T23:59:59Z'), { amount: 1, unit: 'day' }))).toBe('2023-06-30T00:00:00')
+            expect(iso(subtractSpan(at('2023-06-30T23:59:59Z'), { amount: 1, unit: 'week' }))).toBe('2023-06-24T00:00:00')
+            expect(iso(subtractSpan(at('2023-06-30T12:00:00Z'), { amount: 2, unit: 'day' }))).toBe('2023-06-29T00:00:00')
         })
 
-        test('months and years step the calendar, clamping the day to the month', () => {
-            expect(iso(subtractSpan(at('2023-03-31T12:00:00Z'), { amount: 1, unit: 'month' }))).toBe('2023-02-28T00:00:00')
-            expect(iso(subtractSpan(at('2024-03-31T12:00:00Z'), { amount: 1, unit: 'month' }))).toBe('2024-02-29T00:00:00')
-            expect(iso(subtractSpan(at('2023-01-31T12:00:00Z'), { amount: 1, unit: 'month' }))).toBe('2022-12-31T00:00:00')
-            expect(iso(subtractSpan(at('2024-02-29T12:00:00Z'), { amount: 1, unit: 'year' }))).toBe('2023-02-28T00:00:00')
+        test('an end at midnight closes the day before it', () => {
+            expect(iso(subtractSpan(at('2023-07-01T00:00:00Z'), { amount: 1, unit: 'day' }))).toBe('2023-06-30T00:00:00')
+            expect(iso(subtractSpan(at('2023-07-01T00:00:00Z'), { amount: 1, unit: 'year' }))).toBe('2022-07-01T00:00:00')
+        })
+
+        test('months and years step the calendar back from the day after the end', () => {
+            expect(iso(subtractSpan(at('2023-06-30T23:59:59Z'), { amount: 1, unit: 'month' }))).toBe('2023-06-01T00:00:00')
+            expect(iso(subtractSpan(at('2023-03-31T12:00:00Z'), { amount: 1, unit: 'month' }))).toBe('2023-03-01T00:00:00')
+            expect(iso(subtractSpan(at('2026-09-24T23:59:59Z'), { amount: 1, unit: 'year' }))).toBe('2025-09-25T00:00:00')
+        })
+
+        test('the day is clamped to the target month', () => {
+            expect(iso(subtractSpan(at('2023-03-30T12:00:00Z'), { amount: 1, unit: 'month' }))).toBe('2023-02-28T00:00:00')
+            expect(iso(subtractSpan(at('2024-03-30T12:00:00Z'), { amount: 1, unit: 'month' }))).toBe('2024-02-29T00:00:00')
+            expect(iso(subtractSpan(at('2023-01-30T12:00:00Z'), { amount: 1, unit: 'month' }))).toBe('2022-12-31T00:00:00')
+            expect(iso(subtractSpan(at('2024-02-28T12:00:00Z'), { amount: 1, unit: 'year' }))).toBe('2023-02-28T00:00:00')
         })
     })
 
@@ -236,7 +249,7 @@ describe('fetchTimeseries lib', () => {
         const seed = (span, extent = JUNE) => seedRange({ extent, window: null, now: NOW, span })
 
         test('a span shorter than the extent seeds its last span', () => {
-            expect(seed({ amount: 1, unit: 'day' })).toEqual({ start: '2023-06-29T00:00:00', end: '2023-06-30T23:59:59' })
+            expect(seed({ amount: 1, unit: 'day' })).toEqual({ start: '2023-06-30T00:00:00', end: '2023-06-30T23:59:59' })
             expect(seed({ amount: 1, unit: 'hour' })).toEqual({ start: '2023-06-30T22:59:59', end: '2023-06-30T23:59:59' })
         })
 
@@ -246,7 +259,7 @@ describe('fetchTimeseries lib', () => {
 
         test('with no extent start, the span alone sets the start', () => {
             expect(seed({ amount: 1, unit: 'week' }, { start: null, end: JUNE.end })).toEqual({
-                start: '2023-06-23T00:00:00',
+                start: '2023-06-24T00:00:00',
                 end: '2023-06-30T23:59:59',
             })
         })
@@ -265,14 +278,14 @@ describe('fetchTimeseries lib', () => {
 
         test('an extent over a year is clipped to the year ending at its end', () => {
             expect(seed({ start: '2020-01-01T00:00:00Z', end: '2023-06-30T23:59:59Z' })).toEqual({
-                start: '2022-06-30T00:00:00',
+                start: '2022-07-01T00:00:00',
                 end: '2023-06-30T23:59:59',
             })
         })
 
         test('an end in the future is capped at the end of today', () => {
             expect(seed({ start: '2020-01-01T00:00:00Z', end: '2026-12-31T23:59:59Z' })).toEqual({
-                start: '2025-09-24T00:00:00',
+                start: '2025-09-25T00:00:00',
                 end: '2026-09-24T23:59:59',
             })
         })
@@ -290,36 +303,59 @@ describe('fetchTimeseries lib', () => {
         })
 
         test('no extent and no window means today and the year before it', () => {
-            expect(seed(null)).toEqual({ start: '2025-09-24T00:00:00', end: '2026-09-24T23:59:59' })
+            expect(seed(null)).toEqual({ start: '2025-09-25T00:00:00', end: '2026-09-24T23:59:59' })
             expect(seed({ start: null, end: null }, { start: null, end: null })).toEqual({
-                start: '2025-09-24T00:00:00',
+                start: '2025-09-25T00:00:00',
                 end: '2026-09-24T23:59:59',
             })
         })
 
         test('an extent start after a capped end gives the year before the end', () => {
             expect(seed({ start: '2027-01-01T00:00:00Z', end: '2027-12-31T00:00:00Z' })).toEqual({
-                start: '2025-09-24T00:00:00',
+                start: '2025-09-25T00:00:00',
                 end: '2026-09-24T23:59:59',
             })
         })
 
         test('a mission window ending in the future is capped at today like an extent', () => {
             expect(seed(null, { start: '2020-01-01T00:00:00Z', end: '2027-12-31T00:00:00Z' })).toEqual({
-                start: '2025-09-24T00:00:00',
+                start: '2025-09-25T00:00:00',
                 end: '2026-09-24T23:59:59',
             })
             expect(seed({ start: '2024-01-01T00:00:00Z', end: null }, { start: '2020-01-01T00:00:00Z', end: '2027-12-31T00:00:00Z' })).toEqual({
-                start: '2025-09-24T00:00:00',
+                start: '2025-09-25T00:00:00',
                 end: '2026-09-24T23:59:59',
             })
         })
 
         test('a window entirely in the future seeds today and the year before it', () => {
             expect(seed(null, { start: '2027-01-01T00:00:00Z', end: '2027-12-31T00:00:00Z' })).toEqual({
-                start: '2025-09-24T00:00:00',
+                start: '2025-09-25T00:00:00',
                 end: '2026-09-24T23:59:59',
             })
+        })
+    })
+
+    describe('resolvePageUrl', () => {
+        const PAGE = 'https://api.example/collections/c/items?limit=2'
+
+        test('an absolute link is kept', () => {
+            expect(resolvePageUrl('https://api.example/collections/c/items?offset=2', PAGE)).toBe(
+                'https://api.example/collections/c/items?offset=2',
+            )
+        })
+
+        test('a relative link resolves against the page that carried it', () => {
+            expect(resolvePageUrl('?offset=2', PAGE)).toBe(
+                'https://api.example/collections/c/items?offset=2',
+            )
+            expect(resolvePageUrl('/collections/c/items?offset=2', PAGE)).toBe(
+                'https://api.example/collections/c/items?offset=2',
+            )
+        })
+
+        test('a link that does not parse is null', () => {
+            expect(resolvePageUrl('http://[bad', PAGE)).toBeNull()
         })
     })
 

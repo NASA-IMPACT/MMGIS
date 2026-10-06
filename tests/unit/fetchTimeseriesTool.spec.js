@@ -167,13 +167,13 @@ describe('FetchTimeseriesTool', () => {
         expect(requested('plugins:show')).toEqual([
             ['plugins:show', { pluginId: 'FetchTimeseriesTool' }],
         ])
-        expect(valueOf('Start')).toBe('2025-09-24T00:00:00')
+        expect(valueOf('Start')).toBe('2025-09-25T00:00:00')
         expect(valueOf('End')).toBe('2026-09-24T23:59:59')
 
         const [url] = fetchMock.mock.calls[0]
         expect(url.startsWith('https://api/x?s=A1&filter=')).toBe(true)
         expect(filterOf(url)).toBe(
-            "datetime >= '2025-09-24T00:00:00' AND datetime <= '2026-09-24T23:59:59'",
+            "datetime >= '2025-09-25T00:00:00' AND datetime <= '2026-09-24T23:59:59'",
         )
         expect(new URL(url).searchParams.get('filter-lang')).toBe('cql2-text')
 
@@ -206,15 +206,21 @@ describe('FetchTimeseriesTool', () => {
     test('an extent longer than a year seeds its last year, with a future end capped at today', async () => {
         extents[LAYER] = { start: '2020-01-01T00:00:00Z', end: '2026-12-31T23:59:59Z', interval: null }
         await request()
-        expect(valueOf('Start')).toBe('2025-09-24T00:00:00')
+        expect(valueOf('Start')).toBe('2025-09-25T00:00:00')
         expect(valueOf('End')).toBe('2026-09-24T23:59:59')
+    })
+
+    test('the pickers say their instants are UTC', async () => {
+        await request()
+        const labels = [...host.querySelectorAll('.range-card__label')].map((l) => l.textContent)
+        expect(labels).toEqual(['Start (UTC)', 'End (UTC)'])
     })
 
     test("the layer's Default Range sets how far back the card opens", async () => {
         extents[LAYER] = { start: '2023-06-01T00:00:00Z', end: '2023-06-30T23:59:59Z', interval: null }
         layerConfigs[LAYER].variables.timeseries.defaultSpan = '1 day'
         await request()
-        expect(valueOf('Start')).toBe('2023-06-29T00:00:00')
+        expect(valueOf('Start')).toBe('2023-06-30T00:00:00')
         expect(valueOf('End')).toBe('2023-06-30T23:59:59')
     })
 
@@ -230,7 +236,7 @@ describe('FetchTimeseriesTool', () => {
         extents[LAYER] = { start: '2020-01-01T00:00:00Z', end: '2023-06-30T23:59:59Z', interval: null }
         layerConfigs[LAYER].variables.timeseries.defaultSpan = 'a while'
         await request()
-        expect(valueOf('Start')).toBe('2022-06-30T00:00:00')
+        expect(valueOf('Start')).toBe('2022-07-01T00:00:00')
         expect(warn).toHaveBeenCalledWith(expect.stringContaining('unreadable defaultSpan'))
         warn.mockRestore()
     })
@@ -238,7 +244,7 @@ describe('FetchTimeseriesTool', () => {
     test('an extent with an open start seeds the year before its end', async () => {
         extents[LAYER] = { start: null, end: '2023-06-30T23:59:59Z', interval: null }
         await request()
-        expect(valueOf('Start')).toBe('2022-06-30T00:00:00')
+        expect(valueOf('Start')).toBe('2022-07-01T00:00:00')
         expect(valueOf('End')).toBe('2023-06-30T23:59:59')
     })
 
@@ -262,7 +268,7 @@ describe('FetchTimeseriesTool', () => {
             'https://api/x?s={properties.code}&datetime={start}Z/{end}Z'
         await request()
         expect(fetchMock.mock.calls[0][0]).toBe(
-            'https://api/x?s=A1&datetime=2025-09-24T00%3A00%3A00Z/2026-09-24T23%3A59%3A59Z',
+            'https://api/x?s=A1&datetime=2025-09-25T00%3A00%3A00Z/2026-09-24T23%3A59%3A59Z',
         )
     })
 
@@ -318,6 +324,31 @@ describe('FetchTimeseriesTool', () => {
         await request()
         expect(fetchMock).toHaveBeenCalledTimes(1)
         expect(pointsOut()).toEqual([1, 2])
+    })
+
+    test('a relative next link is followed on the service, not the page', async () => {
+        fetchMock
+            .mockResolvedValueOnce(page([1, 2], { matched: 4, next: '?offset=2' }))
+            .mockResolvedValueOnce(page([3, 4], { matched: 4 }))
+        await request()
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+        expect(fetchMock.mock.calls[1][0]).toBe('https://api/x?offset=2')
+        expect(pointsOut()).toEqual([1, 2, 3, 4])
+    })
+
+    test('a next link to another origin is followed with a warning', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        fetchMock
+            .mockResolvedValueOnce(
+                page([1, 2], { matched: 4, next: 'https://elsewhere.example/x?offset=2' }),
+            )
+            .mockResolvedValueOnce(page([3, 4], { matched: 4 }))
+        await request()
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+        expect(fetchMock.mock.calls[1][0]).toBe('https://elsewhere.example/x?offset=2')
+        expect(pointsOut()).toEqual([1, 2, 3, 4])
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('next page link leaves https://api'))
+        warn.mockRestore()
     })
 
     test('the card counts pages while it walks', async () => {
@@ -412,14 +443,14 @@ describe('FetchTimeseriesTool', () => {
         await request()
         // Chrome's change events while typing a year: 0002-…, then the real one.
         await setDate('End', '0002-03-01T00:00:00')
-        expect(valueOf('Start')).toBe('2025-09-24T00:00:00')
+        expect(valueOf('Start')).toBe('2025-09-25T00:00:00')
         await settle()
         expect(fetchMock).toHaveBeenCalledTimes(1)
         await setDate('End', '2027-03-01T00:00:00')
         await settle()
         expect(fetchMock).toHaveBeenCalledTimes(2)
         expect(filterOf(fetchMock.mock.calls[1][0])).toBe(
-            "datetime >= '2025-09-24T00:00:00' AND datetime <= '2027-03-01T00:00:00'",
+            "datetime >= '2025-09-25T00:00:00' AND datetime <= '2027-03-01T00:00:00'",
         )
     })
 
@@ -522,7 +553,7 @@ describe('FetchTimeseriesTool', () => {
         await blur('Start')
         await settle()
         expect(fetchMock).toHaveBeenCalledTimes(1)
-        expect(valueOf('Start')).toBe('2025-09-24T00:00:00')
+        expect(valueOf('Start')).toBe('2025-09-25T00:00:00')
     })
 
     test('EXIT clears the chart, hides this card, and leaves the next request working', async () => {
@@ -557,7 +588,7 @@ describe('FetchTimeseriesTool', () => {
             'https://api/x?lon={lon}&lat={lat}&start={start}'
         await request()
         expect(fetchMock.mock.calls[0][0]).toBe(
-            'https://api/x?lon=-97.7&lat=30.3&start=2025-09-24T00%3A00%3A00',
+            'https://api/x?lon=-97.7&lat=30.3&start=2025-09-25T00%3A00%3A00',
         )
     })
 

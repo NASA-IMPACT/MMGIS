@@ -73,8 +73,9 @@ size; the plugin follows the standard `next` link (`links[rel=next]`) until
 it is gone or the rows gathered reach `numberMatched`, then charts every page
 as one response. The card counts pages while it walks ("Fetching data… page
 3 of 12"). More than 100 pages is a failure shown on the card: narrow the
-range. A response without those members (a bare array, a service that does
-not page) is one request, as before.
+range. Relative `next` links resolve against the service; a link to another
+origin is followed with a console warning. A response without those members (a
+bare array, a service that does not page) is one request, as before.
 
 ## Triggering it from the Feature Popup
 

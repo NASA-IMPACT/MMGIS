@@ -131,25 +131,26 @@ export interface RangeSource {
 }
 
 /**
- * `end` minus the span. Hours keep the clock; days and weeks land on the
- * start of their UTC day; months and years step the calendar with the day
- * clamped to the target month's length, so Mar 31 minus a month is Feb 28.
+ * The start of a span ending at `end`. Hours keep the clock; longer spans
+ * cover whole UTC days through the one `end` falls in, so "1 day" ending
+ * 23:59:59 starts 00:00 the same day. Month ends clamp (Mar 30 → Feb 28).
  */
 export function subtractSpan(end: Date, span: Span): Date {
     const { amount, unit } = span
     if (unit === 'hour') return new Date(end.getTime() - amount * HOUR_MS)
+    const after = new Date(startOfUtcDay(new Date(end.getTime() - 1)).getTime() + DAY_MS)
     if (unit === 'day' || unit === 'week') {
         const days = unit === 'week' ? amount * 7 : amount
-        return startOfUtcDay(new Date(end.getTime() - days * DAY_MS))
+        return new Date(after.getTime() - days * DAY_MS)
     }
-    const year = end.getUTCFullYear() - (unit === 'year' ? amount : 0)
-    const month = end.getUTCMonth() - (unit === 'month' ? amount : 0)
+    const year = after.getUTCFullYear() - (unit === 'year' ? amount : 0)
+    const month = after.getUTCMonth() - (unit === 'month' ? amount : 0)
     const first = new Date(Date.UTC(year, month, 1))
     const monthEnd = new Date(
         Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0),
     ).getUTCDate()
     return new Date(
-        Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(end.getUTCDate(), monthEnd)),
+        Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(after.getUTCDate(), monthEnd)),
     )
 }
 
@@ -344,6 +345,16 @@ export function pageInfo(response: unknown): PageInfo {
         next: next?.href ?? null,
         matched: count(response.numberMatched),
         returned: count(response.numberReturned),
+    }
+}
+
+/** A `next` link resolved against the page that carried it, so a relative
+ *  link reaches the service; null when it does not parse. */
+export function resolvePageUrl(href: string, pageUrl: string): string | null {
+    try {
+        return new URL(href, pageUrl).href
+    } catch {
+        return null
     }
 }
 

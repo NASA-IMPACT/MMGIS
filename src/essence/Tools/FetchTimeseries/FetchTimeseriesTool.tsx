@@ -53,6 +53,7 @@ import {
     seedRange,
     parseSpan,
     pageInfo,
+    resolvePageUrl,
     mergePages,
     TemplateError,
     MappingError,
@@ -351,16 +352,28 @@ const FetchTimeseriesTool = {
 
             // OGC Features pages the answer: follow `next` until it is gone
             // or the rows gathered reach numberMatched, whichever first.
+            // Proxied services may link to another origin; that is warned
+            // about, not refused.
             const pageSize = pageInfo(first).returned
             const rest: unknown[] = []
             let info = pageInfo(first)
             let gathered = info.returned ?? 0
-            let fetched = url
-            while (
-                info.next &&
-                info.next !== fetched &&
-                (info.matched == null || gathered < info.matched)
-            ) {
+            let fetched = new URL(url, window.location.href).href
+            const origin = new URL(fetched).origin
+            let warnedOrigin = false
+            while (info.next && (info.matched == null || gathered < info.matched)) {
+                const next = resolvePageUrl(info.next, fetched)
+                if (next === fetched) break
+                if (next == null) {
+                    this._fail('The service sent a next-page link that could not be read')
+                    return
+                }
+                if (!warnedOrigin && new URL(next).origin !== origin) {
+                    warnedOrigin = true
+                    console.warn(
+                        `[FetchTimeseries] next page link leaves ${origin}; following it to ${new URL(next).origin}`,
+                    )
+                }
                 if (rest.length + 1 >= MAX_PAGES) {
                     this._fail(`More than ${MAX_PAGES} pages of data; narrow the range`)
                     return
@@ -368,7 +381,7 @@ const FetchTimeseriesTool = {
                 const pages =
                     info.matched != null && pageSize ? Math.ceil(info.matched / pageSize) : null
                 this._setStatus({ kind: 'loading', page: rest.length + 2, pages })
-                fetched = info.next
+                fetched = next
                 const page = await getPage(fetched)
                 if (abort.signal.aborted && !timedOut) return
                 rest.push(page)
