@@ -1,0 +1,62 @@
+{
+    "defaults": {
+        "variables": {
+            "sources": [
+                "fetch-timeseries"
+            ],
+            "layout": "dropdown"
+        }
+    },
+    "defaultIcon": "chart-line",
+    "description": "Shows time series charts from other plugins in a panel.",
+    "descriptionFull": {
+        "title": "Shows a chart for each time series another plugin provides, such as Fetch Timeseries. List those plugins under Source plugins.",
+        "example": {
+            "sources": [
+                "fetch-timeseries"
+            ]
+        }
+    },
+    "hasVars": true,
+    "name": "SeriesChart",
+    "toolbarPriority": 7,
+    "width": 400,
+    "height": 0,
+    "paths": {
+        "SeriesChartTool": "essence/Tools/SeriesChart/SeriesChartTool"
+    },
+    "metadata": {
+        "icon": "chart-line",
+        "preferredPosition": "right",
+        "modernLayoutSupport": true,
+        "width": 400,
+        "height": 0,
+        "startHidden": true
+    },
+    "config": {
+        "rows": [
+            {
+                "components": [
+                    {
+                        "field": "variables.sources",
+                        "name": "Source plugins",
+                        "description": "Plugins whose time series this panel charts, separated by commas. Leave empty for fetch-timeseries.",
+                        "type": "textarray",
+                        "width": 8
+                    },
+                    {
+                        "field": "variables.layout",
+                        "name": "Variable picker",
+                        "description": "How a chart with several variables lets the viewer pick one. dropdown: a select above the chart, for a side panel. list: a row of buttons above the chart, for a wide bottom panel. One variable shows at a time either way.",
+                        "type": "dropdown",
+                        "width": 4,
+                        "options": [
+                            "dropdown",
+                            "list"
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+}
