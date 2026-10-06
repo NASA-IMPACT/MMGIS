@@ -1016,6 +1016,37 @@ describe('a periodic layer with a Data Time Interval', () => {
     })
 })
 
+describe('a periodic layer anchored where core places its periods', () => {
+    const EPOCH = '1970-01-01T00:00:00Z'
+
+    test('steps on UTC midnights when core anchors the layer on the epoch', () => {
+        const nav = resolve({
+            enabled: true,
+            dataStartTime: '2024-01-03T06:00:00Z',
+            dataEndTime: '2024-03-25T06:00:00Z',
+            interval: 'P1D',
+            periodAnchor: EPOCH,
+        })!
+        expect(goTo(nav, '2024-01-10T12:00:00Z', 'next')).toBe(
+            '2024-01-11T00:00:00.000Z'
+        )
+        expect(goTo(nav, '2024-01-10T00:00:00Z', 'prev')).toBe(
+            '2024-01-09T00:00:00.000Z'
+        )
+    })
+
+    test('steps a layer with no bounds of its own once core anchors it', () => {
+        const nav = resolve({ enabled: true, interval: 'P1D', periodAnchor: EPOCH })
+        expect(nav).not.toBeNull()
+        expect(goTo(nav!, '2020-05-15T12:00:00Z', 'next', 'HOUR')).toBe(
+            '2020-05-16T00:00:00.000Z'
+        )
+        expect(
+            resolve({ enabled: true, interval: 'P1D', periodAnchor: null })
+        ).toBeNull()
+    })
+})
+
 describe('a periodic layer whose interval steps past what a Date can hold', () => {
     const nav = resolve({
         enabled: true,

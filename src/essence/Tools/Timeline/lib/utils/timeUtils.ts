@@ -235,6 +235,8 @@ export interface LayerTimeConfig {
     dataDates?: string[] | string
     /** The ISO 8601 duration a periodic layer's data repeats at, e.g. `P1D`. */
     interval?: string
+    /** Where core steps the layer's requested periods from, if it does. */
+    periodAnchor?: string | null
 }
 
 /** A layer's extent, with either bound completed from the caller's fallback. */

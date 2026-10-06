@@ -16,6 +16,8 @@ import {
 import {
     resolveTemporalExtent,
     parseISODuration,
+    periodAnchorOf,
+    takesPeriodWindow,
 } from '../TimeControl_/layerTimePolicy'
 import { fetchLayerExtentSource } from '../TimeControl_/layerExtentSource'
 import {
@@ -52,14 +54,17 @@ let _providerCleanups = []
 // Resolved at call time so an open-ended "now" is fresh on every ask.
 // `interval` is the layer's parsed `time.interval` (a Duration), or null
 // when it declares none or an unparseable one — a plugin reads the cadence
-// without parsing ISO-8601 durations itself.
+// without parsing ISO-8601 durations itself. `periodAnchor` is where the
+// layer's requested periods step from, or null when it requests none.
 const temporalExtentFor = (uuid) => {
-    const time = L_.layers.data[uuid]?.time
+    const layer = L_.layers.data[uuid]
+    const time = layer?.time
     const interval =
         time?.interval != null && time.interval !== ''
             ? parseISODuration(String(time.interval).trim())
             : null
-    return { ...resolveTemporalExtent(time), interval }
+    const periodAnchor = takesPeriodWindow(layer) ? periodAnchorOf(time) : null
+    return { ...resolveTemporalExtent(time), interval, periodAnchor }
 }
 
 const runsFor = (uuid) => {

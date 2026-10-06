@@ -9,7 +9,7 @@ import TimeUI from './TimeUI'
 import { parseTimeWithOffset, parseTimeToSeconds } from './timeUtils'
 import { evaluateLayerDataCoverage } from './layerDataCoverage'
 import { leadAt } from './layerRunSource'
-import { layerRequestWindow } from './layerTimePolicy'
+import { layerRequestWindow, takesPeriodWindow } from './layerTimePolicy'
 import { formatLayerTime, buildTileUrlOptions } from '../Layers_/tileUrlUtils'
 import { resolveTileLayerSource } from '../Layers_/tileLayerSource'
 import { isRasterTileLayerType } from '../MapEngines/types/engine'
@@ -951,12 +951,13 @@ var TimeControl = {
 
 /**
  * Writes the window a layer requests into `layer.time.start/end`, which the
- * tile URL builders read. A raster tile layer with a periodic
- * `time.interval` gets the one period holding the cursor
+ * tile URL builders, the `{starttime}`/`{endtime}` substitution and the
+ * local vector filter read. A layer that takes periods (takesPeriodWindow)
+ * with a periodic `time.interval` gets the one period holding the cursor
  * (layerRequestWindow); every other layer gets `[windowStart, cursor]`.
  */
 function stampLayerWindow(layer, windowStart, cursor) {
-    const requested = isRasterTileLayerType(layer)
+    const requested = takesPeriodWindow(layer)
         ? layerRequestWindow(layer.time, windowStart, cursor)
         : { start: windowStart, end: cursor }
     layer.time.start = requested.start

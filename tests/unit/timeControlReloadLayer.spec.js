@@ -325,6 +325,63 @@ describe('TimeControl.reloadLayer with the deck.gl engine', () => {
         expect(Map_.refreshLayer).toHaveBeenCalled()
     })
 
+    test.each([['vector'], ['MVTLayer']])(
+        'requeries a periodic %s layer for the period holding the cursor',
+        async (type) => {
+            const template =
+                'https://example.com/items?datetime={starttime}/{endtime}'
+            const layer = {
+                name: 'Daily Items',
+                type,
+                url: template,
+                controlled: false,
+                time: { enabled: true, type: 'requery', interval: 'P1D' },
+            }
+            registerDeckLayer(layer)
+            TimeControl.startTime = '2022-01-15T00:00:00Z'
+            TimeControl.currentTime = '2022-06-15T13:30:00Z'
+            TimeControl.updateLayersTime()
+            const seenUrls = []
+            Map_.refreshLayer.mockImplementationOnce(async (l) => {
+                seenUrls.push(l.url)
+                return true
+            })
+
+            await TimeControl.reloadLayer(layer)
+
+            expect(seenUrls).toEqual([
+                'https://example.com/items?datetime=2022-06-15T00:00:00Z/2022-06-15T23:59:59Z',
+            ])
+        }
+    )
+
+    test('filters a periodic local vector layer to the period holding the cursor', async () => {
+        const layer = {
+            name: 'Daily Sightings',
+            type: 'vector',
+            url: 'https://example.com/sightings.geojson',
+            controlled: false,
+            time: {
+                enabled: true,
+                type: 'local',
+                endProp: 'when',
+                interval: 'P1D',
+            },
+        }
+        registerDeckLayer(layer)
+        TimeControl.startTime = '2022-01-15T00:00:00Z'
+        TimeControl.currentTime = '2022-06-15T13:30:00Z'
+        TimeControl.updateLayersTime()
+
+        await TimeControl.reloadLayer(layer)
+
+        expect(L_.timeFilterVectorLayer).toHaveBeenCalledWith(
+            'Daily Sightings',
+            Date.parse('2022-06-15T00:00:00Z'),
+            Date.parse('2022-06-15T23:59:59Z')
+        )
+    })
+
     // refreshLayer returns false specifically to say it had no layer to
     // refresh. Dropping that leaves the time change silently unapplied and
     // stale tiles on screen with nothing to explain them.

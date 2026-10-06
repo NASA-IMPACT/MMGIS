@@ -427,6 +427,7 @@ export const TimelineAdapter: React.FC = () => {
                     ...layer.time,
                     dataStartTime: extent?.start ?? layer.time.dataStartTime,
                     dataEndTime: extent?.end ?? layer.time.dataEndTime,
+                    periodAnchor: extent?.periodAnchor ?? null,
                 }
 
                 newLayers.push({

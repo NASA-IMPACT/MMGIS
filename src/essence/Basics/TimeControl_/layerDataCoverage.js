@@ -1,5 +1,8 @@
-import { resolveTimePolicy, isPeriodicRequest } from './layerTimePolicy'
-import { isRasterTileLayerType } from '../MapEngines/types/engine'
+import {
+    resolveTimePolicy,
+    isPeriodicRequest,
+    takesPeriodWindow,
+} from './layerTimePolicy'
 import { readEntry, resolveListedEntries } from './listedDates'
 
 /**
@@ -134,14 +137,15 @@ function spansOverlap(spans, start, end) {
 
 /**
  * Whether the layer requests one period rather than the Time Control
- * window: a raster tile layer that lists no readable Data Dates and whose
- * `time.interval` places a period at the cursor. Decided by the rule TimeControl stamps with (layerRequestWindow),
- * read at the stamped end — for a periodic stamp that end lies inside the
- * period it closes, so the same period is found again.
+ * window: a layer that takes periods (takesPeriodWindow), lists no readable
+ * Data Dates and whose `time.interval` places a period at the cursor.
+ * Decided by the rule TimeControl stamps with (layerRequestWindow), read at
+ * the stamped end — for a periodic stamp that end lies inside the period it
+ * closes, so the same period is found again.
  */
 function requestsPeriod(layer) {
     return (
-        isRasterTileLayerType(layer) &&
+        takesPeriodWindow(layer) &&
         typeof layer?.time?.end === 'string' &&
         isPeriodicRequest(layer.time, layer.time.end)
     )

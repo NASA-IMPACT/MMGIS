@@ -15,15 +15,17 @@
  * duration ("P7D"): data exists only at start-anchored steps, so the
  * extent's end floors to the last step at or before the resolved end —
  * a 7-day cadence that began ten days ago ended three days ago, not now.
- * The same interval decides what a raster tile layer requests at each time
- * step: the one period holding the cursor (see `layerRequestWindow`) —
- * unless the layer lists Data Dates, which then decide on their own.
+ * The same interval decides what a tile, vector or vector tile layer
+ * requests at each time step: the one period holding the cursor (see
+ * `layerRequestWindow`) — unless the layer lists Data Dates, which then
+ * decide on their own.
  *
  * Core owns this vocabulary. Plugins never resolve it themselves: they ask
  * `layers:getTemporalExtent` and receive plain ISO datetimes.
  */
 
 import { hasListedEntries } from './listedDates'
+import { toCanonicalLayerType } from '../MapEngines/types/engine'
 
 const DURATION_RE =
     /^P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/
@@ -276,16 +278,15 @@ function anchorOf(time: RequestTimeConfig): Date | null {
 }
 
 // The cadence a layer requests one period of at a time, or null when the
-// layer is not periodic: time off, a `local` layer, a layer that lists at
-// least one readable Data Dates entry (the listed dates decide when it has
-// data, read as the coverage gate reads them), no or unparseable interval,
-// or a cadence shorter than an hour — that is a run of individually
-// timestamped scenes, not a period.
+// layer is not periodic: time off, a layer that lists at least one readable
+// Data Dates entry (the listed dates decide when it has data, read as the
+// coverage gate reads them), no or unparseable interval, or a cadence
+// shorter than an hour — that is a run of individually timestamped scenes,
+// not a period.
 function requestCadenceOf(
     time: RequestTimeConfig | null | undefined
 ): Duration | null {
     if (time == null || time.enabled !== true) return null
-    if (time.type === 'local') return null
     if (hasListedEntries(time.dataDates)) return null
     if (time.interval == null || time.interval === '') return null
     const cadence = parseISODuration(String(time.interval).trim())
@@ -321,12 +322,52 @@ function periodAt(
     return unit == null ? null : calendarPeriod(cursor, unit)
 }
 
+const PERIOD_WINDOW_TYPES = new Set(['tile', 'vector', 'vectortile'])
+
+/**
+ * Whether a layer's type takes one period at a time when it is periodic: a
+ * tile, vector or vector tile layer. A `local` layer is filtered on the
+ * client, and the only such filter (L_.timeFilterVectorLayer) runs for a raw
+ * `vector` layer with an End Time Property, so only that local layer does.
+ */
+export function takesPeriodWindow(
+    layer:
+        | {
+              type?: string
+              time?: { type?: string; endProp?: string | null } | null
+          }
+        | null
+        | undefined
+): boolean {
+    const type = toCanonicalLayerType(layer?.type)
+    if (type == null || !PERIOD_WINDOW_TYPES.has(type)) return false
+    if (layer?.time?.type === 'local')
+        return layer.type === 'vector' && layer.time.endProp != null
+    return true
+}
+
+/**
+ * The instant a periodic layer's periods step from, so a timeline can draw
+ * the boundaries the layer requests: a concrete `dataStartTime`, or the
+ * epoch for a calendar cadence (UTC calendar boundaries are whole steps from
+ * it). Null when the layer is not periodic or its periods cannot be placed.
+ */
+export function periodAnchorOf(
+    time: RequestTimeConfig | null | undefined
+): string | null {
+    const cadence = requestCadenceOf(time)
+    if (cadence == null || time == null) return null
+    const anchor = anchorOf(time)
+    if (anchor != null) return toIso(anchor)
+    return calendarUnitOf(cadence) == null ? null : '1970-01-01T00:00:00Z'
+}
+
 /**
  * The window a layer requests at the cursor.
  *
- * A periodic layer (`time.interval` of an hour or more, not `local`, no
- * readable Data Dates) requests the one period holding the cursor. Periods step from a concrete
- * `dataStartTime`; without one, a cadence of exactly P1Y, P1M, P1D or PT1H
+ * A periodic layer (`time.interval` of an hour or more, no readable Data
+ * Dates) requests the one period holding the cursor. Periods step from a
+ * concrete `dataStartTime`; without one, a cadence of exactly P1Y, P1M, P1D or PT1H
  * follows UTC calendar boundaries. `end` is the period's last inclusive
  * second, because STAC `datetime=a/b` intervals are closed at both ends and
  * an exclusive next-period end would pull in items stamped at its first

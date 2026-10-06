@@ -7,6 +7,8 @@ import {
     addDuration,
     layerRequestWindow,
     isPeriodicRequest,
+    takesPeriodWindow,
+    periodAnchorOf,
 } from '../../src/essence/Basics/TimeControl_/layerTimePolicy'
 
 // Injected "now" so results are exact: mid-afternoon UTC.
@@ -460,8 +462,12 @@ describe('layerRequestWindow', () => {
         expect(at({ interval: 'P7D' })).toEqual(passthrough)
     })
 
-    test('a local layer requests the window', () => {
-        expect(at({ interval: 'P1D', type: 'local' })).toEqual(passthrough)
+    test('a local layer is placed like any other', () => {
+        expect(at({ interval: 'P1D', type: 'local' })).toEqual({
+            start: '2026-08-25T00:00:00Z',
+            end: '2026-08-25T23:59:59Z',
+            periodic: true,
+        })
     })
 
     test('an unreadable cursor or out-of-range period requests the window', () => {
@@ -522,5 +528,50 @@ describe('a layer listing Data Dates', () => {
             passthrough
         )
         expect(isPeriodicRequest(single)).toBe(false)
+    })
+})
+
+describe('takesPeriodWindow', () => {
+    const layer = (type, time = {}) => ({
+        type,
+        time: { enabled: true, type: 'requery', ...time },
+    })
+
+    test('tile, vector and vector tile layers, under either engine', () => {
+        for (const type of ['tile', 'vector', 'GeoJsonLayer', 'MVTLayer'])
+            expect(takesPeriodWindow(layer(type)), type).toBe(true)
+        for (const type of ['query', 'velocity', undefined])
+            expect(takesPeriodWindow(layer(type)), type).toBe(false)
+    })
+
+    test('a local layer only when it is a vector with an End Time Property', () => {
+        const local = { type: 'local', endProp: 'when' }
+        expect(takesPeriodWindow(layer('vector', local))).toBe(true)
+        expect(takesPeriodWindow(layer('vector', { type: 'local' }))).toBe(false)
+        expect(takesPeriodWindow(layer('vectortile', local))).toBe(false)
+    })
+})
+
+describe('periodAnchorOf', () => {
+    const time = (fields) => ({ enabled: true, ...fields })
+
+    test('a concrete start anchors the periods', () => {
+        expect(
+            periodAnchorOf(
+                time({ interval: 'P7D', dataStartTime: '2024-01-03T06:00:00Z' })
+            )
+        ).toBe('2024-01-03T06:00:00Z')
+    })
+
+    test('a calendar cadence without a concrete start steps from the epoch', () => {
+        expect(
+            periodAnchorOf(time({ interval: 'P1D', dataStartTime: 'now - P30D' }))
+        ).toBe('1970-01-01T00:00:00Z')
+    })
+
+    test('an unplaceable or absent cadence has no anchor', () => {
+        expect(periodAnchorOf(time({ interval: 'P7D' }))).toBeNull()
+        expect(periodAnchorOf(time({ interval: 'PT30M' }))).toBeNull()
+        expect(periodAnchorOf(time({}))).toBeNull()
     })
 })

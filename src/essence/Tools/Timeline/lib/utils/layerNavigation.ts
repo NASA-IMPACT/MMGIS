@@ -34,11 +34,16 @@ export interface LayerNavigation {
     hasOwnEnd: boolean
     /**
      * Periodic only: the Data Time Interval the layer's data repeats at, its
-     * steps anchored at `start`. Absent when the layer names no readable
-     * interval, or no start of its own to anchor one to, in which case the
-     * layer is drawn as one span and stepped by the timeline's granularity.
+     * steps anchored at `anchor`. Absent when the layer names no readable
+     * interval, or nothing to anchor one to, in which case the layer is
+     * drawn as one span and stepped by the timeline's granularity.
      */
     interval?: Duration
+    /**
+     * With `interval`: where core places the layer's periods, or else the
+     * layer's own start.
+     */
+    anchor?: Date
 }
 
 /**
@@ -97,7 +102,18 @@ export function resolveLayerNavigation(
         fallbackEnd
     )
 
-    if (!hasOwnStart && !hasOwnEnd) return null
+    // A start borrowed from the timeline's window moves with the window, so
+    // it anchors nothing.
+    const placed = time.periodAnchor ? new Date(time.periodAnchor) : null
+    const anchor =
+        placed && !isNaN(placed.getTime())
+            ? placed
+            : hasOwnStart
+              ? start
+              : null
+    const interval = anchor ? parseDuration(time.interval) : null
+
+    if (!hasOwnStart && !hasOwnEnd && !interval) return null
 
     // A window lying wholly to one side of the layer's single configured bound
     // would complete the open side past it, running the extent backwards
@@ -121,17 +137,13 @@ export function resolveLayerNavigation(
         return null
     }
 
-    // Steps are anchored at the layer's own start. A start borrowed from the
-    // timeline's window moves with the window, so it anchors nothing.
-    const interval = hasOwnStart ? parseDuration(time.interval) : null
-
     return {
         kind: 'periodic',
         start,
         end,
         hasOwnStart,
         hasOwnEnd,
-        ...(interval ? { interval } : {}),
+        ...(interval && anchor ? { interval, anchor } : {}),
     }
 }
 
@@ -220,7 +232,7 @@ function navigateSparseLayer(
 
 /**
  * The instant one step of the layer's own cadence from `from`: the next or
- * previous step boundary, anchored at the layer's start. Strict, so a press
+ * previous step boundary, counted from the anchor. Strict, so a press
  * from a boundary moves a whole step, and one from between two boundaries
  * lands on the nearer one in the direction pressed.
  */
@@ -248,13 +260,13 @@ function navigatePeriodicLayer(
     action: 'first' | 'prev' | 'next' | 'last',
     mode: TimeMode
 ): Date | null {
-    const { start, end, interval } = nav
+    const { start, end, interval, anchor } = nav
     const at = from.getTime()
     const startMs = start.getTime()
     const endMs = end.getTime()
     const step = (direction: 1 | -1) =>
-        interval
-            ? stepByInterval(start, interval, from, direction)
+        interval && anchor
+            ? stepByInterval(anchor, interval, from, direction)
             : stepTime(from, mode, direction)
 
     switch (action) {

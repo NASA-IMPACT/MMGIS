@@ -561,8 +561,8 @@ describe('evaluateLayerDataCoverage verdict', () => {
     })
 })
 
-// A raster tile layer with a periodic interval is stamped with the one
-// period holding the cursor, its end the period's last second; the whole
+// A tile, vector or vector tile layer with a periodic interval is stamped
+// with the one period holding the cursor, its end the period's last second; the whole
 // period is the request, so it is out of range only when no span meets it.
 describe('evaluateLayerDataCoverage for a periodic request', () => {
     const periodicLayer = (time, type = 'tile') => ({
@@ -628,7 +628,49 @@ describe('evaluateLayerDataCoverage for a periodic request', () => {
         expect(record.outOfDataRange).toBe(true)
     })
 
-    test('a non-raster layer with an interval keeps the end-only test', () => {
+    test.each([
+        ['vector', 'requery'],
+        ['MVTLayer', 'requery'],
+        ['vector', 'local'],
+    ])('a periodic %s %s layer is judged on the whole period', (type, timeType) => {
+        const record = evaluateLayerDataCoverage(
+            periodicLayer(
+                {
+                    type: timeType,
+                    endProp: 'when',
+                    interval: 'P1M',
+                    dataEndTime: '2025-03-17T00:00:00Z',
+                    start: '2025-03-01T00:00:00Z',
+                    end: '2025-03-31T23:59:59Z',
+                },
+                type
+            )
+        )
+        expect(record.periodic).toBe(true)
+        expect(record.outOfDataRange).toBe(false)
+    })
+
+    test.each([
+        ['vectortile', 'local'],
+        ['query', 'requery'],
+    ])('a %s %s layer with an interval keeps the end-only test', (type, timeType) => {
+        const record = evaluateLayerDataCoverage(
+            periodicLayer(
+                {
+                    type: timeType,
+                    interval: 'P1M',
+                    dataEndTime: '2025-03-17T00:00:00Z',
+                    start: '2025-03-01T00:00:00Z',
+                    end: '2025-03-31T23:59:59Z',
+                },
+                type
+            )
+        )
+        expect(record.periodic).toBe(false)
+        expect(record.outOfDataRange).toBe(true)
+    })
+
+    test('a vector layer listing Data Dates keeps the end-only test', () => {
         const record = evaluateLayerDataCoverage(
             periodicLayer(
                 {
