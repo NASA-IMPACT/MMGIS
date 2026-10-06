@@ -148,6 +148,14 @@ Sets the end time for the Time Control feature.
 - _dependencies_: Time Control to be enabled
 - _unset:_ Will default to current time if Time Control feature is enabled
 
+### currentTime=<br>`<current time>`
+
+Sets the time cursor (the current time) for the Time Control feature. It must fall between startTime and endTime.
+
+- _form:_ `<string> (that moment.js understands)`
+- _dependencies_: Time Control to be enabled
+- _unset:_ Will default to the end time
+
 ## Examples
 
 #### General
