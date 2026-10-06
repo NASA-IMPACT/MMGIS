@@ -634,6 +634,15 @@ test.describe('DeckGLAdapter', () => {
 
     test.describe('label stacking', () => {
         const LABELS_ID = 'place-labels'
+        // The five layers terra-draw's MapLibre adapter registers, in order,
+        // at the top of the style; the marker is a symbol layer with no text.
+        const TD_LAYERS = [
+            { id: 'td-polygon', type: 'fill' },
+            { id: 'td-polygon-outline', type: 'line' },
+            { id: 'td-linestring', type: 'line' },
+            { id: 'td-point', type: 'circle' },
+            { id: 'td-point-marker', type: 'symbol', layout: { 'icon-image': 'td-marker' } },
+        ]
 
         function lastSyncedLayers(adapter) {
             const calls = adapter._overlay.setProps.mock.calls
@@ -696,7 +705,20 @@ test.describe('DeckGLAdapter', () => {
             withLabelledStyle(adapter)
             adapter.addLayer(makeLayer('raster'))
             adapter.enableDrawing('polygon')
-            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([LABELS_ID])
+            // terra-draw has now registered its layers above the labels.
+            const drawing = adapter._basemap.getStyle().layers.concat(TD_LAYERS)
+            adapter._basemap.getStyle = () => ({ layers: drawing })
+            adapter.addLayer(makeLayer('mid-draw'))
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([LABELS_ID, LABELS_ID])
+        })
+
+        test("with no labels in the style, terra-draw's layers are not taken for them", () => {
+            const adapter = makeOverlayDrawingAdapter()
+            withLabelledStyle(adapter, [{ id: 'water', type: 'fill' }])
+            adapter.enableDrawing('polygon')
+            adapter._basemap.getStyle = () => ({ layers: [{ id: 'water', type: 'fill' }, ...TD_LAYERS] })
+            adapter.addLayer(makeLayer('raster'))
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual(['td-polygon'])
         })
 
         test('a style swap drops the anchor until the new style loads, then anchors on its labels', () => {
@@ -1640,6 +1662,26 @@ test.describe('DeckGLAdapter', () => {
 
                 adapter.setBasemapLabelsVisible(true)
                 expect(visibility(map)).toEqual([['city-names', 'visible']])
+            })
+
+            test("Labels off during a drawing leaves terra-draw's marker alone", () => {
+                const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
+                const map = adapter._basemap
+                map.getLayer = (id) => ({ id })
+                map.getStyle = () => ({
+                    layers: STYLE.layers.concat([
+                        { id: 'td-polygon', type: 'fill' },
+                        { id: 'td-point-marker', type: 'symbol', layout: { 'icon-image': 'td-marker' } },
+                    ]),
+                })
+                adapter.setBasemapLabelsVisible(false)
+                adapter.setBasemapLabelsVisible(true)
+                expect(visibility(map)).toEqual([
+                    ['place-labels', 'none'],
+                    ['road-shields', 'none'],
+                    ['place-labels', 'visible'],
+                    ['road-shields', 'visible'],
+                ])
             })
 
             test('side-by-side panes follow the main map', () => {

@@ -246,6 +246,8 @@ const TERRA_DRAW_PREFIX = 'td'
  */
 const TERRA_DRAW_BOTTOM_LAYER_ID = `${TERRA_DRAW_PREFIX}-polygon`
 
+const isTerraDrawLayer = (id: string): boolean => id.startsWith(`${TERRA_DRAW_PREFIX}-`)
+
 /**
  * Sort rank for a layer that was never given an explicit z-index.
  *
@@ -721,6 +723,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const hidden: string[] = []
         for (const layer of map.getStyle?.()?.layers ?? []) {
             if (layer.type !== 'symbol' || layer.layout?.visibility === 'none') continue
+            if (isTerraDrawLayer(layer.id)) continue
             map.setLayoutProperty(layer.id, 'visibility', 'none')
             hidden.push(layer.id)
         }
@@ -2483,14 +2486,18 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * under the buildings in the other. The style spec has one layer type
      * that writes labels, `symbol`; every other type paints the map, so the
      * ground ends at the last layer that is not a symbol. A symbol without
-     * text (an icon layer) is taken only when no text label follows. Null
-     * when the style has no labels, while a swap is in flight, or when the
-     * id is not in the style yet, since `addLayer` refuses an anchor it
-     * cannot find.
+     * text (an icon layer) is taken only when no text label follows. A
+     * terra-draw session registers its own layers at the top of the style,
+     * one of them a symbol, so those are left out of the search. Null when
+     * the style has no labels, while a swap is in flight, or when the id is
+     * not in the style yet, since `addLayer` refuses an anchor it cannot
+     * find.
      */
     private _labelAnchorId(map: BasemapInstance | null): string | null {
         if (!map || this._styleSwapping) return null
-        const layers = map.getStyle?.()?.layers ?? []
+        const layers = (map.getStyle?.()?.layers ?? []).filter(
+            (layer) => !isTerraDrawLayer(layer.id)
+        )
         let lastGround = -1
         layers.forEach((layer, i) => {
             if (layer.type !== 'symbol') lastGround = i
