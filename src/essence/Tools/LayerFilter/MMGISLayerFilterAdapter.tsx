@@ -66,6 +66,8 @@ export function MMGISLayerFilterAdapter() {
     useMMGISHandlerReady('layers:getAllConfigs', loadLayerConfigs, {
         timeoutMs: 60000,
     })
+    // The configs are a copy, so a layer added or removed later needs asking for.
+    useMMGISEvent('layers:listChanged', loadLayerConfigs)
 
     const catalog = useMemo(() => parseCatalog(vars.catalog), [vars.catalog])
 
