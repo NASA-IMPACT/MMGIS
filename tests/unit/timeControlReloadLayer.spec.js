@@ -325,6 +325,58 @@ describe('TimeControl.reloadLayer with the deck.gl engine', () => {
         expect(Map_.refreshLayer).toHaveBeenCalled()
     })
 
+    // A local vector layer is filtered on the client against the window
+    // TimeControl stamped on it; a periodic one is stamped with the one
+    // period holding the cursor, so the filter keeps that period's features.
+    test('filters a periodic local vector layer to the period holding the cursor', async () => {
+        const layer = {
+            name: 'Daily Sightings',
+            type: 'vector',
+            url: 'https://example.com/sightings.geojson',
+            controlled: false,
+            time: {
+                enabled: true,
+                type: 'local',
+                endProp: 'when',
+                interval: 'P1D',
+            },
+        }
+        registerDeckLayer(layer)
+        TimeControl.startTime = '2022-01-15T00:00:00Z'
+        TimeControl.currentTime = '2022-06-15T13:30:00Z'
+        TimeControl.updateLayersTime()
+
+        await TimeControl.reloadLayer(layer)
+
+        expect(L_.timeFilterVectorLayer).toHaveBeenCalledWith(
+            'Daily Sightings',
+            Date.parse('2022-06-15T00:00:00Z'),
+            Date.parse('2022-06-15T23:59:59Z')
+        )
+    })
+
+    test('filters a local vector layer without an interval to the whole window', async () => {
+        const layer = {
+            name: 'Sightings',
+            type: 'vector',
+            url: 'https://example.com/sightings.geojson',
+            controlled: false,
+            time: { enabled: true, type: 'local', endProp: 'when' },
+        }
+        registerDeckLayer(layer)
+        TimeControl.startTime = '2022-01-15T00:00:00Z'
+        TimeControl.currentTime = '2022-06-15T13:30:00Z'
+        TimeControl.updateLayersTime()
+
+        await TimeControl.reloadLayer(layer)
+
+        expect(L_.timeFilterVectorLayer).toHaveBeenCalledWith(
+            'Sightings',
+            Date.parse('2022-01-15T00:00:00Z'),
+            Date.parse('2022-06-15T13:30:00Z')
+        )
+    })
+
     // refreshLayer returns false specifically to say it had no layer to
     // refresh. Dropping that leaves the time change silently unapplied and
     // stale tiles on screen with nothing to explain them.

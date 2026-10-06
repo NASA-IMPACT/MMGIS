@@ -387,12 +387,17 @@ export type Duration = {
 /**
  * When a layer has data, as ISO datetimes; null where unset or unreadable.
  * `interval` is the layer's `time.interval` as core parsed it, or null when
- * the layer declares none or core cannot read it.
+ * the layer declares none or core cannot read it. `periodAnchor` is the ISO
+ * instant the layer's periods step from when core requests it one period at
+ * a time — its fixed data start, or the epoch for a calendar cadence, whose
+ * steps fall on UTC year, month, day or hour boundaries — and null when the
+ * layer requests the Time Control window instead.
  */
 export type TemporalExtent = {
     start: string | null
     end: string | null
     interval: Duration | null
+    periodAnchor: string | null
 }
 
 /**

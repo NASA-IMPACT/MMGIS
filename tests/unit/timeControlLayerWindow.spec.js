@@ -2,11 +2,13 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 
 /**
  * TimeControl stamps each time-enabled layer with the window it requests,
- * `layer.time.start/end`, which the tile URL builders read. A raster tile
- * layer with a periodic `time.interval` and no listed Data Dates is stamped
- * with the one period holding the cursor; every other layer with `[window start, cursor]`. Both
- * the per-step path (updateLayersTime) and the init paths stamp the same
- * way, because tile layers are created from the first stamps.
+ * `layer.time.start/end`, which the tile URL builders, the vector URL
+ * substitution and the local vector filter read. A tile, vector or vector
+ * tile layer with a periodic `time.interval` and no listed Data Dates is
+ * stamped with the one period holding the cursor; every other layer with
+ * `[window start, cursor]`. Both the per-step path (updateLayersTime) and
+ * the init paths stamp the same way, because tile layers are created from
+ * the first stamps.
  */
 
 vi.mock('../../src/essence/Basics/Map_/Map_', () => ({ default: {} }))
@@ -25,7 +27,24 @@ const makeLayers = () => ({
     dailyTile: layer('dailyTile', 'tile', { interval: 'P1D' }),
     plainTile: layer('plainTile', 'tile', {}),
     dailyVector: layer('dailyVector', 'vector', { interval: 'P1D' }),
+    plainVector: layer('plainVector', 'vector', {}),
+    dailyVectorTile: layer('dailyVectorTile', 'vectortile', { interval: 'P1D' }),
+    dailyMVT: layer('dailyMVT', 'MVTLayer', { interval: 'P1D' }),
+    dailyLocalVector: layer('dailyLocalVector', 'vector', {
+        interval: 'P1D',
+        type: 'local',
+        endProp: 'when',
+    }),
+    dailyLocalTile: layer('dailyLocalTile', 'tile', { interval: 'P1D', type: 'local' }),
+    dailyLocalVectorTile: layer('dailyLocalVectorTile', 'vectortile', {
+        interval: 'P1D',
+        type: 'local',
+    }),
+    dailyQuery: layer('dailyQuery', 'query', { interval: 'P1D' }),
 })
+
+const PERIOD_START = '2026-08-25T00:00:00Z'
+const PERIOD_END = '2026-08-25T23:59:59Z'
 
 const loadTimeControl = async (layers, configData = {}) => {
     window.mmgisAPI = undefined
@@ -51,7 +70,7 @@ describe('TimeControl layer window stamping', () => {
         delete window.mmgisAPI
     })
 
-    test('updateLayersTime stamps a periodic raster tile layer with its period', async () => {
+    test('updateLayersTime stamps periodic tile, vector and vector tile layers with their period', async () => {
         const layers = makeLayers()
         const TimeControl = await loadTimeControl(layers)
         TimeControl.startTime = WINDOW_START
@@ -59,11 +78,19 @@ describe('TimeControl layer window stamping', () => {
 
         TimeControl.updateLayersTime()
 
-        expect(layers.dailyTile.time.start).toBe('2026-08-25T00:00:00Z')
-        expect(layers.dailyTile.time.end).toBe('2026-08-25T23:59:59Z')
+        for (const name of [
+            'dailyTile',
+            'dailyVector',
+            'dailyVectorTile',
+            'dailyMVT',
+            'dailyLocalVector',
+        ]) {
+            expect(layers[name].time.start, name).toBe(PERIOD_START)
+            expect(layers[name].time.end, name).toBe(PERIOD_END)
+        }
     })
 
-    test('updateLayersTime stamps non-periodic and non-raster layers with the window', async () => {
+    test('updateLayersTime stamps non-periodic layers, local non-vector layers and other types with the window', async () => {
         const layers = makeLayers()
         const TimeControl = await loadTimeControl(layers)
         TimeControl.startTime = WINDOW_START
@@ -71,9 +98,15 @@ describe('TimeControl layer window stamping', () => {
 
         TimeControl.updateLayersTime()
 
-        for (const name of ['plainTile', 'dailyVector']) {
-            expect(layers[name].time.start).toBe(WINDOW_START)
-            expect(layers[name].time.end).toBe(CURSOR)
+        for (const name of [
+            'plainTile',
+            'plainVector',
+            'dailyLocalTile',
+            'dailyLocalVectorTile',
+            'dailyQuery',
+        ]) {
+            expect(layers[name].time.start, name).toBe(WINDOW_START)
+            expect(layers[name].time.end, name).toBe(CURSOR)
         }
     })
 
@@ -106,13 +139,15 @@ describe('TimeControl layer window stamping', () => {
 
         TimeControl.init()
 
-        expect(layers.dailyTile.time.start).toBe('2026-08-25T00:00:00Z')
-        expect(layers.dailyTile.time.end).toBe('2026-08-25T23:59:59Z')
+        for (const name of ['dailyTile', 'dailyVector', 'dailyVectorTile']) {
+            expect(layers[name].time.start, name).toBe(PERIOD_START)
+            expect(layers[name].time.end, name).toBe(PERIOD_END)
+        }
         // init seeds the Time Control through toISOString, milliseconds
         // included, and a non-periodic layer carries that through as-is.
         expect(layers.plainTile.time.start).toBe('2026-07-26T15:42:31.000Z')
         expect(layers.plainTile.time.end).toBe('2026-08-25T15:42:31.000Z')
-        expect(layers.dailyVector.time.end).toBe('2026-08-25T15:42:31.000Z')
+        expect(layers.plainVector.time.end).toBe('2026-08-25T15:42:31.000Z')
     })
 })
 

@@ -7,6 +7,8 @@ import {
     addDuration,
     layerRequestWindow,
     isPeriodicRequest,
+    takesPeriodWindow,
+    periodAnchorOf,
 } from '../../src/essence/Basics/TimeControl_/layerTimePolicy'
 
 // Injected "now" so results are exact: mid-afternoon UTC.
@@ -460,8 +462,12 @@ describe('layerRequestWindow', () => {
         expect(at({ interval: 'P7D' })).toEqual(passthrough)
     })
 
-    test('a local layer requests the window', () => {
-        expect(at({ interval: 'P1D', type: 'local' })).toEqual(passthrough)
+    test('a local layer is placed like any other; which types take it is takesPeriodWindow\'s call', () => {
+        expect(at({ interval: 'P1D', type: 'local' })).toEqual({
+            start: '2026-08-25T00:00:00Z',
+            end: '2026-08-25T23:59:59Z',
+            periodic: true,
+        })
     })
 
     test('an unreadable cursor or out-of-range period requests the window', () => {
@@ -522,5 +528,86 @@ describe('a layer listing Data Dates', () => {
             passthrough
         )
         expect(isPeriodicRequest(single)).toBe(false)
+    })
+})
+
+describe('takesPeriodWindow', () => {
+    const layer = (type, timeType = 'requery') => ({
+        type,
+        time: { enabled: true, type: timeType, interval: 'P1D' },
+    })
+
+    test('tile, vector and vector tile layers take a period, under either engine\'s type name', () => {
+        for (const type of [
+            'tile',
+            'TileLayer',
+            'BitmapLayer',
+            'vector',
+            'GeoJsonLayer',
+            'vectortile',
+            'MVTLayer',
+        ])
+            expect(takesPeriodWindow(layer(type))).toBe(true)
+    })
+
+    test('every other type requests the window', () => {
+        for (const type of ['query', 'velocity', 'data', 'model', 'header', undefined])
+            expect(takesPeriodWindow(layer(type))).toBe(false)
+        expect(takesPeriodWindow(null)).toBe(false)
+        expect(takesPeriodWindow({})).toBe(false)
+    })
+
+    test('a local vector layer takes a period; a local tile or vector tile layer does not', () => {
+        expect(takesPeriodWindow(layer('vector', 'local'))).toBe(true)
+        expect(takesPeriodWindow(layer('GeoJsonLayer', 'local'))).toBe(true)
+        expect(takesPeriodWindow(layer('tile', 'local'))).toBe(false)
+        expect(takesPeriodWindow(layer('vectortile', 'local'))).toBe(false)
+        expect(takesPeriodWindow(layer('MVTLayer', 'local'))).toBe(false)
+    })
+
+    test('reads the type alone: a layer without a time block is a question for the window rule', () => {
+        expect(takesPeriodWindow({ type: 'vector' })).toBe(true)
+    })
+})
+
+describe('periodAnchorOf', () => {
+    const EPOCH = '1970-01-01T00:00:00Z'
+    const time = (fields) => ({ enabled: true, type: 'requery', ...fields })
+
+    test('a concrete start anchors the periods', () => {
+        expect(
+            periodAnchorOf(time({ interval: 'P7D', dataStartTime: '2024-01-03T06:00:00Z' }))
+        ).toBe('2024-01-03T06:00:00Z')
+        expect(
+            periodAnchorOf(time({ interval: 'P1D', dataStartTime: '2024-01-03' }))
+        ).toBe('2024-01-03T00:00:00Z')
+    })
+
+    test('a calendar cadence without a concrete start steps from the epoch, which lands on UTC boundaries', () => {
+        for (const interval of ['P1Y', 'P1M', 'P1D', 'PT1H']) {
+            expect(periodAnchorOf(time({ interval }))).toBe(EPOCH)
+            expect(periodAnchorOf(time({ interval, dataStartTime: 'now - P30D' }))).toBe(EPOCH)
+        }
+    })
+
+    test('a non-calendar cadence without a concrete start cannot be placed', () => {
+        expect(periodAnchorOf(time({ interval: 'P7D' }))).toBeNull()
+        expect(periodAnchorOf(time({ interval: 'P7D', dataStartTime: 'now - P1Y' }))).toBeNull()
+        expect(periodAnchorOf(time({ interval: 'P2D' }))).toBeNull()
+    })
+
+    test('a layer that requests the window has no anchor', () => {
+        expect(periodAnchorOf(time({}))).toBeNull()
+        expect(periodAnchorOf(time({ interval: 'PT30M' }))).toBeNull()
+        expect(periodAnchorOf(time({ interval: 'garbage' }))).toBeNull()
+        expect(
+            periodAnchorOf(time({ interval: 'P1D', dataDates: ['2025-03-03'] }))
+        ).toBeNull()
+        expect(periodAnchorOf({ enabled: false, interval: 'P1D' })).toBeNull()
+        expect(periodAnchorOf(null)).toBeNull()
+    })
+
+    test('a local layer anchors like any other', () => {
+        expect(periodAnchorOf(time({ interval: 'P1D', type: 'local' }))).toBe(EPOCH)
     })
 })

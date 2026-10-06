@@ -16,6 +16,8 @@ import {
 import {
     resolveTemporalExtent,
     parseISODuration,
+    periodAnchorOf,
+    takesPeriodWindow,
 } from '../TimeControl_/layerTimePolicy'
 import { fetchLayerExtentSource } from '../TimeControl_/layerExtentSource'
 import {
@@ -52,14 +54,19 @@ let _providerCleanups = []
 // Resolved at call time so an open-ended "now" is fresh on every ask.
 // `interval` is the layer's parsed `time.interval` (a Duration), or null
 // when it declares none or an unparseable one — a plugin reads the cadence
-// without parsing ISO-8601 durations itself.
+// without parsing ISO-8601 durations itself. `periodAnchor` is the instant
+// the layer's periods step from when it requests one period at a time, or
+// null when it requests the Time Control window, so a timeline draws the
+// boundaries the map actually fetches by.
 const temporalExtentFor = (uuid) => {
-    const time = L_.layers.data[uuid]?.time
+    const layer = L_.layers.data[uuid]
+    const time = layer?.time
     const interval =
         time?.interval != null && time.interval !== ''
             ? parseISODuration(String(time.interval).trim())
             : null
-    return { ...resolveTemporalExtent(time), interval }
+    const periodAnchor = takesPeriodWindow(layer) ? periodAnchorOf(time) : null
+    return { ...resolveTemporalExtent(time), interval, periodAnchor }
 }
 
 const runsFor = (uuid) => {
@@ -579,8 +586,9 @@ const L_ = {
                     })
                     return legends
                 }),
-                // When each layer has data, as ISO datetimes or null, and its
-                // parsed cadence (`interval`, or null). The config's
+                // When each layer has data, as ISO datetimes or null, its
+                // parsed cadence (`interval`, or null) and the instant its
+                // periods step from (`periodAnchor`, or null). The config's
                 // dataStartTime/dataEndTime may be a policy ("now",
                 // "now - P1D"); this is where it is resolved, so a plugin
                 // never sees the policy string. Same call shapes as above.
