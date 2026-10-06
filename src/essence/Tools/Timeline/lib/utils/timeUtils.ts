@@ -235,6 +235,13 @@ export interface LayerTimeConfig {
     dataDates?: string[] | string
     /** The ISO 8601 duration a periodic layer's data repeats at, e.g. `P1D`. */
     interval?: string
+    /**
+     * The ISO instant core steps the layer's periods from when it requests
+     * one period at a time: the layer's fixed start, or the epoch for a
+     * calendar cadence without one. `null` when core says the layer requests
+     * no period; `undefined` when core did not say.
+     */
+    periodAnchor?: string | null
 }
 
 /** A layer's extent, with either bound completed from the caller's fallback. */

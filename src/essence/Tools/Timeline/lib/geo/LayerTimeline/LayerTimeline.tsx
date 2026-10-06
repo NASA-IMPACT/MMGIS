@@ -88,7 +88,8 @@ export function divisionXs(
 ): number[] {
     const nav = layer.navigation
     const interval = nav?.interval
-    if (!nav || !interval) return []
+    const anchor = nav?.anchor
+    if (!nav || !interval || !anchor) return []
 
     const [x0, x1] = xScale.range()
     const [d0, d1] = xScale.domain()
@@ -103,7 +104,6 @@ export function divisionXs(
     if (!(chartTo > chartFrom)) return []
 
     const xs: number[] = []
-    const anchor = nav.start
     let n = stepIndexAtOrBefore(anchor, interval, new Date(chartFrom))
     for (;;) {
         const at = addSteps(anchor, interval, n).getTime()

@@ -457,6 +457,104 @@ describe('LayerTimeline divisions and edges', () => {
         expect(container.querySelector('.layer-time-divisions')).toBeNull()
     })
 
+    /** The hour of every division pinched, read back through the scale. */
+    const divisionHours = (xScale: ReturnType<typeof scaleOver>) => {
+        const d =
+            container
+                .querySelector('.layer-time-divisions')
+                ?.getAttribute('d') ?? ''
+        const xs = Array.from(d.matchAll(/M([-\d.e]+),/g)).map((m) => m[1])
+        return [...new Set(xs)].map((x) =>
+            xScale.invert(Number(x)).toISOString().slice(0, 13)
+        )
+    }
+
+    test('divides a daily layer at UTC midnights when core anchors it on the epoch', () => {
+        const xScale = scaleOver('2020-03-01T00:00:00Z', '2020-03-15T00:00:00Z')
+        render(
+            periodic({
+                enabled: true,
+                dataStartTime: '2020-03-03T06:00:00Z',
+                dataEndTime: '2020-03-08T06:00:00Z',
+                interval: 'P1D',
+                periodAnchor: '1970-01-01T00:00:00Z',
+            }),
+            xScale
+        )
+
+        expect(divisionHours(xScale)).toEqual([
+            '2020-03-04T00',
+            '2020-03-05T00',
+            '2020-03-06T00',
+            '2020-03-07T00',
+            '2020-03-08T00',
+        ])
+    })
+
+    test('divides a daily layer from its own start when core anchors it there', () => {
+        const xScale = scaleOver('2020-03-01T00:00:00Z', '2020-03-15T00:00:00Z')
+        render(
+            periodic({
+                enabled: true,
+                dataStartTime: '2020-03-03T06:00:00Z',
+                dataEndTime: '2020-03-08T06:00:00Z',
+                interval: 'P1D',
+                periodAnchor: '2020-03-03T06:00:00Z',
+            }),
+            xScale
+        )
+
+        expect(divisionHours(xScale)).toEqual([
+            '2020-03-04T06',
+            '2020-03-05T06',
+            '2020-03-06T06',
+            '2020-03-07T06',
+        ])
+    })
+
+    test('divides a daily layer with no start of its own once core anchors it', () => {
+        const xScale = scaleOver('2020-03-01T00:00:00Z', '2020-03-15T00:00:00Z')
+        render(
+            periodic({
+                enabled: true,
+                dataEndTime: '2020-03-08T00:00:00Z',
+                interval: 'P1D',
+                periodAnchor: '1970-01-01T00:00:00Z',
+            }),
+            xScale
+        )
+
+        // Every day on the chart, the one the left margin shows included;
+        // the bar's own end is not a division.
+        expect(divisions(xScale)).toEqual([
+            '2020-02-29',
+            '2020-03-01',
+            '2020-03-02',
+            '2020-03-03',
+            '2020-03-04',
+            '2020-03-05',
+            '2020-03-06',
+            '2020-03-07',
+        ])
+    })
+
+    test('draws a layer core places no period for as one solid bar', () => {
+        const xScale = scaleOver('2020-03-01T00:00:00Z', '2020-05-01T00:00:00Z')
+        render(
+            periodic({
+                enabled: true,
+                dataStartTime: '2020-03-04T00:00:00Z',
+                dataEndTime: '2020-04-08T00:00:00Z',
+                interval: 'P7D',
+                periodAnchor: null,
+            }),
+            xScale
+        )
+
+        expect(container.querySelector('.layer-time-divisions')).toBeNull()
+        expect(bars()).toHaveLength(1)
+    })
+
     test('draws a layer with no interval as one solid bar', () => {
         const xScale = scaleOver('2020-03-01T00:00:00Z', '2020-03-15T00:00:00Z')
         render(
