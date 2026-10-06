@@ -1,4 +1,4 @@
-import * as moment from 'moment'
+import moment from 'moment'
 
 import F_ from '../Basics/Formulae_/Formulae_'
 import L_ from '../Basics/Layers_/Layers_'
@@ -39,6 +39,7 @@ var QueryURL = {
 
         var startTime = this.getSingleQueryVariable('startTime')
         var endTime = this.getSingleQueryVariable('endTime')
+        var currentTime = this.getSingleQueryVariable('currentTime')
         var live = this.getSingleQueryVariable('live')
         var follow = this.getSingleQueryVariable('follow')
 
@@ -183,6 +184,18 @@ var QueryURL = {
                 L_.FUTURES.endTime = date
             } else {
                 console.warn('Invalid endTime from deep link in the url')
+            }
+        }
+
+        if (currentTime !== false) {
+            if (F_.isStringNumeric(currentTime))
+                currentTime = parseInt(currentTime)
+
+            const date = new moment(currentTime)
+            if (!isNaN(date) && date.isValid()) {
+                L_.FUTURES.currentTime = date
+            } else {
+                console.warn('Invalid currentTime from deep link in the url')
             }
         }
 
@@ -443,6 +456,8 @@ var QueryURL = {
                     urlAppendage += '&startTime=' + TimeControl.startTime
             if (TimeControl.endTime)
                 urlAppendage += '&endTime=' + TimeControl.endTime
+            if (TimeControl.currentTime)
+                urlAppendage += '&currentTime=' + TimeControl.currentTime
             if (typeof TimeUI.now === 'boolean')
                 urlAppendage += '&live=' + (TimeUI.now ? '1' : '0')
             
