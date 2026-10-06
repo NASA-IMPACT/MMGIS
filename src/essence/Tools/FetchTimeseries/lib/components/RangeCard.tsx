@@ -1,4 +1,5 @@
-import React from 'react'
+import React, { useId } from 'react'
+import { DateSelector } from '../../../Timeline/lib'
 
 export type RangeStatus =
     | { kind: 'idle' }
@@ -16,22 +17,65 @@ export interface RangeCardProps {
     onExit: () => void
 }
 
-/** A datetime-local input drops zero seconds (`…T12:00`); the range is
- *  always held to the second so `{start}`/`{end}` expand the same way. */
-const toSeconds = (value: string) =>
-    value.length === 16 ? `${value}:00` : value
-
-/** Chrome fires change for every partial year typed (0002-…, 0020-…,
- *  0202-…); those would drag the other bound back to year 2. */
+/** The earliest instant Start can be set to. */
 const MIN_INSTANT = '1000-01-01T00:00:00'
-const isComplete = (value: string) => value >= MIN_INSTANT
 
-/** Start and End inputs over a status line. Props only; the tool owns the
- *  state and the fetch. A value is reported as typed; only leaving a field
- *  with the range reversed snaps the other bound to it, since a change
- *  event fires for every partial day typed ("2" on the way to "25"). The
- *  chart below names the feature; this card does not repeat it. Values
- *  are UTC; datetime-local does no conversion, hence the labels. */
+const toDate = (instant: string) => new Date(`${instant}Z`)
+
+/** The picker works to the minute; the range is held to the second so
+ *  `{start}`/`{end}` expand the same way. A picked End covers its whole
+ *  minute, so a day picked as End still reaches 23:59:59. */
+const toInstant = (date: Date, edge: 'start' | 'end') =>
+    `${date.toISOString().slice(0, 16)}:${edge === 'end' ? '59' : '00'}`
+
+/** The last second of the current UTC day: End's ceiling, unless the range
+ *  already reaches past it. */
+const endOfToday = () => {
+    const now = new Date()
+    return new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59),
+    )
+}
+
+function RangeField({
+    label,
+    value,
+    min,
+    max,
+    onPick,
+}: {
+    label: string
+    value: string
+    min: Date
+    max: Date
+    onPick: (date: Date) => void
+}) {
+    const labelId = useId()
+    return (
+        <div className="range-card__field" role="group" aria-labelledby={labelId}>
+            <span className="range-card__label" id={labelId}>
+                {label}
+            </span>
+            {value ? (
+                <DateSelector
+                    className="range-card__date"
+                    selectedDate={toDate(value)}
+                    startTime={min}
+                    endTime={max}
+                    timeMode="HOUR"
+                    onDateChange={onPick}
+                />
+            ) : (
+                <span className="range-card__date range-card__date--empty">—</span>
+            )}
+        </div>
+    )
+}
+
+/** Start and End pickers over a status line. Props only; the tool owns the
+ *  state and the fetch. Each picker is bounded by the other, so the range
+ *  can never be reversed. The chart below names the feature; this card does
+ *  not repeat it. Values are UTC, hence the labels. */
 export function RangeCard({
     start,
     end,
@@ -39,6 +83,11 @@ export function RangeCard({
     onRangeChange,
     onExit,
 }: RangeCardProps) {
+    const startDate = start ? toDate(start) : null
+    const endDate = end ? toDate(end) : null
+    const today = endOfToday()
+    const ceiling = endDate && endDate > today ? endDate : today
+
     return (
         <div className="range-card">
             <header className="range-card__header">
@@ -48,41 +97,20 @@ export function RangeCard({
                 </button>
             </header>
             <div className="range-card__fields">
-                <label className="range-card__field">
-                    <span className="range-card__label">Start (UTC)</span>
-                    <input
-                        type="datetime-local"
-                        step={1}
-                        className="range-card__input"
-                        value={start}
-                        min={MIN_INSTANT}
-                        max={end}
-                        onChange={(e) => {
-                            const next = toSeconds(e.target.value)
-                            if (isComplete(next)) onRangeChange(next, end)
-                        }}
-                        onBlur={() => {
-                            if (start > end) onRangeChange(start, start)
-                        }}
-                    />
-                </label>
-                <label className="range-card__field">
-                    <span className="range-card__label">End (UTC)</span>
-                    <input
-                        type="datetime-local"
-                        step={1}
-                        className="range-card__input"
-                        value={end}
-                        min={start}
-                        onChange={(e) => {
-                            const next = toSeconds(e.target.value)
-                            if (isComplete(next)) onRangeChange(start, next)
-                        }}
-                        onBlur={() => {
-                            if (end < start) onRangeChange(end, end)
-                        }}
-                    />
-                </label>
+                <RangeField
+                    label="Start (UTC)"
+                    value={start}
+                    min={toDate(MIN_INSTANT)}
+                    max={endDate ?? ceiling}
+                    onPick={(date) => onRangeChange(toInstant(date, 'start'), end)}
+                />
+                <RangeField
+                    label="End (UTC)"
+                    value={end}
+                    min={startDate ?? toDate(MIN_INSTANT)}
+                    max={ceiling}
+                    onPick={(date) => onRangeChange(start, toInstant(date, 'end'))}
+                />
             </div>
             {status.kind === 'loading' && (
                 <div className="range-card__status" aria-live="polite">

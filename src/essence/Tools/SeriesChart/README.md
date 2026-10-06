@@ -25,7 +25,8 @@ and `label`s must be unique within a payload; duplicates count as malformed
 
 Payload capabilities: multiple series per chart, `y: null` gaps (not
 interpolated), per-series `line`/`area`/`bar` style and color, and per-series
-`unit`, shown in the card footer chip. One variable renders at a time: a
+`unit`, shown after the variable name in the card footer chip and beside
+each value in the tooltip. One variable renders at a time: a
 payload with several series gets a variable picker above the chart (see
 `layout` below), and the chart, footer chip and CSV follow the pick. Mixed units therefore never need
 a dual y-axis. The payload's `subtitle` renders under the title as the
@@ -56,10 +57,15 @@ for a wide bottom panel where every variable fits on one line. One variable
 shows at a time either way, and the chart, footer chip and CSV follow the
 pick.
 
-The card itself is one design: a clean symbol-less line, sparse unnamed
-y-axis, a preview zoom strip (the series ghosted inside the slider, dragging
-it is the zoom and the reset), and a footer chip naming the variable and unit
-with a hover hint and a Download CSV link.
+The card itself is one design: a clean symbol-less line centred on the
+canvas, a sparse unnamed y-axis, a preview zoom strip (the
+series ghosted inside the slider; its end handles resize the window, its
+middle moves it with a grab cursor; the window's start and end dates sit
+above the strip's left and right ends at all times), and a footer chip naming the variable
+and unit beside a Download CSV link. How to read and zoom the chart sits
+behind an info button by the title, as on the Timeline. The hover tooltip is
+attached to the page body, so it is never clipped by the panel, and lists
+the hovered time's value once (only the time axis triggers it).
 
 ## Smoke test (devtools console)
 

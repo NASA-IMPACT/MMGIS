@@ -1,11 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useId, useRef, useState } from 'react'
 import * as echarts from 'echarts'
 import type {
     ChartSeries,
     ChartSeriesPayload,
 } from '../../../_shared/types/chartSeries'
 import type { ChartCard, ChartLayout, ChartTheme } from '../types'
-import { buildChartOption, seriesToCsv } from '../chartData'
+import { buildChart, seriesToCsv, WINDOW_LABEL_LAYOUT } from '../chartData'
+import { grabCursorOnSlider } from '../sliderCursors'
+import { FloatingPopover } from '../../../Timeline/lib'
 
 export interface SeriesChartPanelProps {
     cards: ChartCard[]
@@ -64,12 +66,61 @@ export class CardErrorBoundary extends React.Component<
     }
 }
 
+/** How to read and zoom the chart, shown only when asked for — the same
+ *  info button and popover the Timeline uses for its controls. */
+function ChartInfo() {
+    const [open, setOpen] = useState(false)
+    const buttonRef = useRef<HTMLButtonElement>(null)
+    const popupId = useId()
+    return (
+        <>
+            <button
+                type="button"
+                ref={buttonRef}
+                className="series-chart__info-btn"
+                onClick={() => setOpen((o) => !o)}
+                title="Info"
+                aria-label="Chart controls help"
+                aria-haspopup="dialog"
+                aria-expanded={open}
+                aria-controls={open ? popupId : undefined}
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+                    <path d="M11 7h2v2h-2V7zm0 4h2v6h-2v-6zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" />
+                </svg>
+            </button>
+            <FloatingPopover
+                id={popupId}
+                anchorRef={buttonRef}
+                isOpen={open}
+                onClose={() => setOpen(false)}
+                placement="bottom"
+                offset={8}
+                className="series-chart-info-portal"
+                label="Chart controls"
+            >
+                <div className="series-chart-info-portal__content">
+                    <strong>Chart Controls</strong>
+                    <p>
+                        Hover to read values • Scroll or drag on the chart to
+                        zoom and pan • In the strip below, drag an end handle
+                        to resize the window, or drag its middle to move it
+                    </p>
+                </div>
+            </FloatingPopover>
+        </>
+    )
+}
+
 function CardHeader({ title, subtitle }: { title: string; subtitle?: string }) {
     return (
         <header className="series-chart__card-header">
-            <h3 className="series-chart__title" title={title}>
-                {title}
-            </h3>
+            <div className="series-chart__title-row">
+                <h3 className="series-chart__title" title={title}>
+                    {title}
+                </h3>
+                <ChartInfo />
+            </div>
             {subtitle && <p className="series-chart__section">{subtitle}</p>}
         </header>
     )
@@ -182,23 +233,53 @@ function themeFromCss(el: HTMLElement): ChartTheme {
 
 function SeriesCanvas({ series, index }: { series: ChartSeries; index: number }) {
     const hostRef = useRef<HTMLDivElement>(null)
+    const [windowDates, setWindowDates] = useState<[string, string] | null>(null)
 
     useEffect(() => {
         const host = hostRef.current
         if (!host) return
         const chart = echarts.init(host)
-        chart.setOption(
-            buildChartOption(series, themeFromCss(host), index) as never,
-        )
+        const { option, windowText } = buildChart(series, themeFromCss(host), index)
+        chart.setOption(option as never)
+        setWindowDates(windowText(0, 100))
+        // The window dates follow every zoom, whether from the strip or from
+        // scrolling on the plot (the two share one window). They are page
+        // text, not chart shapes: a setOption mid-drag would rebuild the
+        // strip under the pointer and drop the drag.
+        const onZoom = () => {
+            const zoom = (chart.getOption() as {
+                dataZoom?: Array<{ start?: number; end?: number }>
+            }).dataZoom?.[0]
+            setWindowDates(windowText(zoom?.start ?? 0, zoom?.end ?? 100))
+        }
+        chart.on('datazoom', onZoom)
+        const releaseCursor = grabCursorOnSlider(chart)
         const observer = new ResizeObserver(() => chart.resize())
         observer.observe(host)
         return () => {
+            releaseCursor()
+            chart.off('datazoom', onZoom)
             observer.disconnect()
             chart.dispose()
         }
     }, [series, index])
 
-    return <div className="series-chart__canvas" ref={hostRef} />
+    const { side, bottom } = WINDOW_LABEL_LAYOUT
+    return (
+        <div className="series-chart__canvas-wrap">
+            <div className="series-chart__canvas" ref={hostRef} />
+            {windowDates && (
+                <div
+                    className="series-chart__window"
+                    style={{ left: side, right: side, bottom }}
+                    aria-label="Zoom window"
+                >
+                    <span>{windowDates[0]}</span>
+                    <span>{windowDates[1]}</span>
+                </div>
+            )}
+        </div>
+    )
 }
 
 function downloadCsv(s: ChartSeries) {
@@ -215,8 +296,8 @@ function downloadCsv(s: ChartSeries) {
     setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
-/** Colored dot naming the variable (with unit), then the interaction hint
- *  and that variable's CSV download. */
+/** Colored dot naming the variable (with unit), then that variable's CSV
+ *  download. */
 function CardFooter({ series, index }: { series: ChartSeries; index: number }) {
     return (
         <footer className="series-chart__variable-footer">
@@ -230,17 +311,17 @@ function CardFooter({ series, index }: { series: ChartSeries; index: number }) {
                     }}
                     aria-hidden="true"
                 />
-                <span>{series.label}</span>
-                {series.unit && (
-                    <span className="series-chart__variable-unit">
-                        {series.unit}
-                    </span>
-                )}
+                {/* The name over its unit, both clear of the dot. */}
+                <span className="series-chart__variable-text">
+                    {series.label}
+                    {series.unit && (
+                        <span className="series-chart__variable-unit">
+                            {series.unit}
+                        </span>
+                    )}
+                </span>
             </span>
             <div className="series-chart__variable-actions">
-                <p className="series-chart__variable-hint">
-                    Hover to inspect · drag the strip to zoom
-                </p>
                 <button
                     type="button"
                     className="series-chart__csv-link"
