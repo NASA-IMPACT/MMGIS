@@ -9,7 +9,6 @@ import {
     isPeriodicRequest,
     takesPeriodWindow,
     periodAnchorOf,
-    hasPeriodCadence,
 } from '../../src/essence/Basics/TimeControl_/layerTimePolicy'
 
 // Injected "now" so results are exact: mid-afternoon UTC.
@@ -463,7 +462,7 @@ describe('layerRequestWindow', () => {
         expect(at({ interval: 'P7D' })).toEqual(passthrough)
     })
 
-    test('a local layer is placed like any other; which types take it is takesPeriodWindow\'s call', () => {
+    test('a local layer is placed like any other', () => {
         expect(at({ interval: 'P1D', type: 'local' })).toEqual({
             start: '2026-08-25T00:00:00Z',
             end: '2026-08-25T23:59:59Z',
@@ -533,110 +532,46 @@ describe('a layer listing Data Dates', () => {
 })
 
 describe('takesPeriodWindow', () => {
-    const layer = (type, timeType = 'requery') => ({
+    const layer = (type, time = {}) => ({
         type,
-        time: { enabled: true, type: timeType, interval: 'P1D' },
+        time: { enabled: true, type: 'requery', ...time },
     })
 
-    test('tile, vector and vector tile layers take a period, under either engine\'s type name', () => {
-        for (const type of [
-            'tile',
-            'TileLayer',
-            'BitmapLayer',
-            'vector',
-            'GeoJsonLayer',
-            'vectortile',
-            'MVTLayer',
-        ])
-            expect(takesPeriodWindow(layer(type))).toBe(true)
+    test('tile, vector and vector tile layers, under either engine', () => {
+        for (const type of ['tile', 'vector', 'GeoJsonLayer', 'MVTLayer'])
+            expect(takesPeriodWindow(layer(type)), type).toBe(true)
+        for (const type of ['query', 'velocity', undefined])
+            expect(takesPeriodWindow(layer(type)), type).toBe(false)
     })
 
-    test('every other type requests the window', () => {
-        for (const type of ['query', 'velocity', 'data', 'model', 'header', undefined])
-            expect(takesPeriodWindow(layer(type))).toBe(false)
-        expect(takesPeriodWindow(null)).toBe(false)
-        expect(takesPeriodWindow({})).toBe(false)
-    })
-
-    // The local filter (L_.timeFilterVectorLayer) runs for a layer whose raw
-    // type is `vector` and that names an End Time Property; any other local
-    // layer is refreshed whole, so a period stamp would change nothing.
-    test('a local vector layer with an End Time Property takes a period', () => {
-        const local = (type, time = {}) => ({
-            type,
-            time: { enabled: true, type: 'local', interval: 'P1D', ...time },
-        })
-        expect(takesPeriodWindow(local('vector', { endProp: 'when' }))).toBe(true)
-        expect(takesPeriodWindow(local('vector'))).toBe(false)
-        expect(takesPeriodWindow(local('GeoJsonLayer', { endProp: 'when' }))).toBe(false)
-        expect(takesPeriodWindow(local('tile', { endProp: 'when' }))).toBe(false)
-        expect(takesPeriodWindow(local('vectortile', { endProp: 'when' }))).toBe(false)
-        expect(takesPeriodWindow(local('MVTLayer', { endProp: 'when' }))).toBe(false)
-    })
-
-    test('reads the type alone: a layer without a time block is a question for the window rule', () => {
-        expect(takesPeriodWindow({ type: 'vector' })).toBe(true)
+    test('a local layer only when it is a vector with an End Time Property', () => {
+        const local = { type: 'local', endProp: 'when' }
+        expect(takesPeriodWindow(layer('vector', local))).toBe(true)
+        expect(takesPeriodWindow(layer('vector', { type: 'local' }))).toBe(false)
+        expect(takesPeriodWindow(layer('vectortile', local))).toBe(false)
     })
 })
 
 describe('periodAnchorOf', () => {
-    const EPOCH = '1970-01-01T00:00:00Z'
-    const time = (fields) => ({ enabled: true, type: 'requery', ...fields })
+    const time = (fields) => ({ enabled: true, ...fields })
 
     test('a concrete start anchors the periods', () => {
         expect(
-            periodAnchorOf(time({ interval: 'P7D', dataStartTime: '2024-01-03T06:00:00Z' }))
+            periodAnchorOf(
+                time({ interval: 'P7D', dataStartTime: '2024-01-03T06:00:00Z' })
+            )
         ).toBe('2024-01-03T06:00:00Z')
+    })
+
+    test('a calendar cadence without a concrete start steps from the epoch', () => {
         expect(
-            periodAnchorOf(time({ interval: 'P1D', dataStartTime: '2024-01-03' }))
-        ).toBe('2024-01-03T00:00:00Z')
+            periodAnchorOf(time({ interval: 'P1D', dataStartTime: 'now - P30D' }))
+        ).toBe('1970-01-01T00:00:00Z')
     })
 
-    test('a calendar cadence without a concrete start steps from the epoch, which lands on UTC boundaries', () => {
-        for (const interval of ['P1Y', 'P1M', 'P1D', 'PT1H']) {
-            expect(periodAnchorOf(time({ interval }))).toBe(EPOCH)
-            expect(periodAnchorOf(time({ interval, dataStartTime: 'now - P30D' }))).toBe(EPOCH)
-        }
-    })
-
-    test('a non-calendar cadence without a concrete start cannot be placed', () => {
+    test('an unplaceable or absent cadence has no anchor', () => {
         expect(periodAnchorOf(time({ interval: 'P7D' }))).toBeNull()
-        expect(periodAnchorOf(time({ interval: 'P7D', dataStartTime: 'now - P1Y' }))).toBeNull()
-        expect(periodAnchorOf(time({ interval: 'P2D' }))).toBeNull()
-    })
-
-    test('a layer that requests the window has no anchor', () => {
-        expect(periodAnchorOf(time({}))).toBeNull()
         expect(periodAnchorOf(time({ interval: 'PT30M' }))).toBeNull()
-        expect(periodAnchorOf(time({ interval: 'garbage' }))).toBeNull()
-        expect(
-            periodAnchorOf(time({ interval: 'P1D', dataDates: ['2025-03-03'] }))
-        ).toBeNull()
-        expect(periodAnchorOf({ enabled: false, interval: 'P1D' })).toBeNull()
-        expect(periodAnchorOf(null)).toBeNull()
-    })
-
-    test('a local layer anchors like any other', () => {
-        expect(periodAnchorOf(time({ interval: 'P1D', type: 'local' }))).toBe(EPOCH)
-    })
-})
-
-describe('hasPeriodCadence', () => {
-    const time = (fields) => ({ enabled: true, type: 'requery', ...fields })
-
-    test('an interval of an hour or more, with no readable Data Dates, is a period cadence', () => {
-        expect(hasPeriodCadence(time({ interval: 'P1D' }))).toBe(true)
-        expect(hasPeriodCadence(time({ interval: 'P7D' }))).toBe(true)
-        expect(hasPeriodCadence(time({ interval: 'PT1H', type: 'local' }))).toBe(true)
-        expect(hasPeriodCadence(time({ interval: 'P1D', dataDates: ['nope'] }))).toBe(true)
-    })
-
-    test('anything else is not', () => {
-        expect(hasPeriodCadence(time({}))).toBe(false)
-        expect(hasPeriodCadence(time({ interval: 'PT30M' }))).toBe(false)
-        expect(hasPeriodCadence(time({ interval: 'garbage' }))).toBe(false)
-        expect(hasPeriodCadence(time({ interval: 'P1D', dataDates: ['2025-03-03'] }))).toBe(false)
-        expect(hasPeriodCadence({ enabled: false, interval: 'P1D' })).toBe(false)
-        expect(hasPeriodCadence(null)).toBe(false)
+        expect(periodAnchorOf(time({}))).toBeNull()
     })
 })

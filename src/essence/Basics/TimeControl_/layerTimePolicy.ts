@@ -16,13 +16,12 @@
  * extent's end floors to the last step at or before the resolved end —
  * a 7-day cadence that began ten days ago ended three days ago, not now.
  * The same interval decides what a tile, vector or vector tile layer
- * requests at each time step (`takesPeriodWindow` says which layers): the
- * one period holding the cursor (see `layerRequestWindow`) — unless the
- * layer lists Data Dates, which then decide on their own.
+ * requests at each time step: the one period holding the cursor (see
+ * `layerRequestWindow`) — unless the layer lists Data Dates, which then
+ * decide on their own.
  *
  * Core owns this vocabulary. Plugins never resolve it themselves: they ask
- * `layers:getTemporalExtent` and receive plain ISO datetimes, plus the
- * instant the layer's periods step from (`periodAnchorOf`).
+ * `layers:getTemporalExtent` and receive plain ISO datetimes.
  */
 
 import { hasListedEntries } from './listedDates'
@@ -283,8 +282,7 @@ function anchorOf(time: RequestTimeConfig): Date | null {
 // Data Dates entry (the listed dates decide when it has data, read as the
 // coverage gate reads them), no or unparseable interval, or a cadence
 // shorter than an hour — that is a run of individually timestamped scenes,
-// not a period. Whether the layer's type takes a period at all is
-// takesPeriodWindow's question, not this one's.
+// not a period.
 function requestCadenceOf(
     time: RequestTimeConfig | null | undefined
 ): Duration | null {
@@ -324,32 +322,24 @@ function periodAt(
     return unit == null ? null : calendarPeriod(cursor, unit)
 }
 
-// Canonical layer types whose request is shaped by `time.interval`. The
-// others (query, velocity, ...) always take the Time Control window.
 const PERIOD_WINDOW_TYPES = new Set(['tile', 'vector', 'vectortile'])
 
 /**
- * Whether a layer's type takes one period at a time when it is periodic:
- * a tile, vector or vector tile layer, under either engine's type name. A
- * `local` layer is fetched once and filtered on the client, and the only
- * such filter (L_.timeFilterVectorLayer) runs for a layer whose raw type is
- * `vector` and that names an End Time Property; that layer takes the
- * period, and any other local layer is refreshed whole and keeps the
- * window. Whether the layer is periodic at all — its interval, Data Dates,
- * and where its periods fall — is `layerRequestWindow`'s question.
- *
- * Takes a loose shape because callers pass raw mission-config objects.
+ * Whether a layer's type takes one period at a time when it is periodic: a
+ * tile, vector or vector tile layer. A `local` layer is filtered on the
+ * client, and the only such filter (L_.timeFilterVectorLayer) runs for a raw
+ * `vector` layer with an End Time Property, so only that local layer does.
  */
 export function takesPeriodWindow(
     layer:
         | {
-              type?: string | null
-              time?: (RequestTimeConfig & { endProp?: string | null }) | null
+              type?: string
+              time?: { type?: string; endProp?: string | null } | null
           }
         | null
         | undefined
 ): boolean {
-    const type = toCanonicalLayerType(layer?.type ?? undefined)
+    const type = toCanonicalLayerType(layer?.type)
     if (type == null || !PERIOD_WINDOW_TYPES.has(type)) return false
     if (layer?.time?.type === 'local')
         return layer.type === 'vector' && layer.time.endProp != null
@@ -357,29 +347,10 @@ export function takesPeriodWindow(
 }
 
 /**
- * Whether a layer's time block names a cadence core treats as a period:
- * an interval of an hour or more that parses, with no readable Data Dates.
- * Says nothing about where the periods fall — `periodAnchorOf` does — or
- * whether the layer's type takes them — `takesPeriodWindow` does.
- */
-export function hasPeriodCadence(
-    time: RequestTimeConfig | null | undefined
-): boolean {
-    return requestCadenceOf(time) != null
-}
-
-// Period boundaries for a calendar cadence are UTC year, month, day or hour
-// starts, every one of which is a whole number of steps from the epoch.
-const EPOCH_ISO = '1970-01-01T00:00:00Z'
-
-/**
- * The instant a periodic layer's periods step from, as an ISO datetime, so
- * a timeline can draw and step the same boundaries the layer requests: a
- * concrete `dataStartTime`, or the epoch for a cadence of exactly P1Y, P1M,
- * P1D or PT1H without one. Null when the layer is not periodic or its
- * periods cannot be placed (a non-calendar cadence with no concrete start).
- *
- * @param time - The layer config's `time` block.
+ * The instant a periodic layer's periods step from, so a timeline can draw
+ * the boundaries the layer requests: a concrete `dataStartTime`, or the
+ * epoch for a calendar cadence (UTC calendar boundaries are whole steps from
+ * it). Null when the layer is not periodic or its periods cannot be placed.
  */
 export function periodAnchorOf(
     time: RequestTimeConfig | null | undefined
@@ -388,7 +359,7 @@ export function periodAnchorOf(
     if (cadence == null || time == null) return null
     const anchor = anchorOf(time)
     if (anchor != null) return toIso(anchor)
-    return calendarUnitOf(cadence) == null ? null : EPOCH_ISO
+    return calendarUnitOf(cadence) == null ? null : '1970-01-01T00:00:00Z'
 }
 
 /**
@@ -396,17 +367,16 @@ export function periodAnchorOf(
  *
  * A periodic layer (`time.interval` of an hour or more, no readable Data
  * Dates) requests the one period holding the cursor. Periods step from a
- * concrete `dataStartTime`; without one, a cadence of exactly P1Y, P1M, P1D
- * or PT1H follows UTC calendar boundaries. `end` is the period's last
- * inclusive second, because STAC `datetime=a/b` intervals are closed at
- * both ends and an exclusive next-period end would pull in items stamped at
- * its first instant.
+ * concrete `dataStartTime`; without one, a cadence of exactly P1Y, P1M, P1D or PT1H
+ * follows UTC calendar boundaries. `end` is the period's last inclusive
+ * second, because STAC `datetime=a/b` intervals are closed at both ends and
+ * an exclusive next-period end would pull in items stamped at its first
+ * instant.
  *
  * Every other layer — and a periodic one whose period cannot be placed
  * (cursor before the anchor, no anchor for a non-calendar cadence, date
  * math out of range) — requests `[windowStart, cursor]`, the Time Control
- * window. This reads only the time block; whether the layer's type takes a
- * period at all is `takesPeriodWindow`'s call, asked first by every caller.
+ * window.
  *
  * @param time - The layer config's `time` block.
  * @param windowStart - The Time Control window start.

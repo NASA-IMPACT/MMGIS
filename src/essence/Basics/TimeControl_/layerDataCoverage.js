@@ -137,11 +137,11 @@ function spansOverlap(spans, start, end) {
 
 /**
  * Whether the layer requests one period rather than the Time Control
- * window: a layer of a type that takes periods (takesPeriodWindow) that
- * lists no readable Data Dates and whose `time.interval` places a period at
- * the cursor. Decided by the rule TimeControl stamps with
- * (layerRequestWindow), read at the stamped end — for a periodic stamp that
- * end lies inside the period it closes, so the same period is found again.
+ * window: a layer that takes periods (takesPeriodWindow), lists no readable
+ * Data Dates and whose `time.interval` places a period at the cursor.
+ * Decided by the rule TimeControl stamps with (layerRequestWindow), read at
+ * the stamped end — for a periodic stamp that end lies inside the period it
+ * closes, so the same period is found again.
  */
 function requestsPeriod(layer) {
     return (

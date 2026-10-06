@@ -421,19 +421,13 @@ export const TimelineAdapter: React.FC = () => {
                 // Core resolves the authored data times (open-ended "now",
                 // duration offsets, cadence flooring); the resolvers below
                 // read plain timestamps. A bound core could not read stays
-                // as written, so the resolvers below complete it from the
-                // window. Core also says where a layer's periods step from
-                // when it requests them one at a time; an answer without
-                // that leaves the row anchoring on the layer's own start.
+                // as written, so it falls back the way it always has.
                 const extent = extents?.[layerName]
                 const time = layer.time && {
                     ...layer.time,
                     dataStartTime: extent?.start ?? layer.time.dataStartTime,
                     dataEndTime: extent?.end ?? layer.time.dataEndTime,
-                    periodAnchor:
-                        extent && 'periodAnchor' in extent
-                            ? extent.periodAnchor
-                            : undefined,
+                    periodAnchor: extent?.periodAnchor ?? null,
                 }
 
                 newLayers.push({

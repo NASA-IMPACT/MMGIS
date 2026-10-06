@@ -952,10 +952,9 @@ var TimeControl = {
 /**
  * Writes the window a layer requests into `layer.time.start/end`, which the
  * tile URL builders, the `{starttime}`/`{endtime}` substitution and the
- * local vector filter read. A tile, vector or vector tile layer
- * (takesPeriodWindow) with a periodic `time.interval` gets the one period
- * holding the cursor (layerRequestWindow); every other layer gets
- * `[windowStart, cursor]`.
+ * local vector filter read. A layer that takes periods (takesPeriodWindow)
+ * with a periodic `time.interval` gets the one period holding the cursor
+ * (layerRequestWindow); every other layer gets `[windowStart, cursor]`.
  */
 function stampLayerWindow(layer, windowStart, cursor) {
     const requested = takesPeriodWindow(layer)

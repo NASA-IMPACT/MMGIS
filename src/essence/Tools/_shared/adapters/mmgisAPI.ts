@@ -387,19 +387,15 @@ export type Duration = {
 /**
  * When a layer has data, as ISO datetimes; null where unset or unreadable.
  * `interval` is the layer's `time.interval` as core parsed it, or null when
- * the layer declares none or core cannot read it. `periodAnchor` is present
- * only for a layer core requests one period at a time (a tile, vector or
- * vector tile layer with a cadence of an hour or more and no readable Data
- * Dates): the ISO instant its periods step from — its fixed data start, or
- * the epoch for a calendar cadence, whose steps fall on UTC year, month,
- * day or hour boundaries — or null when its periods cannot be placed and it
- * requests the Time Control window after all. Absent for every other layer.
+ * the layer declares none or core cannot read it. `periodAnchor` is the ISO
+ * instant the layer's requested periods step from, or null when core
+ * requests no period for it.
  */
 export type TemporalExtent = {
     start: string | null
     end: string | null
     interval: Duration | null
-    periodAnchor?: string | null
+    periodAnchor: string | null
 }
 
 /**

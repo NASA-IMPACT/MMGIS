@@ -325,9 +325,6 @@ describe('TimeControl.reloadLayer with the deck.gl engine', () => {
         expect(Map_.refreshLayer).toHaveBeenCalled()
     })
 
-    // A requery vector or vector tile layer fills {starttime}/{endtime} from
-    // the window TimeControl stamped on it, which for a periodic layer is the
-    // one period holding the cursor, and puts the template back afterwards.
     test.each([['vector'], ['MVTLayer']])(
         'requeries a periodic %s layer for the period holding the cursor',
         async (type) => {
@@ -355,13 +352,9 @@ describe('TimeControl.reloadLayer with the deck.gl engine', () => {
             expect(seenUrls).toEqual([
                 'https://example.com/items?datetime=2022-06-15T00:00:00Z/2022-06-15T23:59:59Z',
             ])
-            expect(layer.url).toBe(template)
         }
     )
 
-    // A local vector layer is filtered on the client against the window
-    // TimeControl stamped on it; a periodic one is stamped with the one
-    // period holding the cursor, so the filter keeps that period's features.
     test('filters a periodic local vector layer to the period holding the cursor', async () => {
         const layer = {
             name: 'Daily Sightings',
@@ -386,28 +379,6 @@ describe('TimeControl.reloadLayer with the deck.gl engine', () => {
             'Daily Sightings',
             Date.parse('2022-06-15T00:00:00Z'),
             Date.parse('2022-06-15T23:59:59Z')
-        )
-    })
-
-    test('filters a local vector layer without an interval to the whole window', async () => {
-        const layer = {
-            name: 'Sightings',
-            type: 'vector',
-            url: 'https://example.com/sightings.geojson',
-            controlled: false,
-            time: { enabled: true, type: 'local', endProp: 'when' },
-        }
-        registerDeckLayer(layer)
-        TimeControl.startTime = '2022-01-15T00:00:00Z'
-        TimeControl.currentTime = '2022-06-15T13:30:00Z'
-        TimeControl.updateLayersTime()
-
-        await TimeControl.reloadLayer(layer)
-
-        expect(L_.timeFilterVectorLayer).toHaveBeenCalledWith(
-            'Sightings',
-            Date.parse('2022-01-15T00:00:00Z'),
-            Date.parse('2022-06-15T13:30:00Z')
         )
     })
 

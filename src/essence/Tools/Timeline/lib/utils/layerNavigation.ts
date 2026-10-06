@@ -40,18 +40,15 @@ export interface LayerNavigation {
      */
     interval?: Duration
     /**
-     * Periodic only, with `interval`: the instant the steps are counted
-     * from — where core places the layer's periods, or failing that the
-     * layer's own start. May lie far outside the extent: a calendar cadence
-     * core anchors on the epoch steps through UTC boundaries.
+     * With `interval`: where core places the layer's periods, or else the
+     * layer's own start.
      */
     anchor?: Date
 }
 
 /**
  * The navigation model for a layer, or null when there is nothing to navigate:
- * the layer is not time-enabled, or names no instant to move to and core
- * places no period for it.
+ * the layer is not time-enabled, or names no instant to move to.
  *
  * A list with nothing readable in it leaves the layer navigating its extent.
  * A stop is the instant an entry names, so a layer that lists the exact
@@ -105,12 +102,17 @@ export function resolveLayerNavigation(
         fallbackEnd
     )
 
-    const anchor = stepAnchor(time, start, hasOwnStart)
+    // A start borrowed from the timeline's window moves with the window, so
+    // it anchors nothing.
+    const placed = time.periodAnchor ? new Date(time.periodAnchor) : null
+    const anchor =
+        placed && !isNaN(placed.getTime())
+            ? placed
+            : hasOwnStart
+              ? start
+              : null
     const interval = anchor ? parseDuration(time.interval) : null
 
-    // With no bound of its own the layer's bar is the window, and there is
-    // nothing to move to — unless its periods are placed, which the controls
-    // can still step through.
     if (!hasOwnStart && !hasOwnEnd && !interval) return null
 
     // A window lying wholly to one side of the layer's single configured bound
@@ -143,28 +145,6 @@ export function resolveLayerNavigation(
         hasOwnEnd,
         ...(interval && anchor ? { interval, anchor } : {}),
     }
-}
-
-/**
- * Where a layer's steps are counted from: the instant core places its
- * periods from, when core has said, so the row divides and steps the same
- * boundaries the map requests. Core saying it places no period (`null`)
- * leaves the layer stepping by the timeline's granularity. When core has
- * not said, or said something unreadable, the layer's own start anchors
- * the steps; a start borrowed from the timeline's window moves with the
- * window, so it anchors nothing.
- */
-function stepAnchor(
-    time: LayerTimeConfig,
-    start: Date,
-    hasOwnStart: boolean
-): Date | null {
-    if (time.periodAnchor === null) return null
-    if (typeof time.periodAnchor === 'string') {
-        const placed = new Date(time.periodAnchor)
-        if (!isNaN(placed.getTime())) return placed
-    }
-    return hasOwnStart ? start : null
 }
 
 /** The period a sparse stop's entries cover, or null off every stop. */

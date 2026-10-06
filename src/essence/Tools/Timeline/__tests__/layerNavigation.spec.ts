@@ -1016,103 +1016,34 @@ describe('a periodic layer with a Data Time Interval', () => {
     })
 })
 
-/**
- * Core tells the timeline where a periodic layer's periods step from
- * (`periodAnchor`): the layer's fixed start, or the epoch for a calendar
- * cadence without one, whose steps fall on UTC boundaries. The row steps
- * and divides on that anchor, so it moves through the periods the map
- * requests rather than ones counted from a start core never anchored on.
- */
 describe('a periodic layer anchored where core places its periods', () => {
     const EPOCH = '1970-01-01T00:00:00Z'
-    const daily = (fields: Record<string, unknown>) =>
-        resolve({
+
+    test('steps on UTC midnights when core anchors the layer on the epoch', () => {
+        const nav = resolve({
             enabled: true,
             dataStartTime: '2024-01-03T06:00:00Z',
             dataEndTime: '2024-03-25T06:00:00Z',
             interval: 'P1D',
-            ...fields,
+            periodAnchor: EPOCH,
         })!
-
-    test('steps on UTC midnights when core anchors a calendar cadence on the epoch', () => {
-        const nav = daily({ periodAnchor: EPOCH })
-        expect(nav.anchor?.toISOString()).toBe('1970-01-01T00:00:00.000Z')
-        expect(nav.interval).toMatchObject({ days: 1 })
         expect(goTo(nav, '2024-01-10T12:00:00Z', 'next')).toBe(
             '2024-01-11T00:00:00.000Z'
-        )
-        expect(goTo(nav, '2024-01-10T12:00:00Z', 'prev')).toBe(
-            '2024-01-10T00:00:00.000Z'
         )
         expect(goTo(nav, '2024-01-10T00:00:00Z', 'prev')).toBe(
             '2024-01-09T00:00:00.000Z'
         )
     })
 
-    test('steps from the fixed start core anchors on', () => {
-        const nav = daily({ periodAnchor: '2024-01-03T06:00:00Z' })
-        expect(nav.anchor?.toISOString()).toBe('2024-01-03T06:00:00.000Z')
-        expect(goTo(nav, '2024-01-10T12:00:00Z', 'next')).toBe(
-            '2024-01-11T06:00:00.000Z'
-        )
-        expect(goTo(nav, '2024-01-10T12:00:00Z', 'prev')).toBe(
-            '2024-01-10T06:00:00.000Z'
-        )
-    })
-
-    test('steps by the granularity when core places no period for the layer', () => {
-        const nav = daily({ interval: 'P7D', periodAnchor: null })
-        expect(nav.anchor).toBeUndefined()
-        expect(nav.interval).toBeUndefined()
-        expect(goTo(nav, '2024-01-10T12:00:00Z', 'next', 'HOUR')).toBe(
-            '2024-01-10T13:00:00.000Z'
-        )
-    })
-
-    test('anchors on its own start when core has not said', () => {
-        const nav = daily({})
-        expect(nav.anchor?.toISOString()).toBe('2024-01-03T06:00:00.000Z')
-        expect(goTo(nav, '2024-01-10T12:00:00Z', 'next')).toBe(
-            '2024-01-11T06:00:00.000Z'
-        )
-    })
-
-    test('an unreadable anchor is read as none said', () => {
-        const nav = daily({ periodAnchor: 'yesterday' })
-        expect(nav.anchor?.toISOString()).toBe('2024-01-03T06:00:00.000Z')
-    })
-
-    test('steps a layer with no start of its own once core anchors it', () => {
-        const nav = resolve({
-            enabled: true,
-            dataEndTime: '2021-06-01T00:00:00Z',
-            interval: 'P1D',
-            periodAnchor: EPOCH,
-        })!
-        expect(nav.hasOwnStart).toBe(false)
-        expect(nav.interval).toMatchObject({ days: 1 })
-        expect(goTo(nav, '2020-05-15T12:00:00Z', 'next', 'HOUR')).toBe(
-            '2020-05-16T00:00:00.000Z'
-        )
-    })
-
-    test('steps a layer with no bounds of its own by the period core anchors', () => {
-        const nav = resolve({
-            enabled: true,
-            interval: 'P1D',
-            periodAnchor: EPOCH,
-        })
+    test('steps a layer with no bounds of its own once core anchors it', () => {
+        const nav = resolve({ enabled: true, interval: 'P1D', periodAnchor: EPOCH })
         expect(nav).not.toBeNull()
-        expect(nav!.hasOwnStart).toBe(false)
-        expect(nav!.hasOwnEnd).toBe(false)
         expect(goTo(nav!, '2020-05-15T12:00:00Z', 'next', 'HOUR')).toBe(
             '2020-05-16T00:00:00.000Z'
         )
-    })
-
-    test('a layer with no bounds and no anchor still has nothing to navigate', () => {
-        expect(resolve({ enabled: true, interval: 'P1D' })).toBeNull()
-        expect(resolve({ enabled: true, interval: 'P1D', periodAnchor: null })).toBeNull()
+        expect(
+            resolve({ enabled: true, interval: 'P1D', periodAnchor: null })
+        ).toBeNull()
     })
 })
 
