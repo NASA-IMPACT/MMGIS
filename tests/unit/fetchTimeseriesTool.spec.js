@@ -55,32 +55,62 @@ describe('FetchTimeseriesTool', () => {
     const request = (payload = fetchPayload()) =>
         act(() => FetchTimeseriesTool._onFetch(payload))
 
-    const input = (label) =>
-        [...host.querySelectorAll('label')]
-            .find((l) => l.textContent.includes(label))
-            .querySelector('input')
-    // datetime-local serializes zero seconds away (and jsdom, unlike browsers,
-    // appends zero milliseconds); read it back to the second either way.
-    const valueOf = (label) => {
-        const v = input(label).value.replace(/\.000$/, '')
-        return v.length === 16 ? `${v}:00` : v
+    const field = (label) =>
+        [...host.querySelectorAll('.range-card__field')].find((f) =>
+            f.querySelector('.range-card__label').textContent.includes(label),
+        )
+    /** The instant the card holds for a field, to the second. The picker's
+     *  button shows it to the minute; the held value is what the URL gets. */
+    const valueOf = (label) =>
+        FetchTimeseriesTool._range[label === 'Start' ? 'start' : 'end']
+    const shownOf = (label) => field(label).querySelector('.date-text').textContent
+
+    const popover = () => document.body.querySelector('.floating-popover-portal')
+    const setValue = (el, value, event = 'input') => {
+        const proto = Object.getPrototypeOf(el)
+        Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value)
+        el.dispatchEvent(new Event(event, { bubbles: true }))
     }
 
-    const blur = (label) =>
-        act(() => {
-            input(label).dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
-        })
+    /** Picks `YYYY-MM-DDTHH:MM` through the field's calendar, as a viewer
+     *  would: open it, type the year, choose the month and the day, set the
+     *  time, close it. */
+    const setDate = async (label, value) => {
+        const [date, time] = value.split('T')
+        const [year, month, day] = date.split('-').map(Number)
+        await act(() => field(label).querySelector('.date-selector-main-button').click())
+        await act(() => setValue(popover().querySelector('input[aria-label="Year"]'), String(year)))
+        await act(() =>
+            setValue(popover().querySelector('select[aria-label="Month"]'), String(month - 1), 'change'),
+        )
+        const cell = [...popover().querySelectorAll('.day-calendar-cell')].find(
+            (b) => b.textContent === String(day),
+        )
+        if (cell.disabled) throw new Error(`${value} is out of the ${label} picker's range`)
+        await act(() => cell.click())
+        await act(() => setValue(popover().querySelector('input[aria-label="Time"]'), time.slice(0, 5)))
+        await act(() =>
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })),
+        )
+    }
 
-    const setDate = (label, value) =>
-        act(() => {
-            const el = input(label)
-            const setter = Object.getOwnPropertyDescriptor(
-                HTMLInputElement.prototype,
-                'value',
-            ).set
-            setter.call(el, value)
-            el.dispatchEvent(new Event('input', { bubbles: true }))
-        })
+    /** Whether the field's calendar refuses a day, opened on that day's month. */
+    const dayDisabled = async (label, value) => {
+        const [year, month, day] = value.split('-').map(Number)
+        await act(() => field(label).querySelector('.date-selector-main-button').click())
+        await act(() => setValue(popover().querySelector('input[aria-label="Year"]'), String(year)))
+        await act(() =>
+            setValue(popover().querySelector('select[aria-label="Month"]'), String(month - 1), 'change'),
+        )
+        const cell = [...popover().querySelectorAll('.day-calendar-cell')].find(
+            (b) => b.textContent === String(day),
+        )
+        const disabled = cell.disabled
+        await act(() =>
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })),
+        )
+        return disabled
+    }
 
     beforeEach(() => {
         vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
@@ -276,7 +306,7 @@ describe('FetchTimeseriesTool', () => {
         layerConfigs[LAYER].variables.timeseries.url = 'https://api/x?s={properties.code}'
         await request()
         expect(fetchMock.mock.calls[0][0]).toBe('https://api/x?s=A1')
-        expect(host.querySelectorAll('input')).toHaveLength(2)
+        expect(host.querySelectorAll('.date-selector')).toHaveLength(2)
         await setDate('Start', '2026-01-01T00:00:00')
         await settle()
         expect(fetchMock).toHaveBeenCalledTimes(2)
@@ -439,18 +469,18 @@ describe('FetchTimeseriesTool', () => {
         expect(filterOf(fetchMock.mock.calls[1][0])).toContain("datetime >= '2026-04-01T00:00:00'")
     })
 
-    test('a partial year typed into End leaves Start alone and fetches only the finished value', async () => {
+    test('the pickers show the held range to the minute, in the Timeline date format', async () => {
         await request()
-        // Chrome's change events while typing a year: 0002-…, then the real one.
-        await setDate('End', '0002-03-01T00:00:00')
-        expect(valueOf('Start')).toBe('2025-09-25T00:00:00')
+        expect(shownOf('Start')).toBe('Sep 25, 2025, 00:00')
+        expect(shownOf('End')).toBe('Sep 24, 2026, 23:59')
+    })
+
+    test('a picked End covers its whole minute', async () => {
+        await request()
+        await setDate('End', '2026-03-25T12:30')
         await settle()
-        expect(fetchMock).toHaveBeenCalledTimes(1)
-        await setDate('End', '2027-03-01T00:00:00')
-        await settle()
-        expect(fetchMock).toHaveBeenCalledTimes(2)
         expect(filterOf(fetchMock.mock.calls[1][0])).toBe(
-            "datetime >= '2025-09-25T00:00:00' AND datetime <= '2027-03-01T00:00:00'",
+            "datetime >= '2025-09-25T00:00:00' AND datetime <= '2026-03-25T12:30:59'",
         )
     })
 
@@ -507,53 +537,33 @@ describe('FetchTimeseriesTool', () => {
         expect(fetchMock).toHaveBeenCalledTimes(1)
     })
 
-    test('an end typed before the start leaves the start alone and fetches nothing until the field is left', async () => {
+    test('each picker is bounded by the other, so the range cannot be reversed', async () => {
         await request()
-        await setDate('Start', '2026-03-15T00:00:00')
+        await setDate('Start', '2026-03-15T00:00')
         await settle()
-        expect(fetchMock).toHaveBeenCalledTimes(2)
-        // Typing "25" into the day of End passes through 02 on the way.
-        await setDate('End', '2026-03-02T00:00:00')
-        expect(valueOf('Start')).toBe('2026-03-15T00:00:00')
-        expect(valueOf('End')).toBe('2026-03-02T00:00:00')
+        expect(await dayDisabled('End', '2026-03-14')).toBe(true)
+        expect(await dayDisabled('End', '2026-03-15')).toBe(false)
+        await setDate('End', '2026-03-20T00:00')
         await settle()
-        expect(fetchMock).toHaveBeenCalledTimes(2)
-        await setDate('End', '2026-03-25T00:00:00')
-        await settle()
-        expect(fetchMock).toHaveBeenCalledTimes(3)
+        expect(await dayDisabled('Start', '2026-03-21')).toBe(true)
         expect(filterOf(fetchMock.mock.calls[2][0])).toBe(
-            "datetime >= '2026-03-15T00:00:00' AND datetime <= '2026-03-25T00:00:00'",
+            "datetime >= '2026-03-15T00:00:00' AND datetime <= '2026-03-20T00:00:59'",
         )
     })
 
-    test('leaving a field with the range reversed snaps the other bound to it; the refetch uses the clamped range', async () => {
+    test('End stops at the end of today', async () => {
         await request()
-        await setDate('End', '2025-02-01T00:00:00')
-        await settle()
-        expect(fetchMock).toHaveBeenCalledTimes(1)
-        await blur('End')
-        expect(valueOf('Start')).toBe('2025-02-01T00:00:00')
-        await settle()
-        expect(filterOf(fetchMock.mock.calls[1][0])).toBe(
-            "datetime >= '2025-02-01T00:00:00' AND datetime <= '2025-02-01T00:00:00'",
-        )
-        await setDate('Start', '2025-12-01T00:00:00')
-        await blur('Start')
-        expect(valueOf('End')).toBe('2025-12-01T00:00:00')
-        await settle()
-        expect(filterOf(fetchMock.mock.calls[2][0])).toBe(
-            "datetime >= '2025-12-01T00:00:00' AND datetime <= '2025-12-01T00:00:00'",
-        )
-        expect(emittedFor(READY)).toHaveLength(3)
+        expect(await dayDisabled('End', '2026-09-24')).toBe(false)
+        expect(await dayDisabled('End', '2026-09-25')).toBe(true)
     })
 
-    test('leaving a field with the range in order changes nothing', async () => {
+    test('an End time picked before Start on the same day snaps to the minute Start begins', async () => {
         await request()
-        await blur('End')
-        await blur('Start')
+        await setDate('Start', '2026-03-15T12:00')
         await settle()
-        expect(fetchMock).toHaveBeenCalledTimes(1)
-        expect(valueOf('Start')).toBe('2025-09-25T00:00:00')
+        await setDate('End', '2026-03-15T08:00')
+        await settle()
+        expect(valueOf('End')).toBe('2026-03-15T12:00:59')
     })
 
     test('EXIT clears the chart, hides this card, and leaves the next request working', async () => {

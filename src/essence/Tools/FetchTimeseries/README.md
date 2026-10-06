@@ -28,9 +28,11 @@ Bus-only — no core imports.
   response shape) show on the card; neither is an event. A failure also
   emits `seriesCleared`, so the previous chart never sits under an error.
 - Changing the range refetches the same feature, 400 ms after the last
-  change, and emits `seriesReady` again, so the chart replaces its card. A
-  range left reversed (an end before the start) fetches nothing; leaving
-  the field snaps the other bound to it.
+  change, and emits `seriesReady` again, so the chart replaces its card.
+- Start and End use the Timeline's date picker (calendar plus a UTC time, to
+  the minute). Each is bounded by the other, so the range cannot be
+  reversed; End also stops at the end of today. A picked End covers its
+  whole minute (`…:59`), a picked Start begins on it (`…:00`).
 - A new request aborts any in-flight fetch and replaces the chart (single
   `chartId: 'vector-timeseries'`). The chart stays until the next request
   replaces it, EXIT clears it, or a fetch fails. Fetches time out after 30

@@ -83,8 +83,8 @@ class HttpError extends Error {
         super(`HTTP ${status}`)
     }
 }
-/** Typing a date fires several changes; the card updates at once, the
- *  refetch waits for the typing to settle. */
+/** Stepping a picker's time fires a change per keystroke or arrow press;
+ *  the card updates at once, the refetch waits for the edits to settle. */
 const REFETCH_DEBOUNCE_MS = 400
 
 interface FetchRequest {
@@ -251,8 +251,8 @@ const FetchTimeseriesTool = {
         this._render()
         if (!this._selection) return
         this._cancelRefetch()
-        // Reversed while a field is being typed into; the card reports the
-        // clamped range once the field is left.
+        // The pickers bound each other, so a reversed range only comes from
+        // a caller outside the card; it is shown but never fetched.
         if (start > end) return
         this._refetchTimer = window.setTimeout(() => {
             this._refetchTimer = null

@@ -7,9 +7,17 @@ import { SeriesChartPanel } from '../../src/essence/Tools/SeriesChart/lib'
 // The ready card mounts a real chart; neither echarts' canvas nor
 // ResizeObserver exist under jsdom, and neither is what's under test.
 vi.mock('echarts', () => ({
+    graphic: { Rect: class {} },
     init: () => ({
         setOption() {},
         on() {},
+        off() {},
+        getZr() {
+            return {
+                storage: { getDisplayList: () => [] },
+                setCursorStyle() {},
+            }
+        },
         dispose() {},
         resize() {},
         getOption() {
@@ -86,6 +94,13 @@ describe('MMGISSeriesChartAdapter', () => {
         act(() => bus.emit(READY, validPayload()))
         expect(host.textContent).toContain('Station 42')
         expect(host.textContent).toContain('NO₂')
+    })
+
+    test("the zoom window's start and end dates show above the strip without hovering", () => {
+        act(() => bus.emit(READY, validPayload()))
+        const ends = [...host.querySelectorAll('.series-chart__window span')]
+        expect(ends).toHaveLength(2)
+        expect(ends.every((e) => e.textContent !== '')).toBe(true)
     })
 
     test('several series get a Variable dropdown; the pick drives the footer', () => {

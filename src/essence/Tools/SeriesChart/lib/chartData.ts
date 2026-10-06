@@ -113,18 +113,35 @@ function seriesBase(s: ChartSeries, i: number, theme: ChartTheme) {
     }
 }
 
+/** Space the plot keeps on each side of the canvas. Left and right match so
+ *  the plot sits centred; `containLabel` fits the tick labels inside it. */
+const SIDE_MARGIN = 12
+/** The strip's height and its gap to the canvas bottom. */
+const SLIDER_HEIGHT = 24
+const SLIDER_BOTTOM = 6
+/** Height of the row above the strip that holds the window's start and
+ *  end dates (drawn by the panel over the canvas, see WINDOW_LABEL_LAYOUT). */
+const WINDOW_LABEL_ROW = 16
+
+/** Where the panel places the window dates: in the row above the strip,
+ *  flush with the strip's ends. */
+export const WINDOW_LABEL_LAYOUT = {
+    side: SIDE_MARGIN,
+    bottom: SLIDER_BOTTOM + SLIDER_HEIGHT + 2,
+}
+
 /** The preview zoom strip under the chart: the series ghosted inside the
- *  slider in its own color, light default filler over it, dark end handles. */
-function previewSlider(
-    theme: ChartTheme,
-    color: string,
-    tickFormat: ((ms: number) => string) | null,
-) {
+ *  slider in its own color, light default filler over it, dark end handles.
+ *  It spans the canvas between the side margins, so the window labels above
+ *  it can sit at its ends; they replace the slider's own hover-only labels. */
+function previewSlider(theme: ChartTheme, color: string) {
     return {
         type: 'slider' as const,
-        height: 24,
-        bottom: 6,
-        textStyle: { fontSize: 10, color: theme.textColor },
+        height: SLIDER_HEIGHT,
+        bottom: SLIDER_BOTTOM,
+        left: SIDE_MARGIN,
+        right: SIDE_MARGIN,
+        showDetail: false,
         showDataShadow: true,
         brushSelect: false,
         borderColor: theme.gridColor,
@@ -135,10 +152,36 @@ function previewSlider(
             lineStyle: { color, opacity: 0.6, width: 1 },
             areaStyle: { color, opacity: 0.08 },
         },
-        ...(tickFormat
-            ? { labelFormatter: (v: number) => tickFormat(v) }
-            : {}),
     }
+}
+
+const WINDOW_DATE_FMT = new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+})
+
+/** The format for the zoom window's ends: the date, plus the clock when the
+ *  whole series spans two days or less, where the date alone would repeat. */
+export function makeWindowLabelFormat(
+    minMs: number,
+    maxMs: number,
+): (ms: number) => string {
+    if (maxMs - minMs <= 2 * DAY_MS) return formatTooltipTime
+    return (ms) => WINDOW_DATE_FMT.format(new Date(ms))
+}
+
+/** The zoom window, in epoch ms, for the slider's start/end percentages of
+ *  the series' time extent (the x axis runs dataMin to dataMax). */
+export function windowAt(
+    extent: [number, number],
+    startPct: number,
+    endPct: number,
+): [number, number] {
+    const [min, max] = extent
+    const at = (pct: number) => min + ((max - min) * pct) / 100
+    return [at(startPct), at(endPct)]
 }
 
 /** Min/max via a loop — `Math.min(...xs)` overflows the engine's argument
@@ -170,22 +213,29 @@ const HTML_ESCAPES: Record<string, string> = {
 const escapeHtml = (text: string) =>
     text.replace(/[&<>"']/g, (c) => HTML_ESCAPES[c])
 
-/** Axis tooltip whose title is the hovered UTC datetime, not raw epoch ms.
- *  echarts writes this string with innerHTML, and the series name comes
- *  off the wire (a groupBy value from the remote API), so it is escaped. */
-function timeTooltipFormatter(params: TooltipParam[] | TooltipParam): string {
-    const list = Array.isArray(params) ? params : [params]
-    if (list.length === 0) return ''
-    const rows = list.map(
-        (p) => `${p.marker}${escapeHtml(p.seriesName)}: ${p.value[1] ?? '—'}`,
-    )
-    return [formatTooltipTime(list[0].value[0]), ...rows].join('<br/>')
+/** Axis tooltip whose title is the hovered UTC datetime, not raw epoch ms,
+ *  with the value carrying the series' unit. echarts writes this string
+ *  with innerHTML, and the series name and unit come off the wire (a
+ *  groupBy value from the remote API), so both are escaped. */
+function makeTooltipFormatter(unit?: string) {
+    const suffix = unit ? ` ${escapeHtml(unit)}` : ''
+    return (params: TooltipParam[] | TooltipParam): string => {
+        const list = Array.isArray(params) ? params : [params]
+        if (list.length === 0) return ''
+        const rows = list.map((p) =>
+            p.value[1] == null
+                ? `${p.marker}${escapeHtml(p.seriesName)}: —`
+                : `${p.marker}${escapeHtml(p.seriesName)}: ${p.value[1]}${suffix}`,
+        )
+        return [formatTooltipTime(list[0].value[0]), ...rows].join('<br/>')
+    }
 }
 
 /**
  * The ECharts option for one variable: a single-series chart over a preview
- * zoom strip (the series redrawn inside the slider). Sparse unlabeled axes —
- * the card's footer chip, not the chart, names the variable and unit.
+ * zoom strip (the series redrawn inside the slider). The card's footer chip,
+ * not the plot, names the variable and its unit; the tooltip repeats the
+ * unit beside each value.
  * `index` is the variable's position in the payload, so it keeps its palette
  * slot whichever variable is picked. Typed loosely on purpose: echarts' own
  * option generics add nothing here and the object is validated by rendering.
@@ -195,6 +245,23 @@ export function buildChartOption(
     theme: ChartTheme,
     index: number,
 ): Record<string, any> {
+    return buildChart(s, theme, index).option
+}
+
+export interface ChartModel {
+    option: Record<string, any>
+    /** The zoom window's start and end dates for the slider's start/end
+     *  percentages; null for a series with no readable times. */
+    windowText: (startPct: number, endPct: number) => [string, string] | null
+}
+
+/** The chart option together with the zoom window's dates, both from one
+ *  pass over the points. */
+export function buildChart(
+    s: ChartSeries,
+    theme: ChartTheme,
+    index: number,
+): ChartModel {
     const color = seriesColor(s, index, theme.palette)
 
     const data = toTimePoints(s.points).map(
@@ -204,16 +271,35 @@ export function buildChartOption(
     const tickFormat = xExtent
         ? makeTimeTickFormat(xExtent[0], xExtent[1])
         : null
+    const windowFormat = xExtent
+        ? makeWindowLabelFormat(xExtent[0], xExtent[1])
+        : null
+    const windowText = (startPct: number, endPct: number): [string, string] | null => {
+        if (!xExtent || !windowFormat) return null
+        const [start, end] = windowAt(xExtent, startPct, endPct)
+        return [windowFormat(start), windowFormat(end)]
+    }
 
-    return {
+    const option = {
         useUTC: true,
         tooltip: {
             trigger: 'axis' as const,
             axisPointer: { type: 'cross' as const, label: { show: false } },
-            formatter: timeTooltipFormatter,
+            formatter: makeTooltipFormatter(s.unit),
+            // The panel clips its overflow; on the body the tooltip floats
+            // over every panel instead of being cut off at the card's edge.
+            appendTo: 'body',
+            extraCssText: 'z-index: 999999;',
         },
-        // Bottom band holds the x labels and the preview strip.
-        grid: { left: 44, right: 8, top: 8, bottom: 64 },
+        // The bottom band holds the preview strip and the window dates above
+        // it; the x labels sit inside the grid via containLabel.
+        grid: {
+            left: SIDE_MARGIN,
+            right: SIDE_MARGIN,
+            top: 8,
+            bottom: SLIDER_BOTTOM + SLIDER_HEIGHT + WINDOW_LABEL_ROW + 8,
+            containLabel: true,
+        },
         xAxis: {
             type: 'time' as const,
             min: 'dataMin' as const,
@@ -230,9 +316,13 @@ export function buildChartOption(
         yAxis: {
             type: 'value' as const,
             scale: true,
-            // A handful of unnamed ticks — identity and unit live in the
-            // card footer, so the plot stays clean like the reference.
+            // A handful of unnamed ticks keeps the plot clean; the footer
+            // chip says what they count.
             splitNumber: 2,
+            // The crosshair's horizontal line is only a guide. Left to
+            // trigger the tooltip, it adds a second row for the point
+            // nearest the cursor's height, repeating the series.
+            axisPointer: { triggerTooltip: false },
             axisLabel: axisLabel(theme),
             splitLine: { show: false },
         },
@@ -244,9 +334,10 @@ export function buildChartOption(
         ],
         dataZoom: [
             { type: 'inside' as const },
-            previewSlider(theme, color, tickFormat),
+            previewSlider(theme, color),
         ],
     }
+    return { option, windowText }
 }
 
 /**
