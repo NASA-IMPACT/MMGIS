@@ -172,6 +172,38 @@ test.describe('QueryURL.writeCoordinateURL basemap', () => {
         )
     })
 
+    test('escapes & and # so the whole name survives as one value', () => {
+        L_.Map_.getActiveBasemap = () => ({
+            name: 'Roads & Labels #2',
+            style: 'https://example.com/roads.json',
+        })
+
+        const url = QueryURL.writeCoordinateURL()
+
+        expect(url).toContain('&basemap=Roads%20%26%20Labels%20%232')
+        expect(new URL(url).searchParams.get('basemap')).toBe('Roads & Labels #2')
+    })
+
+    test('keeps every parameter that follows a # in the name', () => {
+        L_.configData = { time: { enabled: true } }
+        const savedTimes = {
+            startTime: TimeControl.startTime,
+            endTime: TimeControl.endTime,
+            currentTime: TimeControl.currentTime,
+        }
+        TimeControl.currentTime = '2026-08-05T12:00:00Z'
+        L_.Map_.getActiveBasemap = () => ({
+            name: 'Top #1',
+            style: 'https://example.com/top.json',
+        })
+
+        const params = new URL(QueryURL.writeCoordinateURL()).searchParams
+        Object.assign(TimeControl, savedTimes)
+
+        expect(params.get('basemap')).toBe('Top #1')
+        expect(params.get('currentTime')).toBe('2026-08-05T12:00:00Z')
+    })
+
     test('writes no basemap when the mission has none', () => {
         L_.Map_.getActiveBasemap = () => null
 

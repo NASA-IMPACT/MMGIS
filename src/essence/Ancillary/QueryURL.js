@@ -453,11 +453,6 @@ var QueryURL = {
         var urlTools = T_.getToolsUrl()
         if (urlTools !== false) urlAppendage += '&tools=' + urlTools
 
-        //basemap
-        const activeBasemap = L_.Map_?.getActiveBasemap?.()
-        if (activeBasemap?.name)
-            urlAppendage += '&basemap=' + activeBasemap.name
-
         //time
         if (L_.configData.time && L_.configData.time.enabled === true) {
             // If the time UI is in the Range mode, then we have a start time
@@ -478,6 +473,13 @@ var QueryURL = {
         }
 
         var url = encodeURI(urlAppendage)
+
+        //basemap
+        // encodeURI leaves & and # alone, so the name is encoded on its own
+        // and added after it.
+        const activeBasemap = L_.Map_?.getActiveBasemap?.()
+        if (activeBasemap?.name)
+            url += '&basemap=' + encodeURIComponent(activeBasemap.name)
 
         return window.location.href.split('?')[0] + url
     },
