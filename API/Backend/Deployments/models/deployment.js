@@ -74,6 +74,14 @@ var Deployments = sequelize.define(
 
 Deployments.STATUS = STATUS;
 
+// A dashboard's own password (`settings.auth.password`) never leaves the
+// server: every response serializes the row through this.
+Deployments.prototype.toJSON = function () {
+  const json = Sequelize.Model.prototype.toJSON.call(this);
+  if (json.settings && json.settings.auth) delete json.settings.auth.password;
+  return json;
+};
+
 // Statuses under which a publish task may be running for the row.
 const IN_FLIGHT_STATUSES = Object.freeze([STATUS.PROVISIONING, STATUS.UPDATING]);
 Deployments.IN_FLIGHT_STATUSES = IN_FLIGHT_STATUSES;

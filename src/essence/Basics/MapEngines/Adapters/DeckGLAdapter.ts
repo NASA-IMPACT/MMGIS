@@ -532,6 +532,13 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._syncLayers()
     }
 
+    // A style that fails to download fires only `error`, never `style.load`.
+    // Any error during a swap ends the wait: the anchor is checked against
+    // the live style on every sync, so at worst one sync re-anchors early.
+    private _onBasemapError = (): void => {
+        if (this._styleSwapping) this._onBasemapLoad()
+    }
+
     /**
      * Create and mount the map inside the element identified by `options.containerId`.
      *
@@ -612,6 +619,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                 this._basemap.off('moveend', this._onBasemapMoveEnd)
                 this._basemap.off('load', this._onBasemapLoad)
                 this._basemap.off('style.load', this._onBasemapLoad)
+                this._basemap.off('error', this._onBasemapError)
                 if (this._overlay) {
                     this._overlay.finalize()
                     this._basemap.removeControl(this._overlay as unknown as object)
@@ -679,6 +687,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     setBasemapStyle(styleUrl: string): boolean {
         if (!this._basemap) return false
+        // maplibre diffs the new style against the current one and fires
+        // nothing when nothing changed, so the swap would never end.
+        if (styleUrl === this._basemapStyle) return true
         this.disableDrawing()
         // The label anchor names a layer of the outgoing style; push the
         // layers unanchored before the swap, and anchor again on load.
@@ -2387,6 +2398,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         // `load` fires once; `style.load` on every style, so a basemap
         // switch re-anchors the layers on the new style's labels.
         this._basemap.on('style.load', this._onBasemapLoad)
+        this._basemap.on('error', this._onBasemapError)
     }
 
     /**

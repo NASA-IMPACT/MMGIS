@@ -9,7 +9,7 @@ import TimeUI from './TimeUI'
 import { parseTimeWithOffset, parseTimeToSeconds } from './timeUtils'
 import { evaluateLayerDataCoverage } from './layerDataCoverage'
 import { leadAt } from './layerRunSource'
-import { layerRequestWindow } from './layerTimePolicy'
+import { layerRequestWindow, takesPeriodWindow } from './layerTimePolicy'
 import { formatLayerTime, buildTileUrlOptions } from '../Layers_/tileUrlUtils'
 import { resolveTileLayerSource } from '../Layers_/tileLayerSource'
 import { isRasterTileLayerType } from '../MapEngines/types/engine'
@@ -253,13 +253,32 @@ var TimeControl = {
             }
         }
 
+        // A deep-linked cursor is honored only inside the window; outside it
+        // the cursor sits at the end, as it does with no deep link at all.
+        let initialCurrent = initialEnd
+        if (L_.FUTURES.currentTime != null) {
+            const cursor = new Date(L_.FUTURES.currentTime.valueOf())
+            if (
+                !isNaN(cursor.getTime()) &&
+                cursor.getTime() >= initialStart.getTime() &&
+                cursor.getTime() <= initialEnd.getTime()
+            ) {
+                initialCurrent = cursor
+            } else {
+                console.warn(
+                    'Deep-linked currentTime is outside the time window. Defaulting to the end time.'
+                )
+                L_.FUTURES.currentTime = null
+            }
+        }
+
         // Seed TimeControl state (start/end/current) and notify subscribers.
         // Do NOT reload here: Map_.init() runs after TimeControl.init(), so
         // time-enabled layers aren't on the map yet — reloading now is a no-op.
         timeInputChange(
             initialStart.toISOString(),
             initialEnd.toISOString(),
-            initialEnd.toISOString(),
+            initialCurrent.toISOString(),
             true
         )
 
@@ -951,27 +970,30 @@ var TimeControl = {
 
 /**
  * Writes the window a layer requests into `layer.time.start/end`, which the
- * tile URL builders read. A raster tile layer with a periodic
- * `time.interval` gets the one period holding the cursor
+ * tile URL builders, the `{starttime}`/`{endtime}` substitution and the
+ * local vector filter read. A layer that takes periods (takesPeriodWindow)
+ * with a periodic `time.interval` gets the one period holding the cursor
  * (layerRequestWindow); every other layer gets `[windowStart, cursor]`.
  */
 function stampLayerWindow(layer, windowStart, cursor) {
-    const requested = isRasterTileLayerType(layer)
+    const requested = takesPeriodWindow(layer)
         ? layerRequestWindow(layer.time, windowStart, cursor)
         : { start: windowStart, end: cursor }
     layer.time.start = requested.start
     layer.time.end = requested.end
 }
 
-// The window layers are first stamped with: a deep link's start/end when
-// present, else the Time Control's start/end.
+// The window layers are first stamped with: a deep link's start and cursor
+// when present, else the Time Control's start/end.
 function initialLayerWindow() {
     const start = L_.FUTURES.startTime
         ? L_.FUTURES.startTime.toISOString().split('.')[0] + 'Z'
         : TimeControl.startTime
-    const end = L_.FUTURES.endTime
-        ? L_.FUTURES.endTime.toISOString().split('.')[0] + 'Z'
-        : TimeControl.endTime
+    const end = L_.FUTURES.currentTime
+        ? L_.FUTURES.currentTime.toISOString().split('.')[0] + 'Z'
+        : L_.FUTURES.endTime
+          ? L_.FUTURES.endTime.toISOString().split('.')[0] + 'Z'
+          : TimeControl.endTime
     return [start, end]
 }
 

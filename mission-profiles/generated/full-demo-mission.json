@@ -195,7 +195,8 @@
         },
         "panelTools": [
           "AOI",
-          "Chart"
+          "Chart",
+          "SeriesChart"
         ],
         "id": "float-analysis",
         "dimensions": {
@@ -316,9 +317,11 @@
       },
       "metadata": {
         "icon": "information-variant",
-        "requiredOrientation": "horizontal",
+        "requiredOrientation": "any",
         "compatiblePositions": [
-          "top"
+          "top",
+          "left",
+          "right"
         ],
         "preferredPosition": "top",
         "modernLayoutSupport": true,
@@ -390,6 +393,26 @@
       }
     },
     {
+      "name": "SeriesChart",
+      "icon": "chart-line",
+      "js": "SeriesChartTool",
+      "on": true,
+      "variables": {
+        "sources": [
+          "fetch-timeseries"
+        ],
+        "layout": "dropdown"
+      },
+      "metadata": {
+        "icon": "chart-line",
+        "preferredPosition": "right",
+        "modernLayoutSupport": true,
+        "width": 400,
+        "height": 0,
+        "startHidden": true
+      }
+    },
+    {
       "name": "FeaturePopup",
       "js": "FeaturePopupTool",
       "on": true,
@@ -400,6 +423,19 @@
       "js": "FetchStatsTool",
       "on": true,
       "variables": {}
+    },
+    {
+      "name": "FetchTimeseries",
+      "js": "FetchTimeseriesTool",
+      "on": true,
+      "variables": {},
+      "metadata": {
+        "icon": "calendar-range",
+        "startHidden": true,
+        "modernLayoutSupport": true,
+        "width": 400,
+        "height": 0
+      }
     },
     {
       "name": "LayerFilter",

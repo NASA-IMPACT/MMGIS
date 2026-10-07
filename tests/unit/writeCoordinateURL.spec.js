@@ -16,6 +16,7 @@ vi.mock('../../src/pre/capabilities', () => ({
 
 import QueryURL from '../../src/essence/Ancillary/QueryURL'
 import L_ from '../../src/essence/Basics/Layers_/Layers_'
+import TimeControl from '../../src/essence/Basics/TimeControl_/TimeControl'
 import T_ from '../../src/essence/Basics/ToolController_/ToolController_'
 import calls from '../../src/pre/calls'
 import { isStaticBuild } from '../../src/pre/capabilities'
@@ -99,6 +100,48 @@ test.describe('QueryURL.writeCoordinateURL (issue #143)', () => {
             url = QueryURL.writeCoordinateURL()
         }).not.toThrow()
         expect(url).toContain('panePercents=0,100,0')
+    })
+})
+
+// The share link carries the Time Control window as startTime/endTime and the
+// cursor as currentTime, so a link opened later lands the scrubber where it
+// was, not at the window's end.
+test.describe('QueryURL.writeCoordinateURL time cursor', () => {
+    let savedTimes
+
+    beforeEach(() => {
+        savedTimes = {
+            startTime: TimeControl.startTime,
+            endTime: TimeControl.endTime,
+            currentTime: TimeControl.currentTime,
+        }
+        L_.UserInterface_ = {}
+        TimeControl.startTime = '2026-07-20T00:00:00Z'
+        TimeControl.endTime = '2026-08-20T00:00:00Z'
+        TimeControl.currentTime = '2026-08-05T12:00:00Z'
+    })
+
+    afterEach(() => {
+        Object.assign(TimeControl, savedTimes)
+    })
+
+    test('carries the cursor as currentTime beside the window', () => {
+        L_.configData = { time: { enabled: true } }
+
+        const url = QueryURL.writeCoordinateURL()
+
+        expect(url).toContain('&startTime=2026-07-20T00:00:00Z')
+        expect(url).toContain('&endTime=2026-08-20T00:00:00Z')
+        expect(url).toContain('&currentTime=2026-08-05T12:00:00Z')
+    })
+
+    test('writes no time at all when the mission has time disabled', () => {
+        L_.configData = { time: { enabled: false } }
+
+        const url = QueryURL.writeCoordinateURL()
+
+        expect(url).not.toContain('currentTime=')
+        expect(url).not.toContain('endTime=')
     })
 })
 

@@ -1711,6 +1711,58 @@ test.describe('DeckGLAdapter', () => {
             })
         })
 
+        // maplibre diffs a new style against the current one and announces
+        // nothing when nothing changed, and only an error when the style
+        // could not be fetched; neither fires style.load.
+        test('re-picking the active style swaps nothing and keeps the anchor', () => {
+            const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
+            const map = adapter._basemap
+            map.getLayer = (id) => ({ id })
+            map.setStyle = vi.fn()
+            map.getStyle = () => ({
+                layers: [{ id: 'water', type: 'fill' }, { id: 'place-labels', type: 'symbol' }],
+            })
+            adapter._overlay.setProps = vi.fn()
+            const anchors = () =>
+                adapter._overlay.setProps.mock.calls.at(-1)[0].layers.map((l) => l.beforeId)
+
+            adapter.addLayer(makeLayer('raster'))
+            expect(adapter.setBasemapStyle(MAPLIBRE_BASEMAP.style)).toBe(true)
+            expect(map.setStyle).not.toHaveBeenCalled()
+            expect(anchors()).toEqual(['place-labels'])
+        })
+
+        test('a style that fails to download ends the swap', () => {
+            const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
+            const map = adapter._basemap
+            map.getLayer = (id) => ({ id })
+            map.setStyle = vi.fn()
+            map.getStyle = () => ({
+                layers: [{ id: 'water', type: 'fill' }, { id: 'place-labels', type: 'symbol' }],
+            })
+            adapter._overlay.setProps = vi.fn()
+            const anchors = () =>
+                adapter._overlay.setProps.mock.calls.at(-1)[0].layers.map((l) => l.beforeId)
+
+            adapter.addLayer(makeLayer('raster'))
+            adapter.setBasemapStyle('https://example.com/missing.json')
+            expect(anchors()).toEqual([undefined])
+
+            map._on.filter(([type]) => type === 'error').forEach(([, handler]) => handler())
+            expect(anchors()).toEqual(['place-labels'])
+        })
+
+        test('an error outside a swap changes nothing', () => {
+            const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
+            const map = adapter._basemap
+            adapter._overlay.setProps = vi.fn()
+            adapter.addLayer(makeLayer('raster'))
+            const calls = adapter._overlay.setProps.mock.calls.length
+
+            map._on.filter(([type]) => type === 'error').forEach(([, handler]) => handler())
+            expect(adapter._overlay.setProps.mock.calls.length).toBe(calls)
+        })
+
         for (const [mode, basemap] of [
             ['standalone', null],
             ['overlay', MAPLIBRE_BASEMAP],

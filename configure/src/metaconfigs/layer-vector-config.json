@@ -522,7 +522,7 @@
             {
               "field": "time.interval",
               "name": "Data Time Interval",
-              "description": "How often new data is added, as an ISO 8601 duration (e.g., P1D for daily, P7D for weekly, P1M for monthly). When set, the data end time snaps back to the most recent date that actually has data. Leave empty for continuous or irregular data. An unreadable value is ignored. When a Time Extent URL is set below and its path finds a value, that value is used instead and this one is the fallback.",
+              "description": "How often new data is added, as an ISO 8601 duration (e.g., P1D for daily, P7D for weekly, P1M for monthly). When set, the data end time snaps back to the most recent date that actually has data. An interval of an hour or more also limits the layer to the one period holding the current time: requery fills {starttime}/{endtime} with that period, and local keeps only that period's features (requires an End Time Property). Leave empty for continuous or irregular data. An unreadable value is ignored. When a Time Extent URL is set below and its path finds a value, that value is used instead and this one is the fallback.",
               "type": "text",
               "width": 4
             },
@@ -567,6 +567,75 @@
               "description": "Where in the response the list of times with data is, as a dotted path naming a list, e.g. summaries.datetime. Each entry is an ISO 8601 date or datetime, or milliseconds since 1970. Leave empty to keep Data Dates.",
               "type": "text",
               "width": 3
+            }
+          ]
+        },
+        {
+          "name": "Timeseries",
+          "components": [
+            {
+              "field": "variables.timeseries.url",
+              "name": "Timeseries URL",
+              "description": "Where a clicked feature's time series is fetched from, read by the FetchTimeseries plugin and charted by SeriesChart. Leave empty to turn this off. Write the feature's values into the URL as placeholders: '{properties.<key>}' (dot notation reaches nested ones), '{lon}' and '{lat}' (the feature's point, or the click location for features without geometry), '{id}' when the source data carries feature ids, and '{start}' and '{end}' (the Start and End instants picked on the Timeseries card, YYYY-MM-DDTHH:MM:SS in UTC) written in whatever range syntax the service takes, e.g. datetime={start}Z/{end}Z. Values are URL-encoded. Trigger it from the Feature Popup (Interface tab): add a Card Action whose Event Name is 'plugin:fetch-timeseries:fetch'.",
+              "type": "text",
+              "width": 12
+            },
+            {
+              "field": "variables.timeseries.titleProp",
+              "name": "Title Property",
+              "description": "The feature property used as the chart's title, e.g. 'local_site_name'. Leave empty to use the feature's 'name', then 'title', then its id, then the layer name.",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "variables.timeseries.groupBy",
+              "name": "Split Series By",
+              "description": "A property of each returned point whose distinct values become one series each, e.g. 'parameter' for one line per measured pollutant. Leave empty for a single series.",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "variables.timeseries.unitKey",
+              "name": "Unit Property",
+              "description": "A property of each returned point holding its unit, e.g. 'units_of_measure'. Shown in the chart's footer next to the variable name.",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "variables.timeseries.seriesPath",
+              "name": "Points Path",
+              "description": "Where the list of points sits in the response when the response is an object, in dot notation. Default 'features', the GeoJSON FeatureCollection an OGC features API returns. Ignored when the response is itself a list.",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "variables.timeseries.xKey",
+              "name": "Time Property",
+              "description": "The property of each point holding its time, an ISO datetime or epoch milliseconds. Default 'datetime'. Found at the point's top level or under its 'properties'.",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "variables.timeseries.yKey",
+              "name": "Value Property",
+              "description": "The property of each point holding the number to chart. Default 'value'. Numbers written as text are read as numbers.",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "variables.timeseries.defaultSpan",
+              "name": "Default Range",
+              "description": "How far back from the latest data the card's range starts when it opens. The viewer can widen or narrow it afterwards. Default '1 year'.",
+              "type": "dropdown",
+              "width": 4,
+              "default": "1 year",
+              "options": [
+                "1 hour",
+                "1 day",
+                "1 week",
+                "1 month",
+                "1 year"
+              ]
             }
           ]
         }

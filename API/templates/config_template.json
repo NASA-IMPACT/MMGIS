@@ -150,9 +150,11 @@
       },
       "metadata": {
         "icon": "information-variant",
-        "requiredOrientation": "horizontal",
+        "requiredOrientation": "any",
         "compatiblePositions": [
-          "top"
+          "top",
+          "left",
+          "right"
         ],
         "preferredPosition": "top",
         "modernLayoutSupport": true,

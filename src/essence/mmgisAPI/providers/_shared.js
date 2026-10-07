@@ -32,3 +32,20 @@ export const withStateIn = (allowed, fn) => (owner, id, payload) => {
         ? fn(owner, id, state)
         : { ok: false, reason: 'bad-request' }
 }
+
+let warnedUncloneable = false
+
+// A copy of core state for a provider to answer with, so a plugin writing to
+// the answer cannot change core. A value that will not clone goes out as JSON
+// rather than failing the request.
+export const detached = (value) => {
+    try {
+        return structuredClone(value)
+    } catch (err) {
+        if (!warnedUncloneable) {
+            warnedUncloneable = true
+            console.warn('[mmgisAPI] answer could not be cloned; copied as JSON', err)
+        }
+        return JSON.parse(JSON.stringify(value))
+    }
+}

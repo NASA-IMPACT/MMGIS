@@ -457,6 +457,32 @@ describe('LayerTimeline divisions and edges', () => {
         expect(container.querySelector('.layer-time-divisions')).toBeNull()
     })
 
+    test('divides a daily layer with no start of its own on core\'s anchor', () => {
+        const xScale = scaleOver('2020-03-01T00:00:00Z', '2020-03-15T00:00:00Z')
+        render(
+            periodic({
+                enabled: true,
+                dataEndTime: '2020-03-08T00:00:00Z',
+                interval: 'P1D',
+                periodAnchor: '1970-01-01T00:00:00Z',
+            }),
+            xScale
+        )
+
+        // Every day on the chart, the one the left margin shows included;
+        // the bar's own end is not a division.
+        expect(divisions(xScale)).toEqual([
+            '2020-02-29',
+            '2020-03-01',
+            '2020-03-02',
+            '2020-03-03',
+            '2020-03-04',
+            '2020-03-05',
+            '2020-03-06',
+            '2020-03-07',
+        ])
+    })
+
     test('draws a layer with no interval as one solid bar', () => {
         const xScale = scaleOver('2020-03-01T00:00:00Z', '2020-03-15T00:00:00Z')
         render(

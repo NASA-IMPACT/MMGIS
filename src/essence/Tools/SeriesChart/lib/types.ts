@@ -1,0 +1,23 @@
+// Presentation-side state for the SeriesChart panel. Framework-agnostic — the
+// only import is the shared series contract (types only).
+
+import type { ChartSeriesPayload } from '../../_shared/types/chartSeries'
+
+/** How the variable picker renders when a payload carries several: a
+ *  dropdown for a narrow side panel, a row of buttons above the chart for a
+ *  wide bottom panel. One variable shows at a time either way. */
+export type ChartLayout = 'dropdown' | 'list'
+
+/** One chart slot: the latest payload that named this chartId. */
+export interface ChartCard {
+    chartId: string
+    payload: ChartSeriesPayload
+}
+
+/** Colors resolved from the page theme (CSS custom properties). */
+export interface ChartTheme {
+    /** Series colors, cycled when a series declares no color of its own. */
+    palette: string[]
+    gridColor: string
+    textColor: string
+}
