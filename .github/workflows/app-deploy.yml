@@ -205,19 +205,26 @@ jobs:
       # primary container at the new image and AWS rolls it out.
       # (`update-service --task-definition` does not apply to them.)
       #
-      # Progress is polled with `describe-express-gateway-service` —
-      # `monitor-...` is a live stream meant for a human terminal, while
-      # describe gives CI a bounded loop with a clean exit code.
+      # Progress is polled, not streamed: `monitor-...` is a live stream
+      # meant for a human terminal, while polling gives CI a bounded
+      # loop with a clean exit code. The update starts an ECS service
+      # deployment a few seconds later; we find it with
+      # `list-service-deployments` (created after the update was sent)
+      # and poll its own status with `describe-service-deployments`.
+      # An update that changes nothing (same image) starts no deployment,
+      # so if none appears we pass only when the service already runs
+      # just the new image.
       #
-      # How we know it's DONE: the API has no rolloutState field. A
-      # rollout is complete when statusCode is ACTIVE and every entry in
-      # activeConfigurations[] runs the new image — old and new are
-      # listed side by side until the old one drains away.
+      # How we know it's DONE: status is SUCCESSFUL. ECS sets it once
+      # the new tasks are healthy, before the old configuration has
+      # finished draining, so we don't wait out the drain.
       #
-      # How we know it FAILED: we can't, directly — statusCode is only
-      # ever ACTIVE | DRAINING | INACTIVE, never "failed". A rollout
-      # that can't converge simply never finishes, so the timeout below
-      # is the failure detector, not any status check.
+      # How we know it FAILED: status is STOPPED or one of the
+      # ROLLBACK_* values (e.g. the circuit breaker rolled back to the
+      # old image), or a describe call is denied. The step exits 1 and
+      # prints the status and reason.
+      # The timeout below only catches a deployment that never
+      # finishes either way.
       - name: Roll the Express Mode gateway service
         env:
           ECS_CLUSTER: ${{ inputs.ecs_cluster }}
@@ -236,6 +243,9 @@ jobs:
             --output text)
           echo "Resolved $ECS_SERVICE -> $SERVICE_ARN"
 
+          # 30 s back absorbs runner clock skew; per-env concurrency means any deployment since then is this update's.
+          T0=$(date -u -d '30 seconds ago' +%Y-%m-%dT%H:%M:%SZ)
+
           # No --cluster here: current CLIs removed it from
           # update-express-gateway-service (the service ARN fully
           # qualifies the target).
@@ -243,33 +253,79 @@ jobs:
             --service-arn "$SERVICE_ARN" \
             --primary-container "{\"image\": \"$IMAGE_URI\"}"
 
-          # Bounded poll (up to 20 minutes) until the rollout converges:
-          # the service is ACTIVE and the target image is the only one
-          # across the active configurations.
-          IMAGES="(unknown)"
+          # ECS creates the deployment a few seconds after the update.
+          DEP=""
+          for attempt in $(seq 1 12); do
+            CUR=$(aws ecs list-service-deployments \
+              --cluster "$ECS_CLUSTER" \
+              --service "$ECS_SERVICE" \
+              --created-at after="$T0" \
+              --query 'sort_by(serviceDeployments,&createdAt)[-1].serviceDeploymentArn' \
+              --output text) || CUR=""
+            if [ -n "$CUR" ] && [ "$CUR" != "None" ]; then
+              DEP="$CUR"
+              break
+            fi
+            sleep 5
+          done
+          if [ -z "$DEP" ]; then
+            # No deployment: fine only if the service already runs just
+            # this image (e.g. a re-run of the same commit).
+            RESPONSE=$(aws ecs describe-express-gateway-service \
+              --service-arn "$SERVICE_ARN" \
+              --output json)
+            STATUS=$(echo "$RESPONSE" | jq -r '.service.status.statusCode')
+            IMAGES=$(echo "$RESPONSE" \
+              | jq -r '[.service.activeConfigurations[]?.primaryContainer.image]
+                       | unique | join(", ")')
+            if [ "$STATUS" = "ACTIVE" ] && [ "$IMAGES" = "$IMAGE_URI" ]; then
+              echo "No new deployment; already serving $IMAGE_URI; nothing to roll."
+              exit 0
+            fi
+            echo "No new deployment appeared after the update (status: $STATUS; active images: $IMAGES)" >&2
+            exit 1
+          fi
+          echo "Polling deployment $DEP"
+
+          # Bounded poll (up to 20 minutes) on the deployment's status.
+          STATUS="(unknown)"
+          ERR_FILE=$(mktemp)
           for attempt in $(seq 1 80); do
             # A transient describe failure should cost one attempt, not
-            # the whole rollout step.
-            if ! RESPONSE=$(aws ecs describe-express-gateway-service \
-              --service-arn "$SERVICE_ARN" \
-              --output json); then
+            # the whole rollout step; a permissions error never clears.
+            if ! RESULT=$(aws ecs describe-service-deployments \
+              --service-deployment-arns "$DEP" \
+              --query 'serviceDeployments[0].[status,statusReason]' \
+              --output text 2>"$ERR_FILE"); then
+              cat "$ERR_FILE" >&2
+              if grep -qE 'AccessDenied|UnauthorizedOperation|InvalidParameterException' "$ERR_FILE"; then
+                echo "Describe failed with a non-retryable error; failing now." >&2
+                exit 1
+              fi
               echo "[$attempt/80] describe failed; retrying" >&2
               sleep 15
               continue
             fi
-            STATUS=$(echo "$RESPONSE" \
-              | jq -r '.service.status.statusCode')
-            IMAGES=$(echo "$RESPONSE" \
-              | jq -r '[.service.activeConfigurations[]?.primaryContainer.image]
-                       | unique | join(", ")')
-            echo "[$attempt/80] status: $STATUS; active images: $IMAGES"
-            if [ "$STATUS" = "ACTIVE" ] && [ "$IMAGES" = "$IMAGE_URI" ]; then
-              echo "Rollout converged on $IMAGE_URI."
-              exit 0
-            fi
+            IFS=$'\t' read -r STATUS REASON <<< "$RESULT"
+            [ "$REASON" = "None" ] && REASON="" || REASON=" ($REASON)"
+            echo "[$attempt/80] deployment status: $STATUS"
+            case "$STATUS" in
+              SUCCESSFUL)
+                echo "Deployment succeeded on $IMAGE_URI."
+                exit 0
+                ;;
+              STOPPED|ROLLBACK_REQUESTED|ROLLBACK_IN_PROGRESS|ROLLBACK_SUCCESSFUL|ROLLBACK_FAILED)
+                echo "Deployment failed: $STATUS$REASON" >&2
+                exit 1
+                ;;
+              None)
+                echo "Deployment $DEP not found." >&2
+                exit 1
+                ;;
+            esac
             sleep 15
           done
-          echo "Rollout did not converge within 20 minutes; still serving: $IMAGES" >&2
+          echo "Deployment did not finish within 20 minutes; last status: $STATUS" >&2
           exit 1
 
       # Surface what this deploy shipped in the run summary. Runs even when
