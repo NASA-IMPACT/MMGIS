@@ -1,7 +1,10 @@
 import React from 'react'
 import { useCallback, useState } from 'react'
 import { Title } from './lib'
-import { mmgisRequest } from '../_shared/adapters/mmgisAPI'
+import {
+    mmgisGetMissionPath,
+    mmgisRequest,
+} from '../_shared/adapters/mmgisAPI'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 import { resolveAction } from '../_shared/actions/resolveAction'
 import { resolveMissionAssetUrl } from '../_shared/content/uploadKey'
@@ -65,7 +68,7 @@ export function MMGISTitleAdapter() {
             const [branding, vars, missionPath] = await Promise.all([
                 mmgisRequest<Branding>('app:getBranding'),
                 mmgisRequest<TitleToolVars>('tool:getVars', PLUGIN_ID),
-                mmgisRequest<string>('app:getMissionPath'),
+                mmgisGetMissionPath().catch(() => null),
             ])
             const b = branding || {}
             const v = vars || {}
