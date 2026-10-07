@@ -22,6 +22,19 @@
         gap: var(--theme-spacing-105, 0.75rem);
         flex: 0 0 auto;
         min-width: 0;
+
+        &--link {
+            border-radius: var(--theme-radius-sm, 0.25rem);
+            color: inherit;
+            text-decoration: none;
+            cursor: pointer;
+
+            &:focus-visible {
+                outline: var(--theme-border-width-md, 2px) solid
+                    var(--theme-color-accent-cool, var(--color-a));
+                outline-offset: var(--theme-spacing-05, 0.25rem);
+            }
+        }
     }
 
     &__logo {
@@ -38,22 +51,6 @@
         width: auto;
         max-height: 3.25rem;
         object-fit: contain;
-    }
-
-    &__logo-link {
-        display: flex;
-        align-items: center;
-        align-self: stretch;
-        border-radius: var(--theme-radius-sm, 0.25rem);
-        color: inherit;
-        text-decoration: none;
-        cursor: pointer;
-
-        &:focus-visible {
-            outline: var(--theme-border-width-md, 2px) solid
-                var(--theme-color-accent-cool, var(--color-a));
-            outline-offset: var(--theme-spacing-05, 0.25rem);
-        }
     }
 
     &__icon {

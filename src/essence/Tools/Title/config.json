@@ -60,7 +60,7 @@
                     {
                         "field": "variables.logoLink",
                         "name": "Logo Link",
-                        "description": "An external http(s) URL opened in a new tab when the logo/icon is clicked. Leave empty to keep the logo unclickable.",
+                        "description": "An external http(s) URL opened in a new tab when the logo/icon or title text is clicked. Leave empty for no link.",
                         "type": "text",
                         "width": 12
                     }
