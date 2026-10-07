@@ -9,7 +9,7 @@ import { faviconHref } from './Favicon'
 export function stylize() {
     if (L_.configData.look) {
         if (L_.configData.look.pagename && L_.configData.look.pagename != '')
-            document.title = L_.configData.look.pagename + ' - ' + L_.mission
+            document.title = L_.configData.look.pagename
 
         const r = document.querySelector(':root')
 
