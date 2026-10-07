@@ -299,7 +299,7 @@ jobs:
               --output text 2>"$ERR_FILE"); then
               cat "$ERR_FILE" >&2
               if grep -qE 'AccessDenied|UnauthorizedOperation|InvalidParameterException' "$ERR_FILE"; then
-                echo "Not allowed to describe the deployment; failing now." >&2
+                echo "Describe failed with a non-retryable error; failing now." >&2
                 exit 1
               fi
               echo "[$attempt/80] describe failed; retrying" >&2
