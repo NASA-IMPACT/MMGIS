@@ -41,20 +41,6 @@ const adjacentServers = require("../adjacent-servers/adjacent-servers");
 const WebSocket = require("isomorphic-ws");
 
 const chalk = require("chalk");
-const webpack = require("webpack");
-const WebpackDevServer = require("webpack-dev-server");
-const clearConsole = require("react-dev-utils/clearConsole");
-const checkRequiredFiles = require("react-dev-utils/checkRequiredFiles");
-const {
-  choosePort,
-  createCompiler,
-  prepareProxy,
-  prepareUrls,
-} = require("react-dev-utils/WebpackDevServerUtils");
-const openBrowser = require("react-dev-utils/openBrowser");
-const paths = require("../configuration/paths");
-const configFactory = require("../configuration/webpack.config");
-const createDevServerConfig = require("../configuration/webpackDevServer.config");
 
 const middleware = require("./middleware").middleware;
 
@@ -803,6 +789,20 @@ setups.getBackendSetups(function (setups) {
 });
 
 function setupDevServer() {
+  // Dev-only modules (devDependencies) are required here, not at the top of
+  // the file, so production installs (`npm ci --omit=dev`) can boot.
+  const webpack = require("webpack");
+  const WebpackDevServer = require("webpack-dev-server");
+  const clearConsole = require("react-dev-utils/clearConsole");
+  const {
+    createCompiler,
+    prepareProxy,
+    prepareUrls,
+  } = require("react-dev-utils/WebpackDevServerUtils");
+  const paths = require("../configuration/paths");
+  const configFactory = require("../configuration/webpack.config");
+  const createDevServerConfig = require("../configuration/webpackDevServer.config");
+
   const HOST = "localhost";
   const config = configFactory("development");
   const protocol = process.env.HTTPS === "true" ? "https" : "http";

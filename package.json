@@ -99,9 +99,11 @@
     "@uswds/uswds": "^3.13.0",
     "bcryptjs": "^2.4.3",
     "bluebird": "^3.7.2",
+    "body-parser": "^1.20.4",
     "busboy": "1.6",
     "camelcase": "^5.3.1",
     "cesium": "^1.121.0",
+    "chalk": "^2.4.2",
     "chart.js": "^4.4.0",
     "chartjs-plugin-zoom": "^2.2.0",
     "chroma-js": "^1.4.1",
@@ -145,6 +147,7 @@
     "hotkeys-js": "^3.12.0",
     "html2canvas": "^1.4.1",
     "html2pug": "^4.0.0",
+    "http-errors": "^2.0.1",
     "http-proxy-middleware": "^3.0.2",
     "isomorphic-ws": "5.0.0",
     "jquery": "^3.5.1",
@@ -158,9 +161,11 @@
     "materialize-css": "^1.0.0",
     "memorystore": "^1.6.2",
     "mitt": "^3.0.1",
+    "moment": "^2.29.4",
     "nipplejs": "^0.8.5",
     "node-fetch": "^2.6.1",
     "node-schedule": "^2.1.1",
+    "pg": "^8.13.1",
     "pg-promise": "^10.6.1",
     "pixel-utils": "^0.7.0",
     "png-js": "^1.0.0",
@@ -194,6 +199,7 @@
     "util": "^0.12.3",
     "utm-utils": "^0.1.0",
     "uuid": "^9.0.0",
+    "winston": "^3.11.0",
     "ws": "^8.8.1",
     "xml2js": "^0.6.2"
   },
@@ -269,7 +275,6 @@
     "webpack-bundle-analyzer": "^4.5.0",
     "webpack-cli": "^5.1.4",
     "webpack-dev-server": "^4.15.1",
-    "webpack-manifest-plugin": "^5.0.0",
-    "winston": "^3.3.4"
+    "webpack-manifest-plugin": "^5.0.0"
   }
 }
