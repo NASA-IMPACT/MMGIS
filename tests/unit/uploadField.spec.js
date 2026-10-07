@@ -1,36 +1,30 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
-import React, { act } from 'react'
-import { createRoot } from 'react-dom/client'
+// The Configure app is a separate bundle on React 17 with its own MUI, so the
+// field renders with that React rather than the root one.
+import React from '../../configure/node_modules/react'
+import ReactDOM from '../../configure/node_modules/react-dom'
+import { act } from '../../configure/node_modules/react-dom/test-utils'
 import UploadField from '../../configure/src/core/components/UploadField'
-
-// The Configure app's dependencies (MUI, its own React 17) live in
-// configure/node_modules, which the unit run does not install. The field
-// renders with the root React, and vitest.config.ts serves its MUI imports
-// from tests/unit/__mocks__/mui/.
-
-globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 // UploadField is upload-only with a square-cropped preview unless a field
 // opts in: `allowUrl` adds a text box for pasting an image URL, and
 // `previewFit: 'contain'` shows the preview at the image's own aspect ratio.
 describe('UploadField', () => {
     let host
-    let root
 
     beforeEach(() => {
         host = document.createElement('div')
         document.body.appendChild(host)
-        root = createRoot(host)
     })
 
     afterEach(() => {
-        act(() => root.unmount())
+        ReactDOM.unmountComponentAtNode(host)
         host.remove()
     })
 
     const render = (props) =>
         act(() => {
-            root.render(
+            ReactDOM.render(
                 React.createElement(UploadField, {
                     label: 'Logo Image',
                     mission: 'Demo',
@@ -38,6 +32,7 @@ describe('UploadField', () => {
                     base: '/',
                     ...props,
                 }),
+                host,
             )
         })
 
