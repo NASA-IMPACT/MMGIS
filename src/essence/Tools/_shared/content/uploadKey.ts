@@ -12,7 +12,7 @@
 //
 // The Configure app needs the same test for its upload previews, but it is
 // a separate bundle that can't import from this one, so the regex is also
-// written in configure/src/core/upload.js (and src/essence/Ancillary/Favicon.js).
+// written in configure/src/core/upload.js.
 // tests/unit/uploadPreviewSrc.spec.js fails if the copies ever differ.
 const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//
 

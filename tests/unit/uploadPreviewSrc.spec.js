@@ -109,7 +109,6 @@ test.describe('ASSETS_UPLOAD_KEY stays identical across bundles', () => {
     const SOURCES = [
         'configure/src/core/upload.js',
         'src/essence/Tools/_shared/content/uploadKey.ts',
-        'src/essence/Ancillary/Favicon.js',
     ]
 
     test('all sources declare the same regex literal', () => {

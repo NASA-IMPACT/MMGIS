@@ -17,4 +17,16 @@ describe('faviconHref', () => {
     test('is empty when neither is set', () => {
         expect(faviconHref({}, 'Missions/Demo/')).toBe('')
     })
+
+    test('falls back to the logo when the favicon is not a string', () => {
+        const look = { faviconurl: 42, logourl: 'https://x/l.png' }
+        expect(faviconHref(look, 'Missions/Demo/')).toBe('https://x/l.png')
+    })
+
+    test('leaves a lean upload key unprefixed', () => {
+        const look = { faviconurl: 'assets/Demo/Branding/uploads/f.ico' }
+        expect(faviconHref(look, 'Missions/Demo/')).toBe(
+            'assets/Demo/Branding/uploads/f.ico'
+        )
+    })
 })
