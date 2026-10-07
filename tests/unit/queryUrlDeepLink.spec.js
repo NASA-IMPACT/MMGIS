@@ -75,3 +75,29 @@ test.describe('QueryURL.queryURL currentTime', () => {
         expect(L_.FUTURES.endTime.isValid()).toBe(true)
     })
 })
+
+test.describe('QueryURL.queryURL basemap', () => {
+    test('reads the basemap style name into FUTURES', () => {
+        setQuery('mission=Test&basemap=Dark')
+
+        QueryURL.queryURL()
+
+        expect(L_.FUTURES.basemap).toBe('Dark')
+    })
+
+    test('decodes a percent-encoded name', () => {
+        setQuery('mission=Test&basemap=Satellite%20Streets')
+
+        QueryURL.queryURL()
+
+        expect(L_.FUTURES.basemap).toBe('Satellite Streets')
+    })
+
+    test('ignores an empty basemap', () => {
+        setQuery('mission=Test&basemap=')
+
+        QueryURL.queryURL()
+
+        expect(L_.FUTURES.basemap).toBeUndefined()
+    })
+})

@@ -156,6 +156,14 @@ Sets the time cursor (the current time) for the Time Control feature. It must fa
 - _dependencies_: Time Control to be enabled
 - _unset:_ Will default to the end time
 
+### basemap=<br>`<basemap style name>`
+
+Sets the active basemap style by its name, as listed in the mission's `msv.basemap.styles` or the provider's default styles (for example `Dark`). A name that matches no style is ignored with a console warning.
+
+- _form:_ `<string>`
+- _dependencies_: A basemap provider configured for the mission
+- _unset:_ Will default to the mission's configured basemap style
+
 ## Examples
 
 #### General

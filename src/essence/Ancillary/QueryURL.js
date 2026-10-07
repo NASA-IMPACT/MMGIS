@@ -24,6 +24,7 @@ var QueryURL = {
         var urlGlobeCamera = this.getSingleQueryVariable('globeCamera')
         var urlPanePercents = this.getSingleQueryVariable('panePercents')
         var urlToolsObj = this.getSingleQueryVariable('tools')
+        var urlBasemap = this.getSingleQueryVariable('basemap')
 
         var urlCenterPin = this.getSingleQueryVariable('centerPin')
 
@@ -96,6 +97,10 @@ var QueryURL = {
 
         if (urlToolsObj !== false) {
             L_.FUTURES.tools = urlToolsObj.split(',')
+        }
+
+        if (urlBasemap !== false && urlBasemap !== '') {
+            L_.FUTURES.basemap = urlBasemap
         }
 
         if (urlCenterPin !== false) {
@@ -468,6 +473,13 @@ var QueryURL = {
         }
 
         var url = encodeURI(urlAppendage)
+
+        //basemap
+        // encodeURI leaves & and # alone, so the name is encoded on its own
+        // and added after it.
+        const activeBasemap = L_.Map_?.getActiveBasemap?.()
+        if (activeBasemap?.name)
+            url += '&basemap=' + encodeURIComponent(activeBasemap.name)
 
         return window.location.href.split('?')[0] + url
     },

@@ -145,6 +145,76 @@ test.describe('QueryURL.writeCoordinateURL time cursor', () => {
     })
 })
 
+// The share link names the active basemap style, so a link opened later boots
+// on the style that was showing rather than the mission's configured default.
+test.describe('QueryURL.writeCoordinateURL basemap', () => {
+    beforeEach(() => {
+        L_.UserInterface_ = {}
+    })
+
+    test('carries the active basemap style by name', () => {
+        L_.Map_.getActiveBasemap = () => ({
+            name: 'Dark',
+            style: 'mapbox://styles/mapbox/dark-v11',
+        })
+
+        expect(QueryURL.writeCoordinateURL()).toContain('&basemap=Dark')
+    })
+
+    test('percent-encodes a name with spaces', () => {
+        L_.Map_.getActiveBasemap = () => ({
+            name: 'Satellite Streets',
+            style: 'mapbox://styles/mapbox/satellite-streets-v12',
+        })
+
+        expect(QueryURL.writeCoordinateURL()).toContain(
+            '&basemap=Satellite%20Streets'
+        )
+    })
+
+    test('escapes & and # so the whole name survives as one value', () => {
+        L_.Map_.getActiveBasemap = () => ({
+            name: 'Roads & Labels #2',
+            style: 'https://example.com/roads.json',
+        })
+
+        const url = QueryURL.writeCoordinateURL()
+
+        expect(url).toContain('&basemap=Roads%20%26%20Labels%20%232')
+        expect(new URL(url).searchParams.get('basemap')).toBe('Roads & Labels #2')
+    })
+
+    test('keeps every parameter that follows a # in the name', () => {
+        L_.configData = { time: { enabled: true } }
+        const savedTimes = {
+            startTime: TimeControl.startTime,
+            endTime: TimeControl.endTime,
+            currentTime: TimeControl.currentTime,
+        }
+        TimeControl.currentTime = '2026-08-05T12:00:00Z'
+        L_.Map_.getActiveBasemap = () => ({
+            name: 'Top #1',
+            style: 'https://example.com/top.json',
+        })
+
+        const params = new URL(QueryURL.writeCoordinateURL()).searchParams
+        Object.assign(TimeControl, savedTimes)
+
+        expect(params.get('basemap')).toBe('Top #1')
+        expect(params.get('currentTime')).toBe('2026-08-05T12:00:00Z')
+    })
+
+    test('writes no basemap when the mission has none', () => {
+        L_.Map_.getActiveBasemap = () => null
+
+        expect(QueryURL.writeCoordinateURL()).not.toContain('basemap=')
+    })
+
+    test('writes no basemap against a core without the getter', () => {
+        expect(QueryURL.writeCoordinateURL()).not.toContain('basemap=')
+    })
+})
+
 test.describe('QueryURL.getShareURL (issue #143)', () => {
     test('resolves with the long URL without shortening in static builds', async () => {
         vi.mocked(isStaticBuild).mockReturnValue(true)
