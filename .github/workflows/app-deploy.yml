@@ -237,14 +237,19 @@ jobs:
             exit 0
           fi
 
-          # Keep the live max/min percents; the alarm name is the one
-          # Express Mode derives for the service.
+          # Keep the live max/min percents and alarm names (falling back
+          # to the RollbackAlarm name Express Mode derives for the service).
           echo "$BEFORE" | jq \
             --arg ALARM "$ECS_CLUSTER/$ECS_SERVICE/RollbackAlarm" '{
               deploymentCircuitBreaker: {enable: true, rollback: true},
               maximumPercent: .maximumPercent,
               minimumHealthyPercent: .minimumHealthyPercent,
-              alarms: {alarmNames: [$ALARM], enable: true, rollback: true},
+              alarms: {
+                alarmNames: ((.alarms.alarmNames // [])
+                  | if length > 0 then . else [$ALARM] end),
+                enable: true,
+                rollback: true
+              },
               strategy: "ROLLING",
               bakeTimeInMinutes: 0
             }' > /tmp/deployment-configuration.json
