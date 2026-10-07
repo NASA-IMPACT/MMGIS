@@ -20,6 +20,13 @@
  *                       dashboards with no password gate; any other value,
  *                       including unset, gates them. Set per environment by
  *                       Terraform's dashboards_require_auth.
+ *   MMGIS_PUBLISH_PRECOMPRESS - the exact string "false" uploads every file
+ *                       raw; any other value, including unset, brotli-
+ *                       compresses the bundle's text assets at publish and
+ *                       stores them at the same key with Content-Encoding:
+ *                       br (CloudFront never compresses objects over 10 MB,
+ *                       and the vendor chunk is 13 MB). A kill switch, not
+ *                       per-environment configuration.
  *
  * Flow: render the stack template and read the stack, so a missing password
  * or an unusable stack is answered before the long steps → read the mission
@@ -58,6 +65,7 @@ const { applyTimeBakeGuard } = require("./lib/bake-guards");
 
 const DEPLOYMENT_ID = process.env.MMGIS_DEPLOYMENT_ID || process.argv[2];
 const ACTION = process.env.MMGIS_DEPLOYMENT_ACTION || process.argv[3] || "publish";
+const PRECOMPRESS = process.env.MMGIS_PUBLISH_PRECOMPRESS !== "false";
 
 const { requireEnv, UNUSABLE_STACK_STATUSES, unusableStackMessage } = provision;
 
@@ -392,17 +400,21 @@ async function main() {
     // root (the distribution's default root object).
     // Both skipped keys are un-rendered templates whose bodies are still
     // full of `#{…}` placeholders.
+    if (!PRECOMPRESS)
+      log("MMGIS_PUBLISH_PRECOMPRESS=false — uploading every file raw.");
     const uploadedBuild = await provision.uploadDirectory({
       bucket,
       dir: path.join(rootDir, "build"),
       prefix: "build/",
       filter: (key) => key !== "build/index.pug",
+      precompress: PRECOMPRESS,
     });
     const uploadedPublic = await provision.uploadDirectory({
       bucket,
       dir: path.join(rootDir, "public"),
       prefix: "public/",
       filter: (key) => key !== "public/index.html",
+      precompress: PRECOMPRESS,
     });
     await provision.uploadFile({
       bucket,
@@ -424,8 +436,14 @@ async function main() {
     });
     fs.unlinkSync(bakedConfigPath);
     log(
-      `Uploaded ${uploadedBuild} build and ${uploadedPublic} public file(s) to ${bucket}.`
+      `Uploaded ${uploadedBuild.count} build and ${uploadedPublic.count} public file(s) to ${bucket}.`
     );
+    if (PRECOMPRESS)
+      log(
+        `Precompressed ${uploadedBuild.precompressed + uploadedPublic.precompressed} file(s) with brotli: ` +
+          `${uploadedBuild.rawBytes + uploadedPublic.rawBytes} -> ` +
+          `${uploadedBuild.compressedBytes + uploadedPublic.compressedBytes} bytes.`
+      );
 
     // 6.5 Bust the CDN so the refreshed bundle/config/assets serve
     // immediately — the distribution caches aggressively, and only the

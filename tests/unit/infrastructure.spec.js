@@ -293,7 +293,9 @@ test.describe('infrastructure/ recipes (JSON and Terraform)', () => {
         // it to namespace dashboards per environment; the legacy hand-built
         // environment deliberately omits it to keep the original
         // mmgis-dashboard-* names.
-        const OPTIONAL_VARS = ['MMGIS_ENVIRONMENT']
+        // MMGIS_PUBLISH_PRECOMPRESS is a kill switch read by publish-static.js;
+        // unset means on, so no task definition needs to carry it.
+        const OPTIONAL_VARS = ['MMGIS_ENVIRONMENT', 'MMGIS_PUBLISH_PRECOMPRESS']
 
         // Vars only the publish-side code (scripts/publish-static.js and the
         // template renderer it calls) reads. They ride the PUBLISH task
