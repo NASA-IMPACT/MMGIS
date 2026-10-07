@@ -109,7 +109,7 @@ describe('MMGISTitleAdapter logo link', () => {
         expect(host.querySelector('img')).not.toBeNull()
     })
 
-    test.each(['javascript:alert(1)', 'example.com', '/relative/path'])(
+    test.each(['javascript:alert(1)', 'example.com', '/relative/path', 123, true])(
         'ignores the non-http(s) value %s',
         async (logoLink) => {
             const host = await renderTitle({ logoLink })

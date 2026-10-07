@@ -13,8 +13,8 @@ const DEFAULT_ICON = 'mdi mdi-earth mdi-24px'
  * The logo link becomes an anchor href, so anything other than an absolute
  * http(s) URL (e.g. a `javascript:` URL) is dropped rather than rendered.
  */
-const toExternalUrl = (link?: string): string | null => {
-    const trimmed = (link || '').trim()
+const toExternalUrl = (link?: unknown): string | null => {
+    const trimmed = typeof link === 'string' ? link.trim() : ''
     return /^https?:\/\//i.test(trimmed) ? trimmed : null
 }
 
