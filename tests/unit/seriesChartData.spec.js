@@ -4,6 +4,7 @@ import {
     makeTimeTickFormat,
     formatTooltipTime,
     buildChartOption,
+    buildChart,
     seriesToCsv,
 } from '../../src/essence/Tools/SeriesChart/lib/chartData.ts'
 
@@ -103,7 +104,32 @@ describe('seriesChart chartData', () => {
         test('identity lives in the footer, not the plot: unnamed sparse y-axis', () => {
             const opt = card(series({ unit: 'ppm' }))
             expect(opt.yAxis.name).toBeUndefined()
+            expect(opt.graphic).toBeUndefined()
             expect(opt.yAxis.splitNumber).toBe(2)
+        })
+
+        test('only the time axis drives the tooltip, so a series is listed once', () => {
+            expect(card(series()).yAxis.axisPointer.triggerTooltip).toBe(false)
+        })
+
+        test('the plot keeps equal margins on both sides, so it sits centred', () => {
+            const { grid } = card(series({ unit: 'ppm' }))
+            expect(grid.left).toBe(grid.right)
+        })
+
+        test('the tooltip is attached to the page body, out of reach of the panel clipping', () => {
+            expect(card(series()).tooltip.appendTo).toBe('body')
+        })
+
+        test('tooltip values carry the unit, escaped; a gap reads as a dash without it', () => {
+            const fmt = card(series({ unit: '<b>ppm' })).tooltip.formatter
+            const at = Date.parse('2026-01-01T00:00:00Z')
+            expect(fmt([{ marker: '·', seriesName: 'S1', value: [at, 4] }])).toContain(
+                'S1: 4 &lt;b&gt;ppm',
+            )
+            expect(fmt([{ marker: '·', seriesName: 'S1', value: [at, null] }])).toContain(
+                'S1: —',
+            )
         })
 
         test('the palette slot follows the variable index, explicit color wins', () => {
@@ -124,13 +150,11 @@ describe('seriesChart chartData', () => {
             expect(opt.dataZoom.map((z) => z.type)).toEqual(['inside', 'slider'])
         })
 
-        test('time cards format axis, slider labels, and tooltip as UTC', () => {
+        test('time cards format axis and tooltip as UTC', () => {
             const opt = card(series())
             expect(opt.xAxis.type).toBe('time')
             expect(opt.useUTC).toBe(true)
             expect(typeof opt.xAxis.axisLabel.formatter).toBe('function')
-            const slider = opt.dataZoom.find((z) => z.type === 'slider')
-            expect(typeof slider.labelFormatter).toBe('function')
             expect(typeof opt.tooltip.formatter).toBe('function')
             expect(opt.series[0].data[0]).toEqual([
                 Date.parse('2026-01-01T00:00:00Z'),
@@ -181,6 +205,33 @@ describe('seriesChart chartData', () => {
             ])
             expect(html).not.toContain('<img')
             expect(html).toContain('&lt;img src=x onerror=&quot;alert(1)&quot;&gt;: 1')
+        })
+
+        test('the strip shows no hover labels; the window dates are always shown instead', () => {
+            const slider = card(series()).dataZoom.find((z) => z.type === 'slider')
+            expect(slider.showDetail).toBe(false)
+        })
+
+        test('the window dates name the zoomed span, date only across days', () => {
+            const long = series({
+                points: [
+                    { x: '2026-01-01T00:00:00Z', y: 1 },
+                    { x: '2026-01-11T00:00:00Z', y: 2 },
+                ],
+            })
+            const { windowText } = buildChart(long, THEME, 0)
+            expect(windowText(0, 100)).toEqual(['Jan 1, 2026', 'Jan 11, 2026'])
+            expect(windowText(10, 50)).toEqual(['Jan 2, 2026', 'Jan 6, 2026'])
+        })
+
+        test('the window dates carry the clock when the series spans two days or less', () => {
+            const [start] = buildChart(series(), THEME, 0).windowText(50, 100)
+            expect(start).toBe('Jan 1, 2026, 12:00')
+        })
+
+        test('a series with no readable times has no window dates', () => {
+            const empty = series({ points: [{ x: 'not a time', y: 1 }] })
+            expect(buildChart(empty, THEME, 0).windowText(0, 100)).toBeNull()
         })
 
         test('no in-canvas toolbox or legend: the dropdown picks, the strip resets', () => {

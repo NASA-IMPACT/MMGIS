@@ -37,6 +37,40 @@
     margin-bottom: var(--theme-spacing-1, 0.5rem);
 }
 
+.series-chart__title-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--theme-spacing-1, 0.5rem);
+    min-width: 0;
+}
+
+// The Timeline toolbar's icon button.
+.series-chart__info-btn {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 2px;
+    border: none;
+    background: transparent;
+    color: var(--theme-color-primary, #005ea2);
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+
+    &:hover {
+        background: var(--theme-color-primary-lightest, #e6f4f6);
+    }
+
+    &:focus-visible {
+        outline: var(--theme-border-width-md, 2px) solid
+            var(--theme-color-primary, #005ea2);
+        outline-offset: 1px;
+    }
+}
+
 .series-chart__title {
     margin: 0;
     min-width: 0;
@@ -146,10 +180,29 @@
     color: var(--theme-color-white, #ffffff);
 }
 
+.series-chart__canvas-wrap {
+    position: relative;
+    min-width: 0;
+}
+
 .series-chart__canvas {
     position: relative;
     min-width: 0;
     height: 200px;
+}
+
+// The zoom window's start and end dates, at the strip's left and right ends
+// just above it. Placed by the panel from the chart's own layout numbers.
+.series-chart__window {
+    position: absolute;
+    display: flex;
+    justify-content: space-between;
+    gap: var(--theme-spacing-1, 0.5rem);
+    font-size: 10px;
+    line-height: 14px;
+    color: var(--theme-color-base-dark, #565c65);
+    white-space: nowrap;
+    pointer-events: none;
 }
 
 .series-chart__variable-footer {
@@ -162,24 +215,32 @@
 
 .series-chart__variable-chip {
     display: flex;
-    align-items: baseline;
-    flex-wrap: wrap;
-    gap: 0 var(--theme-spacing-05, 0.25rem);
+    align-items: flex-start;
+    gap: var(--theme-spacing-05, 0.25rem);
     min-width: 0;
     font-size: var(--theme-font-size-3xs, 0.75rem);
     font-weight: var(--theme-font-weight-semibold, 600);
+    // Fixed, since the dot below is centred against it.
+    line-height: 1.35;
     color: var(--theme-color-ink, #1b1b1b);
 }
 
+// Centred on the first line of text, which is 1.35em tall.
 .series-chart__variable-dot {
     width: 8px;
     height: 8px;
+    margin-top: calc((1.35em - 8px) / 2);
     border-radius: 50%;
     flex-shrink: 0;
-    align-self: center;
 }
 
+.series-chart__variable-text {
+    min-width: 0;
+}
+
+// On its own line under the name, starting where the name starts.
 .series-chart__variable-unit {
+    display: block;
     font-weight: var(--theme-font-weight-normal, 400);
     color: var(--theme-color-base-dark, #565c65);
 }
@@ -187,16 +248,9 @@
 .series-chart__variable-actions {
     display: flex;
     align-items: baseline;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: var(--theme-spacing-1, 0.5rem);
     min-width: 0;
-}
-
-.series-chart__variable-hint {
-    margin: 0;
-    min-width: 0;
-    font-size: var(--theme-font-size-3xs, 0.75rem);
-    color: var(--theme-color-base-dark, #565c65);
 }
 
 .series-chart__csv-link {
@@ -213,5 +267,48 @@
 
     &:hover {
         text-decoration: underline;
+    }
+}
+
+// The info popover, portalled to document.body like the Timeline's, so it
+// carries its own font rather than inheriting the panel's.
+.series-chart-info-portal {
+    width: 280px;
+    padding: 12px 16px;
+    border-radius: 8px;
+    background: var(--theme-color-primary-dark, #0d313d);
+    box-shadow: 0 4px 16px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
+    font-family: var(--theme-font-ui, 'Public Sans', system-ui, sans-serif);
+    pointer-events: none;
+    animation: series-chart-info-in 0.15s ease;
+
+    @media (prefers-reduced-motion: reduce) {
+        animation: none;
+    }
+}
+
+@keyframes series-chart-info-in {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.series-chart-info-portal__content {
+    strong {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--theme-color-white, #ffffff);
+    }
+
+    p {
+        margin: 0;
+        font-size: 12px;
+        line-height: 1.5;
+        color: var(--theme-color-base-light, #a9aeb1);
     }
 }
