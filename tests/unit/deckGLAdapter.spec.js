@@ -144,7 +144,8 @@ function makeDrawingBasemap() {
     }
     container.getBoundingClientRect = () => bounds
     canvas.getBoundingClientRect = () => bounds
-    const styleLayers = new Set()
+    const styleLayers = []
+    const indexOf = (id) => styleLayers.findIndex((layer) => layer.id === id)
     return {
         getContainer: () => container,
         getCanvas: () => canvas,
@@ -154,12 +155,21 @@ function makeDrawingBasemap() {
         dragPan: { isEnabled: () => true, enable: () => {}, disable: () => {} },
         doubleClickZoom: { enable: () => {}, disable: () => {} },
         addSource: vi.fn(),
-        addLayer: vi.fn((layer) => styleLayers.add(layer.id)),
-        removeLayer: vi.fn((id) => styleLayers.delete(id)),
+        addLayer: vi.fn((layer) => styleLayers.push(layer)),
+        removeLayer: vi.fn((id) => {
+            if (indexOf(id) !== -1) styleLayers.splice(indexOf(id), 1)
+        }),
         removeSource: vi.fn(),
-        getLayer: (id) => (styleLayers.has(id) ? { id } : undefined),
+        getLayer: (id) => styleLayers[indexOf(id)],
+        getStyle: () => ({ layers: [...styleLayers] }),
+        // To the top without a beforeId, as mapbox-gl and maplibre-gl do.
+        moveLayer: vi.fn((id, beforeId) => {
+            const [layer] = styleLayers.splice(indexOf(id), 1)
+            const at = beforeId === undefined ? styleLayers.length : indexOf(beforeId)
+            styleLayers.splice(at, 0, layer)
+        }),
         getSource: () => ({ setData: () => {} }),
-        setStyle: vi.fn(() => styleLayers.clear()),
+        setStyle: vi.fn(() => styleLayers.splice(0)),
         off: vi.fn(),
         removeControl: vi.fn(),
         remove: vi.fn(),
@@ -649,48 +659,117 @@ test.describe('DeckGLAdapter', () => {
             return calls[calls.length - 1][0].layers
         }
 
-        // A style whose first symbol layer is the place names, with the
-        // fills below it, registered so getLayer answers for them.
+        const TEXT = { 'text-field': '{name}' }
+
+        // A style with the place names on top of its fills, registered so
+        // the mock answers getLayer and getStyle for them.
         function withLabelledStyle(adapter, layers = [
             { id: 'water', type: 'fill' },
-            { id: LABELS_ID, type: 'symbol' },
-            { id: 'road-labels', type: 'symbol' },
+            { id: LABELS_ID, type: 'symbol', layout: TEXT },
+            { id: 'road-labels', type: 'symbol', layout: TEXT },
         ]) {
-            adapter._basemap.getStyle = () => ({ layers })
-            layers.forEach((layer) => adapter._basemap.addLayer({ id: layer.id }))
+            layers.forEach((layer) => adapter._basemap.addLayer(layer))
         }
+        const styleOrder = (adapter) => adapter._basemap.getStyle().layers.map((l) => l.id)
 
-        test("every deck layer is inserted below the style's first symbol layer", () => {
+        test("every deck layer is inserted beneath the style's lowest label; labels already on top stay put", () => {
             const adapter = makeOverlayDrawingAdapter()
             withLabelledStyle(adapter)
             adapter.addLayer(makeLayer('raster'))
             adapter.addLayer(makeLayer('vector'))
             expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([LABELS_ID, LABELS_ID])
+            expect(adapter._basemap.moveLayer).not.toHaveBeenCalled()
         })
 
-        test('a label layer drawn before the roads is passed over for the first label above them', () => {
+        test('labels drawn below the roads are lifted above them, in order, and the data goes beneath the first', () => {
             const adapter = makeOverlayDrawingAdapter()
             // Carto Voyager's shape: water names, then the roads, then the
             // place names. Liberty's: an icon layer, then buildings, then text.
             withLabelledStyle(adapter, [
-                { id: 'waterway_label', type: 'symbol', layout: { 'text-field': '{name}' } },
+                { id: 'waterway_label', type: 'symbol', layout: TEXT },
                 { id: 'road_motorway', type: 'line' },
                 { id: 'road_one_way_arrow', type: 'symbol', layout: { 'icon-image': 'arrow' } },
                 { id: 'building', type: 'fill' },
-                { id: 'place_city', type: 'symbol', layout: { 'text-field': '{name}' } },
+                { id: 'place_city', type: 'symbol', layout: TEXT },
             ])
             adapter.addLayer(makeLayer('raster'))
-            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual(['place_city'])
+            expect(adapter._basemap.moveLayer.mock.calls).toEqual([
+                ['waterway_label', undefined],
+                ['place_city', undefined],
+            ])
+            expect(styleOrder(adapter)).toEqual([
+                'road_motorway',
+                'road_one_way_arrow',
+                'building',
+                'waterway_label',
+                'place_city',
+            ])
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual(['waterway_label'])
         })
 
-        test('an icon-only symbol layer above the ground is the anchor when no text label follows', () => {
+        test('a line the style draws above its labels is sunk beneath them', () => {
+            const adapter = makeOverlayDrawingAdapter()
+            // A Mapbox Studio style with a border line placed last, over the names.
+            withLabelledStyle(adapter, [
+                { id: 'land', type: 'background' },
+                { id: 'water', type: 'fill' },
+                { id: 'settlement-label', type: 'symbol', layout: TEXT },
+                { id: 'state-label', type: 'symbol', layout: TEXT },
+                { id: 'country-label', type: 'symbol', layout: TEXT },
+                { id: 'Country Border', type: 'line' },
+            ])
+            adapter.addLayer(makeLayer('raster'))
+            expect(styleOrder(adapter)).toEqual([
+                'land',
+                'water',
+                'Country Border',
+                'settlement-label',
+                'state-label',
+                'country-label',
+            ])
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual(['settlement-label'])
+
+            // The next sync finds the labels on top and moves nothing.
+            const moves = adapter._basemap.moveLayer.mock.calls.length
+            adapter.addLayer(makeLayer('vector'))
+            expect(adapter._basemap.moveLayer.mock.calls.length).toBe(moves)
+            expect(styleOrder(adapter).slice(-3)).toEqual(['settlement-label', 'state-label', 'country-label'])
+        })
+
+        test('an icon-only symbol layer is ground, not a label', () => {
             const adapter = makeOverlayDrawingAdapter()
             withLabelledStyle(adapter, [
                 { id: 'water', type: 'fill' },
                 { id: 'poi_icons', type: 'symbol', layout: { 'icon-image': 'pin' } },
             ])
             adapter.addLayer(makeLayer('raster'))
-            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual(['poi_icons'])
+            expect(adapter._basemap.moveLayer).not.toHaveBeenCalled()
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([undefined])
+        })
+
+        test('a style built on imports takes the middle slot instead of an anchor', () => {
+            const adapter = makeOverlayDrawingAdapter()
+            // Mapbox Standard keeps its labels inside the import, unlisted.
+            adapter._basemap.getStyle = () => ({ imports: [{ id: 'basemap' }], layers: [] })
+            adapter.addLayer(makeLayer('raster'))
+            const [layer] = lastSyncedLayers(adapter)
+            expect(layer.slot).toBe('middle')
+            expect(layer.beforeId).toBeUndefined()
+            expect(adapter._basemap.moveLayer).not.toHaveBeenCalled()
+        })
+
+        test("labels are lifted beneath terra-draw's layers while a shape is drawn", () => {
+            const adapter = makeOverlayDrawingAdapter()
+            withLabelledStyle(adapter, [
+                { id: 'waterway_label', type: 'symbol', layout: TEXT },
+                { id: 'road', type: 'line' },
+            ])
+            // The first sync runs inside enableDrawing, once terra-draw sits on top.
+            adapter.enableDrawing('polygon')
+            expect(adapter._basemap.moveLayer.mock.calls).toEqual([['waterway_label', 'td-polygon']])
+            adapter.addLayer(makeLayer('raster'))
+            expect(styleOrder(adapter).slice(0, 3)).toEqual(['road', 'waterway_label', 'td-polygon'])
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual(['waterway_label'])
         })
 
         test('a style with no symbol layers leaves the deck layers on top, as before', () => {
@@ -730,7 +809,7 @@ test.describe('DeckGLAdapter', () => {
             expect(adapter._overlay.setProps.mock.invocationCallOrder.at(-1)).toBeLessThan(
                 adapter._basemap.setStyle.mock.invocationCallOrder[0]
             )
-            withLabelledStyle(adapter, [{ id: 'land', type: 'fill' }, { id: 'city-names', type: 'symbol' }])
+            withLabelledStyle(adapter, [{ id: 'land', type: 'fill' }, { id: 'city-names', type: 'symbol', layout: TEXT }])
             adapter._onBasemapLoad()
             expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual(['city-names'])
         })
@@ -1545,7 +1624,7 @@ test.describe('DeckGLAdapter', () => {
             map.getLayer = (id) => ({ id })
             map.setStyle = vi.fn()
             map.getStyle = () => ({
-                layers: [{ id: 'water', type: 'fill' }, { id: 'place-labels', type: 'symbol' }],
+                layers: [{ id: 'water', type: 'fill' }, { id: 'place-labels', type: 'symbol', layout: { 'text-field': '{name}' } }],
             })
             adapter._overlay.setProps = vi.fn()
             const anchors = () =>
@@ -1560,7 +1639,7 @@ test.describe('DeckGLAdapter', () => {
             // The new style has its own label layer; the map announces it
             // with style.load, not load, which fired once at start.
             map.getStyle = () => ({
-                layers: [{ id: 'land', type: 'fill' }, { id: 'city-names', type: 'symbol' }],
+                layers: [{ id: 'land', type: 'fill' }, { id: 'city-names', type: 'symbol', layout: { 'text-field': '{name}' } }],
             })
             map._on.filter(([type]) => type === 'style.load').forEach(([, handler]) => handler())
             expect(anchors()).toEqual(['city-names'])
@@ -1614,7 +1693,7 @@ test.describe('DeckGLAdapter', () => {
                 expect(visibility(map)).toEqual([])
 
                 map.getStyle = () => ({
-                    layers: [{ id: 'land', type: 'fill' }, { id: 'city-names', type: 'symbol' }],
+                    layers: [{ id: 'land', type: 'fill' }, { id: 'city-names', type: 'symbol', layout: { 'text-field': '{name}' } }],
                 })
                 fireStyleLoad(map)
                 expect(visibility(map)).toEqual([['city-names', 'none']])
@@ -1720,7 +1799,7 @@ test.describe('DeckGLAdapter', () => {
             map.getLayer = (id) => ({ id })
             map.setStyle = vi.fn()
             map.getStyle = () => ({
-                layers: [{ id: 'water', type: 'fill' }, { id: 'place-labels', type: 'symbol' }],
+                layers: [{ id: 'water', type: 'fill' }, { id: 'place-labels', type: 'symbol', layout: { 'text-field': '{name}' } }],
             })
             adapter._overlay.setProps = vi.fn()
             const anchors = () =>
@@ -1738,7 +1817,7 @@ test.describe('DeckGLAdapter', () => {
             map.getLayer = (id) => ({ id })
             map.setStyle = vi.fn()
             map.getStyle = () => ({
-                layers: [{ id: 'water', type: 'fill' }, { id: 'place-labels', type: 'symbol' }],
+                layers: [{ id: 'water', type: 'fill' }, { id: 'place-labels', type: 'symbol', layout: { 'text-field': '{name}' } }],
             })
             adapter._overlay.setProps = vi.fn()
             const anchors = () =>

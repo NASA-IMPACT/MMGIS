@@ -91,6 +91,18 @@ import {
  * Minimal API surface that is identical between mapbox-gl and maplibre-gl `Map` instances.
  * Defined as a local interface so neither library is a hard compile-time dependency.
  */
+interface BasemapStyleLayer {
+    id: string
+    type: string
+    layout?: Record<string, unknown>
+}
+
+/** A style built on Mapbox Standard lists its `imports`; its labels live inside them, unlisted. */
+interface BasemapStyle {
+    layers?: BasemapStyleLayer[]
+    imports?: unknown[]
+}
+
 interface BasemapInstance {
     /** Attach a deck.gl `MapboxOverlay` (or any IControl) to the map. */
     addControl(control: object): void
@@ -166,11 +178,11 @@ interface BasemapInstance {
     /** Return the style layer with the given id, or `undefined` if it is not in the style. */
     getLayer(id: string): unknown
     /** Return the active style, whose `layers` are in draw order (mapbox-gl + maplibre-gl). */
-    getStyle?():
-        | { layers?: Array<{ id: string; type: string; layout?: Record<string, unknown> }> }
-        | undefined
+    getStyle?(): BasemapStyle | undefined
     /** Set a layout property of a style layer, `visibility` included (mapbox-gl + maplibre-gl). */
     setLayoutProperty?(layerId: string, name: string, value: unknown): unknown
+    /** Move a style layer before `beforeId`, or to the top of the style without one (mapbox-gl + maplibre-gl). */
+    moveLayer?(layerId: string, beforeId?: string): unknown
     /** Return the WebGL canvas element the base map renders into. */
     getCanvas(): HTMLCanvasElement
     /** Schedule a re-render on the next animation frame (mapbox-gl + maplibre-gl). */
@@ -2504,52 +2516,48 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _hiddenLabels = new WeakMap<BasemapInstance, string[]>()
 
     /**
-     * The style layer the deck layers are inserted before, so the basemap's
-     * labels draw over the data (a `map.addLayer` before that id is what the
-     * interleaved overlay does with `beforeId`): the first text label after
-     * the style's last ground layer. Styles differ in how they interleave:
-     * Carto's Voyager names its water before it draws its roads, and
-     * OpenFreeMap's Liberty draws buildings after its one-way arrows, so
-     * "the first symbol layer" would sink the data under the roads in one and
-     * under the buildings in the other. The style spec has one layer type
-     * that writes labels, `symbol`; every other type paints the map, so the
-     * ground ends at the last layer that is not a symbol. A symbol without
-     * text (an icon layer) is taken only when no text label follows. A
-     * terra-draw session registers its own layers at the top of the style,
-     * one of them a symbol, so those are left out of the search. Null when
-     * the style has no labels, while a swap is in flight, or when the id is
-     * not in the style yet, since `addLayer` refuses an anchor it cannot
-     * find.
+     * Labels are always on top. Every text label of the style (a `symbol`
+     * layer with a `text-field`) is moved above the rest of it, in the
+     * style's own order, so the data can sit just beneath the lowest one
+     * whatever order the style was authored in. A terra-draw session keeps
+     * its layers above the labels. Returns the label ids in draw order:
+     * empty while a swap is in flight or when the style has none.
      */
-    private _labelAnchorId(map: BasemapInstance | null): string | null {
-        if (!map || this._styleSwapping) return null
-        const layers = (map.getStyle?.()?.layers ?? []).filter(
-            (layer) => !isTerraDrawLayer(layer.id)
-        )
-        let lastGround = -1
-        layers.forEach((layer, i) => {
-            if (layer.type !== 'symbol') lastGround = i
-        })
-        const above = layers.slice(lastGround + 1)
-        const anchor =
-            above.find((layer) => layer.layout?.['text-field'] != null) ?? above[0]
-        if (!anchor || !map.getLayer(anchor.id)) return null
-        return anchor.id
+    private _liftLabels(map: BasemapInstance | null, style: BasemapStyle | undefined): string[] {
+        if (!map || this._styleSwapping) return []
+        const layers = (style?.layers ?? []).filter((layer) => !isTerraDrawLayer(layer.id))
+        const labels = layers
+            .filter((layer) => layer.type === 'symbol' && layer.layout?.['text-field'] != null)
+            .map((layer) => layer.id)
+        if (labels.length === 0) return []
+        const onTop = layers
+            .slice(-labels.length)
+            .every((layer, i) => layer.id === labels[i])
+        if (!onTop && typeof map.moveLayer === 'function') {
+            const under =
+                this._drawingShape && map.getLayer(TERRA_DRAW_BOTTOM_LAYER_ID)
+                    ? TERRA_DRAW_BOTTOM_LAYER_ID
+                    : undefined
+            for (const id of labels) if (map.getLayer(id)) map.moveLayer(id, under)
+        }
+        return labels.filter((id) => map.getLayer(id))
     }
 
     /**
-     * Return a clone of every deck layer carrying the `beforeId` it should sit
-     * under. Below the basemap's labels when the style has them, which also
-     * keeps a terra-draw session above the data since terra-draw registers at
-     * the top of the style. Failing that, while a session runs, below
-     * terra-draw's bottom-most layer: without an anchor the interleaved
-     * overlay's `resolveLayers()` lifts the deck layers back to the top of the
-     * style on every `styledata` event and buries the in-progress drawing.
-     * The anchor is only applied while its layer is actually in the style.
+     * Return a clone of every deck layer placed beneath the basemap's labels:
+     * the `middle` slot of a style built on Mapbox Standard, otherwise a
+     * `beforeId` on the lowest label. With no label to anchor on, a running
+     * terra-draw session anchors on its own bottom-most layer instead, since
+     * the interleaved overlay lifts unanchored layers back to the top of the
+     * style on every `styledata` and would bury the drawing.
      */
     private _anchorBelowLabels(layers: Layer[], map: BasemapInstance | null): Layer[] {
+        const style = map?.getStyle?.()
+        if (style?.imports?.length) {
+            return layers.map((layer) => layer.clone({ slot: 'middle' } as any))
+        }
         const anchor =
-            this._labelAnchorId(map) ??
+            this._liftLabels(map, style)[0] ??
             (this._drawingShape && map?.getLayer(TERRA_DRAW_BOTTOM_LAYER_ID)
                 ? TERRA_DRAW_BOTTOM_LAYER_ID
                 : null)
