@@ -165,6 +165,10 @@ interface BasemapInstance {
     setStyle(styleUrl: string): unknown
     /** Return the style layer with the given id, or `undefined` if it is not in the style. */
     getLayer(id: string): unknown
+    /** Return the active style, whose `layers` are in draw order (mapbox-gl + maplibre-gl). */
+    getStyle?():
+        | { layers?: Array<{ id: string; type: string; layout?: Record<string, unknown> }> }
+        | undefined
     /** Return the WebGL canvas element the base map renders into. */
     getCanvas(): HTMLCanvasElement
     /** Schedule a re-render on the next animation frame (mapbox-gl + maplibre-gl). */
@@ -519,7 +523,15 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * post-load `setProps`, re-inserting everything buffered in `_layers`.
      */
     private _onBasemapLoad = (): void => {
+        this._styleSwapping = false
         this._syncLayers()
+    }
+
+    // A style that fails to download fires only `error`, never `style.load`.
+    // Any error during a swap ends the wait: the anchor is checked against
+    // the live style on every sync, so at worst one sync re-anchors early.
+    private _onBasemapError = (): void => {
+        if (this._styleSwapping) this._onBasemapLoad()
     }
 
     /**
@@ -601,6 +613,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                 this._basemap.off('move', this._onBasemapMove)
                 this._basemap.off('moveend', this._onBasemapMoveEnd)
                 this._basemap.off('load', this._onBasemapLoad)
+                this._basemap.off('style.load', this._onBasemapLoad)
+                this._basemap.off('error', this._onBasemapError)
                 if (this._overlay) {
                     this._overlay.finalize()
                     this._basemap.removeControl(this._overlay as unknown as object)
@@ -668,7 +682,14 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     setBasemapStyle(styleUrl: string): boolean {
         if (!this._basemap) return false
+        // maplibre diffs the new style against the current one and fires
+        // nothing when nothing changed, so the swap would never end.
+        if (styleUrl === this._basemapStyle) return true
         this.disableDrawing()
+        // The label anchor names a layer of the outgoing style; push the
+        // layers unanchored before the swap, and anchor again on load.
+        this._styleSwapping = true
+        this._syncLayers()
         this._basemap.setStyle(styleUrl)
         this._basemapStyle = styleUrl
         this._sbsPanes?.forEach((pane) => pane.map?.setStyle(styleUrl))
@@ -2133,10 +2154,14 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         map.on('move', onMove)
         map.on('moveend', onMoveEnd)
         map.on('load', onLoad)
+        // `load` fires once; `style.load` on every style, so a swap
+        // re-anchors the pane's layers on the new style's labels.
+        map.on('style.load', onLoad)
         pane.offMap = () => {
             map.off('move', onMove)
             map.off('moveend', onMoveEnd)
             map.off('load', onLoad)
+            map.off('style.load', onLoad)
         }
     }
 
@@ -2181,7 +2206,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /** Send one pane's layer set to whichever surface that pane renders through. */
     private _setPaneLayers(pane: SideBySidePane, layers: Layer[]): void {
-        if (pane.overlay) pane.overlay.setProps({ layers })
+        if (pane.overlay) pane.overlay.setProps({ layers: this._anchorBelowLabels(layers, pane.map) })
         else pane.deck?.setProps({ layers } as any)
     }
 
@@ -2322,6 +2347,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._basemap.on('move', this._onBasemapMove)
         this._basemap.on('moveend', this._onBasemapMoveEnd)
         this._basemap.on('load', this._onBasemapLoad)
+        // `load` fires once; `style.load` on every style, so a basemap
+        // switch re-anchors the layers on the new style's labels.
+        this._basemap.on('style.load', this._onBasemapLoad)
+        this._basemap.on('error', this._onBasemapError)
     }
 
     /**
@@ -2397,30 +2426,64 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                   )
                   .map((layer) => layer.clone({}) as Layer)
         if (this._isOverlayMode) {
-            this._overlay?.setProps({ layers: this._anchorBelowDrawing(layers) })
+            this._overlay?.setProps({ layers: this._anchorBelowLabels(layers, this._basemap) })
         } else {
             this._deckSetProps({ layers })
         }
         if (this._comparisonEnabled) this._renderComparisonLayers()
     }
 
+    /** True from a style swap until the new style has loaded. */
+    private _styleSwapping = false
+
     /**
-     * While a terra-draw session is running, return a clone of every deck
-     * layer carrying a `beforeId` that points at terra-draw's bottom-most
-     * MapLibre layer, which keeps the whole drawing above the deck layers.
-     *
-     * Without that `beforeId`, the interleaved overlay's `resolveLayers()`
-     * lifts the deck layers back to the top of the style on every `styledata`
-     * event and buries the in-progress drawing.
-     *
-     * `resolveLayers()` passes the anchor straight to `map.addLayer`, which
-     * refuses to insert before a layer that is not in the style. So the anchor
-     * is only applied while terra-draw's layers are actually registered.
+     * The style layer the deck layers are inserted before, so the basemap's
+     * labels draw over the data (a `map.addLayer` before that id is what the
+     * interleaved overlay does with `beforeId`): the first text label after
+     * the style's last ground layer. Styles differ in how they interleave:
+     * Carto's Voyager names its water before it draws its roads, and
+     * OpenFreeMap's Liberty draws buildings after its one-way arrows, so
+     * "the first symbol layer" would sink the data under the roads in one and
+     * under the buildings in the other. The style spec has one layer type
+     * that writes labels, `symbol`; every other type paints the map, so the
+     * ground ends at the last layer that is not a symbol. A symbol without
+     * text (an icon layer) is taken only when no text label follows. Null
+     * when the style has no labels, while a swap is in flight, or when the
+     * id is not in the style yet, since `addLayer` refuses an anchor it
+     * cannot find.
      */
-    private _anchorBelowDrawing(layers: Layer[]): Layer[] {
-        if (!this._drawingShape) return layers
-        if (!this._basemap?.getLayer(TERRA_DRAW_BOTTOM_LAYER_ID)) return layers
-        return layers.map((layer) => layer.clone({ beforeId: TERRA_DRAW_BOTTOM_LAYER_ID } as any))
+    private _labelAnchorId(map: BasemapInstance | null): string | null {
+        if (!map || this._styleSwapping) return null
+        const layers = map.getStyle?.()?.layers ?? []
+        let lastGround = -1
+        layers.forEach((layer, i) => {
+            if (layer.type !== 'symbol') lastGround = i
+        })
+        const above = layers.slice(lastGround + 1)
+        const anchor =
+            above.find((layer) => layer.layout?.['text-field'] != null) ?? above[0]
+        if (!anchor || !map.getLayer(anchor.id)) return null
+        return anchor.id
+    }
+
+    /**
+     * Return a clone of every deck layer carrying the `beforeId` it should sit
+     * under. Below the basemap's labels when the style has them, which also
+     * keeps a terra-draw session above the data since terra-draw registers at
+     * the top of the style. Failing that, while a session runs, below
+     * terra-draw's bottom-most layer: without an anchor the interleaved
+     * overlay's `resolveLayers()` lifts the deck layers back to the top of the
+     * style on every `styledata` event and buries the in-progress drawing.
+     * The anchor is only applied while its layer is actually in the style.
+     */
+    private _anchorBelowLabels(layers: Layer[], map: BasemapInstance | null): Layer[] {
+        const anchor =
+            this._labelAnchorId(map) ??
+            (this._drawingShape && map?.getLayer(TERRA_DRAW_BOTTOM_LAYER_ID)
+                ? TERRA_DRAW_BOTTOM_LAYER_ID
+                : null)
+        if (!anchor) return layers
+        return layers.map((layer) => layer.clone({ beforeId: anchor } as any))
     }
 
     /**
