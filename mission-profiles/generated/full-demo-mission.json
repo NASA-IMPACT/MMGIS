@@ -62,6 +62,7 @@
     "fullscreen": true,
     "help": true,
     "logourl": "https://visualization-tool-prototype.netlify.app/nasa-disasters-logo.svg",
+    "faviconurl": "",
     "helpurl": "",
     "mapLogoUrl": "",
     "mapLogoLink": ""

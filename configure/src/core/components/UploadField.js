@@ -1,7 +1,11 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Button from '@mui/material/Button';
+import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { uploadImage, buildPreviewSrc } from '../upload';
+
+const DEFAULT_ACCEPT =
+    'image/png,image/jpeg,image/webp,image/gif,image/svg+xml';
 
 // A generic config field that uploads an image and stores the returned
 // path — mission-relative on disk, or a document-relative
@@ -10,6 +14,14 @@ import { uploadImage, buildPreviewSrc } from '../upload';
 // the upload target folder declared by the field's config (so this field is
 // not tied to any one plugin). On success it calls onChange(path); on
 // failure it calls onError(message) and keeps the old value.
+//
+// Opt-in props:
+//   - `allowUrl` adds a text box holding the stored value, so an image URL
+//     can be pasted instead of uploading. It commits the trimmed text on
+//     blur, and follows `value` when an upload or Clear replaces it.
+//   - `previewFit: 'contain'` draws the preview 48px high at the image's own
+//     aspect ratio; otherwise it is a 48×48 square crop.
+//   - `accept` replaces the file picker's type filter (DEFAULT_ACCEPT).
 export default function UploadField({
     label,
     description,
@@ -18,11 +30,25 @@ export default function UploadField({
     subdir,
     disabled,
     base,
+    accept,
+    allowUrl,
+    previewFit,
     onChange,
     onError,
 }) {
     const inputRef = useRef(null);
     const [uploading, setUploading] = useState(false);
+    const [draft, setDraft] = useState(value || '');
+
+    useEffect(() => {
+        setDraft(value || '');
+    }, [value]);
+
+    const commitDraft = () => {
+        const next = draft.trim();
+        setDraft(next);
+        if (next !== (value || '')) onChange && onChange(next);
+    };
 
     const handleSelect = async (e) => {
         const file = e.target.files && e.target.files[0];
@@ -67,9 +93,13 @@ export default function UploadField({
                         src={previewSrc}
                         alt=""
                         style={{
-                            width: 48,
+                            ...(previewFit === 'contain'
+                                ? { width: 'auto', maxWidth: 192 }
+                                : { width: 48 }),
                             height: 48,
-                            objectFit: 'cover',
+                            objectFit:
+                                previewFit === 'contain' ? 'contain' : 'cover',
+                            flexShrink: 0,
                             border: '1px solid #DFE1E2',
                             borderRadius: 2,
                         }}
@@ -100,10 +130,26 @@ export default function UploadField({
                 <input
                     ref={inputRef}
                     type="file"
-                    accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+                    accept={accept || DEFAULT_ACCEPT}
                     style={{ display: 'none' }}
                     onChange={handleSelect}
                 />
+                {allowUrl ? (
+                    <TextField
+                        size="small"
+                        variant="outlined"
+                        placeholder="or paste an image URL"
+                        disabled={disabled || uploading}
+                        inputProps={{
+                            autoComplete: 'off',
+                            'aria-label': `${label || 'Image'} URL`,
+                        }}
+                        style={{ flex: 1, minWidth: 160 }}
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        onBlur={commitDraft}
+                    />
+                ) : null}
             </div>
             {description ? (
                 <div
