@@ -281,17 +281,26 @@ const UserInterfaceModern_ = {
         panels = panelsArr
         layoutStyle = style
 
-        try {
-            require(`../../../../dist/${theme}.css`)
-            logger.log(`Loaded theme CSS for ${theme}`)
-        } catch (e) {
-            logger.warn(`Failed to load theme CSS for ${theme}. Loading default.`, e)
-            try {
-                require(`../../../../dist/default.css`)
-            } catch (err) {
-                logger.error(`Failed to load default theme CSS.`, err)
-            }
-        }
+        // Dynamic import() so webpack emits one lazy CSS chunk per theme and
+        // only the configured one is fetched (a sync require() here bundled
+        // every dist/*.css into main.css). The fallback goes through the same
+        // template-literal context: a static '../../../../dist/default.css'
+        // path is rejected by webpack's ModuleScopePlugin. Not awaited:
+        // nothing reads theme tokens synchronously at init, and components
+        // carry var(--theme-*, fallback) defaults.
+        const loadThemeCss = (name) =>
+            import(
+                /* webpackChunkName: "theme-[request]", webpackInclude: /[\\/]dist[\\/][^\\/]+\.css$/ */
+                `../../../../dist/${name}.css`
+            )
+        loadThemeCss(theme)
+            .then(() => logger.log(`Loaded theme CSS for ${theme}`))
+            .catch((e) => {
+                logger.warn(`Failed to load theme CSS for ${theme}. Loading default.`, e)
+                return loadThemeCss('default')
+                    .then(() => logger.log('Loaded theme CSS for default'))
+                    .catch((err) => logger.error('Failed to load default theme CSS.', err))
+            })
 
         this.render()
 

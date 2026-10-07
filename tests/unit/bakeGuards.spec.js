@@ -4,10 +4,15 @@ import { test, expect } from 'vitest'
 // a published dashboard has no backend, so config.time.enabled is baked
 // off unless an externally-served time-enabled layer remains.
 
+const fs = require('fs')
+const os = require('os')
+const path = require('path')
+
 const {
     isExternallyServedUrl,
     hasResolvableTimeLayer,
     applyTimeBakeGuard,
+    assertThemeCssPresent,
 } = require('../../scripts/lib/bake-guards')
 
 const timeLayer = (url) => ({
@@ -121,5 +126,29 @@ test.describe('applyTimeBakeGuard', () => {
         const disabled = { time: { enabled: false }, layers: [] }
         applyTimeBakeGuard(disabled)
         expect(disabled.time.enabled).toBe(false)
+    })
+})
+
+test.describe('assertThemeCssPresent', () => {
+    // A fake build/ with only default.css and horizon.css compiled
+    const buildDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mmgis-build-'))
+    fs.mkdirSync(path.join(buildDir, 'dist'))
+    fs.writeFileSync(path.join(buildDir, 'dist', 'default.css'), ':root{}')
+    fs.writeFileSync(path.join(buildDir, 'dist', 'horizon.css'), ':root{}')
+
+    test('passes when build/dist/<msv.theme>.css exists', () => {
+        const config = { msv: { theme: 'horizon' } }
+        expect(assertThemeCssPresent(config, buildDir)).toBe(config)
+    })
+
+    test('falls back to default.css when no theme is configured', () => {
+        expect(() => assertThemeCssPresent({}, buildDir)).not.toThrow()
+        expect(() => assertThemeCssPresent({ msv: {} }, buildDir)).not.toThrow()
+    })
+
+    test('throws naming the theme when its stylesheet is missing', () => {
+        expect(() => assertThemeCssPresent({ msv: { theme: 'air4us' } }, buildDir)).toThrow(
+            /Theme 'air4us' stylesheet not found .*build:themes/
+        )
     })
 })
