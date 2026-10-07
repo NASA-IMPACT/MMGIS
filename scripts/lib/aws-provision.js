@@ -519,21 +519,17 @@ function shouldPrecompress({ key, contentType, size }) {
   );
 }
 
-// Body, length, type (and encoding) for one PutObject. Raw files stream
-// with an explicit ContentLength, which keeps the PUT retryable by the SDK
-// (an unknown-length stream is sent unsigned/non-retryable, so one network
-// blip would fail the whole publish). Precompressed files are a Buffer;
-// one that brotli would not shrink is uploaded raw instead.
+// Body, length, type (and encoding) for one PutObject. Every Body is a
+// Buffer: the SDK retries a Buffer body but treats any stream body as
+// non-retryable, so a streamed PUT that hit a reset socket failed the
+// whole publish. The largest file is ~30 MB, so memory is not a concern.
+// A file that brotli would not shrink is uploaded raw instead.
 async function bodyFieldsFor(filePath, key, precompress) {
   const contentType = contentTypeForFile(filePath);
-  const size = fs.statSync(filePath).size;
-  if (!precompress || !shouldPrecompress({ key, contentType, size }))
-    return {
-      Body: fs.createReadStream(filePath),
-      ContentLength: size,
-      ContentType: contentType,
-    };
   const raw = fs.readFileSync(filePath);
+  const size = raw.length;
+  if (!precompress || !shouldPrecompress({ key, contentType, size }))
+    return { Body: raw, ContentLength: size, ContentType: contentType };
   const br = await brotliCompress(raw, {
     params: {
       ...BROTLI_PARAMS,

@@ -939,20 +939,13 @@ test.describe('shouldPrecompress', () => {
 
 // Runs fn(dir, puts) against a fresh temp directory with an injected S3
 // client that records every command input into `puts`, then resets the client
-// and removes the directory. The mock never reads the body, so a stream's
-// deferred fs.open() is swallowed here — otherwise the cleanup below can race
-// it into an unhandled 'error' event. (A precompressed body is a Buffer and
-// needs no such care.)
+// and removes the directory.
 async function withUploadFixture(fn) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mmgis-upload-'))
     const puts = []
     provision.setClients({
         s3: mockClient((command) => {
             puts.push(command.input)
-            if (command.input.Body && !Buffer.isBuffer(command.input.Body)) {
-                command.input.Body.on('error', () => {})
-                command.input.Body.destroy()
-            }
             return {}
         }),
     })
@@ -995,9 +988,10 @@ test.describe('uploadDirectory', () => {
     test('uploads raw with no Content-Encoding unless precompress is asked for', async () => {
         await withUploadFixture(async (dir, puts) => {
             fs.mkdirSync(path.join(dir, 'static', 'js'), { recursive: true })
+            const source = 'console.log(1);\n'.repeat(400)
             fs.writeFileSync(
                 path.join(dir, 'static', 'js', 'main.abc123.js'),
-                'console.log(1);\n'.repeat(400)
+                source
             )
             await provision.uploadDirectory({
                 bucket: 'dash',
@@ -1005,7 +999,10 @@ test.describe('uploadDirectory', () => {
                 prefix: 'build/',
             })
             expect(puts[0].ContentEncoding).toBeUndefined()
-            expect(Buffer.isBuffer(puts[0].Body)).toBe(false)
+            // A Buffer, not a stream: the SDK only retries Buffer bodies.
+            expect(Buffer.isBuffer(puts[0].Body)).toBe(true)
+            expect(puts[0].Body.toString()).toBe(source)
+            expect(puts[0].ContentLength).toBe(source.length)
         })
     })
 
@@ -1046,15 +1043,18 @@ test.describe('uploadDirectory', () => {
             expect(js.ContentLength).toBeLessThan(source.length)
             expect(zlib.brotliDecompressSync(js.Body).toString()).toBe(source)
 
-            // Not a text type, below the floor, and the no-cache tier: raw.
+            // Not a text type, below the floor, and the no-cache tier: raw
+            // (still a Buffer, holding the file's own bytes).
             for (const key of [
                 'build/static/media/a.png',
                 'build/static/js/tiny.js',
                 'build/index.html',
             ]) {
                 expect(byKey[key].ContentEncoding, key).toBeUndefined()
-                expect(Buffer.isBuffer(byKey[key].Body), key).toBe(false)
+                expect(Buffer.isBuffer(byKey[key].Body), key).toBe(true)
+                expect(byKey[key].ContentLength, key).toBe(byKey[key].Body.length)
             }
+            expect(byKey['build/index.html'].Body.toString()).toBe('<html></html>')
 
             expect(stats).toEqual({
                 count: 4,
