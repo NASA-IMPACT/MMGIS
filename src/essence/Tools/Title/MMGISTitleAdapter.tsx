@@ -72,11 +72,7 @@ export function MMGISTitleAdapter() {
             setState({
                 titleText:
                     b.pagename || b.mission || b.name || DEFAULT_TITLE,
-                logoUrl:
-                    resolveMissionAssetUrl(
-                        b.logoUrl,
-                        typeof missionPath === 'string' ? missionPath : null,
-                    ) || null,
+                logoUrl: resolveMissionAssetUrl(b.logoUrl, missionPath) || null,
                 iconClass: v.icon || DEFAULT_ICON,
                 showLogo: v.showLogo !== false,
                 showTitleText: v.showTitleText !== false,

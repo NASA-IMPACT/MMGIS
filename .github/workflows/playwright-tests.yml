@@ -10,6 +10,10 @@ jobs:
   # Unit tests (Vitest + jsdom, no DB/browser). Run once, outside the matrix:
   # they already cover both modes in a single run by reloading the mode module
   # per test. See tests/unit/deploymentMode.spec.js and bakeGuards.spec.js.
+  #
+  # The Configure app is its own package (configure/) with its own React and
+  # MUI. Specs that render a Configure component import those from
+  # configure/node_modules, so the unit job installs both packages.
   unit:
     timeout-minutes: 10
     runs-on: ubuntu-latest
@@ -22,9 +26,16 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
+          cache-dependency-path: |
+            package-lock.json
+            configure/package-lock.json
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Install Configure dependencies
+        run: npm ci
+        working-directory: configure
 
       - name: Run Unit Tests
         run: npx vitest run

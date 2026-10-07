@@ -445,7 +445,7 @@ const getComponent = (
           }
           subdir={com.subdir}
           base={uploadBase}
-          allowUrl={com.allowUrl === true}
+          allowUrl={com.allowUrl}
           previewFit={com.previewFit}
           disabled={disabled || isDisabled}
           onChange={(p) =>
