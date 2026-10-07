@@ -34,7 +34,13 @@ export function resolveBasemapStyles(basemapConfig, engineType) {
           : [...maplibreDefaults]
 }
 
+// Returns the switchable styles, which one is active, and `basemap`: the
+// option the engine boots on (the mission's config with the active style).
 export function resolveInitialBasemap(basemapConfig, engineType, requestedName) {
+    if (!basemapConfig?.provider || basemapConfig.provider === 'none') {
+        return { styles: [], activeIndex: 0, basemap: basemapConfig || null }
+    }
+
     const styles = resolveBasemapStyles(basemapConfig, engineType)
     let activeIndex = styles.findIndex((s) => s.style === basemapConfig.style)
     // A configured style outside the resolved list must still be reported
@@ -56,5 +62,9 @@ export function resolveInitialBasemap(basemapConfig, engineType, requestedName) 
         }
     }
 
-    return { styles, activeIndex }
+    return {
+        styles,
+        activeIndex,
+        basemap: { ...basemapConfig, style: styles[activeIndex].style },
+    }
 }

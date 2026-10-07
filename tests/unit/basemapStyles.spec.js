@@ -102,6 +102,37 @@ describe('resolveInitialBasemap', () => {
         expect(warn).toHaveBeenCalledWith(expect.stringContaining('"Nope"'))
     })
 
+    test('hands the engine the config with the booting style', () => {
+        const config = { ...mapbox('mapbox://styles/mapbox/streets-v12'), accessToken: 'pk.x' }
+
+        const { styles, activeIndex, basemap } = resolveInitialBasemap(
+            config,
+            MAP_ENGINE.DECKGL,
+            'Dark'
+        )
+
+        expect(basemap).toEqual({
+            provider: 'mapbox',
+            accessToken: 'pk.x',
+            style: 'mapbox://styles/mapbox/dark-v11',
+        })
+        expect(basemap.style).toBe(styles[activeIndex].style)
+        expect(config.style).toBe('mapbox://styles/mapbox/streets-v12')
+    })
+
+    test('hands the engine nothing switchable without a provider', () => {
+        expect(resolveInitialBasemap(undefined, MAP_ENGINE.DECKGL)).toEqual({
+            styles: [],
+            activeIndex: 0,
+            basemap: null,
+        })
+
+        const none = { provider: 'none' }
+        const resolved = resolveInitialBasemap(none, MAP_ENGINE.DECKGL, 'Dark')
+        expect(resolved.styles).toEqual([])
+        expect(resolved.basemap).toBe(none)
+    })
+
     test('treats an empty or missing name as no request', () => {
         warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
         const config = mapbox('mapbox://styles/mapbox/outdoors-v12')

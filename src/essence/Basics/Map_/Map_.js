@@ -68,8 +68,7 @@ const IMAGE_DEFAULT_COLOR_RAMP = 'binary'
 // Provider cleanup functions for re-initialization
 let _providerCleanups = []
 
-let _basemapStyles = []
-let _basemapActiveIndex = 0
+let _basemap = { styles: [], activeIndex: 0 }
 
 let Map_ = {
     /** The native map object (L.Map for Leaflet, Deck for deck.gl). Kept for backward compatibility with existing callers. */
@@ -93,8 +92,8 @@ let Map_ = {
         return layer
     },
     getActiveBasemap: function () {
-        if (_basemapStyles.length === 0) return null
-        return { ..._basemapStyles[_basemapActiveIndex] }
+        if (_basemap.styles.length === 0) return null
+        return { ..._basemap.styles[_basemap.activeIndex] }
     },
     /**
      * Initialize the map using the engine specified in `msv.mapEngine`.
@@ -148,24 +147,11 @@ let Map_ = {
 
         // Resolved before the engine is built so a deep-linked style is the
         // one the engine boots on, not a swap after first paint.
-        const basemapConfig = L_.configData.msv.basemap
-        let initialBasemap = basemapConfig || null
-        if (basemapConfig && basemapConfig.provider && basemapConfig.provider !== 'none') {
-            const resolved = resolveInitialBasemap(
-                basemapConfig,
-                engineType,
-                L_.FUTURES.basemap
-            )
-            _basemapStyles = resolved.styles
-            _basemapActiveIndex = resolved.activeIndex
-            initialBasemap = {
-                ...basemapConfig,
-                style: _basemapStyles[_basemapActiveIndex].style,
-            }
-        } else {
-            _basemapStyles = []
-            _basemapActiveIndex = 0
-        }
+        _basemap = resolveInitialBasemap(
+            L_.configData.msv.basemap,
+            engineType,
+            L_.FUTURES.basemap
+        )
 
         const initOptions = {
             containerId: 'map',
@@ -176,7 +162,7 @@ let Map_ = {
             worldCopyJump: L_.configData.msv.worldCopyJump || false,
             maxBounds,
             projection: null,
-            basemap: initialBasemap,
+            basemap: _basemap.basemap,
         }
 
         if (
@@ -330,12 +316,12 @@ let Map_ = {
                     return true
                 }),
                 window.mmgisAPI.provide('map:setBasemap', (styleName) => {
-                    const index = _basemapStyles.findIndex((s) => s.name === styleName)
+                    const index = _basemap.styles.findIndex((s) => s.name === styleName)
                     if (index === -1) {
                         console.warn(`[map:setBasemap] No basemap style found with name: "${styleName}"`)
                         return false
                     }
-                    const selectedStyle = _basemapStyles[index]
+                    const selectedStyle = _basemap.styles[index]
                     if (!Map_.engine || typeof Map_.engine.setBasemapStyle !== 'function') {
                         console.warn('[map:setBasemap] The active engine does not support basemap switching')
                         return false
@@ -344,14 +330,14 @@ let Map_ = {
                         console.warn(`[map:setBasemap] Engine could not apply style: "${styleName}"`)
                         return false
                     }
-                    _basemapActiveIndex = index
+                    _basemap.activeIndex = index
                     return true
                 }),
                 window.mmgisAPI.provide('map:getBasemap', () =>
                     Map_.getActiveBasemap()
                 ),
                 window.mmgisAPI.provide('map:getBasemapStyles', () => {
-                    return [..._basemapStyles]
+                    return [..._basemap.styles]
                 }),
                 window.mmgisAPI.provide('map:zoomIn', () => {
                     if (!Map_.engine || typeof Map_.engine.getZoom !== 'function') return false
