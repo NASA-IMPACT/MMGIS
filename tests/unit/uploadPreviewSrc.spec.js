@@ -100,18 +100,19 @@ test.describe('buildPreviewSrc', () => {
 // cannot share a module. They must still agree on what an upload key looks
 // like — a value the CMS previews as an upload but the Card tool
 // mission-prefixes (or vice versa) renders a broken image only at runtime.
-// This reads both sources as text and fails CI the moment the literals drift.
-// It pins the CLASSIFIER only: what the two consumers then DO with a matched
+// This reads the sources as text and fails CI the moment the literals drift.
+// It pins the CLASSIFIER only: what the consumers then DO with a matched
 // key deliberately differs (the Card tool returns it document-relative, the
 // CMS prefixes it with its own base), so agreement of resolution is not
 // covered.
-test.describe('ASSETS_UPLOAD_KEY stays identical across both bundles', () => {
+test.describe('ASSETS_UPLOAD_KEY stays identical across bundles', () => {
     const SOURCES = [
         'configure/src/core/upload.js',
         'src/essence/Tools/_shared/content/uploadKey.ts',
+        'src/essence/Ancillary/Favicon.js',
     ]
 
-    test('both sources declare the same regex literal', () => {
+    test('all sources declare the same regex literal', () => {
         const literals = SOURCES.map((relative) => {
             const source = fs.readFileSync(
                 path.join(__dirname, '../..', relative),
@@ -123,6 +124,8 @@ test.describe('ASSETS_UPLOAD_KEY stays identical across both bundles', () => {
             expect(match, `${relative} declares ASSETS_UPLOAD_KEY`).toBeTruthy()
             return match[1]
         })
-        expect(literals[1]).toBe(literals[0])
+        for (const literal of literals.slice(1)) {
+            expect(literal).toBe(literals[0])
+        }
     })
 })

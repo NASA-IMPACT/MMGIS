@@ -4,6 +4,9 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { uploadImage, buildPreviewSrc } from '../upload';
 
+const DEFAULT_ACCEPT =
+    'image/png,image/jpeg,image/webp,image/gif,image/svg+xml';
+
 // A generic config field that uploads an image and stores the returned
 // path — mission-relative on disk, or a document-relative
 // "assets/<mission>/<subdir>/uploads/<file>" key in lean mode (see
@@ -12,12 +15,13 @@ import { uploadImage, buildPreviewSrc } from '../upload';
 // not tied to any one plugin). On success it calls onChange(path); on
 // failure it calls onError(message) and keeps the old value.
 //
-// Two opt-in props widen it for fields that also accept a link:
+// Opt-in props:
 //   - `allowUrl` adds a text box holding the stored value, so an image URL
 //     can be pasted instead of uploading. It commits the trimmed text on
 //     blur, and follows `value` when an upload or Clear replaces it.
 //   - `previewFit: 'contain'` draws the preview 48px high at the image's own
 //     aspect ratio; otherwise it is a 48×48 square crop.
+//   - `accept` replaces the file picker's type filter (DEFAULT_ACCEPT).
 export default function UploadField({
     label,
     description,
@@ -26,6 +30,7 @@ export default function UploadField({
     subdir,
     disabled,
     base,
+    accept,
     allowUrl,
     previewFit,
     onChange,
@@ -125,7 +130,7 @@ export default function UploadField({
                 <input
                     ref={inputRef}
                     type="file"
-                    accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+                    accept={accept || DEFAULT_ACCEPT}
                     style={{ display: 'none' }}
                     onChange={handleSelect}
                 />

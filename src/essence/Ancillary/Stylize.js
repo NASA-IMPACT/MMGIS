@@ -4,6 +4,7 @@
 import $ from 'jquery'
 import L_ from '../Basics/Layers_/Layers_'
 import F_ from '../Basics/Formulae_/Formulae_'
+import { faviconHref } from './Favicon'
 
 export function stylize() {
     if (L_.configData.look) {
@@ -71,8 +72,9 @@ export function stylize() {
             $('#mmgislogo').html(
                 `<img src="${L_.configData.look.logourl}" alt="Logo" width="32px">`
             )
-            $('#favicon').attr('href', L_.configData.look.logourl)
         }
+        const favicon = faviconHref(L_.configData.look, L_.missionPath)
+        if (favicon) $('#favicon').attr('href', favicon)
         if (L_.configData.look.infourl && L_.configData.look.infourl != '') {
             $('#topBarInfo').on('click', function () {
                 let win = window.open(L_.configData.look.infourl, '_mmgisinfo')

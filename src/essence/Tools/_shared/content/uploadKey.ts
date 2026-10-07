@@ -11,9 +11,9 @@
 // middle segments keeps the two shapes apart.
 //
 // The Configure app needs the same test for its upload previews, but it is
-// a separate bundle that can't import from this one, so the regex is
-// written twice: here and ASSETS_UPLOAD_KEY in configure/src/core/upload.js.
-// tests/unit/uploadPreviewSrc.spec.js fails if the two copies ever differ.
+// a separate bundle that can't import from this one, so the regex is also
+// written in configure/src/core/upload.js (and src/essence/Ancillary/Favicon.js).
+// tests/unit/uploadPreviewSrc.spec.js fails if the copies ever differ.
 const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//
 
 // Turns a stored asset value — a tool's uploaded image, icon, or file — into
