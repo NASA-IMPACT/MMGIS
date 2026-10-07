@@ -1,7 +1,31 @@
-import LithoSphere from 'lithosphere'
-import * as Cesium from 'cesium'
 import * as d3 from 'd3'
-import 'cesium/Source/Widgets/widgets.css'
+
+// The 3D engines are loaded on demand so 2D-only missions never download them.
+let LithoSphere = null
+let Cesium = null
+const _engineLoads = {}
+
+export function loadGlobeEngine(rendererType = 'lithosphere') {
+    const engine = rendererType === 'cesium' ? 'cesium' : 'lithosphere'
+    if (_engineLoads[engine] == null) {
+        _engineLoads[engine] =
+            engine === 'cesium'
+                ? Promise.all([
+                      import(/* webpackChunkName: "cesium" */ 'cesium'),
+                      import(
+                          /* webpackChunkName: "cesium" */ 'cesium/Source/Widgets/widgets.css'
+                      ),
+                  ]).then(([mod]) => {
+                      Cesium = mod
+                  })
+                : import(
+                      /* webpackChunkName: "lithosphere" */ 'lithosphere'
+                  ).then((mod) => {
+                      LithoSphere = mod.default || mod
+                  })
+    }
+    return _engineLoads[engine]
+}
 
 /**
  * GlobeRenderer - Abstraction wrapper for 3D globe rendering engines
@@ -17,6 +41,11 @@ class GlobeRenderer {
         this.renderer = null
         // Earth's circumference in meters (Web Mercator standard)
         this.EARTH_CIRCUMFERENCE = 40075017
+
+        if ((rendererType === 'cesium' ? Cesium : LithoSphere) == null)
+            throw new Error(
+                `GlobeRenderer: call loadGlobeEngine('${rendererType}') before constructing`
+            )
 
         // Initialize the appropriate renderer
         if (rendererType === 'cesium') {
