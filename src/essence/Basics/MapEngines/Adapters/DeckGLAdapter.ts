@@ -169,6 +169,8 @@ interface BasemapInstance {
     getStyle?():
         | { layers?: Array<{ id: string; type: string; layout?: Record<string, unknown> }> }
         | undefined
+    /** Set a layout property of a style layer, `visibility` included (mapbox-gl + maplibre-gl). */
+    setLayoutProperty?(layerId: string, name: string, value: unknown): unknown
     /** Return the WebGL canvas element the base map renders into. */
     getCanvas(): HTMLCanvasElement
     /** Schedule a re-render on the next animation frame (mapbox-gl + maplibre-gl). */
@@ -243,6 +245,8 @@ const TERRA_DRAW_PREFIX = 'td'
  * fill layer first.
  */
 const TERRA_DRAW_BOTTOM_LAYER_ID = `${TERRA_DRAW_PREFIX}-polygon`
+
+const isTerraDrawLayer = (id: string): boolean => id.startsWith(`${TERRA_DRAW_PREFIX}-`)
 
 /**
  * Sort rank for a layer that was never given an explicit z-index.
@@ -524,6 +528,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     private _onBasemapLoad = (): void => {
         this._styleSwapping = false
+        this._applyLabelVisibility(this._basemap)
         this._syncLayers()
     }
 
@@ -694,6 +699,46 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._basemapStyle = styleUrl
         this._sbsPanes?.forEach((pane) => pane.map?.setStyle(styleUrl))
         return true
+    }
+
+    /**
+     * Show or hide the basemap's labels: every `symbol` layer of the style,
+     * which is the place names, road shields and POI glyphs. A hidden layer
+     * stays in the style, so the label anchor the data sits under still
+     * resolves. The choice outlives a style switch (see {@link _onBasemapLoad}).
+     */
+    setBasemapLabelsVisible(visible: boolean): boolean {
+        if (!this._basemap?.setLayoutProperty) return false
+        this._labelsVisible = visible
+        this._applyLabelVisibility(this._basemap)
+        this._sbsPanes?.forEach((pane) => this._applyLabelVisibility(pane.map))
+        return true
+    }
+
+    getBasemapLabelsVisible(): boolean {
+        return this._labelsVisible
+    }
+
+    /** Hides the style's symbol layers, or shows the ones this adapter hid.
+     *  Only those: a style may hide a symbol layer of its own (an alternate
+     *  language's names, say), and labels coming back must not reveal it. */
+    private _applyLabelVisibility(map: BasemapInstance | null): void {
+        if (!map?.setLayoutProperty || this._styleSwapping) return
+        if (this._labelsVisible) {
+            for (const id of this._hiddenLabels.get(map) ?? []) {
+                if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'visible')
+            }
+            this._hiddenLabels.delete(map)
+            return
+        }
+        const hidden: string[] = []
+        for (const layer of map.getStyle?.()?.layers ?? []) {
+            if (layer.type !== 'symbol' || layer.layout?.visibility === 'none') continue
+            if (isTerraDrawLayer(layer.id)) continue
+            map.setLayoutProperty(layer.id, 'visibility', 'none')
+            hidden.push(layer.id)
+        }
+        this._hiddenLabels.set(map, hidden)
     }
 
     getContainer(): HTMLElement {
@@ -2149,7 +2194,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const onMoveEnd = () => this._onPaneCameraChange(pane, true)
         // The interleaved overlay drops layers set before the style loads (see
         // `_onBasemapLoad`), so a pane re-sends its own once it is ready.
-        const onLoad = () => this._renderComparisonLayers()
+        const onLoad = () => {
+            this._applyLabelVisibility(map)
+            this._renderComparisonLayers()
+        }
 
         map.on('move', onMove)
         map.on('moveend', onMoveEnd)
@@ -2435,6 +2483,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /** True from a style swap until the new style has loaded. */
     private _styleSwapping = false
+    private _labelsVisible = true
+    /** Per map, the symbol layers hidden by {@link setBasemapLabelsVisible}. */
+    private _hiddenLabels = new WeakMap<BasemapInstance, string[]>()
 
     /**
      * The style layer the deck layers are inserted before, so the basemap's
@@ -2447,14 +2498,18 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * under the buildings in the other. The style spec has one layer type
      * that writes labels, `symbol`; every other type paints the map, so the
      * ground ends at the last layer that is not a symbol. A symbol without
-     * text (an icon layer) is taken only when no text label follows. Null
-     * when the style has no labels, while a swap is in flight, or when the
-     * id is not in the style yet, since `addLayer` refuses an anchor it
-     * cannot find.
+     * text (an icon layer) is taken only when no text label follows. A
+     * terra-draw session registers its own layers at the top of the style,
+     * one of them a symbol, so those are left out of the search. Null when
+     * the style has no labels, while a swap is in flight, or when the id is
+     * not in the style yet, since `addLayer` refuses an anchor it cannot
+     * find.
      */
     private _labelAnchorId(map: BasemapInstance | null): string | null {
         if (!map || this._styleSwapping) return null
-        const layers = map.getStyle?.()?.layers ?? []
+        const layers = (map.getStyle?.()?.layers ?? []).filter(
+            (layer) => !isTerraDrawLayer(layer.id)
+        )
         let lastGround = -1
         layers.forEach((layer, i) => {
             if (layer.type !== 'symbol') lastGround = i

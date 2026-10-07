@@ -363,6 +363,27 @@ let Map_ = {
                 window.mmgisAPI.provide('map:getBasemapStyles', () => {
                     return [..._basemapStyles]
                 }),
+                // Basemap labels can only be switched off on an engine whose
+                // basemap is a vector style (deck.gl); raster tiles carry
+                // theirs baked in. Three questions, one answer each.
+                window.mmgisAPI.provide('map:supportsBasemapLabels', () => {
+                    return Boolean(
+                        Map_.engine &&
+                            typeof Map_.engine.setBasemapLabelsVisible === 'function' &&
+                            typeof Map_.engine.getBasemapLabelsVisible === 'function'
+                    )
+                }),
+                window.mmgisAPI.provide('map:setBasemapLabelsVisible', (visible) => {
+                    if (!Map_.engine || typeof Map_.engine.setBasemapLabelsVisible !== 'function') {
+                        console.warn('[map:setBasemapLabelsVisible] The active engine cannot toggle basemap labels')
+                        return false
+                    }
+                    return Map_.engine.setBasemapLabelsVisible(visible !== false) !== false
+                }),
+                window.mmgisAPI.provide('map:getBasemapLabelsVisible', () => {
+                    if (!Map_.engine || typeof Map_.engine.getBasemapLabelsVisible !== 'function') return true
+                    return Map_.engine.getBasemapLabelsVisible()
+                }),
                 window.mmgisAPI.provide('map:zoomIn', () => {
                     if (!Map_.engine || typeof Map_.engine.getZoom !== 'function') return false
                     const current = Map_.engine.getZoom()

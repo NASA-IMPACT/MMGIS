@@ -17,6 +17,10 @@ export const selectBasemap = (style: BasemapStyle): void => {
     void mmgisRequest('map:setBasemap', style.name)
 }
 
+export const setBasemapLabelsVisible = (visible: boolean): void => {
+    void mmgisRequest('map:setBasemapLabelsVisible', visible)
+}
+
 export const zoomIn = (): void => {
     void mmgisRequest('map:zoomIn')
 }

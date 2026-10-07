@@ -18,6 +18,7 @@ import {
 import { getBasemaps } from './adapters/getBasemaps'
 import {
     selectBasemap,
+    setBasemapLabelsVisible,
     zoomIn,
     zoomOut,
     subscribeToMap,
@@ -73,6 +74,7 @@ function withResolvedIcon(
 export function MMGISMapControlAdapter() {
     const [basemapStyles, setBasemapStyles] = useState<BasemapStyle[]>([])
     const [activeBasemap, setActiveBasemap] = useState<BasemapStyle | null>(null)
+    const [basemapLabels, setBasemapLabels] = useState<boolean | null>(null)
     const [shareBusy, setShareBusy] = useState(false)
     const [shareCopied, setShareCopied] = useState(false)
     const copiedTimer = useRef<number | null>(null)
@@ -169,9 +171,10 @@ export function MMGISMapControlAdapter() {
     // Fetch once the map registers its basemap handlers. An empty style list
     // then means the mission genuinely has no basemap — not "not ready yet".
     const fetchBasemaps = useCallback(() => {
-        getBasemaps().then(({ styles, active }) => {
+        getBasemaps().then(({ styles, active, labelsVisible }) => {
             setBasemapStyles(styles)
             setActiveBasemap(active)
+            setBasemapLabels(labelsVisible)
         })
     }, [])
     useMMGISHandlerReady('map:getBasemapStyles', fetchBasemaps)
@@ -181,11 +184,18 @@ export function MMGISMapControlAdapter() {
         selectBasemap(style)
     }, [])
 
+    const onToggleBasemapLabels = useCallback((visible: boolean) => {
+        setBasemapLabels(visible)
+        setBasemapLabelsVisible(visible)
+    }, [])
+
     return (
         <MapControlBar
             basemapStyles={showBasemapSwitcher ? basemapStyles : []}
             activeBasemap={showBasemapSwitcher ? activeBasemap : null}
             onSelectBasemap={showBasemapSwitcher ? onSelectBasemap : undefined}
+            basemapLabelsVisible={showBasemapSwitcher ? basemapLabels : null}
+            onToggleBasemapLabels={showBasemapSwitcher ? onToggleBasemapLabels : undefined}
             onZoomIn={showZoom ? zoomIn : undefined}
             onZoomOut={showZoom ? zoomOut : undefined}
             subscribeToMap={showMeasure ? subscribeToMap : undefined}
