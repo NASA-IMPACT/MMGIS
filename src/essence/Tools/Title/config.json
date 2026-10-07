@@ -56,6 +56,17 @@
                 ]
             },
             {
+                "components": [
+                    {
+                        "field": "variables.logoLink",
+                        "name": "Logo Link",
+                        "description": "An external http(s) URL opened in a new tab when the logo/icon is clicked. Leave empty to keep the logo unclickable.",
+                        "type": "text",
+                        "width": 12
+                    }
+                ]
+            },
+            {
                 "name": "Action Button",
                 "description": "Configure an optional action button displayed on the side of the title.",
                 "components": [

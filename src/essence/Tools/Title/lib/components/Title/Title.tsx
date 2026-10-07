@@ -7,6 +7,8 @@ export type TitleProps = {
     logoUrl?: string | null
     /** mdi icon class used when no logoUrl is provided. */
     iconClass?: string
+    /** URL opened in a new tab when the logo/icon is clicked. */
+    logoLink?: string | null
     /** Show the logo/icon. Default true. */
     showLogo?: boolean
     /** Show the title text. Default true. */
@@ -30,6 +32,7 @@ export function Title({
     titleText,
     logoUrl,
     iconClass = 'mdi mdi-earth mdi-24px',
+    logoLink,
     showLogo = true,
     showTitleText = true,
     showAction = false,
@@ -37,23 +40,33 @@ export function Title({
     actionTitle,
     onActionClick,
 }: TitleProps) {
+    const logo = logoUrl ? (
+        <div className="blocks-title__logo">
+            <img src={logoUrl} alt="Logo" className="blocks-title__logo-img" />
+        </div>
+    ) : (
+        <div className="blocks-title__icon">
+            <i className={iconClass} />
+        </div>
+    )
+
     return (
         <div className="blocks-title">
             <div className="blocks-title__container">
                 <div className="blocks-title__header">
                     {showLogo &&
-                        (logoUrl ? (
-                            <div className="blocks-title__logo">
-                                <img
-                                    src={logoUrl}
-                                    alt="Logo"
-                                    className="blocks-title__logo-img"
-                                />
-                            </div>
+                        (logoLink ? (
+                            <a
+                                className="blocks-title__logo-link"
+                                href={logoLink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title={logoLink}
+                            >
+                                {logo}
+                            </a>
                         ) : (
-                            <div className="blocks-title__icon">
-                                <i className={iconClass} />
-                            </div>
+                            logo
                         ))}
                     {showTitleText && (
                         <div className="blocks-title__text">
