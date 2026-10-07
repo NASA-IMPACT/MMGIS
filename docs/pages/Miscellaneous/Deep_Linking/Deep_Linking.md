@@ -148,6 +148,22 @@ Sets the end time for the Time Control feature.
 - _dependencies_: Time Control to be enabled
 - _unset:_ Will default to current time if Time Control feature is enabled
 
+### currentTime=<br>`<current time>`
+
+Sets the time cursor (the current time) for the Time Control feature. It must fall between startTime and endTime.
+
+- _form:_ `<string> (that moment.js understands)`
+- _dependencies_: Time Control to be enabled
+- _unset:_ Will default to the end time
+
+### basemap=<br>`<basemap style name>`
+
+Sets the active basemap style by its name, as listed in the mission's `msv.basemap.styles` or the provider's default styles (for example `Dark`). A name that matches no style is ignored with a console warning.
+
+- _form:_ `<string>`
+- _dependencies_: A basemap provider configured for the mission
+- _unset:_ Will default to the mission's configured basemap style
+
 ## Examples
 
 #### General

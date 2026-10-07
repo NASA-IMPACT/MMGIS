@@ -3,7 +3,7 @@ import L_ from '../Layers_/Layers_'
 import $ from 'jquery'
 
 import TimeControl from '../TimeControl_/TimeControl'
-import GlobeRenderer from './GlobeRenderer'
+import GlobeRenderer, { loadGlobeEngine } from './GlobeRenderer'
 
 // Provider cleanup functions for re-initialization
 let _providerCleanups = []
@@ -16,7 +16,7 @@ let Globe_ = {
         link: null,
     },
     hasBeenOpened: false, // Track if Globe panel has been opened before
-    init: function () {
+    init: async function () {
         const containerId = this.id
         let initialView = null
         if (L_.FUTURES.globeView != null) {
@@ -117,17 +117,30 @@ let Globe_ = {
                     L_.configData.panelSettings.demFallbackType || 'rgba',
             }
 
+        if (!L_.hasGlobe) {
+            this.litho = this.getMockLitho()
+            return
+        }
+
+        // Download the engine only now that we know a globe is wanted
+        try {
+            await loadGlobeEngine(this.rendererType)
+        } catch (err) {
+            console.error(
+                'Globe_: failed to load the 3D engine; continuing without a globe',
+                err
+            )
+            L_.hasGlobe = false
+            this.litho = this.getMockLitho()
+            return
+        }
+
         // CONSTRUCTOR - Use GlobeRenderer abstraction
         this.litho = new GlobeRenderer(
             containerId,
             lithoConfig,
             this.rendererType
         )
-
-        if (!L_.hasGlobe) {
-            this.litho = this.getMockLitho(this.litho)
-            return
-        }
 
         this.litho.addControl('mmgisLithoHome', this.litho.controls.home)
         this.litho.addControl(
@@ -296,7 +309,16 @@ let Globe_ = {
             getElevationAtLngLat: function () {
                 return 0
             },
-            projection: this.litho.projection,
+            projection: {
+                // Web-mercator inverse of F_.lon2tileUnfloored/lat2tileUnfloored
+                tileXYZ2LatLng: function (x, y, z) {
+                    const n = Math.PI - (2 * Math.PI * y) / Math.pow(2, z)
+                    return {
+                        lat: (180 / Math.PI) * Math.atan(Math.sinh(n)),
+                        lng: (x / Math.pow(2, z)) * 360 - 180,
+                    }
+                },
+            },
             _: {},
             options: {},
         }

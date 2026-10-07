@@ -242,6 +242,10 @@ function copyPublicFolder() {
     });
     console.log(chalk.cyan("Copied dist/ assets to build/dist/\n"));
   } else {
-    console.log(chalk.yellow("Warning: dist/ directory not found. Run 'npm run build:themes' to generate theme assets.\n"));
+    // The modern layout lazy-loads dist/<theme>.css at runtime; without
+    // dist/ the build ships with no theme chunks and every theme falls back
+    // to unstyled defaults.
+    console.log(chalk.red("dist/ directory not found. Run 'npm run build:themes' before 'npm run build' to generate theme assets.\n"));
+    process.exit(1);
   }
 }

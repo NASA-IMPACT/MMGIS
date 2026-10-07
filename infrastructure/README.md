@@ -201,9 +201,9 @@ word passphrase and stores it:
 
 Every environment gets a `dashboards-password` shell, but only an environment
 with `dashboards_require_auth = true` injects it on the publish task and gates
-its dashboards behind it. Production runs `false`, so its shell is generated
-and then unused — which is what makes re-enabling the gate a one-line
-Terraform change rather than a secret bootstrap.
+its dashboards behind it. Both development and production run `false`, so
+their shells are generated and then unused — which is what makes re-enabling
+the gate a one-line Terraform change rather than a secret bootstrap.
 
 A shell that already carries a value is **never overwritten**, whoever set it,
 so a steady-state run generates nothing and leaves no new secret versions

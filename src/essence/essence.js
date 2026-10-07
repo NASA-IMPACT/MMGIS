@@ -388,7 +388,7 @@ var essence = {
         if (!swapping) CursorInfo.init()
 
         //Make the globe
-        if (!swapping) Globe_.init()
+        if (!swapping) await Globe_.init()
 
         //Make the viewer
         if (!swapping) Viewer_.init()

@@ -38,6 +38,8 @@ const withVars = (vars: Record<string, unknown>) => {
                 return []
             case 'map:getBasemap':
                 return null
+            case 'map:supportsBasemapLabels':
+                return false
             default:
                 return { ok: true }
         }
@@ -353,5 +355,74 @@ describe('MMGISMapControlAdapter action button icon', () => {
 
             await mounted.unmount()
         })
+    })
+})
+
+/** The basemap popover, with the map answering the label questions. */
+const withBasemap = (support: boolean, labelsVisible = true) => {
+    request.mockImplementation(async (name: string) => {
+        switch (name) {
+            case 'tool:getVars':
+                return {}
+            case 'app:getMissionPath':
+                return MISSION_PATH
+            case 'map:getBasemapStyles':
+                return [{ name: 'Light' }]
+            case 'map:getBasemap':
+                return { name: 'Light' }
+            case 'map:supportsBasemapLabels':
+                return support
+            case 'map:getBasemapLabelsVisible':
+                return labelsVisible
+            default:
+                return true
+        }
+    })
+}
+const openBasemapPopover = async (container: HTMLElement) => {
+    const btn = Array.from(container.querySelectorAll('.blocks-map-control__btn')).find((b) =>
+        b.getAttribute('title')?.startsWith('Basemap'),
+    )!
+    await click(btn)
+}
+const labelsCheckbox = () =>
+    document.body.querySelector<HTMLInputElement>('.blocks-basemap-panel__labels input')
+const requestsNamed = (name: string) =>
+    request.mock.calls.filter(([n]) => n === name).map(([, payload]) => payload)
+
+describe('MMGISMapControlAdapter basemap labels', () => {
+    test('asks the map whether labels can be toggled, and reads their state only when they can', async () => {
+        withBasemap(true, false)
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+        await openBasemapPopover(container)
+
+        expect(requestsNamed('map:supportsBasemapLabels')).toHaveLength(1)
+        expect(requestsNamed('map:getBasemapLabelsVisible')).toHaveLength(1)
+        expect(labelsCheckbox()!.checked).toBe(false)
+
+        await unmount()
+    })
+
+    test('sends the toggled value to the map', async () => {
+        withBasemap(true)
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+        await openBasemapPopover(container)
+        await click(labelsCheckbox()!)
+
+        expect(requestsNamed('map:setBasemapLabelsVisible')).toEqual([false])
+        expect(labelsCheckbox()!.checked).toBe(false)
+
+        await unmount()
+    })
+
+    test('renders no checkbox for a map that cannot toggle labels, and never asks their state', async () => {
+        withBasemap(false)
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+        await openBasemapPopover(container)
+
+        expect(labelsCheckbox()).toBeNull()
+        expect(requestsNamed('map:getBasemapLabelsVisible')).toHaveLength(0)
+
+        await unmount()
     })
 })

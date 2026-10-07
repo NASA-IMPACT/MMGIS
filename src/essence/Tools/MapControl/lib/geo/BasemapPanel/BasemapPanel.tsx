@@ -9,12 +9,35 @@ export type BasemapPanelProps = {
     active: BasemapStyle | null
     /** Called when a style row is chosen. */
     onSelect: (style: BasemapStyle) => void
+    /** Whether the basemap's labels show; null or undefined when the map
+     *  cannot toggle them, which leaves the checkbox out. */
+    labelsVisible?: boolean | null
+    onToggleLabels?: (visible: boolean) => void
 }
 
-export function BasemapPanel({ styles, active, onSelect }: BasemapPanelProps) {
+export function BasemapPanel({
+    styles,
+    active,
+    onSelect,
+    labelsVisible,
+    onToggleLabels,
+}: BasemapPanelProps) {
+    const hasLabelsToggle = typeof labelsVisible === 'boolean' && Boolean(onToggleLabels)
     return (
         <div className="blocks-basemap-panel">
-            <div className="blocks-basemap-panel__header">Basemap style</div>
+            <div className="blocks-basemap-panel__header">
+                <span>Basemap style</span>
+                {hasLabelsToggle && (
+                    <label className="blocks-basemap-panel__labels">
+                        <input
+                            type="checkbox"
+                            checked={labelsVisible}
+                            onChange={(e) => onToggleLabels?.(e.target.checked)}
+                        />
+                        Labels
+                    </label>
+                )}
+            </div>
             {styles.map((entry) => {
                 const isActive = active?.name === entry.name
                 return (

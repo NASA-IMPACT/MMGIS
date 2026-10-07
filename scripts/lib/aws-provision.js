@@ -11,6 +11,8 @@
 
 const fs = require("fs");
 const path = require("path");
+const zlib = require("zlib");
+const { promisify } = require("util");
 
 const {
   CloudFormationClient,
@@ -479,6 +481,71 @@ function cacheControlForKey(key) {
   return "public, max-age=300";
 }
 
+// Text content types worth brotli-compressing at publish. Images, fonts,
+// pdf, video, glb and wasm stay raw: already compressed, or (wasm) unmeasured.
+const PRECOMPRESS_TYPES = new Set([
+  "application/javascript",
+  "text/css",
+  "application/json",
+  "application/geo+json",
+  "image/svg+xml",
+  "text/plain",
+  "text/csv",
+  "application/xml",
+]);
+// CloudFront itself never compresses below 1,000 B; mirror that floor.
+const PRECOMPRESS_MIN_BYTES = 1024;
+// q11 costs ~20 s of CPU per publish on the current bundle (q9 is ~20x
+// faster for ~12% more bytes); lgwin 24 is the largest window.
+const BROTLI_PARAMS = {
+  [zlib.constants.BROTLI_PARAM_QUALITY]: 11,
+  [zlib.constants.BROTLI_PARAM_LGWIN]: 24,
+};
+const brotliCompress = promisify(zlib.brotliCompress);
+
+// Whether the object at `key` is uploaded brotli-compressed at the same key
+// with Content-Encoding: br. S3 does no negotiation, so this is the single
+// representation every client receives: the no-cache tier (index.html and
+// the baked config) stays plain so curl and link checkers keep reading it,
+// while the bundle and public/ assets are fetched only by browsers, which
+// all accept br over HTTPS. Stored-compressed objects also sidestep the
+// edge's compression window (1,000 B to 10 MB, best-effort): the vendor
+// chunk is over 10 MB and so shipped raw before this.
+function shouldPrecompress({ key, contentType, size }) {
+  return (
+    cacheControlForKey(key) !== "no-cache" &&
+    PRECOMPRESS_TYPES.has(contentType) &&
+    size >= PRECOMPRESS_MIN_BYTES
+  );
+}
+
+// Body, length, type (and encoding) for one PutObject. Every Body is a
+// Buffer: the SDK retries a Buffer body but treats any stream body as
+// non-retryable, so a streamed PUT that hit a reset socket failed the
+// whole publish. The largest file is ~30 MB, so memory is not a concern.
+// A file that brotli would not shrink is uploaded raw instead.
+async function bodyFieldsFor(filePath, key, precompress) {
+  const contentType = contentTypeForFile(filePath);
+  const raw = fs.readFileSync(filePath);
+  const size = raw.length;
+  if (!precompress || !shouldPrecompress({ key, contentType, size }))
+    return { Body: raw, ContentLength: size, ContentType: contentType };
+  const br = await brotliCompress(raw, {
+    params: {
+      ...BROTLI_PARAMS,
+      [zlib.constants.BROTLI_PARAM_SIZE_HINT]: raw.length,
+    },
+  });
+  if (br.length >= raw.length)
+    return { Body: raw, ContentLength: raw.length, ContentType: contentType };
+  return {
+    Body: br,
+    ContentLength: br.length,
+    ContentType: contentType,
+    ContentEncoding: "br",
+  };
+}
+
 function walkDirectory(dir, baseDir) {
   baseDir = baseDir || dir;
   let files = [];
@@ -496,54 +563,63 @@ function walkDirectory(dir, baseDir) {
 
 // Uploads every file under `dir` to `bucket`, keys relative to `dir`
 // (optionally prefixed). `filter` receives the prefixed key and returning
-// false leaves that file out of the upload and out of the count. Returns the
-// number of files uploaded.
+// false leaves that file out of the upload and out of the count. With
+// `precompress`, eligible files (shouldPrecompress) are stored brotli-
+// compressed. Returns { count, precompressed, rawBytes, compressedBytes },
+// the byte totals covering only the precompressed files.
 async function uploadDirectory({
   bucket,
   dir,
   prefix = "",
   concurrency = 8,
   filter,
+  precompress = false,
 }) {
   const { s3 } = getClients();
   const files = walkDirectory(dir)
     .map((file) => ({ ...file, key: `${prefix}${file.key}` }))
     .filter((file) => (filter ? filter(file.key) : true));
+  const stats = {
+    count: files.length,
+    precompressed: 0,
+    rawBytes: 0,
+    compressedBytes: 0,
+  };
   let index = 0;
   async function worker() {
     while (index < files.length) {
       const file = files[index++];
+      const body = await bodyFieldsFor(file.absolute, file.key, precompress);
       await s3.send(
         new PutObjectCommand({
           Bucket: bucket,
           Key: file.key,
-          Body: fs.createReadStream(file.absolute),
-          // An explicit length keeps the streaming PUT retryable by the
-          // SDK (an unknown-length stream is sent unsigned/non-retryable,
-          // so one network blip would fail the whole publish).
-          ContentLength: fs.statSync(file.absolute).size,
-          ContentType: contentTypeForFile(file.absolute),
+          ...body,
           CacheControl: cacheControlForKey(file.key),
         })
       );
+      if (body.ContentEncoding) {
+        stats.precompressed++;
+        stats.rawBytes += fs.statSync(file.absolute).size;
+        stats.compressedBytes += body.ContentLength;
+      }
     }
   }
   await Promise.all(
     Array.from({ length: Math.min(concurrency, files.length || 1) }, worker)
   );
-  return files.length;
+  return stats;
 }
 
 // Uploads a single local file to an exact key.
-async function uploadFile({ bucket, key, filePath }) {
+async function uploadFile({ bucket, key, filePath, precompress = false }) {
   const { s3 } = getClients();
+  const body = await bodyFieldsFor(filePath, key, precompress);
   await s3.send(
     new PutObjectCommand({
       Bucket: bucket,
       Key: key,
-      Body: fs.createReadStream(filePath),
-      ContentLength: fs.statSync(filePath).size,
-      ContentType: contentTypeForFile(filePath),
+      ...body,
       CacheControl: cacheControlForKey(key),
     })
   );
@@ -836,6 +912,7 @@ module.exports = {
   deleteStack,
   contentTypeForFile,
   cacheControlForKey,
+  shouldPrecompress,
   uploadDirectory,
   uploadFile,
   createInvalidation,

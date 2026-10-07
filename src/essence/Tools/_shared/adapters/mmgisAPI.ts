@@ -175,6 +175,14 @@ export const mmgisGetLayerConfigs = (): Promise<Record<
     )
 }
 
+/** One layer's config by UUID. Registered as late as mmgisGetLayerConfigs;
+ *  null while the handler is absent means "layer unknown yet", not an error. */
+export const mmgisGetLayerConfig = (
+    layerUUID: string,
+): Promise<LayerConfig | null> => {
+    return mmgisRequestIfProvided<LayerConfig>('layers:getConfig', layerUUID)
+}
+
 /** Per-layer visibility, keyed by layer UUID. Registered as late as
  *  mmgisGetLayerConfigs; the same readiness caveat applies. */
 export const mmgisGetVisibleLayers = (): Promise<Record<
@@ -379,12 +387,15 @@ export type Duration = {
 /**
  * When a layer has data, as ISO datetimes; null where unset or unreadable.
  * `interval` is the layer's `time.interval` as core parsed it, or null when
- * the layer declares none or core cannot read it.
+ * the layer declares none or core cannot read it. `periodAnchor` is the ISO
+ * instant the layer's requested periods step from, or null when core
+ * requests no period for it.
  */
 export type TemporalExtent = {
     start: string | null
     end: string | null
     interval: Duration | null
+    periodAnchor: string | null
 }
 
 /**

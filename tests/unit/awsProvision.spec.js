@@ -1,7 +1,9 @@
 import { test, expect } from 'vitest'
+import crypto from 'crypto'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import zlib from 'zlib'
 
 // Tests for scripts/lib/aws-provision.js using injected mock clients —
 // no test here (or anywhere) ever calls real AWS.
@@ -906,21 +908,44 @@ test.describe('cacheControlForKey', () => {
     })
 })
 
+test.describe('shouldPrecompress', () => {
+    // [key, content type, size, expected]. Compressible text types outside
+    // the no-cache tier and at or above the 1 KiB floor are stored brotli;
+    // everything else is uploaded raw.
+    const CASES = [
+        ['build/static/js/main.abc123.js', 'application/javascript', 5000, true],
+        ['build/static/css/x.css', 'text/css', 5000, true],
+        ['public/workers/pdf.worker.min.mjs', 'application/javascript', 5000, true],
+        ['build/static/media/a.svg', 'image/svg+xml', 5000, true],
+        ['build/static/media/a.png', 'image/png', 5000, false],
+        ['build/static/media/f.woff2', 'font/woff2', 5000, false],
+        ['public/ffmpeg/ffmpeg-core.wasm', 'application/wasm', 5000, false],
+        // Below the floor.
+        ['build/static/js/tiny.js', 'application/javascript', 512, false],
+        // The no-cache tier stays plain so curl and link checkers read it.
+        ['index.html', 'text/html', 5000, false],
+        ['build/index.html', 'text/html', 5000, false],
+        ['Missions/M/config.json', 'application/json', 5000, false],
+    ]
+
+    CASES.forEach(([key, contentType, size, expected]) => {
+        test(`'${key}' (${contentType}, ${size} B) -> ${expected}`, () => {
+            expect(
+                provision.shouldPrecompress({ key, contentType, size })
+            ).toBe(expected)
+        })
+    })
+})
+
 // Runs fn(dir, puts) against a fresh temp directory with an injected S3
 // client that records every command input into `puts`, then resets the client
-// and removes the directory. The mock never reads the body, so the stream's
-// deferred fs.open() is swallowed here — otherwise the cleanup below can race
-// it into an unhandled 'error' event.
+// and removes the directory.
 async function withUploadFixture(fn) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mmgis-upload-'))
     const puts = []
     provision.setClients({
         s3: mockClient((command) => {
             puts.push(command.input)
-            if (command.input.Body) {
-                command.input.Body.on('error', () => {})
-                command.input.Body.destroy()
-            }
             return {}
         }),
     })
@@ -941,7 +966,7 @@ test.describe('uploadDirectory', () => {
                 path.join(dir, 'static', 'js', 'main.abc123.js'),
                 'console.log(1)'
             )
-            const count = await provision.uploadDirectory({
+            const { count } = await provision.uploadDirectory({
                 bucket: 'dash',
                 dir,
                 prefix: 'build/',
@@ -960,11 +985,106 @@ test.describe('uploadDirectory', () => {
         })
     })
 
+    test('uploads raw with no Content-Encoding unless precompress is asked for', async () => {
+        await withUploadFixture(async (dir, puts) => {
+            fs.mkdirSync(path.join(dir, 'static', 'js'), { recursive: true })
+            const source = 'console.log(1);\n'.repeat(400)
+            fs.writeFileSync(
+                path.join(dir, 'static', 'js', 'main.abc123.js'),
+                source
+            )
+            await provision.uploadDirectory({
+                bucket: 'dash',
+                dir,
+                prefix: 'build/',
+            })
+            expect(puts[0].ContentEncoding).toBeUndefined()
+            // A Buffer, not a stream: the SDK only retries Buffer bodies.
+            expect(Buffer.isBuffer(puts[0].Body)).toBe(true)
+            expect(puts[0].Body.toString()).toBe(source)
+            expect(puts[0].ContentLength).toBe(source.length)
+        })
+    })
+
+    test('with precompress, stores eligible text files brotli at the same key', async () => {
+        await withUploadFixture(async (dir, puts) => {
+            fs.mkdirSync(path.join(dir, 'static', 'js'), { recursive: true })
+            fs.mkdirSync(path.join(dir, 'static', 'media'), { recursive: true })
+            const source = 'console.log("hello");\n'.repeat(200)
+            fs.writeFileSync(
+                path.join(dir, 'static', 'js', 'main.abc123.js'),
+                source
+            )
+            fs.writeFileSync(
+                path.join(dir, 'static', 'media', 'a.png'),
+                crypto.randomBytes(4096)
+            )
+            fs.writeFileSync(
+                path.join(dir, 'static', 'js', 'tiny.js'),
+                'console.log(1)'
+            )
+            fs.writeFileSync(path.join(dir, 'index.html'), '<html></html>')
+            const stats = await provision.uploadDirectory({
+                bucket: 'dash',
+                dir,
+                prefix: 'build/',
+                precompress: true,
+            })
+            const byKey = Object.fromEntries(
+                puts.map((input) => [input.Key, input])
+            )
+
+            const js = byKey['build/static/js/main.abc123.js']
+            expect(js.ContentEncoding).toBe('br')
+            expect(js.ContentType).toBe('application/javascript')
+            expect(js.CacheControl).toBe('public, max-age=31536000, immutable')
+            expect(Buffer.isBuffer(js.Body)).toBe(true)
+            expect(js.ContentLength).toBe(js.Body.length)
+            expect(js.ContentLength).toBeLessThan(source.length)
+            expect(zlib.brotliDecompressSync(js.Body).toString()).toBe(source)
+
+            // Not a text type, below the floor, and the no-cache tier: raw
+            // (still a Buffer, holding the file's own bytes).
+            for (const key of [
+                'build/static/media/a.png',
+                'build/static/js/tiny.js',
+                'build/index.html',
+            ]) {
+                expect(byKey[key].ContentEncoding, key).toBeUndefined()
+                expect(Buffer.isBuffer(byKey[key].Body), key).toBe(true)
+                expect(byKey[key].ContentLength, key).toBe(byKey[key].Body.length)
+            }
+            expect(byKey['build/index.html'].Body.toString()).toBe('<html></html>')
+
+            expect(stats).toEqual({
+                count: 4,
+                precompressed: 1,
+                rawBytes: source.length,
+                compressedBytes: js.ContentLength,
+            })
+        })
+    })
+
+    test('with precompress, a file brotli cannot shrink is uploaded raw', async () => {
+        await withUploadFixture(async (dir, puts) => {
+            fs.writeFileSync(path.join(dir, 'noise.json'), crypto.randomBytes(4096))
+            const stats = await provision.uploadDirectory({
+                bucket: 'dash',
+                dir,
+                prefix: 'public/',
+                precompress: true,
+            })
+            expect(puts[0].ContentEncoding).toBeUndefined()
+            expect(puts[0].ContentLength).toBe(4096)
+            expect(stats.precompressed).toBe(0)
+        })
+    })
+
     test('skips the keys `filter` rejects and leaves them out of the count', async () => {
         await withUploadFixture(async (dir, puts) => {
             fs.writeFileSync(path.join(dir, 'index.html'), '<html></html>')
             fs.writeFileSync(path.join(dir, 'index.pug'), 'html')
-            const count = await provision.uploadDirectory({
+            const { count } = await provision.uploadDirectory({
                 bucket: 'dash',
                 dir,
                 prefix: 'build/',
@@ -990,6 +1110,30 @@ test.describe('uploadFile', () => {
             // Literal, not cacheControlForKey(key): that form would pass even
             // if the tiering broke.
             expect(puts[0].CacheControl).toBe('public, max-age=300')
+        })
+    })
+
+    test('with precompress, the no-cache tier stays raw and other text goes brotli', async () => {
+        await withUploadFixture(async (dir, puts) => {
+            const body = JSON.stringify({ layers: 'x'.repeat(2048) })
+            const configPath = path.join(dir, 'config.json')
+            fs.writeFileSync(configPath, body)
+            await provision.uploadFile({
+                bucket: 'dash',
+                key: 'Missions/M/config.json',
+                filePath: configPath,
+                precompress: true,
+            })
+            await provision.uploadFile({
+                bucket: 'dash',
+                key: 'public/data/big.json',
+                filePath: configPath,
+                precompress: true,
+            })
+            expect(puts[0].ContentEncoding).toBeUndefined()
+            expect(puts[0].ContentLength).toBe(body.length)
+            expect(puts[1].ContentEncoding).toBe('br')
+            expect(puts[1].ContentLength).toBeLessThan(body.length)
         })
     })
 })

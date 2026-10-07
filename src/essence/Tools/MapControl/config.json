@@ -2,7 +2,7 @@
     "defaultIcon": "layers",
     "description": "Floating map control bar: basemap switcher, search, measure, zoom, share, and a configurable action button.",
     "descriptionFull": {
-        "title": "A floating horizontal toolbar rendered over the map. Basemap switcher, search, measure, zoom and share each have their own toggle; the action button appears whenever Button Link is set."
+        "title": "A floating horizontal toolbar rendered over the map. Basemap switcher, search, measure, zoom and share each have their own toggle; the action button appears whenever Button Link is set. The basemap switcher's popover also carries a Labels checkbox that shows or hides the basemap's place names on a map whose basemap is a vector style (deck.gl); raster basemaps have no such control."
     },
     "hasVars": true,
     "name": "MapControl",

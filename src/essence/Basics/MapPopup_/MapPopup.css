@@ -14,15 +14,15 @@
 .mmgis-popup-card {
     box-sizing: border-box;
     width: max-content;
-    min-width: 14rem;
-    max-width: min(360px, 100%);
-    padding: var(--theme-spacing-205, 1.25rem) var(--theme-spacing-3, 1.5rem);
+    min-width: 180px;
+    max-width: min(300px, 100%);
+    padding: var(--theme-spacing-2, 1rem);
     /* Its own surface: the card's ink is its to pick, and a frame the app has
        themed dark would otherwise decide the contrast. */
     background: var(--theme-color-white, #ffffff);
     color: var(--theme-color-ink, #1b1b1b);
     font-family: var(--theme-font-ui, system-ui, sans-serif);
-    font-size: var(--theme-font-size-2xs, 0.8125rem);
+    font-size: var(--theme-font-size-3xs, 0.75rem);
     line-height: var(--theme-line-height-3, 1.4);
     text-align: left;
 }
@@ -36,9 +36,9 @@
 
 /* Clear of the close control, which sits over the card's top-right corner. */
 .mmgis-popup-title {
-    padding-right: var(--theme-spacing-4, 2rem);
-    font-size: var(--theme-font-size-sm, 0.9375rem);
-    font-weight: var(--theme-font-weight-bold, 700);
+    padding-right: var(--theme-spacing-2, 1rem);
+    font-size: var(--theme-font-size-2xs, 0.875rem);
+    font-weight: var(--theme-font-weight-semibold, 600);
     line-height: var(--theme-line-height-3, 1.4);
     color: var(--theme-color-ink, #1b1b1b);
 }
@@ -49,7 +49,7 @@
 }
 
 .mmgis-popup-title + .mmgis-popup-body {
-    margin-top: var(--theme-spacing-2, 1rem);
+    margin-top: var(--theme-spacing-05, 0.25rem);
 }
 
 /* Property listings: label and value as a quiet two-column list. */
@@ -80,16 +80,16 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--theme-spacing-1, 0.5rem);
-    margin-top: var(--theme-spacing-205, 1.25rem);
+    margin-top: var(--theme-spacing-105, 0.75rem);
 }
 
 /* A label reads as one line. */
 .mmgis-popup-button {
     white-space: nowrap;
-    padding: var(--theme-spacing-1, 0.5rem) var(--theme-spacing-205, 1.25rem);
+    padding: var(--theme-spacing-1, 0.5rem) var(--theme-spacing-2, 1rem);
     border-radius: var(--theme-radius-sm, 0.125rem);
     font-family: inherit;
-    font-size: var(--theme-font-size-2xs, 0.8125rem);
+    font-size: var(--theme-font-size-3xs, 0.75rem);
     font-weight: var(--theme-font-weight-bold, 700);
     line-height: var(--theme-line-height-3, 1.4);
     cursor: pointer;
@@ -133,14 +133,14 @@
 .mmgis-map-popup .maplibregl-popup-content,
 .mmgis-map-popup .mapboxgl-popup-content {
     padding: 0;
-    border-radius: var(--theme-radius-0, 0);
+    border-radius: var(--theme-radius-sm, 0.125rem);
     background: var(--theme-color-white, #ffffff);
     box-shadow: 0 4px 16px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
 }
 
 .mmgis-map-popup .leaflet-popup-content-wrapper {
     padding: 0;
-    border-radius: var(--theme-radius-0, 0);
+    border-radius: var(--theme-radius-sm, 0.125rem);
     background: var(--theme-color-white, #ffffff);
     box-shadow: 0 4px 16px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
 }
@@ -154,19 +154,19 @@
 .mmgis-map-popup .mapboxgl-popup-close-button,
 .mmgis-map-popup .leaflet-popup-close-button {
     position: absolute;
-    top: var(--theme-spacing-1, 0.5rem) !important;
-    right: var(--theme-spacing-1, 0.5rem) !important;
+    top: var(--theme-spacing-05, 0.25rem) !important;
+    right: var(--theme-spacing-05, 0.25rem) !important;
     display: flex !important;
     align-items: center;
     justify-content: center;
-    width: 1.75rem !important;
-    height: 1.75rem !important;
+    width: 1.25rem !important;
+    height: 1.25rem !important;
     padding: 0 !important;
     border: 0;
     border-radius: var(--theme-radius-sm, 0.125rem);
     background: transparent !important;
     color: var(--theme-color-base, #71767a) !important;
-    font: var(--theme-font-weight-normal, 400) 1.375rem/1 var(--theme-font-ui, system-ui, sans-serif) !important;
+    font: var(--theme-font-weight-normal, 400) 1rem/1 var(--theme-font-ui, system-ui, sans-serif) !important;
     text-decoration: none;
     cursor: pointer;
 }
