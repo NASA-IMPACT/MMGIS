@@ -150,11 +150,14 @@ jobs:
         run: node tests/ci/assert-gated-tables.js
 
       # Must build before the server starts: the e2e tests hit `/`, which 500s
-      # without build/index.pug.
+      # without build/index.pug. build:themes first: `npm run build` fails
+      # without dist/ (the compiled theme CSS, gitignored).
       - name: Build frontend
         # CI=false: GitHub sets CI=true, which makes react-scripts fail on MMGIS's
         # intentional build warnings. The production Dockerfile builds with CI unset.
-        run: npm run build
+        run: |
+          npm run build:themes
+          npm run build
         env:
           CI: false
 

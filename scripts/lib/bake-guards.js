@@ -10,6 +10,9 @@
  * nowhere. Time scrubbing on externally-served time layers still works.
  */
 
+const fs = require("fs");
+const path = require("path");
+
 // A URL is resolvable from a static dashboard only when it's absolute
 // (http://, https:// or protocol-relative //) — i.e. served by something
 // other than the (absent) MMGIS backend.
@@ -55,9 +58,24 @@ function applyTimeBakeGuard(config) {
   return config;
 }
 
+// The modern layout lazy-loads the configured theme's stylesheet
+// (msv.theme, default 'default') from the build at runtime. A dashboard
+// published without it would silently render on unthemed fallbacks, so
+// refuse to publish a build that lacks build/dist/<theme>.css.
+function assertThemeCssPresent(config, buildDir) {
+  const theme = (config && config.msv && config.msv.theme) || "default";
+  const cssPath = path.join(buildDir, "dist", `${theme}.css`);
+  if (!fs.existsSync(cssPath))
+    throw new Error(
+      `Theme '${theme}' stylesheet not found at ${cssPath}; run 'npm run build:themes' before 'npm run build'`
+    );
+  return config;
+}
+
 module.exports = {
   isExternallyServedUrl,
   forEachLayer,
   hasResolvableTimeLayer,
   applyTimeBakeGuard,
+  assertThemeCssPresent,
 };

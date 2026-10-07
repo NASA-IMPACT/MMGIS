@@ -61,7 +61,10 @@ const {
   renderCfnTemplate,
   stackNameForDeployment,
 } = require("./lib/cfn-template");
-const { applyTimeBakeGuard } = require("./lib/bake-guards");
+const {
+  applyTimeBakeGuard,
+  assertThemeCssPresent,
+} = require("./lib/bake-guards");
 
 const DEPLOYMENT_ID = process.env.MMGIS_DEPLOYMENT_ID || process.argv[2];
 const ACTION = process.env.MMGIS_DEPLOYMENT_ACTION || process.argv[3] || "publish";
@@ -248,6 +251,8 @@ async function main() {
     run("npm", ["run", "build"], {
       SERVER: "static",
     });
+    // Fail before touching AWS if the build lacks the configured theme.
+    assertThemeCssPresent(baked.get, path.join(rootDir, "build"));
 
     // 4. Provision (publish) or converge (update) the dashboard stack
     let stack;
