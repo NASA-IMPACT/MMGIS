@@ -13,6 +13,15 @@ const PLUGIN_ID = 'title'
 const DEFAULT_TITLE = 'MMGIS'
 const DEFAULT_ICON = 'mdi mdi-earth mdi-24px'
 
+/**
+ * The logo link becomes an anchor href, so anything other than an absolute
+ * http(s) URL (e.g. a `javascript:` URL) is dropped rather than rendered.
+ */
+const toExternalUrl = (link?: unknown): string | null => {
+    const trimmed = typeof link === 'string' ? link.trim() : ''
+    return /^https?:\/\//i.test(trimmed) ? trimmed : null
+}
+
 /** Raw mission branding from the 'app:getBranding' bus provider. */
 type Branding = {
     pagename?: string | null
@@ -26,6 +35,7 @@ type TitleToolVars = {
     icon?: string
     showLogo?: boolean
     showTitleText?: boolean
+    logoLink?: string
     actionButtonText?: string
     actionButtonLink?: string
 }
@@ -36,6 +46,7 @@ type TitleState = {
     iconClass: string
     showLogo: boolean
     showTitleText: boolean
+    logoLink: string | null
     actionButtonText: string
     actionButtonLink: string
 }
@@ -46,6 +57,7 @@ const INITIAL_STATE: TitleState = {
     iconClass: DEFAULT_ICON,
     showLogo: true,
     showTitleText: true,
+    logoLink: null,
     actionButtonText: '',
     actionButtonLink: '',
 }
@@ -79,6 +91,7 @@ export function MMGISTitleAdapter() {
                 iconClass: v.icon || DEFAULT_ICON,
                 showLogo: v.showLogo !== false,
                 showTitleText: v.showTitleText !== false,
+                logoLink: toExternalUrl(v.logoLink),
                 actionButtonText: v.actionButtonText || '',
                 actionButtonLink: v.actionButtonLink || '',
             })
@@ -103,6 +116,7 @@ export function MMGISTitleAdapter() {
             iconClass={state.iconClass}
             showLogo={state.showLogo}
             showTitleText={state.showTitleText}
+            logoLink={state.logoLink}
             showAction={!!state.actionButtonLink}
             actionLabel={state.actionButtonText}
             actionTitle={state.actionButtonLink}
