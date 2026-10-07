@@ -56,12 +56,15 @@ sequenceDiagram
     I-->>T: workflow_variables — the six runtime names
     T->>A: call (the six names)
     A->>AWS: assume the deploy role (OIDC)
+    A->>AWS: set the service's rollout strategy to ROLLING, no bake
     A->>AWS: build + push image, tag = commit short SHA
     A->>AWS: register admin + publish task-def revisions
-    A->>AWS: set the service's rollout strategy to ROLLING, no bake
     A->>AWS: roll the Express service's primary container
     A->>AWS: poll until only the new image is active
+    A->>AWS: confirm the rollout strategy is still ROLLING
 ```
+
+The admin service rolls out with ROLLING and no bake rather than Express Mode's default CANARY, since it serves no public traffic; the app job applies that setting before each roll and checks it after, because neither Terraform nor the Express API can set it. It survives a roll only because Express Mode's own infrastructure role cannot modify the service today; if AWS grants it that ability, the post-roll check fails and flags the reset.
 
 ### Why the apply discovers the serving image
 

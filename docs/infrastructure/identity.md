@@ -36,8 +36,8 @@ sequenceDiagram
 | `mmgis-terraform-apply-development` | Infrastructure apply, dev | `repo:NASA-IMPACT/MMGIS:environment:development` + account root |
 | `mmgis-terraform-apply-production` | Infrastructure apply, prod | `repo:NASA-IMPACT/MMGIS:environment:production` + account root |
 | `mmgis-terraform-plan` | Read-only PR plan previews (both envs) | `repo:NASA-IMPACT/MMGIS:pull_request` |
-| `mmgis-development-github-deploy` | Update the running app image only, dev | `repo:NASA-IMPACT/MMGIS:environment:development` |
-| `mmgis-production-github-deploy` | Update the running app image only, prod | `repo:NASA-IMPACT/MMGIS:environment:production` |
+| `mmgis-development-github-deploy` | Update the running app image and its rollout strategy only, dev | `repo:NASA-IMPACT/MMGIS:environment:development` |
+| `mmgis-production-github-deploy` | Update the running app image and its rollout strategy only, prod | `repo:NASA-IMPACT/MMGIS:environment:production` |
 
 The bootstrap root also creates the three state buckets, the two permissions boundaries (`mmgis-ci-role-boundary-<env>`, attached to every CI-created role), the KMS key that encrypts the database admin password's secret, and the service-linked role CloudFront runs both environments' VPC origins under.
 

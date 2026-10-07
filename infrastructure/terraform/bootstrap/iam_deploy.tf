@@ -24,7 +24,7 @@ resource "aws_iam_role" "deploy" {
   for_each = local.environments
 
   name        = "mmgis-${each.key}-github-deploy"
-  description = "GitHub OIDC deploy role for the ${each.key} environment (image roll only). Environment-scoped trust."
+  description = "GitHub OIDC deploy role for the ${each.key} environment (image roll + rollout-strategy update only). Environment-scoped trust."
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -96,6 +96,27 @@ resource "aws_iam_role_policy" "deploy" {
         Effect   = "Allow"
         Action   = ["ecs:UpdateService"]
         Resource = local.deploy_service_arns[each.key]
+      },
+      {
+        # UpdateService cannot be scoped to deploymentConfiguration, and with
+        # PassRole on the runtime roles, pointing the service at another task
+        # definition is the real escalation. Deny that, and ECS Exec.
+        Sid      = "DenyUpdateServiceTaskDefinition"
+        Effect   = "Deny"
+        Action   = ["ecs:UpdateService"]
+        Resource = "*"
+        Condition = {
+          Null = { "ecs:task-definition" = "false" }
+        }
+      },
+      {
+        Sid      = "DenyUpdateServiceExecuteCommand"
+        Effect   = "Deny"
+        Action   = ["ecs:UpdateService"]
+        Resource = "*"
+        Condition = {
+          Bool = { "ecs:enable-execute-command" = "true" }
+        }
       },
       {
         # Update + Describe only — creating a service is Terraform's job, and
