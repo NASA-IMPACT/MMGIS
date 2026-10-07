@@ -1,13 +1,26 @@
 import React from 'react'
 import { useCallback, useState } from 'react'
 import { Title } from './lib'
-import { mmgisRequest } from '../_shared/adapters/mmgisAPI'
+import {
+    mmgisGetMissionPath,
+    mmgisRequest,
+} from '../_shared/adapters/mmgisAPI'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 import { resolveAction } from '../_shared/actions/resolveAction'
+import { resolveMissionAssetUrl } from '../_shared/content/uploadKey'
 
 const PLUGIN_ID = 'title'
 const DEFAULT_TITLE = 'MMGIS'
 const DEFAULT_ICON = 'mdi mdi-earth mdi-24px'
+
+/**
+ * The logo link becomes an anchor href, so anything other than an absolute
+ * http(s) URL (e.g. a `javascript:` URL) is dropped rather than rendered.
+ */
+const toExternalUrl = (link?: unknown): string | null => {
+    const trimmed = typeof link === 'string' ? link.trim() : ''
+    return /^https?:\/\//i.test(trimmed) ? trimmed : null
+}
 
 /** Raw mission branding from the 'app:getBranding' bus provider. */
 type Branding = {
@@ -22,6 +35,7 @@ type TitleToolVars = {
     icon?: string
     showLogo?: boolean
     showTitleText?: boolean
+    logoLink?: string
     actionButtonText?: string
     actionButtonLink?: string
 }
@@ -32,6 +46,7 @@ type TitleState = {
     iconClass: string
     showLogo: boolean
     showTitleText: boolean
+    logoLink: string | null
     actionButtonText: string
     actionButtonLink: string
 }
@@ -42,6 +57,7 @@ const INITIAL_STATE: TitleState = {
     iconClass: DEFAULT_ICON,
     showLogo: true,
     showTitleText: true,
+    logoLink: null,
     actionButtonText: '',
     actionButtonLink: '',
 }
@@ -51,25 +67,31 @@ const INITIAL_STATE: TitleState = {
  * and tool variables over the mmgisAPI bus, resolves the display props (the
  * title fallback order lives here, not in the core provider), and hands the
  * action button's configured link off to resolveAction.
+ *
+ * The branding logo is stored either as a URL or as an uploaded image's path
+ * (mission-relative on disk, an "assets/..." key in lean mode), so it goes
+ * through resolveMissionAssetUrl before reaching <img src>.
  */
 export function MMGISTitleAdapter() {
     const [state, setState] = useState<TitleState>(INITIAL_STATE)
 
     const refresh = useCallback(async () => {
         try {
-            const [branding, vars] = await Promise.all([
+            const [branding, vars, missionPath] = await Promise.all([
                 mmgisRequest<Branding>('app:getBranding'),
                 mmgisRequest<TitleToolVars>('tool:getVars', PLUGIN_ID),
+                mmgisGetMissionPath().catch(() => null),
             ])
             const b = branding || {}
             const v = vars || {}
             setState({
                 titleText:
                     b.pagename || b.mission || b.name || DEFAULT_TITLE,
-                logoUrl: b.logoUrl || null,
+                logoUrl: resolveMissionAssetUrl(b.logoUrl, missionPath) || null,
                 iconClass: v.icon || DEFAULT_ICON,
                 showLogo: v.showLogo !== false,
                 showTitleText: v.showTitleText !== false,
+                logoLink: toExternalUrl(v.logoLink),
                 actionButtonText: v.actionButtonText || '',
                 actionButtonLink: v.actionButtonLink || '',
             })
@@ -94,6 +116,7 @@ export function MMGISTitleAdapter() {
             iconClass={state.iconClass}
             showLogo={state.showLogo}
             showTitleText={state.showTitleText}
+            logoLink={state.logoLink}
             showAction={!!state.actionButtonLink}
             actionLabel={state.actionButtonText}
             actionTitle={state.actionButtonLink}

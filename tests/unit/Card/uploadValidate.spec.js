@@ -12,6 +12,8 @@ test.describe('Upload validation', () => {
         expect(extensionForMime('image/webp')).toBe('webp')
         expect(extensionForMime('image/gif')).toBe('gif')
         expect(extensionForMime('image/svg+xml')).toBe('svg')
+        expect(extensionForMime('image/x-icon')).toBe('ico')
+        expect(extensionForMime('image/vnd.microsoft.icon')).toBe('ico')
     })
 
     test('extensionForMime rejects disallowed types', () => {

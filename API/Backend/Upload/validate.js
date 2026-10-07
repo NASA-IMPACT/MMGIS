@@ -9,6 +9,9 @@ const IMAGE_MIME_TO_EXT = {
     // rendered via <img src>, which does not execute scripts embedded in an SVG.
     // (Residual risk is limited to someone opening the raw asset URL directly.)
     'image/svg+xml': 'svg',
+    // Browsers report .ico under either name.
+    'image/x-icon': 'ico',
+    'image/vnd.microsoft.icon': 'ico',
 };
 
 // Map an upload mimetype to a safe file extension using the given allow-list,
