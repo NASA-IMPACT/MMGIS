@@ -1,27 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { transformAsync } from "@babel/core";
 import { defineConfig } from "vitest/config";
-
-// The Configure app (configure/) is a create-react-app bundle that writes JSX
-// in plain .js files, which Vite only parses in .jsx/.tsx. Specs that render a
-// Configure component need those sources compiled first; JSX is the only
-// syntax this adds, so everything else passes through for Vite as usual.
-const CONFIGURE_JS = /\/configure\/src\/.*\.js$/;
-const configureJsx = {
-  name: "configure-jsx",
-  enforce: "pre" as const,
-  async transform(code: string, id: string) {
-    if (!CONFIGURE_JS.test(id) || !/<[A-Za-z>]/.test(code)) return null;
-    const result = await transformAsync(code, {
-      filename: id,
-      babelrc: false,
-      configFile: false,
-      sourceMaps: true,
-      presets: [["@babel/preset-react", { runtime: "automatic" }]],
-    });
-    return result && { code: result.code ?? code, map: result.map };
-  },
-};
 
 /**
  * Vitest configuration for MMGIS unit tests.
@@ -38,7 +16,6 @@ const configureJsx = {
  * so they travel with the directory when it is extracted.
  */
 export default defineConfig({
-  plugins: [configureJsx],
   resolve: {
     alias: [
       // `src/pre/tools.js` is generated at server start (gitignored, absent in a
