@@ -58,6 +58,7 @@ sequenceDiagram
     A->>AWS: assume the deploy role (OIDC)
     A->>AWS: build + push image, tag = commit short SHA
     A->>AWS: register admin + publish task-def revisions
+    A->>AWS: set the service's rollout strategy to ROLLING, no bake
     A->>AWS: roll the Express service's primary container
     A->>AWS: poll until only the new image is active
 ```

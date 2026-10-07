@@ -89,6 +89,15 @@ resource "aws_iam_role_policy" "deploy" {
         Resource = local.deploy_service_arns[each.key]
       },
       {
+        # app-deploy.yml sets the rollout strategy to ROLLING, which only
+        # UpdateService can do (the Express API exposes no deployment
+        # configuration). Scoped to this environment's admin service.
+        Sid      = "SetAdminServiceDeploymentConfiguration"
+        Effect   = "Allow"
+        Action   = ["ecs:UpdateService"]
+        Resource = local.deploy_service_arns[each.key]
+      },
+      {
         # Update + Describe only — creating a service is Terraform's job, and
         # a compromised deploy token must not stand up new services. The API
         # authorizes these against the SERVICE ARN (learned empirically), not
