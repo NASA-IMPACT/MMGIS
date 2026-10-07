@@ -309,6 +309,9 @@ it from the real login password (the full note lives in
   the service ARN); and the CLI rejects `--cluster` on
   `update-express-gateway-service` (ARN-only) — the workflow already resolves
   the ARN first.
+  `ecs:ListServiceDeployments` finds the deployment the rollout started.
+  `ecs:DescribeServiceDeployments` polls its status; its `Resource` lists the
+  `service-deployment/<cluster>/<service>/*` pattern and the service ARN.
 - **Serving a published dashboard from a customer's own domain.** When a team
   wants a dashboard to appear under a path on their own domain, hand them
   [`../docs/infrastructure/serving-a-dashboard-from-your-domain.md`](../docs/infrastructure/serving-a-dashboard-from-your-domain.md).

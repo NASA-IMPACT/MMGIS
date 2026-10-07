@@ -208,9 +208,12 @@ jobs:
       # Progress is polled, not streamed: `monitor-...` is a live stream
       # meant for a human terminal, while polling gives CI a bounded
       # loop with a clean exit code. The update starts an ECS service
-      # deployment, which `describe-express-gateway-service` names in
-      # `.service.currentDeployment`; we poll that deployment's own
-      # status with `describe-service-deployments`.
+      # deployment a few seconds later; we find it with
+      # `list-service-deployments` (created after the update was sent)
+      # and poll its own status with `describe-service-deployments`.
+      # An update that changes nothing (same image) starts no deployment,
+      # so if none appears we pass only when the service already runs
+      # just the new image.
       #
       # How we know it's DONE: status is SUCCESSFUL. ECS sets it once
       # the new tasks are healthy, before the old configuration has
@@ -218,7 +221,8 @@ jobs:
       #
       # How we know it FAILED: status is STOPPED or one of the
       # ROLLBACK_* values (e.g. the circuit breaker rolled back to the
-      # old image). The step exits 1 and prints the status and reason.
+      # old image), or a describe call is denied. The step exits 1 and
+      # prints the status and reason.
       # The timeout below only catches a deployment that never
       # finishes either way.
       - name: Roll the Express Mode gateway service
@@ -239,12 +243,8 @@ jobs:
             --output text)
           echo "Resolved $ECS_SERVICE -> $SERVICE_ARN"
 
-          # Capture the deployment in flight (if any) BEFORE the update,
-          # so the loop below never polls a stale deployment.
-          PREV_DEP=$(aws ecs describe-express-gateway-service \
-            --service-arn "$SERVICE_ARN" \
-            --query 'service.currentDeployment' \
-            --output text)
+          # Deployments created after this instant belong to this update.
+          T0=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
           # No --cluster here: current CLIs removed it from
           # update-express-gateway-service (the service ARN fully
@@ -253,39 +253,61 @@ jobs:
             --service-arn "$SERVICE_ARN" \
             --primary-container "{\"image\": \"$IMAGE_URI\"}"
 
-          # Wait briefly for the update to show up as a new deployment.
+          # ECS creates the deployment a few seconds after the update.
           DEP=""
           for attempt in $(seq 1 12); do
-            CUR=$(aws ecs describe-express-gateway-service \
-              --service-arn "$SERVICE_ARN" \
-              --query 'service.currentDeployment' \
+            CUR=$(aws ecs list-service-deployments \
+              --cluster "$ECS_CLUSTER" \
+              --service "$ECS_SERVICE" \
+              --created-at after="$T0" \
+              --query 'sort_by(serviceDeployments,&createdAt)[-1].serviceDeploymentArn' \
               --output text) || CUR=""
-            if [ -n "$CUR" ] && [ "$CUR" != "None" ] && [ "$CUR" != "$PREV_DEP" ]; then
+            if [ -n "$CUR" ] && [ "$CUR" != "None" ]; then
               DEP="$CUR"
               break
             fi
             sleep 5
           done
           if [ -z "$DEP" ]; then
-            echo "No new deployment appeared after the update (currentDeployment still: ${CUR:-unknown}; before update: $PREV_DEP)" >&2
+            # No deployment: fine only if the service already runs just
+            # this image (e.g. a re-run of the same commit).
+            RESPONSE=$(aws ecs describe-express-gateway-service \
+              --service-arn "$SERVICE_ARN" \
+              --output json)
+            STATUS=$(echo "$RESPONSE" | jq -r '.service.status.statusCode')
+            IMAGES=$(echo "$RESPONSE" \
+              | jq -r '[.service.activeConfigurations[]?.primaryContainer.image]
+                       | unique | join(", ")')
+            if [ "$STATUS" = "ACTIVE" ] && [ "$IMAGES" = "$IMAGE_URI" ]; then
+              echo "No new deployment; already serving $IMAGE_URI; nothing to roll."
+              exit 0
+            fi
+            echo "No new deployment appeared after the update (status: $STATUS; active images: $IMAGES)" >&2
             exit 1
           fi
           echo "Polling deployment $DEP"
 
           # Bounded poll (up to 20 minutes) on the deployment's status.
           STATUS="(unknown)"
+          ERR_FILE=$(mktemp)
           for attempt in $(seq 1 80); do
             # A transient describe failure should cost one attempt, not
-            # the whole rollout step.
+            # the whole rollout step; a permissions error never clears.
             if ! RESULT=$(aws ecs describe-service-deployments \
               --service-deployment-arns "$DEP" \
               --query 'serviceDeployments[0].[status,statusReason]' \
-              --output text); then
+              --output text 2>"$ERR_FILE"); then
+              cat "$ERR_FILE" >&2
+              if grep -qE 'AccessDenied|UnauthorizedOperation' "$ERR_FILE"; then
+                echo "Not allowed to describe the deployment; failing now." >&2
+                exit 1
+              fi
               echo "[$attempt/80] describe failed; retrying" >&2
               sleep 15
               continue
             fi
             IFS=$'\t' read -r STATUS REASON <<< "$RESULT"
+            [ "$REASON" = "None" ] && REASON="" || REASON=" ($REASON)"
             echo "[$attempt/80] deployment status: $STATUS"
             case "$STATUS" in
               SUCCESSFUL)
@@ -293,7 +315,11 @@ jobs:
                 exit 0
                 ;;
               STOPPED|ROLLBACK_REQUESTED|ROLLBACK_IN_PROGRESS|ROLLBACK_SUCCESSFUL|ROLLBACK_FAILED)
-                echo "Deployment failed: $STATUS ($REASON)" >&2
+                echo "Deployment failed: $STATUS$REASON" >&2
+                exit 1
+                ;;
+              None)
+                echo "Deployment $DEP not found." >&2
                 exit 1
                 ;;
             esac
