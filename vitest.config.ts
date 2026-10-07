@@ -6,6 +6,9 @@ import { defineConfig } from "vitest/config";
 // in plain .js files, which Vite only parses in .jsx/.tsx. Specs that render a
 // Configure component need those sources compiled first; JSX is the only
 // syntax this adds, so everything else passes through for Vite as usual.
+// configure/node_modules is not installed for the unit run, and when it is
+// present locally its React 17 must not load beside the root React, so
+// `resolve.dedupe` pins every `react`/`react-dom` import to the root copy.
 const CONFIGURE_JS = /\/configure\/src\/.*\.js$/;
 const configureJsx = {
   name: "configure-jsx",
@@ -40,6 +43,7 @@ const configureJsx = {
 export default defineConfig({
   plugins: [configureJsx],
   resolve: {
+    dedupe: ["react", "react-dom"],
     alias: [
       // `src/pre/tools.js` is generated at server start (gitignored, absent in a
       // fresh checkout / CI). Specs that transitively import it only need it to
@@ -50,6 +54,15 @@ export default defineConfig({
         find: /^.*\/pre\/tools$/,
         replacement: fileURLToPath(
           new URL("./tests/unit/__mocks__/preTools.js", import.meta.url)
+        ),
+      },
+      // MUI belongs to the Configure app and is not installed for the unit
+      // run. Each `@mui/material/<Name>` import is served by the same-named
+      // stub. See tests/unit/__mocks__/mui/components.js.
+      {
+        find: /^@mui\/material\/(Button|Typography|TextField)$/,
+        replacement: fileURLToPath(
+          new URL("./tests/unit/__mocks__/mui/$1.js", import.meta.url)
         ),
       },
     ],
