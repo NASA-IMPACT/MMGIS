@@ -13,9 +13,12 @@
         },
         {
           "field": "look.logourl",
-          "name": "Square Logo Image URL",
-          "description": "",
-          "type": "text",
+          "name": "Logo Image",
+          "description": "Upload an image (png, jpg, webp, gif or svg, up to 5 MB) or paste an image URL. Any aspect ratio works; the modern title bar shows it uncropped. Leave empty to show the default icon.",
+          "type": "upload",
+          "subdir": "Branding",
+          "allowUrl": true,
+          "previewFit": "contain",
           "width": 9
         },  
         {

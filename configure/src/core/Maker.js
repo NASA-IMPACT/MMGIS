@@ -445,6 +445,8 @@ const getComponent = (
           }
           subdir={com.subdir}
           base={uploadBase}
+          allowUrl={com.allowUrl === true}
+          previewFit={com.previewFit}
           disabled={disabled || isDisabled}
           onChange={(p) =>
             updateConfiguration(forceField || com.field, p, layer)
