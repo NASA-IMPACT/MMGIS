@@ -2282,6 +2282,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             },
             onClick: this._onPointerClick,
             onHover: this._onPointerHover,
+            getCursor: this._cursorFor,
         } as any)
     }
 
@@ -2300,6 +2301,20 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._featureClickHandler?.(pickInfoToResult(info))
         this._emitClick(info)
     }
+
+    /**
+     * deck's own cursor rule stops at dragging: it tracks the pointer over a
+     * pickable feature but never shows it. A pointer there is what every
+     * clickable thing on the map owes the user, and what Leaflet gives its
+     * interactive paths on its own.
+     */
+    private _cursorFor = ({
+        isDragging,
+        isHovering,
+    }: {
+        isDragging: boolean
+        isHovering: boolean
+    }): string => (isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab')
 
     private _onPointerHover = (info: PickingInfo): void => {
         if (this._drawingShape) return
@@ -2384,6 +2399,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             layers: [],
             onClick: this._onPointerClick,
             onHover: this._onPointerHover,
+            getCursor: this._cursorFor,
         })
 
         this._basemap.addControl(this._overlay as unknown as object)
