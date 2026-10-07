@@ -105,6 +105,14 @@ resource "aws_iam_role_policy" "deploy" {
         ]
       },
       {
+        # The workflow polls the rollout's service deployment for its
+        # SUCCESSFUL / STOPPED / ROLLBACK_* status.
+        Sid      = "DescribeAdminServiceDeployments"
+        Effect   = "Allow"
+        Action   = ["ecs:DescribeServiceDeployments"]
+        Resource = "arn:aws:ecs:${local.region}:${local.account_id}:service-deployment/mmgis-${each.key}/mmgis-${each.key}-admin/*"
+      },
+      {
         # Registering task-def revisions passes the task/exec roles; an
         # Express service update passes the infra role too.
         Sid      = "PassEnvTaskRoles"
