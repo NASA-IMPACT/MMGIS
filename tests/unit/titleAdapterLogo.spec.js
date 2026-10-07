@@ -5,10 +5,8 @@ import { MMGISTitleAdapter } from '../../src/essence/Tools/Title/MMGISTitleAdapt
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
-// The branding logo reaches the title bar through resolveMissionAssetUrl: an
-// uploaded image is stored as a path (mission-relative on disk, an
-// "assets/..." key in lean mode) and only loads once resolved, while a full
-// URL passes through untouched. With no logo, the default icon shows.
+// The resolver's own cases are covered in Card/resolveImageUrl.spec.js; this
+// checks the adapter feeds it the mission path and survives without one.
 function makeBus(logoUrl, { missionPath = 'provided' } = {}) {
     const responses = {
         'app:getBranding': { mission: 'Demo', logoUrl },
@@ -64,18 +62,6 @@ describe('MMGISTitleAdapter logo', () => {
         await renderWithLogo('Branding/uploads/abc.png')
         const img = mounted.host.querySelector('img')
         expect(img.getAttribute('src')).toBe('Missions/Demo/Branding/uploads/abc.png')
-    })
-
-    test('keeps a lean-mode upload key relative to the page', async () => {
-        await renderWithLogo('assets/Demo/Branding/uploads/abc.svg')
-        const img = mounted.host.querySelector('img')
-        expect(img.getAttribute('src')).toBe('assets/Demo/Branding/uploads/abc.svg')
-    })
-
-    test('passes an https URL through unchanged', async () => {
-        await renderWithLogo('https://example.com/logo.png')
-        const img = mounted.host.querySelector('img')
-        expect(img.getAttribute('src')).toBe('https://example.com/logo.png')
     })
 
     test('shows the default icon when no logo is set', async () => {
