@@ -98,18 +98,8 @@ resource "aws_iam_role_policy" "deploy" {
         Resource = local.deploy_service_arns[each.key]
       },
       {
-        # UpdateService cannot be scoped to deploymentConfiguration, and with
-        # PassRole on the runtime roles, pointing the service at another task
-        # definition is the real escalation. Deny that, and ECS Exec.
-        Sid      = "DenyUpdateServiceTaskDefinition"
-        Effect   = "Deny"
-        Action   = ["ecs:UpdateService"]
-        Resource = "*"
-        Condition = {
-          Null = { "ecs:task-definition" = "false" }
-        }
-      },
-      {
+        # UpdateService cannot be scoped to deploymentConfiguration; at least
+        # keep it from turning on ECS Exec into the admin container.
         Sid      = "DenyUpdateServiceExecuteCommand"
         Effect   = "Deny"
         Action   = ["ecs:UpdateService"]
