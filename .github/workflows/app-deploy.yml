@@ -243,8 +243,8 @@ jobs:
             --output text)
           echo "Resolved $ECS_SERVICE -> $SERVICE_ARN"
 
-          # Deployments created after this instant belong to this update.
-          T0=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          # 30 s back absorbs runner clock skew; per-env concurrency means any deployment since then is this update's.
+          T0=$(date -u -d '30 seconds ago' +%Y-%m-%dT%H:%M:%SZ)
 
           # No --cluster here: current CLIs removed it from
           # update-express-gateway-service (the service ARN fully
@@ -298,7 +298,7 @@ jobs:
               --query 'serviceDeployments[0].[status,statusReason]' \
               --output text 2>"$ERR_FILE"); then
               cat "$ERR_FILE" >&2
-              if grep -qE 'AccessDenied|UnauthorizedOperation' "$ERR_FILE"; then
+              if grep -qE 'AccessDenied|UnauthorizedOperation|InvalidParameterException' "$ERR_FILE"; then
                 echo "Not allowed to describe the deployment; failing now." >&2
                 exit 1
               fi
