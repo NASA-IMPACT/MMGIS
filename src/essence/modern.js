@@ -129,7 +129,7 @@ class ModernInterface {
         F_.setRadius('minor', L_.radius.minor)
 
         if (!swapping) CursorInfo.init()
-        if (!swapping) Globe_.init()
+        if (!swapping) await Globe_.init()
         if (!swapping) Viewer_.init()
 
         if (swapping) Map_.clear()
