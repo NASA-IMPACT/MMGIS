@@ -142,6 +142,83 @@ jobs:
           role-to-assume: ${{ secrets.IAC_DEPLOY_ROLE_ARN }}
           aws-region: ${{ inputs.aws_region }}
 
+      # Switch the service from Express Mode's default CANARY rollout
+      # (5% canary, 3 min canary bake + 3 min final bake) to ROLLING with
+      # no bake. The admin container never serves public traffic (the
+      # public sites are the static dashboards on S3), so the canary had
+      # nothing to observe and the bakes protected nothing while costing
+      # ~6 min per rollout. The deployment circuit breaker and the
+      # RollbackAlarm Express creates (both enable + rollback) are kept.
+      # Terraform's aws_ecs_express_gateway_service and
+      # update-express-gateway-service expose no deployment configuration,
+      # so this uses update-service; it is a no-op once applied. It runs
+      # before the build and before any task-definition revision is
+      # registered, so if ECS rejects it nothing has changed yet.
+      - name: Set rollout strategy to ROLLING
+        env:
+          ECS_CLUSTER: ${{ inputs.ecs_cluster }}
+          ECS_SERVICE: ${{ inputs.ecs_service }}
+        run: |
+          set -euo pipefail
+
+          current() {
+            aws ecs describe-services \
+              --cluster "$ECS_CLUSTER" \
+              --services "$ECS_SERVICE" \
+              --query 'services[0].deploymentConfiguration' \
+              --output json
+          }
+          # ROLLING, no bake, and no leftover canary block (whether
+          # UpdateService replaces or merges the configuration is not
+          # documented, so a stale canaryConfiguration counts as not done).
+          is_rolling() {
+            jq -e '.strategy == "ROLLING"
+                   and (.bakeTimeInMinutes // 0) == 0
+                   and .canaryConfiguration == null' > /dev/null
+          }
+
+          BEFORE=$(current)
+          echo "Current deployment configuration:"
+          echo "$BEFORE"
+
+          if echo "$BEFORE" | is_rolling; then
+            echo "Already ROLLING with no bake; nothing to change."
+            exit 0
+          fi
+
+          # Keep the live max/min percents and alarm names (falling back
+          # to the RollbackAlarm name Express Mode derives for the service).
+          echo "$BEFORE" | jq \
+            --arg ALARM "$ECS_CLUSTER/$ECS_SERVICE/RollbackAlarm" '{
+              deploymentCircuitBreaker: {enable: true, rollback: true},
+              maximumPercent: .maximumPercent,
+              minimumHealthyPercent: .minimumHealthyPercent,
+              alarms: {
+                alarmNames: ((.alarms.alarmNames // [])
+                  | if length > 0 then . else [$ALARM] end),
+                enable: true,
+                rollback: true
+              },
+              strategy: "ROLLING",
+              bakeTimeInMinutes: 0
+            }' > /tmp/deployment-configuration.json
+          cat /tmp/deployment-configuration.json
+
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" \
+            --service "$ECS_SERVICE" \
+            --deployment-configuration file:///tmp/deployment-configuration.json \
+            --query 'service.deploymentConfiguration.strategy' \
+            --output text
+
+          AFTER=$(current)
+          if ! echo "$AFTER" | is_rolling; then
+            echo "ECS did not accept ROLLING with no bake for $ECS_SERVICE. Configuration is now:" >&2
+            echo "$AFTER" >&2
+            exit 1
+          fi
+          echo "Rollout strategy is ROLLING with no bake."
+
       - name: Login to Amazon ECR
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
@@ -271,6 +348,36 @@ jobs:
           done
           echo "Rollout did not converge within 20 minutes; still serving: $IMAGES" >&2
           exit 1
+
+      # The ROLLING setting survives an Express roll today only because
+      # Express Mode's infrastructure role cannot modify the service: ECS
+      # tries an UpdateService under it right after
+      # update-express-gateway-service and is denied. If AWS ever grants
+      # that, the roll could reset the strategy; this catches it.
+      - name: Confirm rollout strategy survived the roll
+        env:
+          ECS_CLUSTER: ${{ inputs.ecs_cluster }}
+          ECS_SERVICE: ${{ inputs.ecs_service }}
+        run: |
+          set -euo pipefail
+          CONFIG=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --query 'services[0].deploymentConfiguration' \
+            --output json)
+          if ! echo "$CONFIG" | jq -e '.strategy == "ROLLING"
+                                       and (.bakeTimeInMinutes // 0) == 0
+                                       and .canaryConfiguration == null' > /dev/null; then
+            {
+              echo "The Express roll reset $ECS_SERVICE's deployment configuration:"
+              echo "$CONFIG"
+              echo "Express Mode can now modify the service; the next deploy's"
+              echo "'Set rollout strategy to ROLLING' step will set it again, but"
+              echo "every roll will revert it until this is handled."
+            } >&2
+            exit 1
+          fi
+          echo "Rollout strategy is still ROLLING with no bake."
 
       # Surface what this deploy shipped in the run summary. Runs even when
       # the rollout step fails or times out — the image is already in ECR by
