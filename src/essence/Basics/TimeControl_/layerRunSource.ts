@@ -117,6 +117,37 @@ export const leadAt = (runs: RunSource | null | undefined, at: unknown): number 
 }
 
 /**
+ * The value a URL placeholder becomes when nothing can fill it. Leaflet's URL
+ * template throws on an unfilled key, so a placeholder is never left in place;
+ * this marker makes that layer's tile requests fail instead.
+ */
+export const UNRESOLVED_URL_REPLACEMENT = 'MMGIS_UNRESOLVED'
+
+/**
+ * Fills a tile URL's `{reftime}` and `{lead}` from the pinned run: the run
+ * itself, and the whole lead steps from it to `at`, the instant being drawn.
+ * A value that is missing becomes the unresolved marker. The URL is returned
+ * unchanged for a layer with no runs.
+ */
+export function fillRunPlaceholders(
+    url: string,
+    runs: RunSource | null | undefined,
+    at: unknown
+): string {
+    if (!runs) return url
+    const lead = leadAt(runs, at)
+    return url
+        .replace(
+            /{reftime}/g,
+            encodeURIComponent(runs.selected || UNRESOLVED_URL_REPLACEMENT)
+        )
+        .replace(
+            /{lead}/g,
+            lead != null ? String(lead) : UNRESOLVED_URL_REPLACEMENT
+        )
+}
+
+/**
  * Pins `time` to `run`: records the selection and derives the data window
  * from it. False for a run the list does not hold, so a picker cannot pin
  * an instant the service never listed.

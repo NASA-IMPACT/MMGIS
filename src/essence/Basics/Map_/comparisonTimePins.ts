@@ -31,6 +31,7 @@ import {
     resolveDeckCOGFileUrl,
 } from '../Layers_/tileLayerSource'
 import { MAP_ENGINE, toCanonicalLayerType } from '../MapEngines/types/engine'
+import { fillRunPlaceholders } from '../TimeControl_/layerRunSource'
 
 /** The window one comparison side pins its layers to. */
 export type TimePin = {
@@ -148,8 +149,10 @@ function patchFor(
  *
  * Substituting here rather than at each call site matches
  * TimeControl.reloadLayer, which rewrites the URL before rebuilding the layer:
- * it substitutes `{starttime}`, `{endtime}` and `{customtime.N}`, and the two
- * must agree or the sides would differ for a reason other than the date.
+ * it substitutes `{starttime}`, `{endtime}`, `{customtime.N}`, and a model
+ * run's `{reftime}` and `{lead}`, and the two must agree or the sides would
+ * differ for a reason other than the date. Both sides read the same pinned
+ * run; only the lead, counted to the side's own date, differs.
  *
  * `{time}` is left for the branch that owns it — compileTileUrl resolves it
  * from the window's closing instant on the tile branch, nothing does on the
@@ -162,7 +165,7 @@ function withPinnedTime(
 ): Record<string, any> {
     const time = { ...(layerObj.time ?? {}), start: pin.start, end: pin.end }
     const format = formatLayerTime(time.format)
-    let url = String(layerObj.url ?? '')
+    let url = fillRunPlaceholders(String(layerObj.url ?? ''), time.runs, pin.end)
         .replace(/{starttime}/g, format(pin.start))
         .replace(/{endtime}/g, format(pin.end))
 
