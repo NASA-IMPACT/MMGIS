@@ -9,7 +9,6 @@ import type {
     MapSubscribeHandlers,
 } from '../lib'
 
-const SEARCH_OVERLAY_ID = 'plugin:mapcontrol:search'
 const MEASURE_LABEL_ID = 'plugin:mapcontrol:measure-label'
 const MAP_CURSOR_IDS = ['mapScreen', 'map']
 
@@ -85,7 +84,7 @@ export const setCursor = (cursor: string): void => {
     }
 }
 
-/** Fly to a geocode result and drop a pin overlay. */
+/** Fly to a geocode result. */
 export const flyToResult = (result: GeocodeResult): void => {
     // Nominatim bbox: [min_lat, max_lat, min_lon, max_lon]
     // map:fitBounds expects [[south, west], [north, east]]
@@ -93,20 +92,4 @@ export const flyToResult = (result: GeocodeResult): void => {
         [result.bbox[0], result.bbox[2]],
         [result.bbox[1], result.bbox[3]],
     ])
-    void mmgisRequest('map:createLayer', {
-        id: SEARCH_OVERLAY_ID,
-        type: 'vector',
-        interactive: false,
-        geojson: {
-            type: 'FeatureCollection',
-            features: [
-                {
-                    type: 'Feature',
-                    geometry: { type: 'Point', coordinates: [result.lng, result.lat] },
-                    properties: {},
-                },
-            ],
-        },
-        style: { color: '#005ea2', fillColor: '#005ea2', fillOpacity: 0.85, radius: 7, weight: 2 },
-    })
 }
