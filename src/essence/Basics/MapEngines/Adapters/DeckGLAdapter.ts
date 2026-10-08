@@ -1959,17 +1959,19 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * owns an independent instance. A clone carries the layer's own props
      * unless `overrides` names that id, which is how one side draws a source
      * the other does not share. Unknown ids are skipped.
+     *
+     * Clones are drawn in the registry's z-index order rather than the order
+     * `ids` lists them, so each side stacks its layers exactly as the primary
+     * map does.
      */
     private _comparisonClonesFor(
         ids: string[],
         overrides: Record<string, Record<string, unknown>>,
     ): Layer[] {
-        return ids
-            .map((id) => {
-                const layer = this._layers.get(id)
-                return layer ? (layer.clone(overrides[id] ?? {}) as Layer) : null
-            })
-            .filter((l): l is Layer => l != null)
+        const wanted = new Set(ids)
+        return [...this._layers.entries()]
+            .filter(([id]) => wanted.has(id))
+            .map(([id, layer]) => layer.clone(overrides[id] ?? {}) as Layer)
     }
 
     /** Apply the divider position the way the active layout reads it. */
