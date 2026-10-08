@@ -31,6 +31,14 @@ COPY . .
 # dist/ (theme CSS + fonts) is NOT built here: the deploy workflow runs
 # `npm run build:themes` before the image build, and scripts/build.js exits
 # non-zero when dist/ is missing from the build context.
+#
+# MMGIS_DEPLOYMENT_MODE shapes the bundle: in lean, API/updateTools.js leaves
+# the Draw tool out of src/pre/tools.js and configure's toolConfigs.json. The
+# publish task uploads this build/ as-is, so CI builds lean to match the lean
+# environments. Builder stage only: the runtime mode comes from the task
+# definition's environment, never from the image.
+ARG MMGIS_DEPLOYMENT_MODE=full
+ENV MMGIS_DEPLOYMENT_MODE=$MMGIS_DEPLOYMENT_MODE
 RUN npm run build
 RUN cd configure && rm -rf build/* && npm run build
 
@@ -102,8 +110,9 @@ RUN if [ "$WITH_STAC" = "true" ]; then \
 # MMGIS dependencies
 #############################
 
-# Full install, devDependencies included: the publish task runs from this
-# same image and rebuilds the bundle with webpack (scripts/publish-static.js).
+# Full install, devDependencies included. The publish task no longer runs
+# webpack (it uploads the builder's build/), so a follow-up drops these and
+# src/ from this stage.
 COPY package.json package-lock.json .npmrc ./
 RUN --mount=type=cache,target=/root/.npm npm ci
 
@@ -112,9 +121,10 @@ RUN --mount=type=cache,target=/root/.npm npm ci
 #############################
 
 # Only what the server, init-db and the publish task read at runtime. The
-# publish task's webpack build needs src/, configuration/, dist/, public/,
-# tsconfig.json and the full node_modules above. auxiliary/ is kept (small)
-# because the admin UI points operators at its scripts.
+# publish task reads build/ and public/. src/, configuration/, dist/ and
+# tsconfig.json were copied for the in-task webpack build it no longer runs;
+# a follow-up removes them with the devDependencies. auxiliary/ is kept
+# (small) because the admin UI points operators at its scripts.
 COPY tsconfig.json _docker-entrypoint.sh ./
 COPY API ./API
 COPY adjacent-servers ./adjacent-servers

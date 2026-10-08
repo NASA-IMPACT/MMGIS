@@ -168,6 +168,9 @@ jobs:
       # dist/ built above.
       # WITH_STAC=false: deployed environments run lean mode, which never
       # starts the Python/STAC servers.
+      # MMGIS_DEPLOYMENT_MODE=lean: the image's build/ is what the publish task
+      # uploads as a dashboard, so it is compiled lean (no Draw tool), the
+      # same mode the admin and publish task definitions run in.
       - name: Docker build and push
         id: build-image
         uses: docker/build-push-action@v6
@@ -175,7 +178,9 @@ jobs:
           context: .
           push: true
           tags: ${{ steps.image.outputs.IMAGE_URI }}
-          build-args: WITH_STAC=false
+          build-args: |
+            WITH_STAC=false
+            MMGIS_DEPLOYMENT_MODE=lean
           provenance: false
           cache-from: type=gha
           cache-to: type=gha,mode=min

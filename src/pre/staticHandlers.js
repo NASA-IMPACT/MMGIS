@@ -2,29 +2,19 @@
 // 'node', calls.api() dispatches here instead of $.ajax-ing a backend.
 // Every named call in src/pre/calls.js' registry must have an entry.
 // Dispositions follow docs/adr/deployment/lean/api.md (Frontend dispatcher):
-//   Bake    - answer frozen into the bundle at publish (STATIC_MISSION_CONFIG)
+//   Bake    - answer written into the published index.html at publish time
+//             (the #mmgis-static-config JSON block, read by the inline
+//             script into mmgisglobal.STATIC_CONFIG)
 //   Compute - answer computed client-side
 //   Drop    - graceful error/no-op (write paths, auth, dropped modules)
 // Reroutes happen at direct-$.ajax call sites (PR 9), never in this table.
 
 import projStringToWkt from './projStringToWkt'
 
-// Lazy require: webpack resolves the STATIC_MISSION_CONFIG alias at bundle
-// time, but deferring to first use lets Node-side transforms (unit tests)
-// load this module without resolving the alias.
-let staticConfig
-const getStaticConfig = () => {
-    if (staticConfig === undefined) {
-        const mod = require('STATIC_MISSION_CONFIG')
-        staticConfig = (mod && mod.default) || mod || null
-    }
-    return staticConfig
-}
-
-// Baked answers are keyed by call name in the published staticConfig
+// Baked answers are keyed by call name in mmgisglobal.STATIC_CONFIG
 const bake = (call) =>
     function (data, success, error) {
-        const config = getStaticConfig()
+        const config = window.mmgisglobal?.STATIC_CONFIG
         const baked = config != null ? config[call] : null
         if (baked != null) {
             if (typeof success === 'function') success(baked)
@@ -57,13 +47,16 @@ const compute = (fn) =>
     }
 
 const STATIC_HANDLERS = {
-    // Bake — answered from the published mission config
-    get: bake('get'),
+    // Bake — answered from the published static config
     get_generaloptions: bake('get_generaloptions'),
     missions: bake('missions'),
     // Compute — proj4->WKT1 conversion runs in the browser, standing in
     // for the backend's GDAL endpoint (shapefile-export .prj)
     proj42wkt: compute((data) => projStringToWkt(data?.proj4)),
+    // Drop — every calls.api('get') site is gated off in static builds
+    // (LandingPage and essence load Missions/<mission>/config.json instead;
+    // the websocket refresh never connects), so nothing reaches this
+    get: drop(),
     // Drop — auth has no backend in a static dashboard
     login: drop(),
     signup: drop(),

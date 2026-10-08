@@ -62,6 +62,12 @@ sequenceDiagram
     A->>AWS: poll until only the new image is active
 ```
 
+### The image carries the dashboard bundle
+
+The app job's image build compiles the frontend once, and the publish task uploads that same `build/` as every dashboard. It does not run webpack itself. A publish reads the mission's config and the general options from Postgres, then copies `build/` to a temp directory. In that copy's `index.html` it fills the `#{…}` placeholders and the `mmgis-static-config` JSON block (`SERVER: "static"` plus the baked answers). It then uploads the copy along with `Missions/<mission>/config.json` ([`scripts/lib/static-index.js`](../../scripts/lib/static-index.js)).
+
+The image is built with `MMGIS_DEPLOYMENT_MODE=lean` (a build-arg scoped to the builder stage). Lean leaves the Draw tool out of the bundle and out of the admin's tool list, which the dashboards and the lean admin require. The mode the containers run in still comes from the task definitions. A frontend change therefore reaches dashboards only through a deploy followed by a republish, and rolling a dashboard back means redeploying the previous image and republishing.
+
 ### Why the apply discovers the serving image
 
 The task definitions Terraform manages carry an image reference, so every apply must write one — but which build runs is the app job's decision, never Terraform's ([environments](aws-environments.md#images-and-task-definitions)). The infrastructure job squares those two facts by asking ECS, before applying, which image the service is serving right now, and applying with exactly that. An apply can rewrite the task definitions, but never which build they name — so a run whose app job fails halfway leaves the environment stale but working: infrastructure at the new commit, the service still on the old image, and both task-definition families still naming a build that exists in ECR.

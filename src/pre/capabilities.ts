@@ -1,8 +1,9 @@
 /**
  * capabilities.ts
  * The single place the Essence bundle asks about its build personality.
- * SERVER is substituted into mmgisglobal at build time ('node' for
- * server-backed builds, 'static' for published dashboards); consumers
+ * SERVER is 'node' in every build; the publish task sets it to 'static'
+ * through index.html's mmgis-static-config block (see public/index.html
+ * and scripts/lib/static-index.js). Consumers
  * use this predicate instead of comparing the string themselves. The
  * planned post-merge capability table (feature -> personality map)
  * lands here.

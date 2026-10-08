@@ -107,13 +107,24 @@
         <div class="loading-text">Loading...</div>
       </div>
     </div>
+    <!--
+      Static dashboard config. Empty in every build; the publish task
+      (scripts/lib/static-index.js) fills it in the staged copy of the built
+      index.html with SERVER: "static" plus the answers static builds serve
+      in place of the backend (src/pre/staticHandlers.js). A JSON block,
+      not a comment marker, so it survives the production HTML minifier.
+    -->
+    <script id="mmgis-static-config" type="application/json">{}</script>
     <script>
       if(document.title.indexOf('LINK_PREVIEW_TITLE') != -1)
         document.title = "MMGIS";
       const NODE_ENV = "%NODE_ENV%";
       mmgisglobal = {};
       mmgisglobal.name = "MMGIS";
-      mmgisglobal.SERVER = "%SERVER%";
+      mmgisglobal.STATIC_CONFIG = JSON.parse(
+        document.getElementById("mmgis-static-config").textContent || "{}"
+      );
+      mmgisglobal.SERVER = mmgisglobal.STATIC_CONFIG.SERVER || "%SERVER%";
       switch (NODE_ENV) {
         case "production":
           mmgisglobal.AUTH = "#{AUTH}";
