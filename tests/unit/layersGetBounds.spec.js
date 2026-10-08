@@ -87,6 +87,23 @@ describe('layers:getBounds provider', () => {
         ])
     })
 
+    // What is loaded is not what the layer covers: a layer that only loads
+    // the features in view, or in the current time window, measures to that
+    // slice. A configured footprint is the author's word on the whole.
+    test('prefers a configured footprint over valid Leaflet bounds', () => {
+        L_.layers.data = {
+            [OUTLINE]: { type: 'vector', boundingBox: [-8, -4, 16, 12] },
+        }
+        L_.layers.layer = {
+            [OUTLINE]: leafletLayer(leafletBounds(1, 2, 3, 4)),
+        }
+
+        expect(getBounds(OUTLINE)).toEqual([
+            [-4, -8],
+            [12, 16],
+        ])
+    })
+
     // A vector layer whose features have not arrived reports empty bounds.
     // That is not an extent, and the configured footprint is the better answer.
     test('falls past invalid Leaflet bounds to the configured footprint', () => {
@@ -169,6 +186,22 @@ describe('layers:getBounds provider', () => {
             expect(getBounds(OUTLINE)).toBeNull()
         })
 
+        // A vector tile layer's data is always a URL, so its footprint can
+        // only come from configuration.
+        test('reads the configured footprint for a deck.gl layer whose data is a url', () => {
+            L_.layers.data = {
+                [OUTLINE]: { type: 'MVTLayer', boundingBox: [-125, 24, -66, 50] },
+            }
+            L_.layers.layer = {
+                [OUTLINE]: deckLayer('https://host/tiles/{z}/{x}/{y}'),
+            }
+
+            expect(getBounds(OUTLINE)).toEqual([
+                [24, -125],
+                [50, -66],
+            ])
+        })
+
         // An empty collection measures to infinities, which would send the map
         // nowhere real.
         test('answers null for a deck.gl layer with no features', () => {
@@ -202,10 +235,25 @@ describe('layers:getBounds provider', () => {
         ])
     })
 
+    // Configure's raster populate button stores the footprint as one string.
+    test('accepts a footprint written as one comma-separated string', () => {
+        L_.layers.data = { [IMAGERY]: { boundingBox: '-120,30,-100,45' } }
+
+        expect(getBounds(IMAGERY)).toEqual([
+            [30, -120],
+            [45, -100],
+        ])
+    })
+
     test.each([
         ['too short', [-120, 30, -100]],
         ['unparseable', [-120, 30, 'east', 45]],
         ['not an array', { west: -120 }],
+        ['short comma-separated', '-120,30,-100'],
+        ['empty string', ''],
+        ['longitude out of range', [-190, 30, -100, 45]],
+        ['latitude out of range', [-120, 30, -100, 95]],
+        ['south above north', [-120, 45, -100, 30]],
     ])('answers null for a %s footprint', (_label, boundingBox) => {
         L_.layers.data = { [IMAGERY]: { boundingBox } }
         expect(getBounds(IMAGERY)).toBeNull()

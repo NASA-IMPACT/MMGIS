@@ -39,6 +39,41 @@ export const validateConfiguration = (configuration) => {
   return errors;
 };
 
+// Vector and vector tile layers under either engine, by the type name Configure
+// stores: MMGIS's own and deck.gl's class names.
+const VECTOR_TYPES = new Set([
+  "vector",
+  "velocity",
+  "vectortile",
+  "GeoJsonLayer",
+  "ScatterplotLayer",
+  "MVTLayer",
+]);
+
+// An optional footprint, [minx,miny,maxx,maxy] in degrees, as an array or one
+// comma-separated string. Runtime reads both; a box that fails here is one
+// "Zoom to layer" would ignore.
+const validateBoundingBox = (boundingBox) => {
+  const parts = typeof boundingBox === "string" ? boundingBox.split(",") : boundingBox;
+  if (!Array.isArray(parts) || parts.length !== 4) {
+    return [{ field: "boundingBox", message: "Bounding Box needs four values (minx,miny,maxx,maxy)" }];
+  }
+  const [minx, miny, maxx, maxy] = parts.map((n) => parseFloat(n));
+  if (![minx, miny, maxx, maxy].every(Number.isFinite)) {
+    return [{ field: "boundingBox", message: "Bounding Box values must be numbers" }];
+  }
+  if (Math.abs(minx) > 180 || Math.abs(maxx) > 180) {
+    return [{ field: "boundingBox", message: "Bounding Box longitudes must be within -180 to 180" }];
+  }
+  if (Math.abs(miny) > 90 || Math.abs(maxy) > 90) {
+    return [{ field: "boundingBox", message: "Bounding Box latitudes must be within -90 to 90" }];
+  }
+  if (miny >= maxy) {
+    return [{ field: "boundingBox", message: "Bounding Box miny must be south of maxy" }];
+  }
+  return [];
+};
+
 export const validateLayer = (layer) => {
   const errors = [];
   
@@ -178,6 +213,10 @@ export const validateLayer = (layer) => {
       if (layer.type) {
         errors.push({ field: "type", message: `Unknown layer type: ${layer.type}` });
       }
+  }
+
+  if (VECTOR_TYPES.has(layer.type) && layer.boundingBox != null) {
+    errors.push(...validateBoundingBox(layer.boundingBox));
   }
   
   return errors;

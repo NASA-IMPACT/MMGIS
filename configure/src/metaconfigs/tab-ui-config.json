@@ -13,11 +13,25 @@
         },
         {
           "field": "look.logourl",
-          "name": "Square Logo Image URL",
-          "description": "",
-          "type": "text",
+          "name": "Logo Image",
+          "description": "Upload an image (png, jpg, webp, gif or svg, up to 5 MB) or paste an image URL. Any aspect ratio works; the modern title bar shows it uncropped. Leave empty to show the default icon.",
+          "type": "upload",
+          "subdir": "Branding",
+          "allowUrl": true,
+          "previewFit": "contain",
           "width": 9
-        },  
+        },
+        {
+          "field": "look.faviconurl",
+          "name": "Favicon Image",
+          "description": "The browser tab icon. Upload an image (ico, png, jpg, webp, gif or svg, up to 5 MB) or paste an image URL; a small square image works best. Leave empty to use the Logo Image, or the default MMGIS icon if there is no logo.",
+          "type": "upload",
+          "subdir": "Branding",
+          "accept": "image/x-icon,image/vnd.microsoft.icon,.ico,image/png,image/jpeg,image/webp,image/gif,image/svg+xml",
+          "allowUrl": true,
+          "previewFit": "contain",
+          "width": 6
+        },
         {
           "field": "msv.theme",
           "name": "Theme",
