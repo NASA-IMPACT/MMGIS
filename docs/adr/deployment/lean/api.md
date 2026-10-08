@@ -70,7 +70,7 @@ The only structural exception is `/api/utils`, which is heterogeneous enough to 
 
 The dashboard frontend uses the same `src/pre/calls.js` dispatcher as the admin. With `mmgisglobal.SERVER = 'static'` (vs `'node'`), the dispatcher's static branch activates and routes each named call into one of four handlers:
 
-- **Bake** — answer frozen into the bundle at publish, served from `STATIC_MISSION_CONFIG`.
+- **Bake** — answer written at publish into the dashboard's `index.html` (the `mmgis-static-config` JSON block), served from `mmgisglobal.STATIC_CONFIG`. The JS bundle itself is mission-independent.
 - **Reroute** — point at an external URL supplied by the mission config. `getminmax` reroutes to the external TiTiler (a call-site reroute — it's a direct `$.ajax` outside the dispatcher); general sidecar URL substitution happens in `serviceUrls.js`.
 - **Compute** — answer computed client-side, typically from values baked into the mission config at publish or read directly from the COG/data file.
 - **Drop** — return a graceful error or no-op. Used for write paths, auth, anything tied to dropped modules.
@@ -81,7 +81,7 @@ The table describes **runtime dashboard behavior** and is variant-invariant. Bur
 
 | Call | URL | Disposition | One-line why |
 |---|---|---|---|
-| `get` | `/api/configure/get` | Bake | Mission config baked into `STATIC_MISSION_CONFIG`. |
+| `get` | `/api/configure/get` | Drop | Every dispatcher call site is gated off in static builds; dashboards load the published `Missions/<mission>/config.json` directly. |
 | `get_generaloptions` | `/api/configure/getGeneralOptions` | Bake | General options baked at publish. |
 | `missions` | `/api/configure/missions` | Bake | One mission per dashboard; baked mission list. |
 | `login` | `/api/users/login` | Drop | Dashboards are anonymous read-only; any access gate is the CloudFront Function's, per environment. |

@@ -30,11 +30,12 @@
  *
  * Flow: render the stack template and read the stack, so a missing password
  * or an unusable stack is answered before the long steps → read the mission
- * config from Postgres → apply bake guards → bake via bakeStaticConfig →
- * build themes + static webpack bundle (SERVER=static) →
+ * config from Postgres → apply bake guards → stage a copy of the image's
+ * prebuilt build/ (compiled once at image build; this task runs no webpack)
+ * and write the static globals and static config into its index.html →
  * CreateStack/UpdateStack + poll to the terminal status → same-key copy the
- * mission's assets from the shared admin bucket → upload the bundle → mark
- * the row `published`.
+ * mission's assets from the shared admin bucket → upload the staged bundle →
+ * mark the row `published`.
  * Any failure marks the row `failed` with last_error. Both terminal writes
  * skip a row a Delete has already claimed, and a task that finds its row
  * already claimed by a Delete when it starts stops before touching AWS.
@@ -50,7 +51,6 @@ require("dotenv").config();
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { spawnSync } = require("child_process");
 const Sequelize = require("sequelize");
 
 const rootDir = path.join(__dirname, "..");
@@ -65,6 +65,7 @@ const {
   applyTimeBakeGuard,
   assertThemeCssPresent,
 } = require("./lib/bake-guards");
+const { stageBuild, renderStaticIndex } = require("./lib/static-index");
 
 const DEPLOYMENT_ID = process.env.MMGIS_DEPLOYMENT_ID || process.argv[2];
 const ACTION = process.env.MMGIS_DEPLOYMENT_ACTION || process.argv[3] || "publish";
@@ -76,23 +77,10 @@ function log(message) {
   console.log(`[publish-static] ${message}`);
 }
 
-// Runs an npm script synchronously from the repo root; throws on failure.
-function run(command, args, extraEnv) {
-  log(`Running: ${command} ${args.join(" ")}`);
-  const result = spawnSync(command, args, {
-    cwd: rootDir,
-    stdio: "inherit",
-    env: { ...process.env, ...(extraEnv || {}) },
-  });
-  if (result.error) throw result.error;
-  if (result.status !== 0)
-    throw new Error(
-      `'${command} ${args.join(" ")}' exited with code ${result.status}`
-    );
-}
-
-// Builds the baked static config object (keyed by call name — see
-// src/pre/staticHandlers.js) from the mission's latest configuration.
+// Reads what a dashboard bakes from the database: the mission's latest
+// configuration (`get`, uploaded as Missions/<mission>/config.json) and the
+// answers src/pre/staticHandlers.js serves by call name (`missions`,
+// `get_generaloptions`, written into index.html's static-config block).
 async function buildBakedConfig(mission) {
   const Config = require("../API/Backend/Config/models/config");
   const GeneralOptions = require("../API/Backend/GeneralOptions/models/generaloptions");
@@ -181,6 +169,7 @@ async function main() {
     },
   });
 
+  let stagedRoot = null;
   try {
     // A Delete raised between the admin's request and this task's first
     // line has already claimed the row and is tearing its stack down; this
@@ -198,10 +187,9 @@ async function main() {
     const stackName =
       deployment.stack_name || stackNameForDeployment(deployment.id);
 
-    // 1. Preflight the stack and the template, before the minutes-long bake
-    //    and build: a missing password, a missing stack or a wedged one is a
-    //    verdict this run can reach in seconds, and reaching it late costs the
-    //    whole build for an answer that never depended on it.
+    // 1. Preflight the stack and the template, before the bake: a missing
+    //    password, a missing stack or a wedged one is a verdict this run can
+    //    reach in seconds, before any database read or staging.
     //    A dashboard with its own credential (`settings.auth`) is gated with
     //    it; otherwise the environment's gate and shared password apply.
     const own = deployment.settings && deployment.settings.auth;
@@ -232,27 +220,58 @@ async function main() {
         `Stack '${stackName}' does not exist — publish before updating`
       );
 
-    // 2. Bake the mission config into the bundle
+    // 2. Read what the dashboard bakes from the database
     log(`Baking mission '${mission}' for deployment ${deployment.id}...`);
     const baked = await buildBakedConfig(mission);
-    const { bakeStaticConfig } = require("../API/updateTools");
-    bakeStaticConfig(baked);
 
-    // 3. Build the static bundle. Theme assets (dist/) are baked into the
-    // image at image-build time (the deploy workflow runs build:themes before
-    // docker build), and build-assets.sh needs tools absent from the slim
-    // runtime image (rsync) — so only build themes when they're missing.
-    const distDir = path.join(__dirname, "..", "dist");
-    if (fs.existsSync(distDir) && fs.readdirSync(distDir).length > 0) {
-      log("Theme assets already present (dist/), skipping build:themes.");
-    } else {
-      run("npm", ["run", "build:themes"]);
-    }
-    run("npm", ["run", "build"], {
-      SERVER: "static",
-    });
-    // Fail before touching AWS if the build lacks the configured theme.
-    assertThemeCssPresent(baked.get, path.join(rootDir, "build"));
+    // 3. Stage the image's prebuilt bundle and write this dashboard into its
+    // index.html. build/ (theme CSS under build/dist/ included) was compiled
+    // once at image build, so nothing here runs webpack. In server mode
+    // Express renders build/index.pug per request, filling globals like
+    // FORCE_CONFIG_PATH and MAIN_MISSION; a dashboard has no server, so the
+    // static equivalents are baked into the staged index.html here, along
+    // with the static-config block that switches the bundle to its static
+    // personality. Done before touching AWS, so a bundle without the
+    // configured theme or without the static-config anchor fails in seconds.
+    const stagedBuildDir = stageBuild(path.join(rootDir, "build"));
+    stagedRoot = path.dirname(stagedBuildDir);
+    log(`Staged the prebuilt bundle at ${stagedBuildDir}.`);
+    assertThemeCssPresent(baked.get, stagedBuildDir);
+    const indexPath = path.join(stagedBuildDir, "index.html");
+    const packagejson = require(path.join(rootDir, "package.json"));
+    const staticGlobals = {
+      user: "",
+      permission: "000",
+      groups: "[]",
+      AUTH: "off",
+      NODE_ENV: "production",
+      VERSION: packagejson.version,
+      FORCE_CONFIG_PATH: "",
+      CLEARANCE_NUMBER: "",
+      LINK_PREVIEW_TITLE: deployment.name || mission,
+      LINK_PREVIEW_DESCRIPTION: `MMGIS dashboard for ${mission}`,
+      ENABLE_MMGIS_WEBSOCKETS: "false",
+      MAIN_MISSION: mission,
+      IS_DOCKER: "false",
+      SKIP_CLIENT_INITIAL_LOGIN: "true",
+      THIRD_PARTY_COOKIES: "false",
+      PORT: "",
+      ROOT_PATH: "",
+      WEBSOCKET_ROOT_PATH: "",
+      WITH_TITILER: "false",
+      HOSTS: "{}",
+    };
+    fs.writeFileSync(
+      indexPath,
+      renderStaticIndex(fs.readFileSync(indexPath, "utf8"), {
+        globals: staticGlobals,
+        config: {
+          missions: baked.missions,
+          get_generaloptions: baked.get_generaloptions,
+        },
+      })
+    );
+    log("Wrote static globals and static config into the staged index.html.");
 
     // 4. Provision (publish) or converge (update) the dashboard stack
     let stack;
@@ -333,71 +352,6 @@ async function main() {
       log("MMGIS_SHARED_ASSET_BUCKET not set; skipping mission asset copy.");
     }
 
-    // 5.5 Interpolate the Pug placeholders in the built index. In server
-    // mode Express renders build/index.pug per request, filling globals
-    // like FORCE_CONFIG_PATH and MAIN_MISSION; a dashboard has no server,
-    // so bake the static equivalents here (unknown placeholders become
-    // empty strings — the same as unset env vars under Pug).
-    const indexPath = path.join(rootDir, "build", "index.html");
-    const packagejson = require(path.join(rootDir, "package.json"));
-    const staticGlobals = {
-      user: "",
-      permission: "000",
-      groups: "[]",
-      AUTH: "off",
-      NODE_ENV: "production",
-      VERSION: packagejson.version,
-      FORCE_CONFIG_PATH: "",
-      CLEARANCE_NUMBER: "",
-      LINK_PREVIEW_TITLE: deployment.name || mission,
-      LINK_PREVIEW_DESCRIPTION: `MMGIS dashboard for ${mission}`,
-      ENABLE_MMGIS_WEBSOCKETS: "false",
-      MAIN_MISSION: mission,
-      IS_DOCKER: "false",
-      SKIP_CLIENT_INITIAL_LOGIN: "true",
-      THIRD_PARTY_COOKIES: "false",
-      PORT: "",
-      ROOT_PATH: "",
-      WEBSOCKET_ROOT_PATH: "",
-      WITH_TITILER: "false",
-      HOSTS: "{}",
-    };
-    // Escape per placeholder context so values like a mission named
-    // `Jezero "Delta"` can't break the inline <script> or the <title>.
-    // LINK_PREVIEW_* sit in HTML (title text / meta attribute); every other
-    // placeholder sits in a double-quoted JS string in the production branch.
-    const htmlContextKeys = new Set([
-      "LINK_PREVIEW_TITLE",
-      "LINK_PREVIEW_DESCRIPTION",
-    ]);
-    // Escape for a double-quoted JS string literal. JSON.stringify handles
-    // backslashes, quotes and control chars; the extra escaping of every "<"
-    // stops a value containing "</script>" from closing the inline <script>.
-    const escapeForJsString = (value) =>
-      JSON.stringify(String(value))
-        .slice(1, -1)
-        .replace(/</g, "\\u003c");
-    const escapeForHtml = (value) =>
-      String(value)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
-    fs.writeFileSync(
-      indexPath,
-      fs
-        .readFileSync(indexPath, "utf8")
-        .replace(/#\{([A-Za-z_]+)\}/g, (m, key) => {
-          const value = staticGlobals[key];
-          if (value == null) return "";
-          return htmlContextKeys.has(key)
-            ? escapeForHtml(value)
-            : escapeForJsString(value);
-        })
-    );
-    log("Interpolated static globals into index.html.");
-
     // 6. Upload the bundle. The static index references ./build/... and
     // public/... — the same paths Express mounts in server mode — so the
     // bucket must mirror that layout: the webpack output under build/,
@@ -409,7 +363,7 @@ async function main() {
       log("MMGIS_PUBLISH_PRECOMPRESS=false — uploading every file raw.");
     const uploadedBuild = await provision.uploadDirectory({
       bucket,
-      dir: path.join(rootDir, "build"),
+      dir: stagedBuildDir,
       prefix: "build/",
       filter: (key) => key !== "build/index.pug",
       precompress: PRECOMPRESS,
@@ -424,11 +378,11 @@ async function main() {
     await provision.uploadFile({
       bucket,
       key: "index.html",
-      filePath: path.join(rootDir, "build", "index.html"),
+      filePath: indexPath,
     });
     // LandingPage's static branch fetches Missions/<mission>/config.json
     // directly (the legacy static-hosting convention; not routed through
-    // the dispatcher), so the baked config must also live at that key.
+    // the dispatcher), so the mission config lives at that key.
     const bakedConfigPath = path.join(
       os.tmpdir(),
       `mmgis-baked-config-${deployment.id}.json`
@@ -494,6 +448,9 @@ async function main() {
       { where: liveRowWhere(deployment.id) }
     ).catch(() => {});
     throw err;
+  } finally {
+    if (stagedRoot != null)
+      fs.rmSync(stagedRoot, { recursive: true, force: true });
   }
 }
 
