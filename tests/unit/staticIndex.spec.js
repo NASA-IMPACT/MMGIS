@@ -16,26 +16,16 @@ const {
     renderStaticIndex,
 } = staticIndex
 
+const require = createRequire(import.meta.url)
+
 // The publish task rewrites the MINIFIED build/index.html, so the fixture is
 // public/index.html run through the same steps the image build applies:
 // InterpolateHtmlPlugin's %KEY% substitution (SERVER unset -> "node"), then
-// html-webpack-plugin's production minify options
-// (configuration/webpack.config.js, HtmlWebpackPlugin `minify`).
-const MINIFY_OPTIONS = {
-    removeComments: true,
-    collapseWhitespace: true,
-    removeRedundantAttributes: true,
-    useShortDoctype: true,
-    removeEmptyAttributes: true,
-    removeStyleLinkTypeAttributes: true,
-    keepClosingSlash: true,
-    minifyJS: true,
-    minifyCSS: true,
-    minifyURLs: true,
-}
+// html-webpack-plugin's production minify options, loaded from the module
+// webpack.config.js uses (configuration/html-minify-options.js).
+const MINIFY_OPTIONS = require('../../configuration/html-minify-options.js')
 // The minifier html-webpack-plugin itself resolves, so the fixture uses the
 // exact version the build uses and needs no devDependency of its own.
-const require = createRequire(import.meta.url)
 const { minify } = require(
     require.resolve('html-minifier-terser', {
         paths: [
