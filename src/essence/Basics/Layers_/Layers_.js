@@ -169,16 +169,22 @@ async function legendFor(uuid) {
  * `[LatLngLike, LatLngLike]` pair both map engines normalise — or null when no
  * extent can be worked out.
  *
- * Where an extent comes from depends on how the layer is drawn, so the sources
- * are tried in order of fidelity: a Leaflet layer measures the geometry it has
- * actually rendered, a deck.gl layer has to be measured from the GeoJSON it was
- * handed, and a raster layer has no geometry at all — only the footprint
- * declared in mission configuration.
+ * A footprint declared in mission configuration wins when there is one.
+ * Otherwise the extent is measured from what is drawn: a Leaflet layer
+ * measures the geometry it has rendered, and a deck.gl layer is measured from
+ * the GeoJSON it was handed.
  *
  * @param {string} uuid - A key of `L_.layers.data`.
  * @returns {[[number, number], [number, number]] | null}
  */
 function layerBoundsFor(uuid) {
+    // The configured footprint comes first: what is loaded is not what the
+    // layer covers once a layer loads only the features in view or in the
+    // current time window, and a vector tile layer has nothing loaded to
+    // measure at all.
+    const configured = configuredBoundsFor(uuid)
+    if (configured) return configured
+
     const layer = L_.layers.layer[uuid]
 
     // Leaflet measures its own rendered geometry. A vector layer whose features
@@ -222,24 +228,36 @@ function layerBoundsFor(uuid) {
                 ]
             }
         } catch (err) {
-            // Unmeasurable GeoJSON; try the configured footprint.
-        }
-    }
-
-    // Raster layers carry no geometry of their own. Mission configuration
-    // declares their footprint as [west, south, east, north].
-    const boundingBox = L_.layers.data[uuid]?.boundingBox
-    if (Array.isArray(boundingBox) && boundingBox.length === 4) {
-        const [west, south, east, north] = boundingBox.map((n) => parseFloat(n))
-        if ([west, south, east, north].every(Number.isFinite)) {
-            return [
-                [south, west],
-                [north, east],
-            ]
+            // Unmeasurable GeoJSON.
         }
     }
 
     return null
+}
+
+/**
+ * The footprint mission configuration declares for a layer, as
+ * [west, south, east, north]. Configure's text field stores it as an array of
+ * strings and its raster populate button as one comma-separated string, so
+ * both are read.
+ *
+ * @param {string} uuid - A key of `L_.layers.data`.
+ * @returns {[[number, number], [number, number]] | null}
+ */
+function configuredBoundsFor(uuid) {
+    let boundingBox = L_.layers.data[uuid]?.boundingBox
+    if (typeof boundingBox === 'string') boundingBox = boundingBox.split(',')
+    if (!Array.isArray(boundingBox) || boundingBox.length !== 4) return null
+
+    const [west, south, east, north] = boundingBox.map((n) => parseFloat(n))
+    if (![west, south, east, north].every(Number.isFinite)) return null
+    if (Math.abs(west) > 180 || Math.abs(east) > 180) return null
+    if (Math.abs(south) > 90 || Math.abs(north) > 90) return null
+
+    return [
+        [south, west],
+        [north, east],
+    ]
 }
 
 /**
