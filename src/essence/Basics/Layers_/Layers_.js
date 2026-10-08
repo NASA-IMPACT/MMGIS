@@ -253,6 +253,7 @@ function configuredBoundsFor(uuid) {
     if (![west, south, east, north].every(Number.isFinite)) return null
     if (Math.abs(west) > 180 || Math.abs(east) > 180) return null
     if (Math.abs(south) > 90 || Math.abs(north) > 90) return null
+    if (south >= north) return null
 
     return [
         [south, west],

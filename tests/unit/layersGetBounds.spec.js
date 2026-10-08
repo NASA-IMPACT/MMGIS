@@ -253,6 +253,7 @@ describe('layers:getBounds provider', () => {
         ['empty string', ''],
         ['longitude out of range', [-190, 30, -100, 45]],
         ['latitude out of range', [-120, 30, -100, 95]],
+        ['south above north', [-120, 45, -100, 30]],
     ])('answers null for a %s footprint', (_label, boundingBox) => {
         L_.layers.data = { [IMAGERY]: { boundingBox } }
         expect(getBounds(IMAGERY)).toBeNull()
