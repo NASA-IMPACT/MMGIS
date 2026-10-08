@@ -8,7 +8,10 @@ import Map_ from '../Map_/Map_'
 import TimeUI from './TimeUI'
 import { parseTimeWithOffset, parseTimeToSeconds } from './timeUtils'
 import { evaluateLayerDataCoverage } from './layerDataCoverage'
-import { leadAt } from './layerRunSource'
+import {
+    fillRunPlaceholders,
+    UNRESOLVED_URL_REPLACEMENT,
+} from './layerRunSource'
 import { layerRequestWindow, takesPeriodWindow } from './layerTimePolicy'
 import { formatLayerTime, buildTileUrlOptions } from '../Layers_/tileUrlUtils'
 import { resolveTileLayerSource } from '../Layers_/tileLayerSource'
@@ -18,11 +21,6 @@ import './TimeControl.css'
 
 // Provider cleanup functions for re-initialization
 let _providerCleanups = []
-
-// What a `{key}` in a tile URL becomes when its urlReplacement service could
-// not supply a value. Leaflet's URL template throws on a `{key}` it has no
-// value for, so the placeholder can never be left in place.
-const UNRESOLVED_URL_REPLACEMENT = 'MMGIS_UNRESOLVED'
 
 // How long the service gets to answer before the request is abandoned. A
 // server that accepts the connection and then goes quiet never fails the
@@ -722,27 +720,14 @@ var TimeControl = {
     ) {
         const layerTimeFormat = formatLayerTime(layer.time?.format)
 
-        let nextUrl = url
-        // A layer with model runs fills its two placeholders from its pin:
-        // the run itself, and the whole lead steps from it to the layer's end
-        // time, the same lead layers:getRuns reports. A value that is
-        // missing becomes the unresolved marker, since Leaflet's URL
-        // template throws on an unfilled key.
-        const runs = layer.time?.runs
-        if (runs) {
-            const lead = leadAt(runs, layer.time.end)
-            nextUrl = nextUrl
-                .replace(
-                    /{reftime}/g,
-                    encodeURIComponent(
-                        runs.selected || UNRESOLVED_URL_REPLACEMENT
-                    )
-                )
-                .replace(
-                    /{lead}/g,
-                    lead != null ? String(lead) : UNRESOLVED_URL_REPLACEMENT
-                )
-        }
+        // A layer with model runs fills `{reftime}` and `{lead}` from its pin,
+        // the lead counted to the layer's end time, the same lead
+        // layers:getRuns reports.
+        let nextUrl = fillRunPlaceholders(
+            url,
+            layer.time?.runs,
+            layer.time?.end
+        )
         if (layer.variables?.urlReplacements) {
             const keys = Object.keys(layer.variables.urlReplacements)
             for (let i = 0; i < keys.length; i++) {

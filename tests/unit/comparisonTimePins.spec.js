@@ -152,6 +152,62 @@ describe('buildTimePinnedProps', () => {
     })
 })
 
+describe('a layer pinned to a model run', () => {
+    beforeEach(async () => {
+        configs = {
+            forecast: {
+                name: 'forecast',
+                type: 'TileLayer',
+                tileformat: 'wmts',
+                url:
+                    'https://host/{z}/{x}/{y}?sel=reference_time=nearest::{reftime}' +
+                    '&sel=lead=nearest::{lead}',
+                time: {
+                    enabled: true,
+                    type: 'global',
+                    start: 'x',
+                    end: 'x',
+                    runs: {
+                        url: 'https://host/runs',
+                        step: 'PT1H',
+                        list: ['2024-10-31T00:00:00'],
+                        selected: '2024-10-31T00:00:00',
+                        leadRange: [0, 72],
+                    },
+                },
+            },
+        }
+        await load()
+    })
+
+    // The run is the one the layer is pinned to on both sides; the lead counts
+    // whole steps from it to the side's own date, as TimeControl does for the
+    // primary side.
+    test('fills the run and the lead to the pinned date', () => {
+        const props = buildTimePinnedProps(['forecast'], {
+            start: START,
+            end: END,
+        })
+        expect(props.forecast.data).toContain(
+            'reference_time=nearest::2024-10-31T00%3A00%3A00',
+        )
+        expect(props.forecast.data).toContain('lead=nearest::14')
+        expect(props.forecast.data).not.toMatch(/{reftime}|{lead}/)
+    })
+
+    test('a layer with no pinned run gets the unresolved marker', () => {
+        configs.forecast.time.runs.selected = null
+        const props = buildTimePinnedProps(['forecast'], {
+            start: START,
+            end: END,
+        })
+        expect(props.forecast.data).toContain(
+            'reference_time=nearest::MMGIS_UNRESOLVED',
+        )
+        expect(props.forecast.data).toContain('lead=nearest::MMGIS_UNRESOLVED')
+    })
+})
+
 describe('pinWindowFor', () => {
     test('spans the global start up to the pinned instant', () => {
         expect(pinWindowFor(END)).toEqual({ start: START, end: END })
