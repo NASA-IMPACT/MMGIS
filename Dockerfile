@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 
 # Base image, pinned by digest so a rebuild of the same commit starts from the
 # same bits. Dependabot (.github/dependabot.yml) proposes digest bumps as PRs
