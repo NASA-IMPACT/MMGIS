@@ -135,6 +135,18 @@
               "defaultChecked": false
             }
           ]
+        },
+        {
+          "name": "Other",
+          "components": [
+            {
+              "field": "boundingBox",
+              "name": "Bounding Box",
+              "description": "minx,miny,maxx,maxy",
+              "type": "textarray",
+              "width": 12
+            }
+          ]
         }
       ]
     },
