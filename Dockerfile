@@ -133,6 +133,10 @@ COPY src ./src
 COPY views ./views
 COPY configure/package.json ./configure/
 COPY configure/public ./configure/public
+# Generated into configure/public by updateTools during the builder's
+# `npm run build` (gitignored, so absent from the context); the admin fetches
+# them from /configure/public.
+COPY --from=builder /usr/src/app/configure/public/toolConfigs.json /usr/src/app/configure/public/componentConfigs.json ./configure/public/
 
 # The admin app is served from its build output only; configure/node_modules
 # stays in the builder.
