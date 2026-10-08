@@ -1,11 +1,59 @@
-FROM node:20-slim
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 
-# Install system dependencies
+# Base image, pinned by digest so a rebuild of the same commit starts from the
+# same bits. Dependabot (.github/dependabot.yml) proposes digest bumps as PRs
+# to `development`; nothing changes the base image silently. It is a literal
+# FROM, not an ARG, because Dependabot does not update images named via ARG.
+# Both stages below derive from it, so this is the only line to bump.
+FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS base
+
+#############################
+# Builder: compile the main app and the configure (admin) app
+#############################
+
+FROM base AS builder
+
+WORKDIR /usr/src/app
+
+ARG PUBLIC_URL_ARG=
+ENV PUBLIC_URL=$PUBLIC_URL_ARG
+
+# chart.js@4, chartjs-plugin-zoom@2 and react-chartjs-2@5 all agree on
+# chart.js v4, so peer deps resolve cleanly without --force.
+COPY package.json package-lock.json .npmrc ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+
+COPY configure/package.json configure/package-lock.json ./configure/
+RUN --mount=type=cache,target=/root/.npm cd configure && npm ci
+
+COPY . .
+
+# dist/ (theme CSS + fonts) is NOT built here: the deploy workflow runs
+# `npm run build:themes` before the image build, and scripts/build.js exits
+# non-zero when dist/ is missing from the build context.
+RUN npm run build
+RUN cd configure && rm -rf build/* && npm run build
+
+#############################
+# Runtime image
+#############################
+
+FROM base
+
+# Set to "false" to skip Python/STAC services (smaller, faster builds). CI
+# builds pass WITH_STAC=false; local full-mode docker compose defaults to true.
+ARG WITH_STAC=true
+ENV WITH_STAC=$WITH_STAC
+
+# Without STAC there is no micromamba Python, so install the distro python3
+# and make `python` resolve to it: the mission clone route shells out to
+# `python private/api/create_mission.py` (stdlib only).
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     ca-certificates \
     bzip2 \
     curl \
+    $( [ "$WITH_STAC" = "true" ] || echo python3 python-is-python3 ) \
     && rm -rf /var/lib/apt/lists/*
 
 ARG PUBLIC_URL_ARG=
@@ -14,10 +62,6 @@ ENV PUBLIC_URL=$PUBLIC_URL_ARG
 # Use build arguments to detect target platform
 ARG TARGETPLATFORM
 ARG TARGETARCH
-
-# Set to "false" to skip Python/STAC services (faster builds)
-ARG WITH_STAC=true
-ENV WITH_STAC=$WITH_STAC
 
 #############################
 # Micromamba (for Python)
@@ -55,36 +99,49 @@ RUN if [ "$WITH_STAC" = "true" ]; then \
     fi
 
 #############################
-# MMGIS Dependencies
+# MMGIS dependencies
 #############################
 
-# Copy only package files first (cached unless these change)
-COPY package*.json ./
-# chart.js@4, chartjs-plugin-zoom@2 and react-chartjs-2@5 all agree on
-# chart.js v4, so peer deps resolve cleanly without --force. Don't use
-# --legacy-peer-deps; it silently drops @deck.gl/extensions and mesh-layers.
-RUN npm install
+# Full install, devDependencies included: the publish task runs from this
+# same image and rebuilds the bundle with webpack (scripts/publish-static.js).
+COPY package.json package-lock.json .npmrc ./
+RUN --mount=type=cache,target=/root/.npm npm ci
 
 #############################
-# MMGIS Configure Dependencies
+# Source and build output
 #############################
 
-# Copy configure package files separately
-COPY configure/package*.json ./configure/
-RUN cd configure && npm install
+# Only what the server, init-db and the publish task read at runtime. The
+# publish task's webpack build needs src/, configuration/, dist/, public/,
+# tsconfig.json and the full node_modules above. auxiliary/ is kept (small)
+# because the admin UI points operators at its scripts.
+COPY tsconfig.json _docker-entrypoint.sh ./
+COPY API ./API
+COPY adjacent-servers ./adjacent-servers
+COPY auxiliary ./auxiliary
+COPY configuration ./configuration
+COPY dist ./dist
+# Read by the publish task (scripts/lib/cfn-template.js) for the dashboard's
+# CloudFront Function body.
+COPY infrastructure/cloudfront-function.js ./infrastructure/
+COPY mission-profiles ./mission-profiles
+COPY private ./private
+COPY public ./public
+COPY scripts ./scripts
+COPY spice ./spice
+COPY src ./src
+COPY views ./views
+COPY configure/package.json ./configure/
+COPY configure/public ./configure/public
+# Generated into configure/public by updateTools during the builder's
+# `npm run build` (gitignored, so absent from the context); the admin fetches
+# them from /configure/public.
+COPY --from=builder /usr/src/app/configure/public/toolConfigs.json /usr/src/app/configure/public/componentConfigs.json ./configure/public/
 
-#############################
-# Source Code & Build
-#############################
-
-# NOW copy all source code (changes here won't invalidate npm install cache above)
-COPY . .
-
-# Build main app
-RUN npm run build
-
-# Build configure
-RUN cd configure && rm -rf build/* && npm run build
+# The admin app is served from its build output only; configure/node_modules
+# stays in the builder.
+COPY --from=builder /usr/src/app/build ./build
+COPY --from=builder /usr/src/app/configure/build ./configure/build
 
 RUN chmod 755 _docker-entrypoint.sh
 

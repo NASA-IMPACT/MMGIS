@@ -1,0 +1,10 @@
+version: 2
+updates:
+  # Base-image digest bumps for the Dockerfile's pinned NODE_IMAGE. Updates
+  # land on `development` first and reach production only by promotion, so
+  # nothing in a deployed image changes without a reviewed, tested PR.
+  - package-ecosystem: docker
+    directory: /
+    target-branch: development
+    schedule:
+      interval: weekly

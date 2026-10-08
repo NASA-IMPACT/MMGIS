@@ -1,6 +1,5 @@
-node_modules
+**/node_modules
 npm-debug.log
-API/node_modules
 Missions
 Missions_rel
 Missions_dev
@@ -14,3 +13,30 @@ docs
 # Build artifacts (will be regenerated in container)
 build
 configure/build
+
+# Dev, test and repo-only trees: never read by the server or the publish task,
+# and keeping them out of the context means editing them does not invalidate
+# the cached app build.
+.github
+.claude
+.specify
+specs
+tests
+playwright-report
+test-results
+scratchpad
+coverage
+examples
+prepare
+sds
+ssl
+/*.md
+docker-compose*.yml
+playwright.config.js
+vitest.config.ts
+sonar-project.properties
+
+# Terraform and AWS JSON change often and are not runtime inputs, except the
+# CloudFront Function body the publish task reads.
+infrastructure/*
+!infrastructure/cloudfront-function.js

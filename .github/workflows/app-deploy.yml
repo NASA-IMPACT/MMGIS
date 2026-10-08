@@ -129,8 +129,8 @@ jobs:
           cache: "npm"
 
       # The Dockerfile's `npm run build` does NOT run build:themes; the
-      # generated public/ CSS + fonts must exist in the build context
-      # (COPY . .) or themed missions/dashboards render unstyled.
+      # generated dist/ CSS + fonts must exist in the build context, or
+      # scripts/build.js fails the image build.
       - name: Build theme assets
         run: |
           npm ci
@@ -146,23 +146,39 @@ jobs:
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Docker build and push
-        id: build-image
+      # Every trigger tags the image with the commit short SHA.
+      - name: Compute image URI
+        id: image
         env:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
           ECR_REPOSITORY: ${{ inputs.ecr_repository }}
         run: |
-          # Every trigger tags the image with the commit short SHA.
           VERSION=$(git rev-parse --short HEAD)
-          IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$VERSION
+          echo "IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$VERSION" >> "$GITHUB_OUTPUT"
 
-          docker build \
-            --tag $IMAGE_URI \
-            --no-cache \
-            .
-          docker push $IMAGE_URI
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_OUTPUT
+      # Layer cache in the GitHub Actions cache. The inputs are pinned (base
+      # image by digest, bumped only by Dependabot PRs; npm packages by
+      # package-lock.json via `npm ci`), so a cached layer matches a fresh
+      # build. The one exception is the apt layer, which stays at what it
+      # first installed until the base digest changes; that is intended.
+      # `context: .` is required: the default git context would omit the
+      # dist/ built above.
+      # WITH_STAC=false: deployed environments run lean mode, which never
+      # starts the Python/STAC servers.
+      - name: Docker build and push
+        id: build-image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.image.outputs.IMAGE_URI }}
+          build-args: WITH_STAC=false
+          provenance: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
 
       # Register new revisions of both families pointing at the new image.
       # mmgis-publish genuinely needs its revision: the Deployments backend
@@ -175,7 +191,7 @@ jobs:
       - name: Register new task-definition revisions
         id: register
         env:
-          IMAGE_URI: ${{ steps.build-image.outputs.IMAGE_URI }}
+          IMAGE_URI: ${{ steps.image.outputs.IMAGE_URI }}
         run: |
           set -o pipefail
           register_revision() {
@@ -222,7 +238,7 @@ jobs:
         env:
           ECS_CLUSTER: ${{ inputs.ecs_cluster }}
           ECS_SERVICE: ${{ inputs.ecs_service }}
-          IMAGE_URI: ${{ steps.build-image.outputs.IMAGE_URI }}
+          IMAGE_URI: ${{ steps.image.outputs.IMAGE_URI }}
         run: |
           set -o pipefail
 
@@ -280,10 +296,10 @@ jobs:
       # CI itself produces appear here — deliberately nothing hand-set (the
       # admin URL lives in `terraform output admin_url` / the CF console).
       - name: Write deployment summary
-        if: ${{ !cancelled() && steps.build-image.outputs.IMAGE_URI != '' }}
+        if: ${{ !cancelled() && steps.build-image.outcome == 'success' }}
         env:
           ENVIRONMENT: ${{ inputs.environment }}
-          IMAGE_URI: ${{ steps.build-image.outputs.IMAGE_URI }}
+          IMAGE_URI: ${{ steps.image.outputs.IMAGE_URI }}
           JOB_STATUS: ${{ job.status }}
         run: |
           {
