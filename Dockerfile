@@ -33,9 +33,11 @@ COPY . .
 # non-zero when dist/ is missing from the build context.
 #
 # MMGIS_DEPLOYMENT_MODE shapes the bundle: in lean, API/updateTools.js leaves
-# the Draw tool out of src/pre/tools.js and configure's toolConfigs.json. The
-# publish task uploads this build/ as-is, so CI builds lean to match the lean
-# environments. The bundle's tool set is fixed here: an image built lean has
+# the Draw tool out of src/pre/tools.js, so the compiled bundle has no Draw,
+# and out of the configure/public/toolConfigs.json it writes here, which the
+# runtime stage copies from this stage for the admin's Configure page.
+# The publish task uploads this build/ as-is, so CI builds lean to match the
+# lean environments. The bundle's tool set is fixed here: an image built lean has
 # no Draw even where a container later runs with MMGIS_DEPLOYMENT_MODE=full.
 # Builder stage only, so the server's runtime mode still comes from the task
 # definition's environment. The default (full) keeps local builds unchanged.

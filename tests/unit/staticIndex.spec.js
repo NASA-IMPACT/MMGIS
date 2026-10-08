@@ -2,8 +2,8 @@ import { describe, test, expect, beforeAll } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import { createRequire } from 'module'
 import { JSDOM } from 'jsdom'
-import { minify } from 'html-minifier-terser'
 import staticIndex from '../../scripts/lib/static-index.js'
 
 const {
@@ -33,6 +33,17 @@ const MINIFY_OPTIONS = {
     minifyCSS: true,
     minifyURLs: true,
 }
+// The minifier html-webpack-plugin itself resolves, so the fixture uses the
+// exact version the build uses and needs no devDependency of its own.
+const require = createRequire(import.meta.url)
+const { minify } = require(
+    require.resolve('html-minifier-terser', {
+        paths: [
+            path.dirname(require.resolve('html-webpack-plugin/package.json')),
+        ],
+    })
+)
+
 const ENV_RAW = {
     NODE_ENV: 'production',
     SERVER: 'node',

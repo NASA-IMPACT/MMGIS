@@ -66,7 +66,7 @@ sequenceDiagram
 
 The app job's image build compiles the frontend once, and the publish task uploads that same `build/` as every dashboard. It does not run webpack itself. A publish reads the mission's config and the general options from Postgres, then copies `build/` to a temp directory. In that copy's `index.html` it fills the `#{…}` placeholders and the `mmgis-static-config` JSON block (`SERVER: "static"` plus the baked answers). It then uploads the copy along with `Missions/<mission>/config.json` ([`scripts/lib/static-index.js`](../../scripts/lib/static-index.js)).
 
-The image is built with `MMGIS_DEPLOYMENT_MODE=lean` (a build-arg scoped to the builder stage). Lean leaves the Draw tool out of the bundle and out of the admin's tool list, which the dashboards and the lean admin require. The mode the containers run in still comes from the task definitions. A frontend change therefore reaches dashboards only through a deploy followed by a republish, and rolling a dashboard back means redeploying the previous image and republishing.
+The image is built with `MMGIS_DEPLOYMENT_MODE=lean` (a build-arg scoped to the builder stage). Lean leaves the Draw tool out of the compiled bundle (`src/pre/tools.js`) and out of the `configure/public/toolConfigs.json` the admin's Configure page reads, which the runtime stage copies from the builder; the dashboards and the lean admin both require that. The mode the containers run in still comes from the task definitions. A frontend change therefore reaches dashboards only through a deploy followed by a republish, and rolling a dashboard back means redeploying the previous image and republishing.
 
 ### Why the apply discovers the serving image
 
