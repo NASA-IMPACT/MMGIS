@@ -89,7 +89,7 @@ resource "aws_iam_role_policy" "deploy" {
         Resource = local.deploy_service_arns[each.key]
       },
       {
-        # app-deploy.yml sets the rollout strategy to ROLLING, which only
+        # app-deploy.yml sets the rollout strategy to zero-bake CANARY, which only
         # UpdateService can do (the Express API exposes no deployment
         # configuration). Scoped to this environment's admin service.
         Sid      = "SetAdminServiceDeploymentConfiguration"

@@ -142,19 +142,22 @@ jobs:
           role-to-assume: ${{ secrets.IAC_DEPLOY_ROLE_ARN }}
           aws-region: ${{ inputs.aws_region }}
 
-      # Switch the service from Express Mode's default CANARY rollout
-      # (5% canary, 3 min canary bake + 3 min final bake) to ROLLING with
-      # no bake. The admin container never serves public traffic (the
-      # public sites are the static dashboards on S3), so the canary had
-      # nothing to observe and the bakes protected nothing while costing
-      # ~6 min per rollout. The deployment circuit breaker and the
-      # RollbackAlarm Express creates (both enable + rollback) are kept.
+      # Express Mode defaults the service to CANARY with a 5% canary, a
+      # 3 min canary bake and a 3 min final bake. The admin container
+      # serves no public traffic (the public sites are the static
+      # dashboards on S3), so the canary observes nothing and the bakes
+      # protect nothing while costing ~6 min per rollout. ECS does not
+      # allow changing an Express service's strategy to ROLLING, but it
+      # accepts CANARY with canaryPercent 100 and both bake times 0, which
+      # launches the full new task set at once. The deployment circuit
+      # breaker and the RollbackAlarm Express creates (both enable +
+      # rollback) are kept.
       # Terraform's aws_ecs_express_gateway_service and
       # update-express-gateway-service expose no deployment configuration,
       # so this uses update-service; it is a no-op once applied. It runs
       # before the build and before any task-definition revision is
       # registered, so if ECS rejects it nothing has changed yet.
-      - name: Set rollout strategy to ROLLING
+      - name: Set rollout strategy to zero-bake CANARY
         env:
           ECS_CLUSTER: ${{ inputs.ecs_cluster }}
           ECS_SERVICE: ${{ inputs.ecs_service }}
@@ -168,21 +171,21 @@ jobs:
               --query 'services[0].deploymentConfiguration' \
               --output json
           }
-          # ROLLING, no bake, and no leftover canary block (whether
-          # UpdateService replaces or merges the configuration is not
-          # documented, so a stale canaryConfiguration counts as not done).
-          is_rolling() {
-            jq -e '.strategy == "ROLLING"
+          # The percent is checked too, so a partial update is not
+          # mistaken for done.
+          is_zero_bake_canary() {
+            jq -e '.strategy == "CANARY"
                    and (.bakeTimeInMinutes // 0) == 0
-                   and .canaryConfiguration == null' > /dev/null
+                   and (.canaryConfiguration.canaryPercent // 0) == 100
+                   and (.canaryConfiguration.canaryBakeTimeInMinutes // 0) == 0' > /dev/null
           }
 
           BEFORE=$(current)
           echo "Current deployment configuration:"
           echo "$BEFORE"
 
-          if echo "$BEFORE" | is_rolling; then
-            echo "Already ROLLING with no bake; nothing to change."
+          if echo "$BEFORE" | is_zero_bake_canary; then
+            echo "Already zero-bake CANARY; nothing to change."
             exit 0
           fi
 
@@ -199,7 +202,8 @@ jobs:
                 enable: true,
                 rollback: true
               },
-              strategy: "ROLLING",
+              strategy: "CANARY",
+              canaryConfiguration: {canaryPercent: 100, canaryBakeTimeInMinutes: 0},
               bakeTimeInMinutes: 0
             }' > /tmp/deployment-configuration.json
           cat /tmp/deployment-configuration.json
@@ -212,12 +216,12 @@ jobs:
             --output text
 
           AFTER=$(current)
-          if ! echo "$AFTER" | is_rolling; then
-            echo "ECS did not accept ROLLING with no bake for $ECS_SERVICE. Configuration is now:" >&2
+          if ! echo "$AFTER" | is_zero_bake_canary; then
+            echo "ECS did not accept zero-bake CANARY for $ECS_SERVICE. Configuration is now:" >&2
             echo "$AFTER" >&2
             exit 1
           fi
-          echo "Rollout strategy is ROLLING with no bake."
+          echo "Rollout strategy is zero-bake CANARY."
 
       - name: Login to Amazon ECR
         id: ecr-login
@@ -349,11 +353,12 @@ jobs:
           echo "Rollout did not converge within 20 minutes; still serving: $IMAGES" >&2
           exit 1
 
-      # The ROLLING setting survives an Express roll today only because
-      # Express Mode's infrastructure role cannot modify the service: ECS
-      # tries an UpdateService under it right after
-      # update-express-gateway-service and is denied. If AWS ever grants
-      # that, the roll could reset the strategy; this catches it.
+      # The setting survives an Express roll because Express Mode's
+      # infrastructure role attempts an UpdateService on the service after
+      # every roll and is denied (the AWS managed policy
+      # AmazonECSInfrastructureRoleforExpressGatewayServices grants no
+      # ecs:UpdateService). If AWS ever grants it, the roll could reset
+      # the strategy; this catches it.
       - name: Confirm rollout strategy survived the roll
         env:
           ECS_CLUSTER: ${{ inputs.ecs_cluster }}
@@ -365,19 +370,20 @@ jobs:
             --services "$ECS_SERVICE" \
             --query 'services[0].deploymentConfiguration' \
             --output json)
-          if ! echo "$CONFIG" | jq -e '.strategy == "ROLLING"
+          if ! echo "$CONFIG" | jq -e '.strategy == "CANARY"
                                        and (.bakeTimeInMinutes // 0) == 0
-                                       and .canaryConfiguration == null' > /dev/null; then
+                                       and (.canaryConfiguration.canaryPercent // 0) == 100
+                                       and (.canaryConfiguration.canaryBakeTimeInMinutes // 0) == 0' > /dev/null; then
             {
               echo "The Express roll reset $ECS_SERVICE's deployment configuration:"
               echo "$CONFIG"
               echo "Express Mode can now modify the service; the next deploy's"
-              echo "'Set rollout strategy to ROLLING' step will set it again, but"
+              echo "'Set rollout strategy to zero-bake CANARY' step will set it again, but"
               echo "every roll will revert it until this is handled."
             } >&2
             exit 1
           fi
-          echo "Rollout strategy is still ROLLING with no bake."
+          echo "Rollout strategy is still zero-bake CANARY."
 
       # Surface what this deploy shipped in the run summary. Runs even when
       # the rollout step fails or times out — the image is already in ECR by
