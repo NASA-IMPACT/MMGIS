@@ -34,7 +34,10 @@ section heading (FetchTimeseries sends the layer's display name); `meta` is
 carried but not rendered.
 
 Time axes render on a linear epoch-ms scale with UTC tick/tooltip
-formatting; timezone-less ISO datetimes are read as UTC.
+formatting; timezone-less ISO datetimes are read as UTC. The tooltip title
+and the zoom window's ends print the date only (`Feb 28, 2026`), never a
+clock: the feeds charted so far are daily summaries whose times are all
+midnight. Axis ticks still show hours inside a one-day span.
 
 ## Configuration
 
