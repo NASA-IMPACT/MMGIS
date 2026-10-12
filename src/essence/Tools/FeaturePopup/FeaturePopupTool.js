@@ -23,6 +23,10 @@
  *
  * Listens to:
  *   - map:featureClick    (engine bus; filtered to layers that opted in)
+ *   - layers:valueFetchStart (core is fetching a raster's value at a point;
+ *                        a reading card holds the spot until the click resolves)
+ *   - layers:valueFetchEnd (the fetch settled; nothing there, or a failure,
+ *                        is said on the card rather than left silent)
  *   - layers:listChanged  (a layer gained or lost, so re-read the opt-ins)
  *
  * Requests:
@@ -88,6 +92,8 @@ const FeaturePopupTool = {
             this._cleanups.push(mmgisOn(event, handler))
         }
         subscribe('map:featureClick', (info) => this._onFeatureClick(info))
+        subscribe('layers:valueFetchStart', (info) => this._onValueFetchStart(info))
+        subscribe('layers:valueFetchEnd', (info) => this._onValueFetchEnd(info))
         // A mission can gain or lose a layer after load, and with it the
         // popup a layer opted into.
         subscribe('layers:listChanged', () => this._readLayerConfigs())
@@ -143,6 +149,9 @@ const FeaturePopupTool = {
         // rule that a card never outlives its feature belongs to the plugin
         // rather than to a library default nothing here pins.
         if (!info?.feature) {
+            // Except a card saying the clicked spot had no value: the empty
+            // click that follows is the same click, and the card is its answer.
+            if (this._openCard?.noData && isAt(this._openCard, info?.latlng)) return
             this._hideOwnCard()
             return
         }
@@ -223,6 +232,58 @@ const FeaturePopupTool = {
     },
 
     /**
+     * Core is asking a raster for its value at a clicked point, which takes
+     * seconds. A card there at once says the click landed; the resolved click
+     * then replaces it with the value, or takes it down when there is none.
+     * Only for a layer that will get a card, and only once per spot: the
+     * second raster asked in one click finds the card already up.
+     */
+    _onValueFetchStart(info) {
+        const latlng = info?.latlng
+        if (!latlng || !this._configs.has(info.layerName)) return
+        if (this._openCard?.reading && isAt(this._openCard, latlng)) return
+        this._showStatusCard({ reading: true }, { latlng, title: 'Reading value…' })
+    },
+
+    /**
+     * A value that is not there is still an answer, and the spot the user
+     * clicked should say so rather than go quiet. Only while the reading
+     * card for that spot is up: a value is on its way as a feature, and an
+     * answer to a click that was superseded belongs to a spot no longer shown.
+     */
+    _onValueFetchEnd(info) {
+        const latlng = info?.latlng
+        if (!latlng || info.value != null) return
+        if (!this._openCard?.reading || !isAt(this._openCard, latlng)) return
+        const config = this._configs.get(info.layerName)
+        if (!config) return
+        this._showStatusCard(
+            { noData: true },
+            {
+                latlng,
+                title: staticTitle(config),
+                html: info.failed
+                    ? 'The value could not be read.'
+                    : 'No data at this point.',
+            }
+        )
+    },
+
+    _showStatusCard(kind, request) {
+        const card = { ...kind, lat: request.latlng.lat, lng: request.latlng.lng }
+        this._openCard = card
+        mmgisRequest('map:showPopup', request).then(
+            () => {
+                if (this._openCard === card) this._openCard = null
+            },
+            (err) => {
+                if (this._openCard === card) this._openCard = null
+                console.warn('[FeaturePopup] showPopup failed', err)
+            }
+        )
+    },
+
+    /**
      * Take down the card this plugin opened. The popup is one global slot, so
      * hiding unconditionally would close whatever another plugin is showing.
      */
@@ -264,6 +325,18 @@ function resolveActions(actions, layerId) {
 
 function isNonBlank(value) {
     return typeof value === 'string' && value.trim() !== ''
+}
+
+function isAt(card, latlng) {
+    return latlng != null && card.lat === latlng.lat && card.lng === latlng.lng
+}
+
+// A heading with nothing to fill it from: the configured title when it is
+// plain text, nothing when it is a template.
+function staticTitle(config) {
+    const template = config.popup.title
+    if (!isNonBlank(template) || template.includes('{')) return undefined
+    return template.trim()
 }
 
 /**
