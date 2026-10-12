@@ -146,7 +146,16 @@ export function resolveLayerId(layer: Layer | string): string {
  */
 export function pickInfoToResult(info: PickingInfo): FeaturePickResult {
     if (!info.picked) {
-        return { feature: null }
+        // Where an empty click landed still matters: a layer the engine
+        // cannot pick, a raster, is asked for its value there.
+        const coordinate = info.coordinate as [number, number] | undefined
+        return coordinate
+            ? {
+                  feature: null,
+                  latlng: { lat: coordinate[1], lng: coordinate[0] },
+                  pixel: { x: info.x, y: info.y },
+              }
+            : { feature: null }
     }
     const [lng, lat] = (info.coordinate as [number, number]) ?? [0, 0]
     return {

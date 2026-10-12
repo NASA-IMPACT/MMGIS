@@ -53,6 +53,8 @@ export const DECK_ONLY_FIELDS = {
         'variables.featurePopup.title',
         'variables.featurePopup.properties',
         'variables.featurePopup.actions',
+        // A raster's value on click only shows through that same plugin.
+        'pickable',
         // deck.gl highlights a hovered vector tile feature through its own
         // picking; Leaflet's vector tile renderer highlights on click, in a
         // color of its own, and reads neither of these. The id key beside them

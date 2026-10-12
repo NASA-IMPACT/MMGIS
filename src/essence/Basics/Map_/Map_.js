@@ -27,6 +27,14 @@ import {
     syncTileFormatToConfig,
 } from '../Layers_/tileLayerSource'
 import { makeDeckCOGRefresher } from '../Layers_/deckCOGRefresher'
+import {
+    toPointUrl,
+    fetchPointValue,
+    boundsContain,
+} from '../Layers_/layerValueAt'
+import { createClickResolver } from './clickResolver'
+import { evaluateLayerDataCoverage } from '../TimeControl_/layerDataCoverage'
+import { isRasterTileLayerType } from '../MapEngines/types/engine'
 import { handOffLayerToEngine } from '../Layers_/engineLayerHandoff'
 import { vectorTileHighlightOptions } from '../Layers_/deckVectorTileHighlight'
 import { Kinds } from '../../../pre/tools'
@@ -415,10 +423,20 @@ let Map_ = {
             // `map:featureClick` to react to clicks on layers created via
             // `map:createLayer`. The whole pick result is forwarded so
             // consumers can filter by layerId or react to empty-space clicks.
+            // A raster drawn above the picked feature can take the click
+            // with its value at the point; the broadcast then waits for it.
             if (typeof engine.onFeatureClick === 'function') {
-                const off = engine.onFeatureClick((info) =>
-                    window.mmgisAPI.emit('map:featureClick', info)
-                )
+                const resolveClick = createClickResolver()
+                const off = engine.onFeatureClick((info) => {
+                    const outcome = resolveClick(info, rasterCandidatesAbove(info))
+                    if (outcome instanceof Promise) {
+                        outcome.then((result) => {
+                            if (result) window.mmgisAPI.emit('map:featureClick', result)
+                        })
+                    } else {
+                        window.mmgisAPI.emit('map:featureClick', outcome)
+                    }
+                })
                 if (typeof off === 'function') _providerCleanups.push(off)
             }
         }
@@ -1585,6 +1603,80 @@ async function makeVelocityLayer(
     })
 }
 
+// The layer's source with this moment's time placeholders filled: the first
+// steps of makeTileLayer, shared with the click resolver so a value is asked
+// of the same URL the tiles come from.
+async function resolveTimedTileSource(layerObj) {
+    const tileSource = resolveTileLayerSource(layerObj)
+    const url = await TimeControl.performTimeUrlReplacements(
+        tileSource.url,
+        layerObj,
+        null
+    )
+    return { ...tileSource, url }
+}
+
+// The URL the layer is drawing right now, with only `{z}/{x}/{y}` left in
+// it; the bare file for a client-side COG.
+async function currentTileUrlFor(layerObj) {
+    const source = await resolveTimedTileSource(layerObj)
+    const engineType = Map_.engine?.engineType
+    if (shouldUseDeckRaster(engineType, source.splitColonType, layerObj)) {
+        return resolveDeckCOGFileUrl(layerObj, source)
+    }
+    return compileTileUrl(
+        source.url,
+        buildTileUrlOptions(layerObj, source.splitColonType, source.tileFormat)
+    )
+}
+
+async function rasterValueAt(layerObj, lng, lat) {
+    if (evaluateLayerDataCoverage(layerObj).outOfDataRange) return { value: null }
+    if (!boundsContain(layerObj.boundingBox, lng, lat)) return { value: null }
+    const tileUrl = await currentTileUrlFor(layerObj)
+    const pointUrl = tileUrl
+        ? toPointUrl(tileUrl, lng, lat, ServiceUrls.getTiTilerUrl(layerObj))
+        : null
+    if (pointUrl == null) return null
+    const latlng = { lat, lng }
+    const layerName = layerObj.name
+    window.mmgisAPI.emit('layers:valueFetchStart', { layerName, latlng })
+    const answer = await fetchPointValue(pointUrl)
+    window.mmgisAPI.emit('layers:valueFetchEnd', {
+        layerName,
+        latlng,
+        value: answer?.value ?? null,
+        failed: answer == null,
+    })
+    return answer
+}
+
+// The pickable rasters drawn above what the engine picked, top first. A
+// picked feature of a layer the order does not list (an engine-created one,
+// such as the AOI selection) sits above every listed layer.
+function rasterCandidatesAbove(pick) {
+    const order = L_._layersOrdered
+    let floor = order.length
+    if (pick.feature != null) {
+        const index = order.indexOf(pick.layerId)
+        floor = index === -1 ? 0 : index
+    }
+    return order
+        .slice(0, floor)
+        .map((uuid) => L_.layers.data[uuid])
+        .filter(
+            (layer) =>
+                layer != null &&
+                layer.pickable === true &&
+                L_.layers.on[layer.name] === true &&
+                isRasterTileLayerType(layer)
+        )
+        .map((layer) => ({
+            id: layer.name,
+            valueAt: (lng, lat) => rasterValueAt(layer, lng, lat),
+        }))
+}
+
 /**
  * Builds a raster tile layer (TMS, WMTS, COG via TiTiler, STAC) and registers it with the active map engine.
  * @param {object} layerObj - Layer config from the mission JSON.
@@ -1600,7 +1692,7 @@ async function makeTileLayer(layerObj, mapContext = null) {
 
     // Shared with TimeControl.reloadLayer so creation and time-driven reloads
     // resolve the same source and tile format.
-    const tileSource = resolveTileLayerSource(layerObj)
+    const tileSource = await resolveTimedTileSource(layerObj)
     const { splitColonType, tileElevation, tileFormat } = tileSource
     let layerUrl = tileSource.url
 
@@ -1613,11 +1705,6 @@ async function makeTileLayer(layerObj, mapContext = null) {
             L.latLng(layerObj.boundingBox[1], layerObj.boundingBox[0])
         )
     }
-    layerUrl = await TimeControl.performTimeUrlReplacements(
-        layerUrl,
-        layerObj,
-        null
-    )
 
     if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
         // Client-side COG rendering via ColormappedCOGLayer (bypasses TiTiler).
