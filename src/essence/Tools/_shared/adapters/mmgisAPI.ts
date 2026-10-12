@@ -686,6 +686,15 @@ export const mmgisFormatTime = (
 }
 
 /**
+ * The name of the zone mmgisFormatTime and mmgisGetTimeCurrentFormatted write
+ * in (e.g. 'UTC'), for labelling a time they formatted. Null against a core
+ * that predates the handler.
+ */
+export const mmgisGetTimeZone = (): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('time:getTimeZone')
+}
+
+/**
  * Copies text to the clipboard via core's app:copyText handler; true on
  * success. Against cores that predate the handler — including ones whose
  * direct copyText method carried a legacy execCommand path this plugin no
