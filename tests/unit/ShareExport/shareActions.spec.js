@@ -257,7 +257,7 @@ test.describe('buildExportFilename', () => {
             center: { lat: 4.58921, lng: 137.44162 },
             zoom: 7,
         })
-        expect(name).toBe('mmgis-MSL_2026-07-01T12-00-00Z_4.5892_137.4416.png')
+        expect(name).toBe('MSL_2026-07-01T12-00-00Z_4.5892_137.4416.png')
     })
 
     test('omits fields the view cannot answer yet', () => {
@@ -267,11 +267,11 @@ test.describe('buildExportFilename', () => {
             center: null,
             zoom: null,
         })
-        expect(name).toBe('mmgis-MSL.pdf')
+        expect(name).toBe('MSL.pdf')
     })
 
     test('degrades to the generic name with no view state', () => {
-        expect(buildExportFilename('png', null)).toBe('mmgis-map.png')
+        expect(buildExportFilename('png', null)).toBe('map.png')
     })
 })
 
@@ -295,7 +295,7 @@ test.describe('provenance filenames in downloads', () => {
                 zoom: 5,
             }),
         })
-        expect(downloads).toEqual(['mmgis-Earth_33.1000_-84.2000.png'])
+        expect(downloads).toEqual(['Earth_33.1000_-84.2000.png'])
     })
 })
 
