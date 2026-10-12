@@ -74,9 +74,12 @@ describe('seriesChart chartData', () => {
     })
 
     describe('formatTooltipTime', () => {
-        test('formats a full UTC datetime', () => {
+        test('prints the UTC date only, no clock', () => {
             expect(formatTooltipTime(Date.parse('2026-03-04T14:30:00Z'))).toBe(
-                'Mar 4, 2026, 14:30',
+                'Mar 4, 2026',
+            )
+            expect(formatTooltipTime(Date.parse('2026-03-04T23:30:00-05:00'))).toBe(
+                'Mar 5, 2026',
             )
         })
     })
@@ -130,6 +133,14 @@ describe('seriesChart chartData', () => {
             expect(fmt([{ marker: '·', seriesName: 'S1', value: [at, null] }])).toContain(
                 'S1: —',
             )
+        })
+
+        test('the tooltip title is the date only, even for a mid-day point', () => {
+            const html = card(series()).tooltip.formatter([
+                { marker: '·', seriesName: 'S1', value: [Date.parse('2026-01-01T14:30:00Z'), 1] },
+            ])
+            expect(html).toContain('Jan 1, 2026<br/>')
+            expect(html).not.toContain('14:30')
         })
 
         test('the palette slot follows the variable index, explicit color wins', () => {
@@ -224,9 +235,9 @@ describe('seriesChart chartData', () => {
             expect(windowText(10, 50)).toEqual(['Jan 2, 2026', 'Jan 6, 2026'])
         })
 
-        test('the window dates carry the clock when the series spans two days or less', () => {
+        test('the window dates stay date-only inside a short span too', () => {
             const [start] = buildChart(series(), THEME, 0).windowText(50, 100)
-            expect(start).toBe('Jan 1, 2026, 12:00')
+            expect(start).toBe('Jan 1, 2026')
         })
 
         test('a series with no readable times has no window dates', () => {
