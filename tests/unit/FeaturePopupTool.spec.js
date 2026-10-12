@@ -183,7 +183,7 @@ test('holds the spot with a reading card while core fetches a raster value', asy
     expect(api.namesOf('map:showPopup')).toHaveLength(1)
     expect(api.namesOf('map:showPopup')[0].payload).toEqual({
         latlng: CLICK,
-        title: 'Reading value…',
+        html: 'Reading value…',
     })
 })
 
@@ -315,7 +315,7 @@ test('ignores a null answer for a spot no longer shown, and one with a value', a
     await flushBus()
 
     expect(api.namesOf('map:showPopup')).toHaveLength(0)
-    expect(api.openPopupPayload()).toMatchObject({ latlng: ELSEWHERE, title: 'Reading value…' })
+    expect(api.openPopupPayload()).toMatchObject({ latlng: ELSEWHERE, html: 'Reading value…' })
 })
 
 test('asks the next raster after one said nothing, and shows its value', async () => {
@@ -328,7 +328,7 @@ test('asks the next raster after one said nothing, and shows its value', async (
     await flushBus()
     api.emit('layers:valueFetchStart', { layerName: 'naqfc', latlng: CLICK })
     await flushBus()
-    expect(api.openPopupPayload()).toMatchObject({ title: 'Reading value…' })
+    expect(api.openPopupPayload()).toMatchObject({ html: 'Reading value…' })
 
     api.emit('map:featureClick', rasterPick())
     await flushBus()

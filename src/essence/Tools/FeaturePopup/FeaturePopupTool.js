@@ -242,7 +242,9 @@ const FeaturePopupTool = {
         const latlng = info?.latlng
         if (!latlng || !this._configs.has(info.layerName)) return
         if (this._openCard?.reading && isAt(this._openCard, latlng)) return
-        this._showStatusCard({ reading: true }, { latlng, title: 'Reading value…' })
+        // Body text, not a heading: it reads in the quiet type of the rows it
+        // stands in for.
+        this._showStatusCard({ reading: true }, { latlng, html: 'Reading value…' })
     },
 
     /**
