@@ -19,6 +19,7 @@ import {
     mmgisGetTemporalExtents,
     mmgisGetDataCoverage,
     mmgisFormatTime,
+    mmgisGetTimeZone,
     type CoverageSpan,
     type Duration,
     type LayerConfig,
@@ -355,15 +356,23 @@ const dateLineFor = (
 /**
  * The band's own facts, under the mission name: where the time cursor sat, and
  * when the picture was made. Both go through core's own formatter so they read
- * the way the mission's Time Control writes a date. A mission without time has
- * no cursor to name. The export time is the one date always available, so an
- * unformattable one prints raw rather than going missing.
+ * the way the mission's Time Control writes a date, followed by the zone core
+ * wrote them in. A mission without time has no cursor to name. The export time
+ * is the one date always available, so an unformattable one prints as the raw
+ * ISO string, which carries its own zone.
  */
 const buildHeaderFacts = async (): Promise<ExportHeaderFact[]> => {
     const facts: ExportHeaderFact[] = []
+    let zone: string | null = null
+    try {
+        zone = await mmgisGetTimeZone()
+    } catch (err) {
+        console.warn('[export legend] core could not name its time zone', err)
+    }
+    const withZone = (time: string): string => (zone ? `${time} ${zone}` : time)
     try {
         const cursor = await mmgisGetTimeCurrentFormatted()
-        if (cursor) facts.push({ label: 'Time cursor', value: cursor })
+        if (cursor) facts.push({ label: 'Time cursor', value: withZone(cursor) })
     } catch (err) {
         console.warn('[export legend] core could not format the time cursor', err)
     }
@@ -374,7 +383,7 @@ const buildHeaderFacts = async (): Promise<ExportHeaderFact[]> => {
     } catch (err) {
         console.warn('[export legend] could not format the export time', err)
     }
-    facts.push({ label: 'Exported', value: exported ?? now })
+    facts.push({ label: 'Exported', value: exported ? withZone(exported) : now })
     return facts
 }
 

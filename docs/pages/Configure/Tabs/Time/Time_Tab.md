@@ -26,7 +26,7 @@ If enabled and visible, the Time UI will be initially open on the bottom of the 
 
 Controls how dates and times are written wherever the dashboard prints the mission's time, such as an exported legend's header lines. Uses [D3 time format specifiers](https://github.com/d3/d3-time-format), for instance `%Y-%m-%d %H:%M`. Times are written in UTC.
 
-Default: `%Y-%m-%dT%H:%M:%SZ`
+Default: `%Y-%m-%dT%H:%M`
 
 For developers: this value is what plugins receive when they ask core to render a time, via the `time:formatTime` and `time:getCurrentFormatted` bus requests.
 

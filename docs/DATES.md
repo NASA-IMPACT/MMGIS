@@ -75,7 +75,7 @@ The per-layer `time.format` field controls how the times are written into the UR
 
 ## The mission-wide time format
 
-The Configure page's Time tab has a mission-wide `time.format`. `formatMissionTime` in `TimeControl.js` applies it as d3 time-format specifiers, with `%Y-%m-%dT%H:%M:%SZ` as the default. This is a separate setting from the per-layer `time.format` above: both are named `time.format`, both are d3 specifiers, and they live at different levels of the config.
+The Configure page's Time tab has a mission-wide `time.format`. `formatMissionTime` in `TimeControl.js` applies it as d3 time-format specifiers, with `%Y-%m-%dT%H:%M` as the default. This is a separate setting from the per-layer `time.format` above: both are named `time.format`, both are d3 specifiers, and they live at different levels of the config.
 
 ## Acquisition time: the Data Time Extent fields
 
@@ -109,7 +109,7 @@ The export legend's header carries it: `new Date().toISOString()`, rendered thro
 
 `getExportLegendModel.ts` in `src/essence/Tools/_shared/legend/` builds the band: a header, then one row for every layer that is toggled on, painting (opacity above zero), and not a header layer. A layer something has filtered out of the panel's lists still paints, so it still gets a row. A layer with no colour ramp and no categorical stops still gets a row, carrying its name and its date line alone.
 
-The header is the mission name, then `Time cursor <time>` — the cursor as `time:getCurrentFormatted` renders it, left out when that returns null — then `Exported <now>` — the wall-clock moment the export was made, printed as the raw ISO string when that moment cannot be formatted.
+The header is the mission name, then `Time cursor <time> <zone>` — the cursor as `time:getCurrentFormatted` renders it, left out when that returns null — then `Exported <now> <zone>` — the wall-clock moment the export was made, printed as the raw ISO string when that moment cannot be formatted. `<zone>` is the name `time:getTimeZone` returns for the zone core formatted in, left off when core can't name one.
 
 Each row carries one date line, and every dated line opens with one of two words. **Collected** means the data on screen was gathered inside the range that follows: the app knows the layer's coverage and, for a layer that follows the slider, has narrowed it to what the request could have returned — or, for a periodic layer, to the one period core requested, or, for a layer that lists Data Dates, to the one listed entry the cursor sits in. **Requested** means the app knows only the span it asked the server for. A bare `A → B` never appears, so a range can never be mistaken for a stronger claim than it is. The one undated line is **No data at cursor**, for a time-enabled layer core has hidden because its data does not reach the cursor.
 

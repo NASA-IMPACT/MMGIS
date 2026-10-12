@@ -15,6 +15,7 @@ vi.mock('../../adapters/mmgisAPI', () => ({
     mmgisGetTemporalExtents: vi.fn(),
     mmgisGetDataCoverage: vi.fn(),
     mmgisFormatTime: vi.fn(),
+    mmgisGetTimeZone: vi.fn(),
 }))
 
 import { getLayersWithLegends } from '../getLayersWithLegends'
@@ -28,6 +29,7 @@ import {
     mmgisGetTemporalExtents,
     mmgisGetDataCoverage,
     mmgisFormatTime,
+    mmgisGetTimeZone,
 } from '../../adapters/mmgisAPI'
 import { getExportLegendModel } from '../getExportLegendModel'
 
@@ -90,6 +92,7 @@ beforeEach(() => {
     vi.mocked(mmgisGetTimeCurrentFormatted).mockResolvedValue(null)
     vi.mocked(mmgisGetTemporalExtents).mockResolvedValue(null)
     vi.mocked(mmgisGetDataCoverage).mockResolvedValue(null)
+    vi.mocked(mmgisGetTimeZone).mockResolvedValue('UTC')
     vi.mocked(mmgisFormatTime).mockImplementation(async (time) =>
         time == null ? null : formatted(time),
     )
@@ -705,19 +708,46 @@ describe('getExportLegendModel', () => {
         vi.setSystemTime(new Date('2026-09-02T18:30:00Z'))
         try {
             vi.mocked(getLayersWithLegends).mockResolvedValue([baseLayer({})])
-            vi.mocked(mmgisGetTimeCurrentFormatted).mockResolvedValue('Sol 1234')
+            vi.mocked(mmgisGetTimeCurrentFormatted).mockResolvedValue('2026-09-02 18:00')
             const model = await getExportLegendModel()
             expect(model.missionName).toBe('Test Mission')
             expect(model.headerFacts).toEqual([
-                { label: 'Time cursor', value: 'Sol 1234' },
+                { label: 'Time cursor', value: '2026-09-02 18:00 UTC' },
                 {
                     label: 'Exported',
-                    value: formatted('2026-09-02T18:30:00.000Z'),
+                    value: `${formatted('2026-09-02T18:30:00.000Z')} UTC`,
                 },
             ])
         } finally {
             vi.useRealTimers()
         }
+    })
+
+    // The zone is whatever core says it formats in, not one the band assumes.
+    test('names the zone core reports after each header time', async () => {
+        vi.mocked(getLayersWithLegends).mockResolvedValue([baseLayer({})])
+        vi.mocked(mmgisGetTimeCurrentFormatted).mockResolvedValue('2026-09-02 18:00')
+        vi.mocked(mmgisGetTimeZone).mockResolvedValue('America/Chicago')
+        const model = await getExportLegendModel()
+        expect(model.headerFacts.map((fact) => fact.value)).toEqual([
+            '2026-09-02 18:00 America/Chicago',
+            expect.stringMatching(/^fmt\(.*\) America\/Chicago$/),
+        ])
+    })
+
+    // A core that can't name its zone costs the header the suffix, not a line.
+    test.each([
+        ['predates the handler', () => vi.mocked(mmgisGetTimeZone).mockResolvedValue(null)],
+        ['throws', () => vi.mocked(mmgisGetTimeZone).mockRejectedValue(new Error('no zone'))],
+    ])('prints the times bare when core %s', async (_case, arrange) => {
+        arrange()
+        vi.mocked(getLayersWithLegends).mockResolvedValue([baseLayer({})])
+        vi.mocked(mmgisGetTimeCurrentFormatted).mockResolvedValue('2026-09-02 18:00')
+        const model = await getExportLegendModel()
+        expect(model.headerFacts.map((fact) => fact.value)).toEqual([
+            '2026-09-02 18:00',
+            expect.stringMatching(/^fmt\([^)]*\)$/),
+        ])
     })
 
     // A mission without time has no cursor to name, and a time bus that

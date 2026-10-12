@@ -70,9 +70,13 @@ const relativeTimeFormat = new RegExp(
 )
 
 // A mission's time.format is written in d3 time-format specifiers (e.g.
-// '%Y-%m-%dT%H:%M:%SZ'). Falls back to this when a mission never configured
+// '%Y-%m-%d %H:%M'). Falls back to this when a mission never configured
 // a format.
-const DEFAULT_TIME_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
+const DEFAULT_TIME_FORMAT = '%Y-%m-%dT%H:%M'
+
+// The zone formatMissionTime writes times in, named for display beside them.
+// Kept with the formatter so the two can't disagree.
+const DISPLAY_TIME_ZONE = 'UTC'
 
 // Formats a time through the mission's configured time.format, a d3
 // time-format specifier string.
@@ -154,6 +158,9 @@ var TimeControl = {
                 window.mmgisAPI.provide('time:formatTime', (time) =>
                     time != null ? formatMissionTime(time) : null
                 ),
+                // The zone both formatters above write in, so a caller can
+                // label a formatted time without assuming which zone it is.
+                window.mmgisAPI.provide('time:getTimeZone', () => DISPLAY_TIME_ZONE),
                 // Which mode the bottom Time UI bar is in: 'range' or 'point'.
                 // In point mode the window start is pinned to the epoch, so
                 // this is how a caller tells that apart from a real 1970
