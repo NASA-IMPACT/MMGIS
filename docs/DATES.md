@@ -75,7 +75,7 @@ The per-layer `time.format` field controls how the times are written into the UR
 
 ## The mission-wide time format
 
-The Configure page's Time tab has a mission-wide `time.format`. `formatMissionTime` in `TimeControl.js` applies it as d3 time-format specifiers, with `%Y-%m-%dT%H:%M:%SZ` as the default. This is a separate setting from the per-layer `time.format` above: both are named `time.format`, both are d3 specifiers, and they live at different levels of the config.
+The Configure page's Time tab has a mission-wide `time.format`. `formatMissionTime` in `TimeControl.js` applies it as d3 time-format specifiers, with `%Y-%m-%dT%H:%M` as the default. This is a separate setting from the per-layer `time.format` above: both are named `time.format`, both are d3 specifiers, and they live at different levels of the config.
 
 ## Acquisition time: the Data Time Extent fields
 
