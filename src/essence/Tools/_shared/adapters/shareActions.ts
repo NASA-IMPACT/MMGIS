@@ -100,16 +100,15 @@ async function readScaleBarSettings(
 
 // Uses the capture's own scale, which is in image pixels and of that exact
 // view, measured where the on-screen bar sits when the capture was given it.
+// A tilted or continent-wide view has no scale by design, so a capture
+// without one is not logged; the capture logs a failure to measure itself.
 function resolveExportScaleBar(
     screenshot: MapScreenshotResult,
     settings: ScaleBarSettings | null,
 ): ExportScaleBar | null {
     if (!settings) return null
     const { metersPerPixel, scaleAnchor } = screenshot
-    if (typeof metersPerPixel !== 'number' || !(metersPerPixel > 0)) {
-        console.warn('Share export: scale bar omitted, the map gave no scale')
-        return null
-    }
+    if (typeof metersPerPixel !== 'number' || !(metersPerPixel > 0)) return null
     return {
         metersPerPixel,
         units: settings.units,

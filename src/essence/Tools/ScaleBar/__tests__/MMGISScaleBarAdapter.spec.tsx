@@ -12,6 +12,7 @@ import { mount } from '../../_shared/__tests__/reactHarness'
  */
 
 let vars: Record<string, unknown>
+let engineType: 'leaflet' | 'deckgl' | null
 // The map's scale, or the scale at a requested container point.
 let metersPerPixel: number | null | ((at?: { x: number; y: number }) => number | null)
 let listeners: Map<string, Set<(payload?: unknown) => void>>
@@ -42,20 +43,23 @@ const label = (container: HTMLElement) =>
     container.querySelector('.blocks-scale-bar__label')?.textContent ?? null
 
 // jsdom does no layout, so nothing has client rects; a bar the page shows
-// is simulated by giving its host one.
-const showHost = (container: HTMLElement) => {
-    const host = container.querySelector('.blocks-scale-bar-host') as HTMLElement
-    host.getClientRects = () => [{}] as unknown as DOMRectList
+// is simulated by giving its backing box one.
+const showBar = (container: HTMLElement) => {
+    const bar = container.querySelector('.blocks-scale-bar') as HTMLElement
+    bar.getClientRects = () => [{}] as unknown as DOMRectList
+    return bar
 }
 
 beforeEach(() => {
     vars = {}
+    engineType = 'deckgl'
     metersPerPixel = 1
     listeners = new Map()
     provided = new Map()
     ;(window as { mmgisAPI?: unknown }).mmgisAPI = {
         request: vi.fn(async (name: string, arg?: unknown) => {
             if (name === 'tool:getVars') return vars
+            if (name === 'map:getEngineType') return engineType
             if (name === 'map:getMetersPerPixel') {
                 return typeof metersPerPixel === 'function'
                     ? metersPerPixel(arg as { x: number; y: number } | undefined)
@@ -181,6 +185,21 @@ describe('MMGISScaleBarAdapter', () => {
             await unmount()
         })
 
+        // Leaflet misses the pointer leaving across a hoverable feature, which
+        // would leave the bar measuring at the map's edge.
+        test('stays at the map centre on Leaflet', async () => {
+            engineType = 'leaflet'
+            metersPerPixel = (at) => (at ? 10 : 1)
+            const { container, unmount } = await mount(<MMGISScaleBarAdapter />)
+            const before = scaleReads()
+            await pointerAt(40, 300)
+            expect(scaleReads()).toBe(before)
+            await fire('map:move')
+            expect(requestMock()).toHaveBeenLastCalledWith('map:getMetersPerPixel', undefined)
+            expect(label(container)).toBe('100 m')
+            await unmount()
+        })
+
         // Past a zoomed-out world's edge there is no ground under the pointer.
         test("shows the centre's scale where the pointer has none", async () => {
             metersPerPixel = (at) => (at ? null : 10)
@@ -216,7 +235,7 @@ describe('MMGISScaleBarAdapter', () => {
 
     describe('export settings', () => {
         const settings = () => {
-            const handler = provided.get('plugin:scalebar:getSettings')
+            const handler = provided.get('export:getScaleBar')
             if (!handler) throw new Error('getSettings was not provided')
             return handler()
         }
@@ -224,10 +243,10 @@ describe('MMGISScaleBarAdapter', () => {
         test('answer with the units while the bar is on screen', async () => {
             vars = { units: 'imperial' }
             const { container, unmount } = await mount(<MMGISScaleBarAdapter />)
-            showHost(container)
-            const host = container.querySelector('.blocks-scale-bar-host') as HTMLElement
-            host.getBoundingClientRect = () => ({ left: 24, bottom: 580 }) as DOMRect
-            // The position lets the export draw and measure its bar there too.
+            const bar = showBar(container)
+            bar.getBoundingClientRect = () => ({ left: 24, bottom: 580 }) as DOMRect
+            // The backing box's corner lets the export draw and measure its
+            // bar there too.
             expect(settings()).toEqual({
                 units: 'imperial',
                 at: { clientX: 24, clientY: 580 },
@@ -243,11 +262,22 @@ describe('MMGISScaleBarAdapter', () => {
             await unmount()
         })
 
+        // The host stays laid out while the scale is unknown and no bar is
+        // drawn, so the export must not draw one either.
+        test('answer null while no bar is drawn', async () => {
+            metersPerPixel = null
+            const { container, unmount } = await mount(<MMGISScaleBarAdapter />)
+            const host = container.querySelector('.blocks-scale-bar-host') as HTMLElement
+            host.getClientRects = () => [{}] as unknown as DOMRectList
+            expect(settings()).toBeNull()
+            await unmount()
+        })
+
         test('stop answering once the plugin is gone', async () => {
             const { unmount } = await mount(<MMGISScaleBarAdapter />)
-            expect(provided.has('plugin:scalebar:getSettings')).toBe(true)
+            expect(provided.has('export:getScaleBar')).toBe(true)
             await unmount()
-            expect(provided.has('plugin:scalebar:getSettings')).toBe(false)
+            expect(provided.has('export:getScaleBar')).toBe(false)
         })
     })
 })

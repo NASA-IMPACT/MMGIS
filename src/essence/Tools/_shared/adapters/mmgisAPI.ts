@@ -179,19 +179,26 @@ export const mmgisGetMetersPerPixel = (
     return mmgisRequestIfProvided<number>('map:getMetersPerPixel', at)
 }
 
+/** Which engine draws the map; null until the mission has built one. */
+export const mmgisGetEngineType = (): Promise<'leaflet' | 'deckgl' | null> => {
+    return mmgisRequestIfProvided<'leaflet' | 'deckgl'>('map:getEngineType')
+}
+
 export type ScaleBarSettings = {
     units: ScaleUnits
-    /** Where the on-screen bar's bottom-left corner sits on the page, so an
-     *  export can draw and measure its bar at the same spot. */
+    /** Where the on-screen bar's backing box has its bottom-left corner on
+     *  the page, so an export can draw and measure its bar at the same spot. */
     at?: ClientPoint
 }
 
-export const SCALE_BAR_SETTINGS_REQUEST = 'plugin:scalebar:getSettings'
+/** Provided by whichever plugin draws a scale bar on the map, and asked by
+ *  exports so they carry a matching bar. */
+export const EXPORT_SCALE_BAR_REQUEST = 'export:getScaleBar'
 
-/** The ScaleBar plugin's units while its bar is on screen, otherwise null,
- *  so exports carry a bar exactly when the map shows one. */
+/** The on-screen scale bar's settings while one is drawn, otherwise null, so
+ *  exports carry a bar exactly when the map shows one. */
 export const mmgisGetScaleBarSettings = (): Promise<ScaleBarSettings | null> => {
-    return mmgisRequestIfProvided<ScaleBarSettings>(SCALE_BAR_SETTINGS_REQUEST)
+    return mmgisRequestIfProvided<ScaleBarSettings>(EXPORT_SCALE_BAR_REQUEST)
 }
 
 /** View metadata (mission, time, center, zoom); fields null until loaded. */
