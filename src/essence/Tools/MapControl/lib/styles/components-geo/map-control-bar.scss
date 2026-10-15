@@ -205,6 +205,17 @@
         perspective: 100px;
     }
 
+    /* The compass as an indicator only, on a map that cannot rotate: drawn as
+       a button but with nothing to press. */
+    &__btn--static {
+        cursor: default;
+
+        &:hover {
+            background: transparent;
+            color: var(--theme-color-base-darker, #444447);
+        }
+    }
+
     /* Follows the camera frame by frame, so it takes no transition of its own:
        one would trail behind every gesture. */
     &__needle {

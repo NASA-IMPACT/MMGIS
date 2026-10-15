@@ -474,12 +474,17 @@ var mmgisAPI_ = {
         const center =
             map && typeof map.getCenter === 'function' ? map.getCenter() : null
         // Bearing and pitch come from the engine, which works out a bearing
-        // even where it cannot rotate (Leaflet, from its projection).
+        // even where it cannot rotate (Leaflet, from its projection). An
+        // engine still booting or being torn down can throw; that leaves the
+        // two null rather than failing the rest of the view state.
         const engine = L_.Map_ && L_.Map_.engine
-        const camera =
-            engine && typeof engine.getViewState === 'function'
-                ? engine.getViewState()
-                : null
+        let camera = null
+        try {
+            if (engine && typeof engine.getViewState === 'function')
+                camera = engine.getViewState()
+        } catch (err) {
+            camera = null
+        }
         return {
             // L_.mission is the canonical identity (the ?mission= URL value);
             // msv.mission is a display field that can be stale.

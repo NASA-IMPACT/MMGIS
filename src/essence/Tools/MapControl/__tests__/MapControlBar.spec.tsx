@@ -268,12 +268,24 @@ const needle = (container: HTMLElement) =>
     container.querySelector<HTMLElement>('.blocks-map-control__needle')
 
 describe('MapControlBar compass', () => {
-    test('is left out when the host supplies no reset handler', async () => {
+    test('is left out when the host supplies neither camera nor reset handler', async () => {
+        const { container, unmount } = await mount(<MapControlBar />)
+
+        expect(compassButton(container)).toBeNull()
+
+        await unmount()
+    })
+
+    test('is an indicator, not a button, given a camera but no reset handler', async () => {
         const { container, unmount } = await mount(
             <MapControlBar camera={{ bearing: 30, pitch: 10 }} />,
         )
 
-        expect(compassButton(container)).toBeNull()
+        const compass = compassButton(container)!
+        expect(compass.tagName).toBe('SPAN')
+        expect(compass.getAttribute('role')).toBe('img')
+        expect(compass.getAttribute('aria-label')).toBe('Bearing 30°, tilt 10°')
+        expect(needle(container)!.style.transform).toBe('rotateX(10deg) rotateZ(-30deg)')
 
         await unmount()
     })

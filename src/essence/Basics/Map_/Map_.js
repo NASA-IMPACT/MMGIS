@@ -388,6 +388,23 @@ let Map_ = {
                     if (!Map_.engine || typeof Map_.engine.resetNorth !== 'function') return false
                     return Map_.engine.resetNorth()
                 }),
+                // Which way the camera faces, and whether map:resetNorth can
+                // ever move it. Null while the engine cannot answer yet.
+                window.mmgisAPI.provide('map:getCamera', () => {
+                    if (!Map_.engine || typeof Map_.engine.getViewState !== 'function') return null
+                    let view
+                    try {
+                        view = Map_.engine.getViewState()
+                    } catch (err) {
+                        return null
+                    }
+                    if (!view || typeof view.bearing !== 'number') return null
+                    return {
+                        bearing: view.bearing,
+                        pitch: view.pitch ?? 0,
+                        rotatable: Map_.engine.engineType !== MAP_ENGINE.LEAFLET,
+                    }
+                }),
                 window.mmgisAPI.provide('map:latLngToContainerPoint', (latlng) => {
                     if (!Map_.engine || typeof Map_.engine.latLngToContainerPoint !== 'function') {
                         return null
@@ -427,6 +444,10 @@ let Map_ = {
                 )
                 if (typeof off === 'function') _providerCleanups.push(off)
             }
+
+            // Every map handler above now answers for this engine. Sent on
+            // each init, so a listener can re-read state a re-init replaced.
+            window.mmgisAPI.emit('map:ready')
         }
 
         // Initialise comparison controller with the active engine so it can

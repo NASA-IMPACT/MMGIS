@@ -428,13 +428,13 @@ describe('MMGISMapControlAdapter basemap labels', () => {
 })
 
 /**
- * The compass against a bus whose camera the spec sets: `map:getViewState`
- * answers from `view`, and bus events are captured from `on` so a spec can
- * fire the map's movement.
+ * The compass against a bus whose camera the spec sets: `map:getCamera`
+ * answers from `view` (null when `view` is), and bus events are captured from
+ * `on` so a spec can fire the map's movement.
  */
 describe('MMGISMapControlAdapter compass', () => {
     let vars: Record<string, unknown>
-    let view: { bearing: number | null; pitch: number | null }
+    let view: { bearing: number; pitch: number; rotatable: boolean } | null
     let listeners: Map<string, Set<(payload?: unknown) => void>>
 
     const fire = async (event: string) => {
@@ -455,7 +455,7 @@ describe('MMGISMapControlAdapter compass', () => {
 
     beforeEach(() => {
         vars = {}
-        view = { bearing: 0, pitch: 0 }
+        view = { bearing: 0, pitch: 0, rotatable: true }
         listeners = new Map()
         request.mockImplementation(async (name: string) => {
             switch (name) {
@@ -469,8 +469,8 @@ describe('MMGISMapControlAdapter compass', () => {
                     return null
                 case 'map:supportsBasemapLabels':
                     return false
-                case 'map:getViewState':
-                    return { missionName: 'M', time: null, center: null, zoom: 3, ...view }
+                case 'map:getCamera':
+                    return view
                 default:
                     return true
             }
@@ -486,7 +486,7 @@ describe('MMGISMapControlAdapter compass', () => {
     })
 
     test('shows by default, drawn from the camera the map reports', async () => {
-        view = { bearing: 30, pitch: 45 }
+        view = { bearing: 30, pitch: 45, rotatable: true }
         const { container, unmount } = await mount(<MMGISMapControlAdapter />)
 
         expect(compassButton(container)).not.toBeNull()
@@ -505,11 +505,11 @@ describe('MMGISMapControlAdapter compass', () => {
             const { container, unmount } = await mount(<MMGISMapControlAdapter />)
 
             expect(compassButton(container)).toBeNull()
-            const before = requestsNamed('map:getViewState').length
+            const before = requestsNamed('map:getCamera').length
             await fire('map:moveend')
             await fire('map:move')
             await nextFrame()
-            expect(requestsNamed('map:getViewState')).toHaveLength(before)
+            expect(requestsNamed('map:getCamera')).toHaveLength(before)
             expect(listeners.get('map:move')?.size ?? 0).toBe(0)
             expect(listeners.get('map:moveend')?.size ?? 0).toBe(0)
 
@@ -529,7 +529,7 @@ describe('MMGISMapControlAdapter compass', () => {
 
     test.each(['map:move', 'map:moveend'])('follows the camera on %s', async (event) => {
         const { container, unmount } = await mount(<MMGISMapControlAdapter />)
-        view = { bearing: -60, pitch: 20 }
+        view = { bearing: -60, pitch: 20, rotatable: true }
         await fire(event)
         await nextFrame()
 
@@ -540,19 +540,20 @@ describe('MMGISMapControlAdapter compass', () => {
 
     test('reads the camera at most once per frame while the map moves', async () => {
         const { unmount } = await mount(<MMGISMapControlAdapter />)
-        const before = requestsNamed('map:getViewState').length
+        const before = requestsNamed('map:getCamera').length
         await fire('map:move')
+        await fire('map:moveend')
         await fire('map:move')
-        await fire('map:move')
+        await fire('map:moveend')
         await nextFrame()
 
-        expect(requestsNamed('map:getViewState').length).toBe(before + 1)
+        expect(requestsNamed('map:getCamera').length).toBe(before + 1)
 
         await unmount()
     })
 
     test('asks the map to reset north when clicked', async () => {
-        view = { bearing: 90, pitch: 30 }
+        view = { bearing: 90, pitch: 30, rotatable: true }
         const { container, unmount } = await mount(<MMGISMapControlAdapter />)
 
         await click(compassButton(container)!)
@@ -562,12 +563,37 @@ describe('MMGISMapControlAdapter compass', () => {
         await unmount()
     })
 
-    // Before a map exists getViewState answers with null fields.
-    test('draws north-up while the map has no bearing to report', async () => {
-        view = { bearing: null, pitch: null }
+    // Before an engine exists getCamera answers null; the compass waits.
+    test('is absent while the map has no camera to report', async () => {
+        view = null
         const { container, unmount } = await mount(<MMGISMapControlAdapter />)
 
+        expect(compassButton(container)).toBeNull()
+
+        await unmount()
+    })
+
+    test('re-reads the camera when the map is re-initialized', async () => {
+        view = { bearing: 40, pitch: 0, rotatable: true }
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+        view = { bearing: 0, pitch: 0, rotatable: true }
+        await fire('map:ready')
+
         expect(needleTransform(container)).toBe('rotateX(0deg) rotateZ(0deg)')
+
+        await unmount()
+    })
+
+    // Leaflet cannot rotate: reset would do nothing, so nothing offers it.
+    test('is an indicator, not a reset button, on a map that cannot rotate', async () => {
+        view = { bearing: 12, pitch: 0, rotatable: false }
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+        const compass = compassButton(container)!
+        expect(compass.tagName).toBe('SPAN')
+        expect(compass.getAttribute('role')).toBe('img')
+        expect(compass.getAttribute('aria-label')).toBe('Bearing 12°, tilt 0°')
+        expect(needleTransform(container)).toBe('rotateX(0deg) rotateZ(-12deg)')
 
         await unmount()
     })
@@ -578,5 +604,6 @@ describe('MMGISMapControlAdapter compass', () => {
 
         expect(listeners.get('map:move')?.size ?? 0).toBe(0)
         expect(listeners.get('map:moveend')?.size ?? 0).toBe(0)
+        expect(listeners.get('map:ready')?.size ?? 0).toBe(0)
     })
 })

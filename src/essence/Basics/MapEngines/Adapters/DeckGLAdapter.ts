@@ -529,9 +529,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /**
      * Bound handler kept as a class field for clean removal.
-     * Silently keeps `_viewState` in sync during animations so that
+     * Keeps `_viewState` in sync during animations so that
      * {@link projectCoordinates} and {@link unprojectCoordinates} remain
-     * accurate while the camera is moving.
+     * accurate while the camera is moving, and emits the engine-level `'move'`
+     * event for each frame.
      */
     private _onBasemapMove = (): void => {
         if (this._sbsSyncing) return
@@ -545,6 +546,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             pitch: this._basemap!.getPitch(),
         }
         if (this._comparisonEnabled) this._syncComparisonCamera()
+        this._emitEvent('move', this._viewState)
     }
 
     /**
@@ -1074,8 +1076,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             return {
                 center: { lat: c.lat, lng: c.lng },
                 zoom: this._basemap!.getZoom(),
-                bearing: this._viewState.bearing,
-                pitch: this._viewState.pitch,
+                bearing: this._basemap!.getBearing(),
+                pitch: this._basemap!.getPitch(),
             }
         }
         return {
@@ -1206,8 +1208,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /**
      * Ease one step back toward a flat, north-up view, leaving centre and zoom
-     * where they are: bearing to 0 with the pitch kept, or, when the camera
-     * already faces north, pitch to 0.
+     * where they are: bearing to north with the pitch kept, or, when the
+     * camera already faces north, pitch to 0. The bearing turns the short way
+     * round: standalone deck.gl leaves it unwrapped (350, or 710 after more
+     * turns), so north is taken as the nearest multiple of 360.
      *
      * - Overlay mode: the basemap owns the camera, so it is eased there and
      *   the deck layers follow through the interleaved overlay.
@@ -1217,7 +1221,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     resetNorth(options?: ViewOptions): boolean {
         const { bearing = 0, pitch = 0 } = this.getViewState()
         let target: { bearing?: number; pitch?: number }
-        if (Math.abs(wrapBearing(bearing)) > RESET_NORTH_TOLERANCE_DEG) target = { bearing: 0 }
+        const offNorth = wrapBearing(bearing)
+        if (Math.abs(offNorth) > RESET_NORTH_TOLERANCE_DEG) target = { bearing: bearing - offNorth }
         else if (Math.abs(pitch) > RESET_NORTH_TOLERANCE_DEG) target = { pitch: 0 }
         else return false
 
@@ -2301,7 +2306,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             pitch: source.map.getPitch(),
         }
         this._syncComparisonCamera(source)
-        if (settled) this._emitEvent('moveend', this._viewState)
+        this._emitEvent(settled ? 'moveend' : 'move', this._viewState)
     }
 
     /** Finalize both panes, detach their listeners and remove their DOM nodes. */
