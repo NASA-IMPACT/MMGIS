@@ -5,8 +5,7 @@
  * `float-bottom-left` floating panel over the map) and calls make(targetId);
  * the React root mounts into that container.
  *
- * All MMGIS coupling lives in MMGISScaleBarAdapter. The lib/ tree is
- * portable.
+ * All MMGIS bus access lives in MMGISScaleBarAdapter.
  */
 import React from 'react'
 import { createRoot, type Root } from 'react-dom/client'

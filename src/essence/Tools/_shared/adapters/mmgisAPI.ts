@@ -1,4 +1,5 @@
 import type { LayerLegend } from '../../../Basics/Layers_/legend/types'
+import type { ScaleUnits } from '../scale/scaleBarModel'
 
 type EventCleanup = () => void
 
@@ -171,7 +172,7 @@ export const mmgisGetMetersPerPixel = (at?: {
     return mmgisRequestIfProvided<number>('map:getMetersPerPixel', at)
 }
 
-export type ScaleBarSettings = { units: 'metric' | 'imperial' }
+export type ScaleBarSettings = { units: ScaleUnits }
 
 export const SCALE_BAR_SETTINGS_REQUEST = 'plugin:scalebar:getSettings'
 

@@ -22,6 +22,21 @@ const fire = async (event: string) => {
     })
 }
 
+// Lets a read scheduled for the next animation frame run and settle.
+const nextFrame = async () => {
+    await act(async () => {
+        await new Promise((resolve) => requestAnimationFrame(resolve))
+    })
+}
+
+const requestMock = () =>
+    (window as unknown as { mmgisAPI: { request: ReturnType<typeof vi.fn> } })
+        .mmgisAPI.request
+
+const scaleReads = () =>
+    requestMock().mock.calls.filter(([name]) => name === 'map:getMetersPerPixel')
+        .length
+
 const label = (container: HTMLElement) =>
     container.querySelector('.blocks-scale-bar__label')?.textContent ?? null
 
@@ -85,10 +100,34 @@ describe('MMGISScaleBarAdapter', () => {
             const { container, unmount } = await mount(<MMGISScaleBarAdapter />)
             metersPerPixel = 10
             await fire(event)
+            await nextFrame()
             expect(label(container)).toBe('1 km')
             await unmount()
         },
     )
+
+    test('reads the scale at most once per frame while the map moves', async () => {
+        const { unmount } = await mount(<MMGISScaleBarAdapter />)
+        const before = scaleReads()
+        await fire('map:move')
+        await fire('map:move')
+        await fire('map:move')
+        await nextFrame()
+        expect(scaleReads()).toBe(before + 1)
+        await unmount()
+    })
+
+    // A map laid out after the plugin mounts has no scale at first.
+    test('rereads the scale when the map area resizes', async () => {
+        metersPerPixel = null
+        const { container, unmount } = await mount(<MMGISScaleBarAdapter />)
+        expect(container.querySelector('.blocks-scale-bar')).toBeNull()
+        metersPerPixel = 1
+        window.dispatchEvent(new Event('resize'))
+        await nextFrame()
+        expect(label(container)).toBe('100 m')
+        await unmount()
+    })
 
     // Map scale varies across the screen, so the bar asks for it where its
     // rule starts: the host's bottom-left corner.
@@ -97,51 +136,12 @@ describe('MMGISScaleBarAdapter', () => {
         showHost(container)
         const host = container.querySelector('.blocks-scale-bar-host') as HTMLElement
         host.getBoundingClientRect = () => ({ left: 24, bottom: 580 }) as DOMRect
-        await fire('map:move')
-        const request = (window as unknown as {
-            mmgisAPI: { request: ReturnType<typeof vi.fn> }
-        }).mmgisAPI.request
-        expect(request).toHaveBeenLastCalledWith('map:getMetersPerPixel', {
+        await fire('map:moveend')
+        expect(requestMock()).toHaveBeenLastCalledWith('map:getMetersPerPixel', {
             clientX: 24,
             clientY: 580,
         })
         await unmount()
-    })
-
-    // A map whose basemap loads asynchronously has no scale when the plugin
-    // first asks; the bar appears once it does, without a zoom or pan.
-    test('keeps asking until the map has a scale', async () => {
-        vi.useFakeTimers()
-        try {
-            metersPerPixel = null
-            const { container, unmount } = await mount(<MMGISScaleBarAdapter />)
-            expect(container.querySelector('.blocks-scale-bar')).toBeNull()
-            metersPerPixel = 1
-            await act(async () => {
-                await vi.advanceTimersByTimeAsync(300)
-            })
-            expect(label(container)).toBe('100 m')
-            await unmount()
-        } finally {
-            vi.useRealTimers()
-        }
-    })
-
-    test('stops asking once unmounted', async () => {
-        vi.useFakeTimers()
-        try {
-            metersPerPixel = null
-            const { unmount } = await mount(<MMGISScaleBarAdapter />)
-            await unmount()
-            const request = (window as unknown as {
-                mmgisAPI: { request: ReturnType<typeof vi.fn> }
-            }).mmgisAPI.request
-            const calls = request.mock.calls.length
-            await vi.advanceTimersByTimeAsync(2000)
-            expect(request.mock.calls.length).toBe(calls)
-        } finally {
-            vi.useRealTimers()
-        }
     })
 
     test('an unknown scale shows no bar', async () => {

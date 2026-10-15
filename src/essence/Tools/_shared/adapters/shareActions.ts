@@ -71,7 +71,7 @@ export async function copyShareLink(
     return url
 }
 
-export type LegendDeps = {
+export type DecorationDeps = {
     includeLegend?: boolean
     getLegendModel?: () => Promise<ExportLegendModel>
     getScaleBarSettings?: () => Promise<ScaleBarSettings | null>
@@ -106,7 +106,7 @@ async function resolveExportScaleBar(
 // drawn and log the rest, rather than surfacing a broken download.
 async function applyDecorations(
     screenshot: MapScreenshotResult,
-    deps: LegendDeps,
+    deps: DecorationDeps,
 ): Promise<MapScreenshotResult> {
     const {
         includeLegend = true,
@@ -132,7 +132,7 @@ async function applyDecorations(
     }
 }
 
-export type DownloadSharePngDeps = LegendDeps & {
+export type DownloadSharePngDeps = DecorationDeps & {
     getScreenshot?: () => Promise<MapScreenshotResult | null>
     download?: (blob: Blob, filename: string) => void
     getViewState?: () => Promise<ViewState | null>
@@ -160,7 +160,7 @@ export async function downloadSharePng(
     return composed
 }
 
-export type DownloadSharePdfDeps = LegendDeps & {
+export type DownloadSharePdfDeps = DecorationDeps & {
     getScreenshot?: () => Promise<MapScreenshotResult | null>
     blobToDataUrl?: (blob: Blob) => Promise<string>
     buildPdf?: (

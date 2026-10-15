@@ -1,6 +1,6 @@
 import F_ from '../Formulae_/Formulae_'
 import type { IMapEngine, MapScreenshotResult } from './IMapEngine'
-import type { LatLng, LatLngLike } from './types/geometry'
+import type { LatLng } from './types/geometry'
 
 type ScaleEngine = Pick<IMapEngine, 'containerPointToLatLng' | 'getContainer' | 'getViewState'>
 
@@ -11,10 +11,6 @@ export type ClientPoint = { clientX: number; clientY: number }
 // Short keeps it local to the point; a long one at world zooms would measure a
 // great-circle chord rather than the distance along the screen row.
 const PROBE_PX = 10
-
-// Both adapters answer with the object form; a tuple is in Leaflet order.
-const toLatLng = (p: LatLngLike): LatLng =>
-    Array.isArray(p) ? { lat: p[0], lng: p[1] } : (p as LatLng)
 
 /** Tilt, in degrees, beyond which the map has no scale. A tilted map's scale
  *  shrinks toward the camera and grows toward the horizon (by about a quarter
@@ -27,13 +23,9 @@ export const DEFAULT_SCALE_INSET_PX = 16
 
 /**
  * Ground metres per CSS pixel at `at`, or near the map's bottom-left corner
- * when `at` is omitted.
- *
- * The engine places two points a few pixels apart on the ground and the
- * distance between them is measured on the mission's planet, so the result
- * holds for any engine or projection — at that point. Mercator's scale changes
- * with latitude, so a bar measured elsewhere on the screen would be off at
- * wide zooms.
+ * when `at` is omitted. Unprojects two points PROBE_PX apart and measures the
+ * great-circle distance between them on the mission's planet, so it works for
+ * any engine.
  *
  * Null when the map has no size, is tilted beyond MAX_SCALE_PITCH_DEG, the
  * engine cannot place the points, or the planet radius is not configured.
@@ -47,8 +39,9 @@ export function metersPerPixelAt(engine: ScaleEngine, at?: ClientPoint): number 
         const given = !!at && Number.isFinite(at.clientX) && Number.isFinite(at.clientY)
         const x = given ? at!.clientX - rect.left : DEFAULT_SCALE_INSET_PX
         const y = given ? at!.clientY - rect.top : rect.height - DEFAULT_SCALE_INSET_PX
-        const a = toLatLng(engine.containerPointToLatLng({ x, y }))
-        const b = toLatLng(engine.containerPointToLatLng({ x: x + PROBE_PX, y }))
+        // Both adapters answer in the object form.
+        const a = engine.containerPointToLatLng({ x, y }) as LatLng
+        const b = engine.containerPointToLatLng({ x: x + PROBE_PX, y }) as LatLng
         const meters = F_.lngLatDistBetween(a.lng, a.lat, b.lng, b.lat)
         return Number.isFinite(meters) && meters > 0 ? meters / PROBE_PX : null
     } catch {
@@ -58,13 +51,9 @@ export function metersPerPixelAt(engine: ScaleEngine, at?: ClientPoint): number 
 
 /**
  * Captures the map and stamps the screenshot with the ground metres one
- * *image* pixel spans near its bottom-left corner, where an export draws its
- * scale bar.
- *
- * The scale is read before the capture starts, so a slow capture still
- * carries the scale of the view it began with. Image pixels outnumber CSS
- * pixels by whatever ratio the engine rendered at, which the image's width
- * against the map's gives directly.
+ * *image* pixel spans near its bottom-left corner. The scale is read before
+ * the capture starts, so it matches the captured view; the image-to-CSS pixel
+ * ratio comes from the image's width against the map's.
  */
 export async function captureScreenshotWithScale(
     engine: ScaleEngine & Pick<IMapEngine, 'captureScreenshot'>

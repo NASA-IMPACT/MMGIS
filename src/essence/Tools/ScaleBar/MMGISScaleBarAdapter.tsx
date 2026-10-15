@@ -4,7 +4,6 @@ import {
     buildScaleBarModel,
     resolveScaleUnits,
     SCALE_BAR_MAX_WIDTH_PX,
-    type ScaleUnits,
 } from '../_shared/scale/scaleBarModel'
 import { useMMGISToolVars } from '../_shared/adapters/useMMGISToolVars'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
@@ -19,9 +18,6 @@ import {
 type ToolVars = {
     units?: unknown
 }
-
-const SCALE_RETRY_MS = 250
-const SCALE_RETRY_LIMIT = 80
 
 // False under a display:none ancestor (a hidden plugin or collapsed panel).
 const isOnScreen = (el: HTMLElement | null): boolean =>
@@ -41,48 +37,44 @@ export function MMGISScaleBarAdapter() {
     const [metersPerPixel, setMetersPerPixel] = useState<number | null>(null)
     const hostRef = useRef<HTMLDivElement | null>(null)
 
-    // An engine that loads its basemap asynchronously answers null at first,
-    // and nothing moves to prompt another read, so a null answer is retried.
-    const retryTimer = useRef<number | null>(null)
-    const retries = useRef(0)
-    const unmounted = useRef(false)
     const refresh = useCallback(async () => {
-        let next: number | null = null
         try {
-            next = await mmgisGetMetersPerPixel(ruleStart(hostRef.current))
+            setMetersPerPixel(await mmgisGetMetersPerPixel(ruleStart(hostRef.current)))
         } catch (err) {
             console.warn('ScaleBar: reading the map scale failed', err)
-        }
-        if (unmounted.current) return
-        setMetersPerPixel(next)
-        if (next == null && retryTimer.current == null && retries.current++ < SCALE_RETRY_LIMIT) {
-            retryTimer.current = window.setTimeout(() => {
-                retryTimer.current = null
-                void refresh()
-            }, SCALE_RETRY_MS)
+            setMetersPerPixel(null)
         }
     }, [])
-    useEffect(
-        () => () => {
-            unmounted.current = true
-            if (retryTimer.current != null) window.clearTimeout(retryTimer.current)
-        },
-        [],
-    )
     useMMGISHandlerReady('map:getMetersPerPixel', refresh)
-
-    useMMGISEvent('map:move', refresh)
     useMMGISEvent('map:moveend', refresh)
 
-    // Exports draw a bar exactly when the map shows one, in the same units.
-    const unitsRef = useRef<ScaleUnits>(units)
-    unitsRef.current = units
+    // 'map:move' fires every frame of a gesture; read at most once per frame.
+    const frame = useRef<number | null>(null)
+    const refreshNextFrame = useCallback(() => {
+        if (frame.current != null) return
+        frame.current = requestAnimationFrame(() => {
+            frame.current = null
+            void refresh()
+        })
+    }, [refresh])
+    useMMGISEvent('map:move', refreshNextFrame)
+
+    // A map with no size yet has no scale; the layout dispatches 'resize'
+    // whenever the map area changes size.
+    useEffect(() => {
+        window.addEventListener('resize', refreshNextFrame)
+        return () => {
+            window.removeEventListener('resize', refreshNextFrame)
+            if (frame.current != null) cancelAnimationFrame(frame.current)
+        }
+    }, [refreshNextFrame])
+
     useEffect(
         () =>
             mmgisProvide(SCALE_BAR_SETTINGS_REQUEST, (): ScaleBarSettings | null =>
-                isOnScreen(hostRef.current) ? { units: unitsRef.current } : null,
+                isOnScreen(hostRef.current) ? { units } : null,
             ),
-        [],
+        [units],
     )
 
     const model = buildScaleBarModel(metersPerPixel, units, SCALE_BAR_MAX_WIDTH_PX)

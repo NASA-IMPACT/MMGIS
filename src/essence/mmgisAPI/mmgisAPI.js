@@ -489,10 +489,7 @@ var mmgisAPI_ = {
     getMapScreenshot: function () {
         // Capture is engine-specific (Leaflet DOM rasterization vs deck.gl
         // canvas readback); delegate to the active IMapEngine adapter. A
-        // missing engine means no map is loaded yet. The scale stamped on the
-        // result is measured the same way for every engine. Being async,
-        // captureScreenshotWithScale turns a sync engine throw into a
-        // rejection.
+        // missing engine means no map is loaded yet.
         const engine = L_.Map_ && L_.Map_.engine
         if (engine && typeof engine.captureScreenshot === 'function') {
             return captureScreenshotWithScale(engine)
