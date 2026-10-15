@@ -40,6 +40,12 @@ export const VALID_LAYOUT_STYLES = ['overlay', 'compact'] as const;
 export type LayoutStyle = typeof VALID_LAYOUT_STYLES[number];
 
 /**
+ * Largest panelSettings.floatingBottomOffset, in pixels. The Configure field
+ * (tab-ui-config.json) carries the same max.
+ */
+export const MAX_FLOAT_BOTTOM_OFFSET = 200;
+
+/**
  * Mission, Site, Venue configuration object
  */
 export interface MSVConfig {
@@ -72,8 +78,12 @@ export interface PanelSettings {
     /** Layout style ('overlay' | 'compact') */
     layoutStyle?: LayoutStyle;
 
-    /** Pixels the bottom floating panels sit above the map's bottom edge */
-    floatingBottomOffset?: number;
+    /**
+     * Pixels the bottom floating panels sit above the map's bottom edge, as a
+     * number or a numeric/'px' string ('24', '24px'); '' (a cleared Configure
+     * field) means unset. Capped at MAX_FLOAT_BOTTOM_OFFSET.
+     */
+    floatingBottomOffset?: number | string;
 }
 
 /**

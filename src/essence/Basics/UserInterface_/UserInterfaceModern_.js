@@ -6,6 +6,7 @@ import { getValidIconClass } from '../ToolController_/ToolMetadataUtils'
 import { createLogger } from '../Logger_/Logger_'
 import { PANEL_STATE, FLOAT_POSITIONS } from '../PanelManager_/types/layout'
 import { toCssDimension, toPixelNumber } from '../PanelManager_/dimensions'
+import { MAX_FLOAT_BOTTOM_OFFSET } from '../../types/dashboard'
 import './UserInterfaceModern_.css'
 
 const logger = createLogger('UserInterfaceModern')
@@ -280,12 +281,12 @@ const UserInterfaceModern_ = {
      * @param {Array} panelsArr - Array of panel objects (parsed from config & PanelManager)
      * @param {string} style - The layout style ('overlay' | 'compact')
      * @param {string} theme - The theme identifier (e.g. 'default', 'disasters')
-     * @param {number|string} bottomOffset - Pixels the bottom float zones sit above the map's bottom edge; an unusable value means 0
+     * @param {number|string} bottomOffset - Pixels the bottom float zones sit above the map's bottom edge; an unusable value means 0, and it is capped at MAX_FLOAT_BOTTOM_OFFSET
      */
     init: function (panelsArr, style = 'overlay', theme = 'default', bottomOffset = 0) {
         panels = panelsArr
         layoutStyle = style
-        floatBottomOffset = toPixelNumber(bottomOffset) ?? 0
+        floatBottomOffset = Math.min(toPixelNumber(bottomOffset) ?? 0, MAX_FLOAT_BOTTOM_OFFSET)
 
         // Dynamic import() so webpack emits one lazy CSS chunk per theme and
         // only the configured one is fetched (a sync require() here bundled
