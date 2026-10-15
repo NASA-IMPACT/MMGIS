@@ -34,7 +34,6 @@ import type {
     IMapEngine, 
     ComparisonConfig, 
     ComparisonLayout,
-    MapChromeInsets,
     MapScreenshotResult 
 } from '../IMapEngine'
 import { MAP_ENGINE } from '../types/engine'
@@ -454,10 +453,6 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     private _comparisonResizeObserver: ResizeObserver | null = null
 
-    /** Watches the basemap's bottom control corners (logo, attribution). */
-    private _chromeObserver: ResizeObserver | null = null
-    private _chromeInsets: MapChromeInsets = { bottomLeft: 0, bottomRight: 0 }
-
     // ── Side-by-side comparison state ─────────────────────────────────────────
     // The other way of splitting the viewport: rather than one camera drawn
     // twice and wiped between, each half gets a map of its own — basemap
@@ -630,10 +625,6 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
         this._comparisonEnabled = false
         this._destroyComparisonSurfaces()
-
-        this._chromeObserver?.disconnect()
-        this._chromeObserver = null
-        this._chromeInsets = { bottomLeft: 0, bottomRight: 0 }
 
         if (this._isOverlayMode) {
             if (this._basemap) {
@@ -2439,41 +2430,6 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         // switch re-anchors the layers on the new style's labels.
         this._basemap.on('style.load', this._onBasemapLoad)
         this._basemap.on('error', this._onBasemapError)
-        this._watchBasemapChrome()
-    }
-
-    /**
-     * MapLibre and Mapbox create their corner containers with the map and
-     * fill them later (logo, attribution), so the corners are measured each
-     * time they resize.
-     */
-    private _watchBasemapChrome(): void {
-        this._chromeObserver?.disconnect()
-        this._chromeObserver = null
-        if (typeof ResizeObserver === 'undefined') return
-        const corner = (side: string) =>
-            this._container.querySelector<HTMLElement>(
-                `.maplibregl-ctrl-bottom-${side}, .mapboxgl-ctrl-bottom-${side}`
-            )
-        const left = corner('left')
-        const right = corner('right')
-        // A corner's box includes its controls' margins; an empty one has no height.
-        const reach = (el: HTMLElement | null): number => {
-            if (!el) return 0
-            const rect = el.getBoundingClientRect()
-            if (rect.height === 0) return 0
-            return Math.max(0, Math.ceil(this._container.getBoundingClientRect().bottom - rect.top))
-        }
-        this._chromeObserver = new ResizeObserver(() => {
-            this._chromeInsets = { bottomLeft: reach(left), bottomRight: reach(right) }
-            this._emitEvent('chromeinsetschange', { ...this._chromeInsets })
-        })
-        if (left) this._chromeObserver.observe(left)
-        if (right) this._chromeObserver.observe(right)
-    }
-
-    getChromeInsets(): MapChromeInsets {
-        return { ...this._chromeInsets }
     }
 
     /**

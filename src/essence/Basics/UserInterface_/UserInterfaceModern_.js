@@ -19,35 +19,6 @@ let layoutStyle = ''
 let toolLoadQueue = []
 let cleanupLayoutListener = null
 let _resizeObserver = null
-let cleanupChromeListener = null
-let mapChromeInsets = { bottomLeft: 0, bottomRight: 0 }
-
-const CHROME_INSET_VARS = {
-    bottomLeft: '--ui-map-chrome-bottom-left',
-    bottomRight: '--ui-map-chrome-bottom-right',
-}
-
-// Lifts the bottom float zones above the basemap's logo and attribution. The
-// chrome is measured from the map's bottom edge; when a panel overlays the
-// bottom of the map, the part it covers needs no clearing.
-const _applyMapChromeInsets = () => {
-    const center = document.getElementById('ui-modern-center')
-    const map = document.getElementById('map')
-    const covered =
-        center && map
-            ? Math.max(0, map.getBoundingClientRect().bottom - center.getBoundingClientRect().bottom)
-            : 0
-    Object.entries(CHROME_INSET_VARS).forEach(([side, name]) => {
-        const lift = Math.max(0, mapChromeInsets[side] - covered)
-        document.documentElement.style.setProperty(name, `${lift}px`)
-    })
-}
-
-const _setMapChromeInsets = (insets) => {
-    if (!insets) return
-    mapChromeInsets = insets
-    _applyMapChromeInsets()
-}
 
 // --- DOM Builder Helpers ---
 const _createPanelIconTray = (panel) => {
@@ -342,27 +313,11 @@ const UserInterfaceModern_ = {
             cleanupLayoutListener = mmgisAPI.on('panels:changed', this.syncDOMState.bind(this))
         }
 
-        if (!cleanupChromeListener) {
-            cleanupChromeListener = mmgisAPI.on(
-                'map:chromeInsetsChange',
-                _setMapChromeInsets
-            )
-        }
-        // The map may have reported its chrome before this listener existed.
-        if (mmgisAPI.hasHandler('map:getChromeInsets')) {
-            mmgisAPI
-                .request('map:getChromeInsets')
-                .then(_setMapChromeInsets)
-                .catch(() => {})
-        }
-        _applyMapChromeInsets()
-
         // Set up ResizeObserver to dispatch resize events when the center map area changes size
         if (_resizeObserver) {
             _resizeObserver.disconnect()
         }
         _resizeObserver = new ResizeObserver(() => {
-            _applyMapChromeInsets()
             window.dispatchEvent(new Event('resize'))
         })
         const centerElement = document.getElementById('ui-modern-center')
@@ -385,14 +340,6 @@ const UserInterfaceModern_ = {
             _resizeObserver.disconnect()
             _resizeObserver = null
         }
-        if (cleanupChromeListener) {
-            cleanupChromeListener()
-            cleanupChromeListener = null
-        }
-        mapChromeInsets = { bottomLeft: 0, bottomRight: 0 }
-        Object.values(CHROME_INSET_VARS).forEach((name) =>
-            document.documentElement.style.removeProperty(name)
-        )
         $('#modern-content').empty()
         panels = []
         mmgisAPI_._pluginController = null
@@ -923,4 +870,4 @@ const UserInterfaceModern_ = {
 }
 
 export default UserInterfaceModern_
-export { _createPanelHeader, _createPanelIconTray, _renderRegion, _setMapChromeInsets }
+export { _createPanelHeader, _createPanelIconTray, _renderRegion }

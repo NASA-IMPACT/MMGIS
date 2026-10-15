@@ -555,18 +555,13 @@ body.ui-is-dragging .ui-modern-grid .ui-panel {
     padding: var(--ui-float-outer-gap);
 }
 
-/* Zone positions. The bottom zones sit above the basemap's logo and
-   attribution (--ui-map-chrome-*, set by the layout). */
+/* Zone positions */
 .ui-float-zone-top-left     { top: 0; left: 0; }
 .ui-float-zone-top-center   { top: 0; left: 50%; transform: translateX(-50%); }
 .ui-float-zone-top-right    { top: 0; right: 0; }
-.ui-float-zone-bottom-left  { bottom: var(--ui-map-chrome-bottom-left, 0px); left: 0; }
-.ui-float-zone-bottom-center {
-    bottom: max(var(--ui-map-chrome-bottom-left, 0px), var(--ui-map-chrome-bottom-right, 0px));
-    left: 50%;
-    transform: translateX(-50%);
-}
-.ui-float-zone-bottom-right { bottom: var(--ui-map-chrome-bottom-right, 0px); right: 0; }
+.ui-float-zone-bottom-left  { bottom: 0; left: 0; }
+.ui-float-zone-bottom-center { bottom: 0; left: 50%; transform: translateX(-50%); }
+.ui-float-zone-bottom-right { bottom: 0; right: 0; }
 
 /* Float panels re-enable pointer events */
 .ui-float-panel {
