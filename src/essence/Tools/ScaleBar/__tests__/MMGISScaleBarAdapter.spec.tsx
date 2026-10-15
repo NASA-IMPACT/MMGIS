@@ -12,13 +12,14 @@ import { mount } from '../../_shared/__tests__/reactHarness'
  */
 
 let vars: Record<string, unknown>
-let metersPerPixel: number | null
+// The map's scale, or the scale at a requested container point.
+let metersPerPixel: number | null | ((at?: { x: number; y: number }) => number | null)
 let listeners: Map<string, Set<(payload?: unknown) => void>>
 let provided: Map<string, (...args: unknown[]) => unknown>
 
-const fire = async (event: string) => {
+const fire = async (event: string, payload?: unknown) => {
     await act(async () => {
-        for (const handler of listeners.get(event) ?? []) handler()
+        for (const handler of listeners.get(event) ?? []) handler(payload)
     })
 }
 
@@ -53,9 +54,13 @@ beforeEach(() => {
     listeners = new Map()
     provided = new Map()
     ;(window as { mmgisAPI?: unknown }).mmgisAPI = {
-        request: vi.fn(async (name: string) => {
+        request: vi.fn(async (name: string, arg?: unknown) => {
             if (name === 'tool:getVars') return vars
-            if (name === 'map:getMetersPerPixel') return metersPerPixel
+            if (name === 'map:getMetersPerPixel') {
+                return typeof metersPerPixel === 'function'
+                    ? metersPerPixel(arg as { x: number; y: number } | undefined)
+                    : metersPerPixel
+            }
             return null
         }),
         hasHandler: () => true,
@@ -100,18 +105,17 @@ describe('MMGISScaleBarAdapter', () => {
             const { container, unmount } = await mount(<MMGISScaleBarAdapter />)
             metersPerPixel = 10
             await fire(event)
-            await nextFrame()
             expect(label(container)).toBe('1 km')
             await unmount()
         },
     )
 
-    test('reads the scale at most once per frame while the map moves', async () => {
+    test('reads the scale once per resize burst', async () => {
         const { unmount } = await mount(<MMGISScaleBarAdapter />)
         const before = scaleReads()
-        await fire('map:move')
-        await fire('map:move')
-        await fire('map:move')
+        window.dispatchEvent(new Event('resize'))
+        window.dispatchEvent(new Event('resize'))
+        window.dispatchEvent(new Event('resize'))
         await nextFrame()
         expect(scaleReads()).toBe(before + 1)
         await unmount()
@@ -129,18 +133,77 @@ describe('MMGISScaleBarAdapter', () => {
         await unmount()
     })
 
-    // Map scale varies across the screen, so the bar asks for it where its
-    // rule starts: the host's bottom-left corner.
-    test('asks for the scale at its own position on the page', async () => {
-        const { container, unmount } = await mount(<MMGISScaleBarAdapter />)
-        showHost(container)
-        const host = container.querySelector('.blocks-scale-bar-host') as HTMLElement
-        host.getBoundingClientRect = () => ({ left: 24, bottom: 580 }) as DOMRect
+    test('measures at the map centre before the pointer is on the map', async () => {
+        const { unmount } = await mount(<MMGISScaleBarAdapter />)
         await fire('map:moveend')
-        expect(requestMock()).toHaveBeenLastCalledWith('map:getMetersPerPixel', {
-            clientX: 24,
-            clientY: 580,
+        expect(requestMock()).toHaveBeenLastCalledWith('map:getMetersPerPixel', undefined)
+        await unmount()
+    })
+
+    describe('with the pointer on the map', () => {
+        const pointerAt = (x: number, y: number) =>
+            fire('map:mousemove', { containerPoint: { x, y } })
+
+        test('shows the scale under the pointer', async () => {
+            metersPerPixel = (at) => (at?.y === 300 ? 10 : 1)
+            const { container, unmount } = await mount(<MMGISScaleBarAdapter />)
+            expect(label(container)).toBe('100 m')
+            await pointerAt(40, 300)
+            expect(requestMock()).toHaveBeenLastCalledWith('map:getMetersPerPixel', {
+                x: 40,
+                y: 300,
+            })
+            expect(label(container)).toBe('1 km')
+            await unmount()
         })
+
+        // A scroll zoom keeps the pointer still while the ground under it
+        // changes, so moves are measured where the pointer rests.
+        test('keeps measuring at the pointer while the map moves', async () => {
+            const { unmount } = await mount(<MMGISScaleBarAdapter />)
+            await pointerAt(40, 300)
+            await fire('map:move')
+            expect(requestMock()).toHaveBeenLastCalledWith('map:getMetersPerPixel', {
+                x: 40,
+                y: 300,
+            })
+            await unmount()
+        })
+
+        test('returns to the map centre once the pointer leaves', async () => {
+            metersPerPixel = (at) => (at ? 10 : 1)
+            const { container, unmount } = await mount(<MMGISScaleBarAdapter />)
+            await pointerAt(40, 300)
+            expect(label(container)).toBe('1 km')
+            await fire('map:mouseout')
+            expect(requestMock()).toHaveBeenLastCalledWith('map:getMetersPerPixel', undefined)
+            expect(label(container)).toBe('100 m')
+            await unmount()
+        })
+
+        // Past a zoomed-out world's edge there is no ground under the pointer.
+        test("shows the centre's scale where the pointer has none", async () => {
+            metersPerPixel = (at) => (at ? null : 10)
+            const { container, unmount } = await mount(<MMGISScaleBarAdapter />)
+            await pointerAt(40, 5)
+            expect(label(container)).toBe('1 km')
+            await unmount()
+        })
+    })
+
+    // A pan along a row barely changes the scale; the bar keeps its state so
+    // React can skip the render.
+    test('keeps the bar when a frame changes neither label nor visible length', async () => {
+        const { container, unmount } = await mount(<MMGISScaleBarAdapter />)
+        const rule = () =>
+            (container.querySelector('.blocks-scale-bar__rule') as HTMLElement).style.width
+        expect(rule()).toBe('100px')
+        metersPerPixel = 1.0001
+        await fire('map:moveend')
+        expect(rule()).toBe('100px')
+        metersPerPixel = 1.2
+        await fire('map:moveend')
+        expect(rule()).not.toBe('100px')
         await unmount()
     })
 
@@ -162,7 +225,13 @@ describe('MMGISScaleBarAdapter', () => {
             vars = { units: 'imperial' }
             const { container, unmount } = await mount(<MMGISScaleBarAdapter />)
             showHost(container)
-            expect(settings()).toEqual({ units: 'imperial' })
+            const host = container.querySelector('.blocks-scale-bar-host') as HTMLElement
+            host.getBoundingClientRect = () => ({ left: 24, bottom: 580 }) as DOMRect
+            // The position lets the export draw and measure its bar there too.
+            expect(settings()).toEqual({
+                units: 'imperial',
+                at: { clientX: 24, clientY: 580 },
+            })
             await unmount()
         })
 

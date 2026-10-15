@@ -2,7 +2,7 @@
     "defaultIcon": "ruler",
     "description": "A scale bar for the 2D map, in metric or imperial units. Exported PNGs and PDFs carry the same bar.",
     "descriptionFull": {
-        "title": "Shows a scale bar, typically in a float-bottom-left panel over the map. The bar is labelled with a round distance (1, 2, 5, 10, ...) and follows the map as it zooms and pans, in metres and kilometres or feet and miles. While the bar is shown, PNG and PDF exports from the Share button draw a matching bar over the map's bottom-left corner; leave the tool out of the layout for no bar on the map or in exports. The bar hides while the map is tilted more than 10°, and exports of a tilted view carry no bar.",
+        "title": "Shows a scale bar, typically in a float-bottom-left panel over the map. The bar is labelled with a round distance (1, 2, 5, 10, ...), in metres and kilometres or feet and miles, and gives the scale under the pointer, or at the map's centre while the pointer is off the map. While the bar is shown, PNG and PDF exports from the Share button draw a matching bar at the same spot on the map, measured there; leave the tool out of the layout for no bar on the map or in exports. Exports carry no bar when the map is tilted more than 10° or zoomed out so far that the scale varies widely across the view.",
         "example": {
             "units": "metric"
         }

@@ -7,11 +7,18 @@ import {
     SCALE_BAR_MAX_WIDTH_PX,
     type ScaleUnits,
 } from '../scale/scaleBarModel'
-import { drawScaleBar, SCALE_BAR_MARGIN } from '../scale/renderScaleBar'
+import {
+    drawScaleBar,
+    measureScaleBar,
+    SCALE_BAR_MARGIN,
+} from '../scale/renderScaleBar'
 
 export type ExportScaleBar = {
     metersPerPixel: number
     units: ScaleUnits
+    /** Image pixel for the bar's bottom-left corner, matching where the
+     *  on-screen bar sits; the map's bottom-left corner when absent. */
+    anchor?: { x: number; y: number } | null
 }
 
 export type ComposeDeps = {
@@ -22,14 +29,18 @@ export type ComposeDeps = {
     scaleBar?: ExportScaleBar | null
 }
 
+// Low wins when the range is empty, keeping the bar's top-left on the image.
+const clamp = (v: number, lo: number, hi: number): number =>
+    Math.max(lo, Math.min(v, hi))
+
 // Keeps the bar from dominating a narrow capture.
 const SCALE_BAR_MAX_IMAGE_SHARE = 1 / 3
 
 /**
- * Decorates a captured map image: a scale bar over the map's bottom-left
- * corner, and the legend band appended below the map. The screenshot blob is
- * the plugin/core boundary — decode it, draw onto a canvas, re-encode in the
- * same mime type. With neither a legend row nor a scale bar to draw, the
+ * Decorates a captured map image: a scale bar over the map, at its anchor or
+ * the bottom-left corner, and the legend band appended below the map. The
+ * screenshot blob is the plugin/core boundary — decode it, draw onto a canvas,
+ * re-encode in the same mime type. With neither a legend row nor a scale bar to draw, the
  * screenshot is returned untouched.
  */
 export async function composeExportImage(
@@ -81,12 +92,17 @@ export async function composeExportImage(
         canvas.height = screenshot.height + bandHeight
         ctx.drawImage(bitmap, 0, 0)
         if (barModel) {
-            drawScaleBar(ctx, barModel, {
-                left: SCALE_BAR_MARGIN * scale,
-                bottom: screenshot.height - SCALE_BAR_MARGIN * scale,
-                scale,
-                theme,
-            })
+            const margin = SCALE_BAR_MARGIN * scale
+            const box = measureScaleBar(ctx, barModel, scale, theme)
+            const anchor = scaleBar!.anchor
+            // An anchor near an edge is pulled in so the whole bar shows.
+            const left = anchor
+                ? clamp(anchor.x, margin, screenshot.width - box.width - margin)
+                : margin
+            const bottom = anchor
+                ? clamp(anchor.y, box.height + margin, screenshot.height - margin)
+                : screenshot.height - margin
+            drawScaleBar(ctx, barModel, { left, bottom, scale, theme })
         }
         if (hasLegend) {
             drawLegendBand(

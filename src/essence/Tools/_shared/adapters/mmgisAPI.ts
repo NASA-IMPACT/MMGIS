@@ -27,10 +27,15 @@ export type MapScreenshotResult = {
     extension: 'png'
     width: number
     height: number
-    /** Ground metres per image pixel near the image's bottom-left corner, at
-     *  capture time. */
+    /** Ground metres per image pixel at the requested `scaleAt`, or near the
+     *  image's bottom-left corner without it, at capture time. */
     metersPerPixel?: number | null
+    /** `scaleAt` in image pixels; null or absent when none was requested. */
+    scaleAnchor?: { x: number; y: number } | null
 }
+
+/** A position on the page, in CSS pixels, as a DOM rectangle or event gives it. */
+export type ClientPoint = { clientX: number; clientY: number }
 
 /** The subset of a mission layer config that plugins read off the bus. */
 export type LayerConfig = {
@@ -153,26 +158,33 @@ export const mmgisWriteCoordinateURL = (): Promise<string | null> => {
     return mmgisRequestIfProvided<string>('map:writeCoordinateURL')
 }
 
-/** The current map as a PNG Blob plus image metadata. */
-export const mmgisGetMapScreenshot = (): Promise<
-    MapScreenshotResult | null
-> => {
-    return mmgisRequestIfProvided<MapScreenshotResult>('map:getScreenshot')
+/**
+ * The current map as a PNG Blob plus image metadata. `scaleAt` picks the page
+ * position its `metersPerPixel` is measured at.
+ */
+export const mmgisGetMapScreenshot = (options?: {
+    scaleAt?: ClientPoint
+}): Promise<MapScreenshotResult | null> => {
+    return mmgisRequestIfProvided<MapScreenshotResult>('map:getScreenshot', options)
 }
 
 /**
- * Ground metres per CSS pixel at a page position (e.g. a DOM rect's corner),
- * or near the map's bottom-left corner when `at` is omitted. Null before the
- * map exists or where it cannot measure.
+ * Ground metres per CSS pixel at a map container point (e.g. a pointer
+ * event's `containerPoint`), or at the map's centre when `at` is omitted. Null
+ * before the map exists or where it cannot measure.
  */
-export const mmgisGetMetersPerPixel = (at?: {
-    clientX: number
-    clientY: number
-}): Promise<number | null> => {
+export const mmgisGetMetersPerPixel = (
+    at?: { x: number; y: number },
+): Promise<number | null> => {
     return mmgisRequestIfProvided<number>('map:getMetersPerPixel', at)
 }
 
-export type ScaleBarSettings = { units: ScaleUnits }
+export type ScaleBarSettings = {
+    units: ScaleUnits
+    /** Where the on-screen bar's bottom-left corner sits on the page, so an
+     *  export can draw and measure its bar at the same spot. */
+    at?: ClientPoint
+}
 
 export const SCALE_BAR_SETTINGS_REQUEST = 'plugin:scalebar:getSettings'
 

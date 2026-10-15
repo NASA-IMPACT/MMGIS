@@ -420,6 +420,51 @@ test.describe('scale bar in the downloads', () => {
         ])
     })
 
+    // The capture measures where the on-screen bar sits, and the export
+    // draws its bar at that same spot.
+    test('captures at the on-screen bar and draws at the anchor it returns', async () => {
+        const calls = []
+        const asked = []
+        const at = { clientX: 40, clientY: 90 }
+        const anchor = { x: 80, y: 180 }
+        await downloadSharePng({
+            getScreenshot: async (options) => {
+                asked.push(options)
+                return { ...screenshot, scaleAnchor: anchor }
+            },
+            download: () => {},
+            includeLegend: false,
+            getScaleBarSettings: async () => ({ units: 'metric', at }),
+            compose: recordCompose(calls),
+        })
+        expect(asked).toEqual([{ scaleAt: at }])
+        expect(calls[0].deps.scaleBar).toEqual({
+            metersPerPixel: 2.5,
+            units: 'metric',
+            anchor,
+        })
+    })
+
+    test('a failing plugin still exports the map', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        try {
+            const result = await downloadSharePng({
+                getScreenshot: async () => screenshot,
+                download: () => {},
+                includeLegend: false,
+                getScaleBarSettings: async () => {
+                    throw new Error('plugin blew up')
+                },
+                compose: () => {
+                    throw new Error('should not be called')
+                },
+            })
+            expect(result).toBe(screenshot)
+        } finally {
+            warn.mockRestore()
+        }
+    })
+
     // No plugin answering means no bar on the map, so none in the export.
     test('no plugin, no bar', async () => {
         const result = await downloadSharePng({

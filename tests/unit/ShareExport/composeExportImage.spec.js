@@ -180,5 +180,39 @@ describe('composeExportImage', () => {
             // 50 px max -> 50 m.
             expect(labels(calls)).toEqual(['50 m'])
         })
+
+        // The bar's backing is the first rectangle drawn after the map.
+        const backing = (calls) => calls.find((c) => c.op === 'fillRect').args
+
+        test('sits in the bottom-left corner without an anchor', async () => {
+            const { calls } = await compose(null, { metersPerPixel: 1, units: 'metric' })
+            const [left, top, , height] = backing(calls)
+            expect(left).toBe(12)
+            expect(top + height).toBe(screenshot.height - 12)
+        })
+
+        // The anchor is where the on-screen bar sits, so the export puts its
+        // bar in the same spot, e.g. the top of the map.
+        test('puts its bottom-left corner on the anchor', async () => {
+            const { calls } = await compose(null, {
+                metersPerPixel: 1,
+                units: 'metric',
+                anchor: { x: 200, y: 90 },
+            })
+            const [left, top, , height] = backing(calls)
+            expect(left).toBe(200)
+            expect(top + height).toBe(90)
+        })
+
+        test('pulls an anchor near an edge in so the whole bar shows', async () => {
+            const { calls } = await compose(null, {
+                metersPerPixel: 1,
+                units: 'metric',
+                anchor: { x: screenshot.width - 5, y: 3 },
+            })
+            const [left, top, width] = backing(calls)
+            expect(left + width).toBe(screenshot.width - 12)
+            expect(top).toBe(12)
+        })
     })
 })

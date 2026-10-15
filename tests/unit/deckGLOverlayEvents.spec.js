@@ -1,7 +1,7 @@
 import { test, expect, vi, beforeEach } from 'vitest'
 
-// The deck.gl engine's overlay mode reports the 'move' stream while the
-// camera moves. The GL constructors are mocked (jsdom has no WebGL); the
+// The deck.gl engine reports the 'move' stream while the camera moves, with
+// or without a basemap. The GL constructors are mocked (jsdom has no WebGL); the
 // basemap mock holds a settable camera.
 
 const basemaps = []
@@ -124,5 +124,65 @@ test.describe('DeckGLAdapter overlay move events', () => {
         basemap.fire('move')
         expect(moves).toHaveLength(1)
         expect(moves[0]).toMatchObject({ latitude: 10, longitude: 20, zoom: 7 })
+    })
+})
+
+test.describe('DeckGLAdapter standalone move events', () => {
+    test("each camera change reaches 'move' as well as 'moveend'", () => {
+        const adapter = new DeckGLAdapter()
+        adapter.init({ containerId: 'map', zoom: 0, center: { lat: 0, lng: 0 } })
+        const moves = []
+        adapter.on('move', (e) => moves.push(e))
+        adapter
+            .getNativeMap()
+            .props.onViewStateChange({
+                viewState: { latitude: 3, longitude: 4, zoom: 2, bearing: 0, pitch: 0 },
+            })
+        expect(moves).toHaveLength(1)
+        expect(moves[0]).toMatchObject({ latitude: 3, longitude: 4, zoom: 2 })
+    })
+})
+
+test.describe('DeckGLAdapter unprojection', () => {
+    const sized = (el, w, h) => {
+        Object.defineProperty(el, 'offsetWidth', { value: w, configurable: true })
+        Object.defineProperty(el, 'offsetHeight', { value: h, configurable: true })
+    }
+
+    // Successive unprojections share one viewport, which has to follow the
+    // camera and the container size rather than answer for a stale view.
+    test('follows camera and container changes', () => {
+        const el = makeContainer()
+        sized(el, 800, 400)
+        const adapter = new DeckGLAdapter()
+        adapter.init({ containerId: 'map', zoom: 2, center: { lat: 0, lng: 0 } })
+        const at = { x: 400, y: 200 }
+        expect(adapter.containerPointToLatLng(at).lng).toBeCloseTo(0, 6)
+
+        adapter.getNativeMap().props.onViewStateChange({
+            viewState: { latitude: 0, longitude: 30, zoom: 2, bearing: 0, pitch: 0 },
+        })
+        expect(adapter.containerPointToLatLng(at).lng).toBeCloseTo(30, 6)
+
+        sized(el, 1200, 400)
+        expect(adapter.containerPointToLatLng(at).lng).toBeLessThan(30)
+        sized(el, 0, 0)
+    })
+})
+
+test.describe('DeckGLAdapter pointer events', () => {
+    // A scale bar measuring under the pointer returns to the map centre once
+    // the pointer leaves, as it does on Leaflet's 'mouseout'.
+    test("the pointer leaving the map reaches 'mouseout' until destroy", () => {
+        const el = makeContainer()
+        const adapter = new DeckGLAdapter()
+        adapter.init({ containerId: 'map', zoom: 0, center: { lat: 0, lng: 0 } })
+        const outs = vi.fn()
+        adapter.on('mouseout', outs)
+        el.dispatchEvent(new MouseEvent('mouseleave'))
+        expect(outs).toHaveBeenCalledTimes(1)
+        adapter.destroy()
+        el.dispatchEvent(new MouseEvent('mouseleave'))
+        expect(outs).toHaveBeenCalledTimes(1)
     })
 })
