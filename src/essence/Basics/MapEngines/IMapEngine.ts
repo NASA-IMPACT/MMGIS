@@ -380,6 +380,13 @@ export interface IMapEngine<
     containerPointToLatLng(point: PointLike): LatLngLike
 
     /**
+     * Whether the map draws in Web Mercator. Its world ends at about ±85°
+     * latitude, and points past the world's top or bottom edge unproject
+     * toward the pole rather than failing.
+     */
+    isWebMercator(): boolean
+
+    /**
      * Convert geographic coordinates to container pixel position.
      */
     latLngToContainerPoint(latLng: LatLngLike): PointLike
