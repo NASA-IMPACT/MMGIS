@@ -473,6 +473,13 @@ var mmgisAPI_ = {
         const map = L_.Map_ && L_.Map_.map
         const center =
             map && typeof map.getCenter === 'function' ? map.getCenter() : null
+        // Bearing and pitch come from the engine, which works out a bearing
+        // even where it cannot rotate (Leaflet, from its projection).
+        const engine = L_.Map_ && L_.Map_.engine
+        const camera =
+            engine && typeof engine.getViewState === 'function'
+                ? engine.getViewState()
+                : null
         return {
             // L_.mission is the canonical identity (the ?mission= URL value);
             // msv.mission is a display field that can be stale.
@@ -483,6 +490,8 @@ var mmgisAPI_ = {
                 map && typeof map.getZoom === 'function'
                     ? map.getZoom()
                     : null,
+            bearing: camera?.bearing ?? null,
+            pitch: camera?.pitch ?? null,
         }
     },
     getMapScreenshot: function () {
@@ -799,7 +808,10 @@ var mmgisAPI = {
     /** getViewState - returns metadata about the current view (for example to
      * build provenance-rich export filenames). Fields are null until the
      * mission has loaded far enough to answer them.
-     * @returns {object} {missionName: string|null, time: string|null, center: {lat, lng}|null, zoom: number|null}
+     * `bearing` is the compass direction the top of the screen faces, in
+     * degrees clockwise from north; `pitch` is the camera's tilt from
+     * straight down, in degrees (always 0 on Leaflet).
+     * @returns {object} {missionName: string|null, time: string|null, center: {lat, lng}|null, zoom: number|null, bearing: number|null, pitch: number|null}
      * Plugins should prefer `mmgisAPI.request('map:getViewState')`.
      */
     getViewState: mmgisAPI_.getViewState,
@@ -897,6 +909,13 @@ var mmgisAPI = {
      * @returns {Promise<boolean>} - true if zoom changed, false if already at min
      */
     zoomOut: () => mmgisAPI.request('map:zoomOut'),
+
+    /** resetNorth - eases the camera one step toward a flat, north-up view:
+     * a rotated map turns back to north and keeps its tilt; a map already
+     * facing north levels out. Leaflet cannot rotate, so it never moves.
+     * @returns {Promise<boolean>} - true if the camera moved, false if there was nothing to undo or the engine cannot rotate
+     */
+    resetNorth: () => mmgisAPI.request('map:resetNorth'),
 
     /** latLngToContainerPoint - project a {lat, lng} to pixel coordinates
      * relative to the map container. Useful for positioning DOM overlays.
