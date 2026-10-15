@@ -65,6 +65,7 @@ The mission configuration controls the layout and behavior of panels in modern i
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `layoutStyle` | String | No | `"overlay"` (default) or `"compact"` layout style |
+| `floatingBottomOffset` | Number | No | Pixels the bottom-left, bottom-center and bottom-right floating panels sit above the map's bottom edge, e.g. to clear the basemap's logo and attribution. Default `0` |
 | `panels` | Array | Yes | Array of panel configuration objects |
 
 ## Panel Configuration
