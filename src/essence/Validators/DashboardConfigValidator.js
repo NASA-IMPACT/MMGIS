@@ -14,7 +14,7 @@
 
 import { PANEL_POSITION, PANEL_STATE, PANEL_LAYOUT_TYPE, FLOAT_POSITIONS } from '../Basics/PanelManager_/types/layout'
 import { TOOL_ORIENTATION } from '../Basics/ToolController_/types/tool'
-import { VALID_MODES, VALID_LAYOUT_STYLES } from '../types/dashboard'
+import { VALID_MODES, VALID_LAYOUT_STYLES, MAX_FLOAT_BOTTOM_OFFSET } from '../types/dashboard'
 import { isDimensionSet, toCssDimension, toPixelNumber, DIMENSION_HINT } from '../Basics/PanelManager_/dimensions'
 
 // Extract valid values from TypeScript constants
@@ -78,8 +78,15 @@ export function validateModernConfig(config) {
 
     // Validate floatingBottomOffset (optional, defaults to 0)
     const offset = panelSettings.floatingBottomOffset
-    if (isDimensionSet(offset) && toPixelNumber(offset, { allowZero: true }) === null) {
-        warnings.push('panelSettings.floatingBottomOffset must be a non-negative number of pixels; using 0')
+    if (isDimensionSet(offset)) {
+        const offsetPx = toPixelNumber(offset, { allowZero: true })
+        if (offsetPx === null) {
+            warnings.push('panelSettings.floatingBottomOffset must be a non-negative number of pixels; using 0')
+        } else if (offsetPx > MAX_FLOAT_BOTTOM_OFFSET) {
+            warnings.push(
+                `panelSettings.floatingBottomOffset must be at most ${MAX_FLOAT_BOTTOM_OFFSET} pixels; using ${MAX_FLOAT_BOTTOM_OFFSET}`
+            )
+        }
     }
 
     // Validate theme (optional, defaults to 'default')
