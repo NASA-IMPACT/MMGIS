@@ -601,6 +601,108 @@ test.describe('DeckGLAdapter', () => {
         })
     })
 
+    test.describe('resetNorth', () => {
+        // Standalone deck owns its camera; a stub Deck records what it is sent.
+        function makeStandalone(bearing, pitch) {
+            const adapter = makeAdapter()
+            adapter._isOverlayMode = false
+            adapter._viewState = { ...adapter._viewState, bearing, pitch }
+            adapter._deck = { setProps: vi.fn() }
+            return adapter
+        }
+
+        // In overlay mode the basemap owns the camera, and the adapter's view
+        // state is synced from it on every basemap move.
+        function makeOverlay(bearing, pitch) {
+            const basemap = {
+                getCenter: () => ({ lat: 40, lng: -120 }),
+                getZoom: () => 5,
+                getBearing: () => bearing,
+                getPitch: () => pitch,
+                easeTo: vi.fn(),
+            }
+            const adapter = makeAdapter()
+            adapter._isOverlayMode = true
+            adapter._basemap = basemap
+            adapter._onBasemapMove()
+            return { adapter, basemap }
+        }
+
+        test('overlay mode reports the basemap bearing and pitch', () => {
+            const { adapter } = makeOverlay(-35, 50)
+            const state = adapter.getViewState()
+            expect(state.bearing).toBe(-35)
+            expect(state.pitch).toBe(50)
+        })
+
+        test('standalone: a rotated view eases to north and keeps its tilt', () => {
+            const adapter = makeStandalone(45, 30)
+            expect(adapter.resetNorth()).toBe(true)
+            const state = adapter.getViewState()
+            expect(state.bearing).toBe(0)
+            expect(state.pitch).toBe(30)
+            const sent = adapter._deck.setProps.mock.calls.at(-1)[0].viewState
+            expect(sent.transitionDuration).toBeGreaterThan(0)
+            expect(sent.transitionInterpolator).toBeDefined()
+            // Centre and zoom stay where they were.
+            expect(state.center).toEqual({ lat: 40, lng: -120 })
+            expect(state.zoom).toBe(5)
+        })
+
+        test('standalone: a north-up tilted view eases flat', () => {
+            const adapter = makeStandalone(0, 30)
+            expect(adapter.resetNorth()).toBe(true)
+            expect(adapter.getViewState().pitch).toBe(0)
+            expect(adapter.getViewState().bearing).toBe(0)
+        })
+
+        test('standalone: clicking twice goes north-up, then flat', () => {
+            const adapter = makeStandalone(-120, 40)
+            adapter.resetNorth()
+            expect(adapter.getViewState()).toMatchObject({ bearing: 0, pitch: 40 })
+            adapter.resetNorth()
+            expect(adapter.getViewState()).toMatchObject({ bearing: 0, pitch: 0 })
+        })
+
+        test('standalone: a whole turn counts as north', () => {
+            const adapter = makeStandalone(360, 20)
+            adapter.resetNorth()
+            expect(adapter.getViewState().pitch).toBe(0)
+        })
+
+        test('returns false and sends nothing when the view is already flat and north-up', () => {
+            const adapter = makeStandalone(0, 0)
+            expect(adapter.resetNorth()).toBe(false)
+            expect(adapter._deck.setProps).not.toHaveBeenCalled()
+        })
+
+        test('overlay: a rotated view eases the basemap to north and leaves the tilt alone', () => {
+            const { adapter, basemap } = makeOverlay(-30, 40)
+            expect(adapter.resetNorth()).toBe(true)
+            expect(basemap.easeTo).toHaveBeenCalledTimes(1)
+            const options = basemap.easeTo.mock.calls[0][0]
+            expect(options.bearing).toBe(0)
+            expect(options).not.toHaveProperty('pitch')
+            expect(options).not.toHaveProperty('center')
+            expect(options).not.toHaveProperty('zoom')
+            expect(options.duration).toBeGreaterThan(0)
+        })
+
+        test('overlay: a north-up tilted view eases the basemap flat', () => {
+            const { adapter, basemap } = makeOverlay(0, 40)
+            expect(adapter.resetNorth()).toBe(true)
+            const options = basemap.easeTo.mock.calls[0][0]
+            expect(options.pitch).toBe(0)
+            expect(options).not.toHaveProperty('bearing')
+        })
+
+        test('overlay: returns false without moving a flat, north-up basemap', () => {
+            const { adapter, basemap } = makeOverlay(0, 0)
+            expect(adapter.resetNorth()).toBe(false)
+            expect(basemap.easeTo).not.toHaveBeenCalled()
+        })
+    })
+
     test.describe('event system', () => {
         test('emit calls registered handlers with data', () => {
             const adapter = makeAdapter()

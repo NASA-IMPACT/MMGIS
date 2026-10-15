@@ -69,6 +69,10 @@ export type ViewState = {
     time: string | null
     center: { lat: number; lng: number } | null
     zoom: number | null
+    /** Direction the top of the screen faces, degrees clockwise from north. */
+    bearing: number | null
+    /** Camera tilt from straight down, in degrees; always 0 on Leaflet. */
+    pitch: number | null
 }
 
 declare global {
@@ -156,7 +160,8 @@ export const mmgisGetMapScreenshot = (): Promise<
     return mmgisRequestIfProvided<MapScreenshotResult>('map:getScreenshot')
 }
 
-/** View metadata (mission, time, center, zoom); fields null until loaded. */
+/** View metadata (mission, time, center, zoom, bearing, pitch); fields null
+ *  until loaded. */
 export const mmgisGetViewState = (): Promise<ViewState | null> => {
     return mmgisRequestIfProvided<ViewState>('map:getViewState')
 }

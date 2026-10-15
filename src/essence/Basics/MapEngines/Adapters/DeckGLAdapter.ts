@@ -144,6 +144,13 @@ interface BasemapInstance {
         bearing?: number
         pitch?: number
     }): unknown
+    /** Animate the camera to a new position along a straight path. */
+    easeTo(options: {
+        bearing?: number
+        pitch?: number
+        duration?: number
+        essential?: boolean
+    }): unknown
     /** Animate the camera to a new position using a fly-to curve. */
     flyTo(options: {
         center?: [number, number]
@@ -244,6 +251,18 @@ interface SideBySidePane {
  * short enough that a dead map fails fast.
  */
 const SCREENSHOT_RENDER_TIMEOUT_MS = 3000
+
+/** How long {@link DeckGLAdapter.resetNorth} eases the camera for. */
+const RESET_NORTH_DURATION_MS = 500
+
+/**
+ * Bearing or pitch, in degrees, below which {@link DeckGLAdapter.resetNorth}
+ * treats the camera as already north-up or already flat.
+ */
+const RESET_NORTH_TOLERANCE_DEG = 0.01
+
+/** A bearing in degrees, wrapped into [-180, 180). */
+const wrapBearing = (bearing: number): number => ((((bearing + 180) % 360) + 360) % 360) - 180
 
 /**
  * Prefix on the MapLibre layers terra-draw renders the in-progress drawing
@@ -1183,6 +1202,40 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             },
             { animate: true, duration: transitionDuration }
         )
+    }
+
+    /**
+     * Ease one step back toward a flat, north-up view, leaving centre and zoom
+     * where they are: bearing to 0 with the pitch kept, or, when the camera
+     * already faces north, pitch to 0.
+     *
+     * - Overlay mode: the basemap owns the camera, so it is eased there and
+     *   the deck layers follow through the interleaved overlay.
+     * - Standalone mode: uses deck.gl's `LinearInterpolator` over bearing and
+     *   pitch.
+     */
+    resetNorth(options?: ViewOptions): boolean {
+        const { bearing = 0, pitch = 0 } = this.getViewState()
+        let target: { bearing?: number; pitch?: number }
+        if (Math.abs(wrapBearing(bearing)) > RESET_NORTH_TOLERANCE_DEG) target = { bearing: 0 }
+        else if (Math.abs(pitch) > RESET_NORTH_TOLERANCE_DEG) target = { pitch: 0 }
+        else return false
+
+        const duration = options?.duration ?? RESET_NORTH_DURATION_MS
+        if (this._isOverlayMode) {
+            this._basemap!.easeTo({ ...target, duration, essential: true })
+            return true
+        }
+        this._applyViewState(
+            {
+                ...this._viewState,
+                ...target,
+                transitionInterpolator: new LinearInterpolator(['bearing', 'pitch']),
+                transitionDuration: duration,
+            },
+            { animate: true, duration }
+        )
+        return true
     }
 
     /**

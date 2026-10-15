@@ -71,6 +71,24 @@ import { MapEngineType } from '../types/engine'
 // Leaflet is loaded globally via window.L
 declare const L: any
 
+/**
+ * Initial great-circle bearing from one point to another, in degrees clockwise
+ * from north, wrapped into (-180, 180].
+ */
+function bearingBetween(
+    from: { lat: number; lng: number },
+    to: { lat: number; lng: number }
+): number {
+    const rad = Math.PI / 180
+    const lat1 = from.lat * rad
+    const lat2 = to.lat * rad
+    const dLng = (to.lng - from.lng) * rad
+    const y = Math.sin(dLng) * Math.cos(lat2)
+    const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng)
+    const deg = Math.atan2(y, x) / rad
+    return deg === -180 ? 180 : deg
+}
+
 export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEngineMarkers {
     /**
      * Engine type identifier
@@ -519,9 +537,27 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         return {
             center: center,
             zoom: this.getZoom(),
-            bearing: 0,
+            bearing: this._centerBearing(),
             pitch: 0
         }
+    }
+
+    /**
+     * The compass direction the top of the screen faces at the map centre, in
+     * degrees clockwise from north. Leaflet cannot rotate, so this is 0 on Web
+     * Mercator and differs only on a projection whose meridians are not
+     * vertical, such as a polar stereographic one. It is read as the bearing
+     * from the pixel just below the centre to the centre itself.
+     */
+    private _centerBearing(): number {
+        const size = this._map.getSize()
+        const x = size.x / 2
+        const y = size.y / 2
+        const center = this._map.containerPointToLatLng([x, y])
+        const below = this._map.containerPointToLatLng([x, y + 1])
+        if (!center || !below) return 0
+        const bearing = bearingBetween(below, center)
+        return Number.isFinite(bearing) ? bearing : 0
     }
 
     /**
@@ -599,6 +635,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
 
         const zoom = options.zoom !== undefined ? options.zoom : this._map.getZoom()
         this._map.flyTo([normalizedCenter.lat, normalizedCenter.lng], zoom, leafletOptions)
+    }
+
+    /** Leaflet cannot rotate or tilt, so there is never a view to undo. */
+    resetNorth(): boolean {
+        return false
     }
 
     /**

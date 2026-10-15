@@ -382,6 +382,12 @@ let Map_ = {
                     Map_.engine.setZoom(next)
                     return true
                 }),
+                // One step toward a flat, north-up view; false when there is
+                // nothing to undo or the engine cannot rotate.
+                window.mmgisAPI.provide('map:resetNorth', () => {
+                    if (!Map_.engine || typeof Map_.engine.resetNorth !== 'function') return false
+                    return Map_.engine.resetNorth()
+                }),
                 window.mmgisAPI.provide('map:latLngToContainerPoint', (latlng) => {
                     if (!Map_.engine || typeof Map_.engine.latLngToContainerPoint !== 'function') {
                         return null
