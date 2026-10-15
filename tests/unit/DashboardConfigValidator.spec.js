@@ -115,6 +115,10 @@ test.describe('DashboardConfigValidator', () => {
             expect(validateModernConfig(config('24')).warnings).toHaveLength(0);
             expect(validateModernConfig(config(Infinity)).warnings).toHaveLength(1);
             expect(validateModernConfig(config('1e400')).warnings).toHaveLength(1);
+            expect(validateModernConfig(config(200)).warnings).toHaveLength(0);
+            expect(validateModernConfig(config('201px')).warnings[0]).toMatch(
+                /floatingBottomOffset must be at most 200 pixels/
+            );
             const result = validateModernConfig(config(-5));
             expect(result.valid).toBe(true);
             expect(result.warnings[0]).toMatch(/floatingBottomOffset must be a non-negative number/);
