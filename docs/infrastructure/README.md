@@ -40,8 +40,8 @@ flowchart LR
     PLAN -.->|"plan role, read-only"| ENVP
     IAC -->|"development apply role"| ENVD
     IAC -->|"production apply role"| ENVP
-    APP -->|"development deploy role,<br/>image roll only"| ENVD
-    APP -->|"production deploy role,<br/>image roll only"| ENVP
+    APP -->|"development deploy role,<br/>image roll + rollout strategy"| ENVD
+    APP -->|"production deploy role,<br/>image roll + rollout strategy"| ENVP
     OP["Operator (human)"] -->|"terraform apply, rarely"| BOOT
 ```
 

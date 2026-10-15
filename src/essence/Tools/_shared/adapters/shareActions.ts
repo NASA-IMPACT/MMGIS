@@ -17,12 +17,12 @@ import {
 // Orchestrates the three export actions, reaching core only through the
 // shared mmgisAPI client. Dependencies are injectable for tests.
 
-export const PNG_FILENAME = 'mmgis-map.png'
-export const PDF_FILENAME = 'mmgis-map.pdf'
+export const PNG_FILENAME = 'map.png'
+export const PDF_FILENAME = 'map.pdf'
 
 /**
- * Export filename per the core convention: mmgis-<mission>_<time>_<lat>_<lng>
- * .<ext>; unavailable fields are omitted, degrading to mmgis-map.<ext>.
+ * Export filename per the core convention: <mission>_<time>_<lat>_<lng>
+ * .<ext>; unavailable fields are omitted, degrading to map.<ext>.
  */
 export function buildExportFilename(
     extension: string,
@@ -37,8 +37,8 @@ export function buildExportFilename(
                 4,
             )}`,
         )
-    if (parts.length === 0) return `mmgis-map.${extension}`
-    return `mmgis-${parts.join('_')}.${extension}`
+    if (parts.length === 0) return `map.${extension}`
+    return `${parts.join('_')}.${extension}`
 }
 
 export type CopyShareLinkDeps = {

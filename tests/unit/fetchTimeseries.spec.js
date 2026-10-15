@@ -411,6 +411,24 @@ describe('fetchTimeseries lib', () => {
 
     describe('featureTitle', () => {
         const cfg = { url: 'x' }
+        test('a title template fills from the feature, ahead of titleProp', () => {
+            const feature = {
+                properties: { county_name: 'Washington', state_name: 'Georgia', site: { num: 1 } },
+            }
+            expect(
+                featureTitle(
+                    feature,
+                    { ...cfg, title: '{county_name}, {state_name} · Site {site.num}', titleProp: 'county_name' },
+                    'L',
+                ),
+            ).toBe('Washington, Georgia · Site 1')
+        })
+        test('a template that fills to nothing falls through to titleProp', () => {
+            expect(
+                featureTitle(FEATURE, { ...cfg, title: '{missing} {also_missing}', titleProp: 'station_id' }, 'L'),
+            ).toBe('A 1')
+            expect(featureTitle(FEATURE, { ...cfg, title: '' }, 'L')).toBe('Station 42')
+        })
         test('prefers the configured property', () => {
             expect(
                 featureTitle(FEATURE, { ...cfg, titleProp: 'station_id' }, 'L'),

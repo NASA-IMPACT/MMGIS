@@ -79,9 +79,7 @@ describe('TimeControl time formatting providers', () => {
     test('falls back to the default format when none is configured', async () => {
         const handlers = await initTimeControl(enabledTimeConfig(undefined))
 
-        expect(handlers['time:getCurrentFormatted']()).toBe(
-            '2026-08-20T19:24:39Z'
-        )
+        expect(handlers['time:getCurrentFormatted']()).toBe('2026-08-20T19:24')
     })
 
     // d3 renders the date itself through whatever specifier the mission

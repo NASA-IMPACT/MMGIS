@@ -71,18 +71,18 @@ export function makeTimeTickFormat(
     return (ms) => fmt.format(new Date(ms))
 }
 
-const TOOLTIP_FMT = new Intl.DateTimeFormat('en-US', {
+const DATE_FMT = new Intl.DateTimeFormat('en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
     timeZone: 'UTC',
 })
 
+/** The date a point falls on, in UTC, for the tooltip title and the zoom
+ *  window's ends. No clock: the feeds charted are daily summaries whose
+ *  times are all midnight, and a clock that never moves reads as broken. */
 export function formatTooltipTime(ms: number): string {
-    return TOOLTIP_FMT.format(new Date(ms))
+    return DATE_FMT.format(new Date(ms))
 }
 
 /** Axis tick labels, sized for a card a few hundred pixels wide. */
@@ -155,23 +155,6 @@ function previewSlider(theme: ChartTheme, color: string) {
     }
 }
 
-const WINDOW_DATE_FMT = new Intl.DateTimeFormat('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-})
-
-/** The format for the zoom window's ends: the date, plus the clock when the
- *  whole series spans two days or less, where the date alone would repeat. */
-export function makeWindowLabelFormat(
-    minMs: number,
-    maxMs: number,
-): (ms: number) => string {
-    if (maxMs - minMs <= 2 * DAY_MS) return formatTooltipTime
-    return (ms) => WINDOW_DATE_FMT.format(new Date(ms))
-}
-
 /** The zoom window, in epoch ms, for the slider's start/end percentages of
  *  the series' time extent (the x axis runs dataMin to dataMax). */
 export function windowAt(
@@ -213,7 +196,7 @@ const HTML_ESCAPES: Record<string, string> = {
 const escapeHtml = (text: string) =>
     text.replace(/[&<>"']/g, (c) => HTML_ESCAPES[c])
 
-/** Axis tooltip whose title is the hovered UTC datetime, not raw epoch ms,
+/** Axis tooltip whose title is the hovered UTC date, not raw epoch ms,
  *  with the value carrying the series' unit. echarts writes this string
  *  with innerHTML, and the series name and unit come off the wire (a
  *  groupBy value from the remote API), so both are escaped. */
@@ -271,13 +254,10 @@ export function buildChart(
     const tickFormat = xExtent
         ? makeTimeTickFormat(xExtent[0], xExtent[1])
         : null
-    const windowFormat = xExtent
-        ? makeWindowLabelFormat(xExtent[0], xExtent[1])
-        : null
     const windowText = (startPct: number, endPct: number): [string, string] | null => {
-        if (!xExtent || !windowFormat) return null
+        if (!xExtent) return null
         const [start, end] = windowAt(xExtent, startPct, endPct)
-        return [windowFormat(start), windowFormat(end)]
+        return [formatTooltipTime(start), formatTooltipTime(end)]
     }
 
     const option = {

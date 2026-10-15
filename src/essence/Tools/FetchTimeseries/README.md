@@ -115,6 +115,7 @@ vector-tile layer's page. The fields write the block below.
 | --- | --- | --- |
 | `enabled` | no | Set `false` to turn the block off without deleting it (default `true`). |
 | `url` | yes | Fetch URL template. Placeholders: `{properties.<key>}` (dot-paths work), `{lon}`/`{lat}` (the feature's Point coordinates, falling back to the clicked location — so they work on vector-tile layers whose features carry no geometry), and `{id}` (only when the source data itself provides feature ids — MMGIS does not assign them, so prefer `{properties.<key>}`). Values are URL-encoded; a missing value surfaces as a visible error. Braces are placeholder syntax — a literal `{`/`}` (e.g. CQL2 filters) is not supported. |
+| `title` | no | Chart title as a `{prop}` template over the feature's properties, the Feature Popup title's syntax (`{county_name}, {state_name} · Site {site_num}`; dot-paths work). A template that fills to nothing falls through to `titleProp`. |
 | `titleProp` | no | Feature property used as the chart title (default: `name` → `title` → feature id → layer name). |
 | `label` | no | Series label for ungrouped responses (default: layer display name). |
 | `seriesPath` | no | Dot-path to the point array when the response is an object (default `features`, the GeoJSON FeatureCollection shape). Ignored when the response is itself an array. |

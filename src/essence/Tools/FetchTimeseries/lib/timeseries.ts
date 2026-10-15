@@ -8,6 +8,7 @@ import {
     type ChartPoint,
     type ChartSeriesPayload,
 } from '../../_shared/types/chartSeries'
+import { fillTemplate } from '../../_shared/content/fillTemplate'
 
 /** Per-layer opt-in, authored at `layer.variables.timeseries`. Only `url` is
  *  required — the shape fields default to the GeoJSON FeatureCollection an
@@ -19,6 +20,10 @@ export interface TimeseriesConfig {
      *  {lat}, and {start}/{end} for the card's range, in the service's own
      *  syntax. */
     url: string
+    /** Chart title as a `{prop}` template over the feature's properties
+     *  (dot paths reach nested ones), the popup title's syntax. A template
+     *  that fills to nothing falls through to titleProp. */
+    title?: string
     /** Feature property used as the chart title (default: name → title → id). */
     titleProp?: string
     /** Series label (default: the layer's display name). */
@@ -253,13 +258,18 @@ export function templateUrl(
     })
 }
 
-/** Feature-derived chart title: configured property → name → title → id. */
+/** Feature-derived chart title: title template → configured property →
+ *  name → title → id. */
 export function featureTitle(
     feature: FeatureLike,
     config: TimeseriesConfig,
     fallback: string,
 ): string {
     const props = feature.properties ?? {}
+    if (typeof config.title === 'string' && config.title !== '') {
+        const filled = fillTemplate(config.title, props).trim()
+        if (filled !== '') return filled
+    }
     const candidates = [
         config.titleProp != null ? props[config.titleProp] : undefined,
         props.name,
