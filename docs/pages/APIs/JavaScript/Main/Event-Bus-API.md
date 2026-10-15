@@ -279,6 +279,21 @@ window.mmgisAPI.on('layer:visibilityChange', ({ layerName, on }) => {
 })
 ```
 
+### Map Events
+
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `map:move` | engine view event | Fired on every frame the camera moves, including moves made in code |
+| `map:moveend` | engine view event | Fired once the camera settles after a move |
+| `map:mousemove` | `{ latlng, containerPoint, ... }` | Fired as the pointer moves over the map. `containerPoint` is in CSS pixels from the map's top-left corner |
+| `map:mouseout` | none | Fired when the pointer leaves the map. On Leaflet it is missed when the pointer leaves across a feature that listens for hovers, so a plugin there should not rely on it to forget the pointer |
+
+```javascript
+window.mmgisAPI.on('map:mousemove', async ({ containerPoint }) => {
+    const metersPerPixel = await window.mmgisAPI.request('map:getMetersPerPixel', containerPoint)
+})
+```
+
 ### Tool Events
 
 | Event | Payload | Description |
@@ -396,6 +411,7 @@ has already delivered — the request can resolve after a later event lands.
 | `map:panTo` | `{ lat, lng }` | `true` | Pan map to coordinates |
 | `map:showPopup` | `MapPopupRequest` | `MapPopupResult` | Show a map-anchored card, replacing any current one. Answers only once it closes. `latlng` is required, and so is one of `title` (text) and `html` (sanitized); each action carries a `label`, and focus lands on the first one when the card opens |
 | `map:hidePopup` | none | `true` | Take the current card down, resolving its request with `{ action: 'closed' }` |
+| `map:getScreenshot` | `{ scaleAt }` (optional) | `MapScreenshotResult` | The map as a PNG: `{ blob, mimeType, extension, width, height, metersPerPixel, scaleAnchor }`. `metersPerPixel` is the ground metres one *image* pixel spans at `scaleAt` (a page position, `{ clientX, clientY }`), or near the image's bottom-left corner without it. It is null when the map is tilted more than 10°, when the view spans too wide a range of latitudes for one scale, or when the map cannot measure it. `scaleAnchor` is `scaleAt` in image pixels, absent without it |
 | `map:getEngineType` | none | `'leaflet' \| 'deckgl' \| null` | Which engine is drawing the map, for a plugin whose behaviour differs by engine. Null until the mission has built one |
 
 ```javascript
@@ -596,6 +612,14 @@ const result = await window.mmgisAPI.request(
 if (!result.ok) console.warn(`Refused: ${result.reason}`)
 ```
 
+### Export Providers
+
+Provided by a plugin, and asked for by the share and export actions. Any plugin that draws the matching element on the map can provide one, so plugins doing the same job can be swapped.
+
+| Provider | Params | Returns | Description |
+|----------|--------|---------|-------------|
+| `export:getScaleBar` | none | `{ units, at } \| null` | The on-screen scale bar's settings while one is drawn, otherwise null. `units` is `'metric'` or `'imperial'`; `at` is the page position (`{ clientX, clientY }`) of the bar's backing box's bottom-left corner, where an exported image draws and measures its own bar |
+
 ### App Providers
 
 | Provider | Params | Returns | Description |
@@ -623,7 +647,7 @@ console.log(`Current mission: ${missionPath}`)
 
 Events and providers follow a namespace:action pattern:
 
-- **Core namespaces**: `map:`, `layers:`, `time:`, `globe:`, `panels:`, `plugins:`, `app:`
+- **Core namespaces**: `map:`, `layers:`, `time:`, `globe:`, `panels:`, `plugins:`, `app:`, `export:`
 - **Plugin namespaces**: `plugin:pluginName:`
 - **Custom namespaces**: `custom:yourNamespace:`
 

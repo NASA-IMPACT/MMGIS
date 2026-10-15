@@ -479,9 +479,9 @@ test.describe('scale bar in the downloads', () => {
         expect(result).toBe(screenshot)
     })
 
-    test('the bus wrapper asks the ScaleBar plugin and reads null without it', async () => {
+    test('the bus wrapper asks whichever plugin draws the scale bar', async () => {
         const { api, requests } = makeBusApi({
-            'plugin:scalebar:getSettings': { units: 'metric' },
+            'export:getScaleBar': { units: 'metric' },
             'map:getScreenshot': screenshot,
         })
         window.mmgisAPI = api
@@ -494,7 +494,7 @@ test.describe('scale bar in the downloads', () => {
                 compose: recordCompose(calls),
             })
             expect(requests.map((r) => r.name)).toContain(
-                'plugin:scalebar:getSettings',
+                'export:getScaleBar',
             )
             expect(calls[0].deps.scaleBar.units).toBe('metric')
         } finally {
@@ -502,7 +502,8 @@ test.describe('scale bar in the downloads', () => {
         }
     })
 
-    test('a capture without a scale downloads without a bar', async () => {
+    // A tilted or continent-wide view has no scale by design, not by failure.
+    test('a capture without a scale downloads without a bar, quietly', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
         try {
             const { metersPerPixel, ...unscaled } = screenshot
@@ -516,7 +517,7 @@ test.describe('scale bar in the downloads', () => {
                 },
             })
             expect(result).toBe(unscaled)
-            expect(warn).toHaveBeenCalled()
+            expect(warn).not.toHaveBeenCalled()
         } finally {
             warn.mockRestore()
         }

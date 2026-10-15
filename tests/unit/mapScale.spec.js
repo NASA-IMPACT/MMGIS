@@ -24,6 +24,7 @@ function makeEngine({
     rect = RECT,
     clientWidth = rect.width,
     pitch = 0,
+    webMercator = true,
     toLatLng,
 } = {}) {
     const container = {
@@ -33,6 +34,7 @@ function makeEngine({
     return {
         getContainer: () => container,
         getViewState: () => ({ pitch }),
+        isWebMercator: () => webMercator,
         containerPointToLatLng: vi.fn(
             toLatLng ?? (({ x, y }) => ({ lng: x * DEG_PER_PX, lat: -y * DEG_PER_PX }))
         ),
@@ -131,15 +133,11 @@ test.describe('metersPerPixelAt', () => {
 
     // A polar projection has ground all the way to the pole.
     test('measures near the pole on a projection other than Mercator', () => {
-        window.mmgisglobal = { customCRS: { projString: '+proj=stere +lat_0=90' } }
-        try {
-            const engine = makeEngine({
-                toLatLng: ({ x }) => ({ lng: x * DEG_PER_PX, lat: 89 }),
-            })
-            expect(metersPerPixelAt(engine)).not.toBeNull()
-        } finally {
-            delete window.mmgisglobal
-        }
+        const engine = makeEngine({
+            webMercator: false,
+            toLatLng: ({ x }) => ({ lng: x * DEG_PER_PX, lat: 89 }),
+        })
+        expect(metersPerPixelAt(engine)).not.toBeNull()
     })
 
     test('is null for a point outside the map', () => {

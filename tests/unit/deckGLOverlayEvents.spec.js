@@ -128,18 +128,66 @@ test.describe('DeckGLAdapter overlay move events', () => {
 })
 
 test.describe('DeckGLAdapter standalone move events', () => {
-    test("each camera change reaches 'move' as well as 'moveend'", () => {
+    const standalone = () => {
         const adapter = new DeckGLAdapter()
         adapter.init({ containerId: 'map', zoom: 0, center: { lat: 0, lng: 0 } })
-        const moves = []
-        adapter.on('move', (e) => moves.push(e))
-        adapter
-            .getNativeMap()
-            .props.onViewStateChange({
-                viewState: { latitude: 3, longitude: 4, zoom: 2, bearing: 0, pitch: 0 },
-            })
-        expect(moves).toHaveLength(1)
-        expect(moves[0]).toMatchObject({ latitude: 3, longitude: 4, zoom: 2 })
+        const events = []
+        adapter.on('move', (e) => events.push(['move', e]))
+        adapter.on('moveend', (e) => events.push(['moveend', e]))
+        return { adapter, deck: adapter.getNativeMap(), events }
+    }
+    const view = (latitude, longitude, zoom) => ({
+        latitude,
+        longitude,
+        zoom,
+        bearing: 0,
+        pitch: 0,
+    })
+
+    test("a camera change outside a gesture reaches 'move', then 'moveend'", () => {
+        const { deck, events } = standalone()
+        deck.props.onViewStateChange({ viewState: view(3, 4, 2) })
+        expect(events.map(([name]) => name)).toEqual(['move', 'moveend'])
+        expect(events[0][1]).toMatchObject({ latitude: 3, longitude: 4, zoom: 2 })
+    })
+
+    // Listeners on both would otherwise do their work twice a frame.
+    test("a gesture reports 'move' each frame and 'moveend' once it settles", () => {
+        const { deck, events } = standalone()
+        const dragging = { isDragging: true, isPanning: true }
+        deck.props.onInteractionStateChange(dragging)
+        deck.props.onViewStateChange({ viewState: view(1, 1, 2), interactionState: dragging })
+        deck.props.onViewStateChange({ viewState: view(2, 2, 2), interactionState: dragging })
+        const inertia = { isDragging: false, isPanning: false, inTransition: true }
+        deck.props.onInteractionStateChange(inertia)
+        deck.props.onViewStateChange({ viewState: view(3, 3, 2), interactionState: inertia })
+        expect(events.map(([name]) => name)).toEqual(['move', 'move', 'move'])
+        deck.props.onInteractionStateChange({ inTransition: false })
+        expect(events.map(([name]) => name)).toEqual(['move', 'move', 'move', 'moveend'])
+        expect(events[3][1]).toMatchObject({ latitude: 3, longitude: 3 })
+    })
+
+    test("a gesture that never moved the camera raises no 'moveend'", () => {
+        const { deck, events } = standalone()
+        deck.props.onInteractionStateChange({ isDragging: true })
+        deck.props.onInteractionStateChange({ isDragging: false })
+        expect(events).toEqual([])
+    })
+
+    // A Sites jump or a URL view moves the camera without animating it, and
+    // deck.gl reports no view state change for that.
+    test("a jump in code reaches 'move' and 'moveend'", () => {
+        const { adapter, events } = standalone()
+        adapter.setView({ lat: 5, lng: 6 }, 14)
+        expect(events.map(([name]) => name)).toEqual(['move', 'moveend'])
+        expect(events[1][1]).toMatchObject({ latitude: 5, longitude: 6, zoom: 14 })
+    })
+
+    // deck.gl reports an animated move frame by frame as it plays.
+    test('an animated move in code leaves its reporting to deck.gl', () => {
+        const { adapter, events } = standalone()
+        adapter.flyTo({ center: { lat: 5, lng: 6 }, zoom: 14 })
+        expect(events).toEqual([])
     })
 })
 

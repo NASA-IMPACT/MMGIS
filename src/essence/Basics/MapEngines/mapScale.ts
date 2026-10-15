@@ -4,7 +4,7 @@ import type { LatLng } from './types/geometry'
 
 type ScaleEngine = Pick<
     IMapEngine,
-    'containerPointToLatLng' | 'getContainer' | 'getViewState'
+    'containerPointToLatLng' | 'getContainer' | 'getViewState' | 'isWebMercator'
 >
 
 /** A position on the page, in CSS pixels, as a DOM rectangle or event gives it. */
@@ -22,13 +22,6 @@ const PROBE_PX = 10
 // bottom edge unproject toward the pole rather than failing, so a latitude
 // beyond it marks a point with no ground under it.
 const MERCATOR_MAX_LAT = 85.0511287798
-
-// Whether the map is in Web Mercator: the default projection, or a custom one
-// built from a `+proj=merc` definition.
-const isMercator = (): boolean => {
-    const projString = (window as any).mmgisglobal?.customCRS?.projString
-    return typeof projString !== 'string' || /\+proj=merc\b/.test(projString)
-}
 
 /** Tilt, in degrees, beyond which an export carries no scale. A tilted map's scale
  *  shrinks toward the camera and grows toward the horizon (by about a quarter
@@ -98,7 +91,8 @@ function readScale(engine: ScaleEngine, at?: ClientPoint): ScaleReading | null {
         ].filter((s): s is number => s != null)
         if (Math.max(...scales) / Math.min(...scales) > MAX_SCALE_SPREAD) return null
         return { metersPerPixel, x, y }
-    } catch {
+    } catch (err) {
+        console.warn('Map screenshot: measuring the scale failed', err)
         return null
     }
 }
@@ -121,7 +115,7 @@ export function metersPerPixelAt(engine: ScaleEngine, at?: ContainerPoint): numb
         const { x, y } = isContainerPoint(at) ? at : { x: rect.width / 2, y: rect.height / 2 }
         if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null
         const ground = engine.containerPointToLatLng({ x, y }) as LatLng
-        if (isMercator() && !(Math.abs(ground.lat) <= MERCATOR_MAX_LAT)) return null
+        if (engine.isWebMercator() && !(Math.abs(ground.lat) <= MERCATOR_MAX_LAT)) return null
         return scaleAt(engine, x, y)
     } catch {
         return null
