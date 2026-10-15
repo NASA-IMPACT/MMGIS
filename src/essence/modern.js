@@ -235,7 +235,7 @@ class ModernInterface {
 
         const layoutStyle = this.configData?.panelSettings?.layoutStyle || 'overlay'
         const theme = this.configData?.msv?.theme || 'default'
-        const floatBottomOffset = this.configData?.panelSettings?.floatingBottomOffset || 0
+        const floatBottomOffset = this.configData?.panelSettings?.floatingBottomOffset
 
         // Initialize the User Interface with the sorted panels from PanelManager
         UserInterfaceModern_.init(activePanels, layoutStyle, theme, floatBottomOffset)

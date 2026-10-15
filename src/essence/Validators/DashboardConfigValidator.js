@@ -78,7 +78,7 @@ export function validateModernConfig(config) {
 
     // Validate floatingBottomOffset (optional, defaults to 0)
     const offset = panelSettings.floatingBottomOffset
-    if (offset != null && offset !== '' && !(typeof offset === 'number' && Number.isFinite(offset) && offset >= 0)) {
+    if (isDimensionSet(offset) && toPixelNumber(offset, { allowZero: true }) === null) {
         warnings.push('panelSettings.floatingBottomOffset must be a non-negative number of pixels; using 0')
     }
 

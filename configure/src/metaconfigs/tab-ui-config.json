@@ -250,9 +250,9 @@
           "name": "Bottom Offset (px)",
           "description": "Raises the bottom-left, bottom-center and bottom-right floating panels this many pixels above the map's bottom edge, e.g. to keep them clear of the basemap's logo and attribution.",
           "type": "number",
-          "default": 0,
           "width": 6,
-          "min": 0
+          "min": 0,
+          "max": 200
         },
         {
           "field": "panelSettings.floatingPanels",
