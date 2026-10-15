@@ -142,7 +142,7 @@ export function MMGISMapControlAdapter() {
     const showCompass = !isFalsy(vars.showCompass)
     const showShare = !isFalsy(vars.showShare)
 
-    const camera = useMapCamera(showCompass)
+    const cameraState = useMapCamera(showCompass)
 
     const actionLink = asText(vars.actionButtonLink)
     const actionText = asText(vars.actionButtonText)
@@ -204,8 +204,8 @@ export function MMGISMapControlAdapter() {
             onToggleBasemapLabels={showBasemapSwitcher ? onToggleBasemapLabels : undefined}
             onZoomIn={showZoom ? zoomIn : undefined}
             onZoomOut={showZoom ? zoomOut : undefined}
-            camera={showCompass ? camera : null}
-            onResetNorth={showCompass ? resetNorth : undefined}
+            camera={showCompass ? cameraState?.camera : undefined}
+            onResetNorth={showCompass && cameraState?.rotatable ? resetNorth : undefined}
             subscribeToMap={showMeasure ? subscribeToMap : undefined}
             onDrawOverlay={showMeasure ? drawOverlay : undefined}
             onRemoveOverlay={showMeasure ? removeOverlay : undefined}

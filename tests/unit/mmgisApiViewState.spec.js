@@ -118,6 +118,26 @@ test.describe('mmgisAPI.getViewState (issue #143)', () => {
             pitch: 0,
         })
     })
+
+    test('leaves bearing and pitch null, and still answers the rest, when the engine throws', () => {
+        L_.Map_ = {
+            map: {
+                getCenter: () => ({ lat: 4.5, lng: 137.4 }),
+                getZoom: () => 7,
+            },
+            engine: {
+                getViewState: () => {
+                    throw new Error('no view yet')
+                },
+            },
+        }
+        expect(mmgisAPI.getViewState()).toMatchObject({
+            center: { lat: 4.5, lng: 137.4 },
+            zoom: 7,
+            bearing: null,
+            pitch: null,
+        })
+    })
 })
 
 test.describe('mmgisAPI.resetNorth', () => {

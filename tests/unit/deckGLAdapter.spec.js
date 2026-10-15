@@ -670,6 +670,19 @@ test.describe('DeckGLAdapter', () => {
             expect(adapter.getViewState().pitch).toBe(0)
         })
 
+        // deck leaves a dragged bearing unwrapped, so north is the nearest
+        // whole turn, not 0.
+        test.each([
+            [350, 360],
+            [710, 720],
+            [-350, -360],
+            [170, 0],
+        ])('standalone: bearing %s turns the short way to %s', (from, to) => {
+            const adapter = makeStandalone(from, 0)
+            adapter.resetNorth()
+            expect(adapter.getViewState().bearing).toBe(to)
+        })
+
         test('returns false and sends nothing when the view is already flat and north-up', () => {
             const adapter = makeStandalone(0, 0)
             expect(adapter.resetNorth()).toBe(false)
@@ -694,6 +707,25 @@ test.describe('DeckGLAdapter', () => {
             const options = basemap.easeTo.mock.calls[0][0]
             expect(options.pitch).toBe(0)
             expect(options).not.toHaveProperty('bearing')
+        })
+
+        // Side-by-side sync skips the basemap move handlers, so the adapter's
+        // own copy of the camera can lag the basemap.
+        test('overlay: decides from the live basemap, not a stale copy', () => {
+            const { adapter, basemap } = makeOverlay(0, 0)
+            adapter._viewState = { ...adapter._viewState, bearing: 80, pitch: 30 }
+            expect(adapter.getViewState()).toMatchObject({ bearing: 0, pitch: 0 })
+            expect(adapter.resetNorth()).toBe(false)
+            expect(basemap.easeTo).not.toHaveBeenCalled()
+        })
+
+        test('overlay: emits move with the camera on each basemap frame', () => {
+            const { adapter } = makeOverlay(-25, 15)
+            const onMove = vi.fn()
+            adapter.on('move', onMove)
+            adapter._onBasemapMove()
+            expect(onMove).toHaveBeenCalledTimes(1)
+            expect(onMove.mock.calls[0][0]).toMatchObject({ bearing: -25, pitch: 15 })
         })
 
         test('overlay: returns false without moving a flat, north-up basemap', () => {

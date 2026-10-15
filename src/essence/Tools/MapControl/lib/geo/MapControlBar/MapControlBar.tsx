@@ -35,7 +35,8 @@ export type MapControlBarProps = {
     onZoomIn?: () => void
     onZoomOut?: () => void
 
-    // Compass — onResetNorth is what makes it render
+    // Compass — renders when either is given. With onResetNorth it is a button
+    // that resets the view; with only a camera it is an indicator.
     /** Which way the map faces; null or undefined draws the needle north-up. */
     camera?: MapCamera | null
     onResetNorth?: () => void
@@ -272,7 +273,7 @@ export function MapControlBar({
                         </button>
                     </div>
                 )}
-                {onResetNorth && (
+                {onResetNorth ? (
                     <div className="blocks-map-control__group">
                         <button
                             type="button"
@@ -284,6 +285,19 @@ export function MapControlBar({
                             <CompassNeedle camera={compass} />
                         </button>
                     </div>
+                ) : (
+                    camera && (
+                        <div className="blocks-map-control__group">
+                            <span
+                                className="blocks-map-control__btn blocks-map-control__btn--compass blocks-map-control__btn--static"
+                                role="img"
+                                title={compassTitle}
+                                aria-label={compassTitle}
+                            >
+                                <CompassNeedle camera={compass} />
+                            </span>
+                        </div>
+                    )
                 )}
                 {endSlot}
                 {/* Built from the bar's __group and __btn classes, so it sits in

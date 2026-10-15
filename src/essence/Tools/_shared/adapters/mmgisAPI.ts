@@ -160,6 +160,18 @@ export const mmgisGetMapScreenshot = (): Promise<
     return mmgisRequestIfProvided<MapScreenshotResult>('map:getScreenshot')
 }
 
+/**
+ * Which way the camera faces, from `map:getCamera`. `rotatable` is false on an
+ * engine that cannot rotate or tilt (Leaflet), where `map:resetNorth` never
+ * moves the view.
+ */
+export type CameraState = { bearing: number; pitch: number; rotatable: boolean }
+
+/** The camera's bearing and pitch; null until the engine can answer. */
+export const mmgisGetCamera = (): Promise<CameraState | null> => {
+    return mmgisRequestIfProvided<CameraState>('map:getCamera')
+}
+
 /** View metadata (mission, time, center, zoom, bearing, pitch); fields null
  *  until loaded. */
 export const mmgisGetViewState = (): Promise<ViewState | null> => {
