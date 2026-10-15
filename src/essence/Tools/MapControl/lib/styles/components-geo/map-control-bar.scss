@@ -212,12 +212,6 @@
         transform-origin: center;
     }
 
-    /* The north half keeps one color through hover, so north stays obvious;
-       the south half follows the button's currentColor. */
-    &__needle-north {
-        fill: var(--theme-color-secondary, #f64137);
-    }
-
     // The hosted share control's slot in the bar, drawn as a bare glyph so it
     // reads as one of the bar's icon buttons. Its colors, square corners and
     // interaction states come from the component's own tokens, which resolve to
