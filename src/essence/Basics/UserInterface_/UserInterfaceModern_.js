@@ -280,12 +280,12 @@ const UserInterfaceModern_ = {
      * @param {Array} panelsArr - Array of panel objects (parsed from config & PanelManager)
      * @param {string} style - The layout style ('overlay' | 'compact')
      * @param {string} theme - The theme identifier (e.g. 'default', 'disasters')
-     * @param {number} bottomOffset - Pixels the bottom float zones sit above the map's bottom edge
+     * @param {number|string} bottomOffset - Pixels the bottom float zones sit above the map's bottom edge; an unusable value means 0
      */
     init: function (panelsArr, style = 'overlay', theme = 'default', bottomOffset = 0) {
         panels = panelsArr
         layoutStyle = style
-        floatBottomOffset = Number(bottomOffset) > 0 ? Number(bottomOffset) : 0
+        floatBottomOffset = toPixelNumber(bottomOffset) ?? 0
 
         // Dynamic import() so webpack emits one lazy CSS chunk per theme and
         // only the configured one is fetched (a sync require() here bundled
