@@ -486,13 +486,13 @@ var mmgisAPI_ = {
                     : null,
         }
     },
-    getMapScreenshot: function () {
+    getMapScreenshot: function (options) {
         // Capture is engine-specific (Leaflet DOM rasterization vs deck.gl
         // canvas readback); delegate to the active IMapEngine adapter. A
         // missing engine means no map is loaded yet.
         const engine = L_.Map_ && L_.Map_.engine
         if (engine && typeof engine.captureScreenshot === 'function') {
-            return captureScreenshotWithScale(engine)
+            return captureScreenshotWithScale(engine, options?.scaleAt)
         }
         return Promise.reject(
             new Error('getMapScreenshot: no active map engine to capture')
@@ -817,7 +817,9 @@ var mmgisAPI = {
      * that the deck.gl capture is limited to the GL canvas and does not include
      * HTML overlays/markers layered on top. Asynchronous; requires no backend
      * call. Rejects if no map engine is active.
-     * @returns {Promise<{blob: Blob, mimeType: 'image/png', extension: 'png', width: number, height: number, metersPerPixel: number|null}>} - resolves to a PNG Blob plus image metadata. `metersPerPixel` is the ground distance one *image* pixel spans near the image's bottom-left corner, null when the map cannot measure it.
+     * @param {object} [options]
+     * @param {{clientX: number, clientY: number}} [options.scaleAt] - page position to measure the scale at, instead of near the image's bottom-left corner
+     * @returns {Promise<{blob: Blob, mimeType: 'image/png', extension: 'png', width: number, height: number, metersPerPixel: number|null, scaleAnchor: {x: number, y: number}|null}>} - resolves to a PNG Blob plus image metadata. `metersPerPixel` is the ground distance one *image* pixel spans at `scaleAt`, or near the image's bottom-left corner without it, null when the map cannot measure it. `scaleAnchor` is `scaleAt` in image pixels, absent without it.
      * Plugins should prefer `mmgisAPI.request('map:getScreenshot')`.
      */
     getMapScreenshot: mmgisAPI_.getMapScreenshot,
@@ -1073,7 +1075,7 @@ mmgisAPI.provide('map:getViewState', () => mmgisAPI_.getViewState())
 // the mission has built an engine — Layers_.fina() is where it becomes
 // readable, so a caller asking at load time gets null rather than an answer.
 mmgisAPI.provide('map:getEngineType', () => L_.Map_?.engine?.engineType ?? null)
-mmgisAPI.provide('map:getScreenshot', () => mmgisAPI_.getMapScreenshot())
+mmgisAPI.provide('map:getScreenshot', (options) => mmgisAPI_.getMapScreenshot(options))
 mmgisAPI.provide('app:copyText', (text) =>
     // Bus payloads arrive from arbitrary plugins; refuse non-strings rather
     // than clobber the user's clipboard with a coerced 'undefined'.

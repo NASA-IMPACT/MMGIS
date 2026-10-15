@@ -412,6 +412,7 @@ let Map_ = {
             // Pointer streams consumed by plugins (e.g. measure tools, overlays).
             reEmit('click', 'map:click')
             reEmit('mousemove', 'map:mousemove')
+            reEmit('mouseout', 'map:mouseout')
 
             // Feature click → bus. Plugins (e.g. AOI Inspect) consume
             // `map:featureClick` to react to clicks on layers created via

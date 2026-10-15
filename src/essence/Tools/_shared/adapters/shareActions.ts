@@ -4,6 +4,7 @@ import {
     mmgisGetViewState,
     mmgisCopyText,
     mmgisGetScaleBarSettings,
+    type ClientPoint,
     type MapScreenshotResult,
     type ScaleBarSettings,
     type ViewState,
@@ -82,23 +83,37 @@ export type DecorationDeps = {
     ) => Promise<MapScreenshotResult>
 }
 
-// Uses the capture's own scale, which is in image pixels and of that exact view.
-async function resolveExportScaleBar(
-    screenshot: MapScreenshotResult,
+type GetScreenshot = (options?: {
+    scaleAt?: ClientPoint
+}) => Promise<MapScreenshotResult | null>
+
+async function readScaleBarSettings(
     getScaleBarSettings: () => Promise<ScaleBarSettings | null>,
-): Promise<ExportScaleBar | null> {
+): Promise<ScaleBarSettings | null> {
     try {
-        const settings = await getScaleBarSettings()
-        if (!settings) return null
-        const { metersPerPixel } = screenshot
-        if (typeof metersPerPixel !== 'number' || !(metersPerPixel > 0)) {
-            console.warn('Share export: scale bar omitted, the map gave no scale')
-            return null
-        }
-        return { metersPerPixel, units: settings.units }
+        return await getScaleBarSettings()
     } catch (err) {
         console.warn('Share export: scale bar omitted', err)
         return null
+    }
+}
+
+// Uses the capture's own scale, which is in image pixels and of that exact
+// view, measured where the on-screen bar sits when the capture was given it.
+function resolveExportScaleBar(
+    screenshot: MapScreenshotResult,
+    settings: ScaleBarSettings | null,
+): ExportScaleBar | null {
+    if (!settings) return null
+    const { metersPerPixel, scaleAnchor } = screenshot
+    if (typeof metersPerPixel !== 'number' || !(metersPerPixel > 0)) {
+        console.warn('Share export: scale bar omitted, the map gave no scale')
+        return null
+    }
+    return {
+        metersPerPixel,
+        units: settings.units,
+        ...(scaleAnchor ? { anchor: scaleAnchor } : {}),
     }
 }
 
@@ -106,15 +121,15 @@ async function resolveExportScaleBar(
 // drawn and log the rest, rather than surfacing a broken download.
 async function applyDecorations(
     screenshot: MapScreenshotResult,
+    settings: ScaleBarSettings | null,
     deps: DecorationDeps,
 ): Promise<MapScreenshotResult> {
     const {
         includeLegend = true,
         getLegendModel = getExportLegendModel,
-        getScaleBarSettings = mmgisGetScaleBarSettings,
         compose = composeExportImage,
     } = deps
-    const scaleBar = await resolveExportScaleBar(screenshot, getScaleBarSettings)
+    const scaleBar = resolveExportScaleBar(screenshot, settings)
     let model: ExportLegendModel | null = null
     if (includeLegend) {
         try {
@@ -132,8 +147,24 @@ async function applyDecorations(
     }
 }
 
+// The ScaleBar plugin's settings are read before the capture, so the capture
+// measures the scale where the on-screen bar sits.
+async function captureDecorated(
+    getScreenshot: GetScreenshot,
+    deps: DecorationDeps,
+): Promise<MapScreenshotResult> {
+    const settings = await readScaleBarSettings(
+        deps.getScaleBarSettings ?? mmgisGetScaleBarSettings,
+    )
+    const screenshot = await getScreenshot(
+        settings?.at ? { scaleAt: settings.at } : undefined,
+    )
+    if (!screenshot) throw new Error('No screenshot available')
+    return applyDecorations(screenshot, settings, deps)
+}
+
 export type DownloadSharePngDeps = DecorationDeps & {
-    getScreenshot?: () => Promise<MapScreenshotResult | null>
+    getScreenshot?: GetScreenshot
     download?: (blob: Blob, filename: string) => void
     getViewState?: () => Promise<ViewState | null>
     filename?: string
@@ -150,9 +181,7 @@ export async function downloadSharePng(
         download = downloadBlob,
         getViewState = mmgisGetViewState,
     } = deps
-    const screenshot = await getScreenshot()
-    if (!screenshot) throw new Error('No screenshot available')
-    const composed = await applyDecorations(screenshot, deps)
+    const composed = await captureDecorated(getScreenshot, deps)
     const filename =
         deps.filename ??
         buildExportFilename(composed.extension, await getViewState())
@@ -161,7 +190,7 @@ export async function downloadSharePng(
 }
 
 export type DownloadSharePdfDeps = DecorationDeps & {
-    getScreenshot?: () => Promise<MapScreenshotResult | null>
+    getScreenshot?: GetScreenshot
     blobToDataUrl?: (blob: Blob) => Promise<string>
     buildPdf?: (
         dataUrl: string,
@@ -186,9 +215,7 @@ export async function downloadSharePdf(
         buildPdf = buildSharePdf,
         getViewState = mmgisGetViewState,
     } = deps
-    const screenshot = await getScreenshot()
-    if (!screenshot) throw new Error('No screenshot available')
-    const composed = await applyDecorations(screenshot, deps)
+    const composed = await captureDecorated(getScreenshot, deps)
     const dataUrl = await convertBlobToDataUrl(composed.blob)
     const doc = await buildPdf(dataUrl, composed.width, composed.height)
     const filename =
