@@ -1,6 +1,7 @@
 import $ from 'jquery'
 import { isStaticBuild } from '../../../pre/capabilities'
 import F_ from '../Formulae_/Formulae_'
+import { metersPerPixelAt } from '../MapEngines/mapScale'
 import L_ from '../Layers_/Layers_'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
 import { captureVector } from '../Layers_/LayerCapturer'
@@ -260,7 +261,7 @@ let Map_ = {
                 window.mmgisAPI.provide('map:getCenter', () => engine.getCenter()),
                 window.mmgisAPI.provide('map:getBounds', () => engine.getBounds()),
                 window.mmgisAPI.provide('map:getZoom', () => engine.getZoom()),
-                window.mmgisAPI.provide('map:getMetersPerPixel', () => engine.getMetersPerPixel()),
+                window.mmgisAPI.provide('map:getMetersPerPixel', (at) => metersPerPixelAt(engine, at)),
                 window.mmgisAPI.provide('map:getChromeInsets', () => engine.getChromeInsets()),
                 window.mmgisAPI.provide('map:setView', ({ center, zoom } = {}) => {
                     if (!center) return false

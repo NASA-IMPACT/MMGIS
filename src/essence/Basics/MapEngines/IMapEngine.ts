@@ -23,8 +23,9 @@ export interface MapScreenshotResult {
     extension: 'png'
     width: number
     height: number
-    /** Ground metres per *image* pixel at the centre, at capture time.
-     *  Null or absent when the engine cannot say. */
+    /** Ground metres per *image* pixel near the image's bottom-left corner,
+     *  at capture time. Stamped by mmgisAPI, not by the engine; null or
+     *  absent when the map cannot measure it. */
     metersPerPixel?: number | null
 }
 
@@ -138,12 +139,6 @@ export interface IMapEngine<
      * Get the full camera state including bearing and pitch.
      */
     getViewState(): ViewState
-
-    /**
-     * Ground metres per CSS pixel at the view centre (exact there only when
-     * tilted). Null before the map exists or when the engine cannot say.
-     */
-    getMetersPerPixel(): number | null
 
     /** Bottom corner chrome; `'chromeinsetschange'` is emitted when it changes. */
     getChromeInsets(): MapChromeInsets

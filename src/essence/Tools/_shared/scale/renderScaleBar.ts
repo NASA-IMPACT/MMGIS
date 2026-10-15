@@ -9,7 +9,7 @@ const PAD_X = 8
 const PAD_Y = 6
 const LABEL_TEXT = 12
 const LABEL_GAP = 4
-const LABEL_INDENT = 4
+const LABEL_INDENT = 8
 const TICK = 8
 const BACKING = 'rgba(255, 255, 255, 0.8)'
 

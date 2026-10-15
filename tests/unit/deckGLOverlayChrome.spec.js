@@ -1,9 +1,9 @@
 import { test, expect, vi, beforeEach } from 'vitest'
 
-// The deck.gl engine's scale: metres per CSS pixel at the view centre, the
-// same figure converted to image pixels on every screenshot, and the 'move'
-// stream a live scale bar follows. The GL constructors are mocked (jsdom has
-// no WebGL); the basemap mock holds a settable camera and canvas.
+// What the deck.gl engine's overlay mode tells the layout and a live scale
+// bar: the 'move' stream while the camera moves, and how far the basemap's
+// logo and attribution reach up from the bottom. The GL constructors are
+// mocked (jsdom has no WebGL); the basemap mock holds a settable camera.
 
 const basemaps = []
 
@@ -12,7 +12,7 @@ vi.mock('@deck.gl/core', async (importOriginal) => {
     class MockDeck {
         constructor(props) {
             this.props = props
-            this.canvas = makeCanvas(400, 800)
+            this.canvas = makeCanvas()
         }
         setProps() {}
         redraw() {}
@@ -36,7 +36,7 @@ vi.mock('maplibre-gl', () => {
             }
             this.center = { lat: 0, lng: 0 }
             this.zoom = 0
-            this.canvas = makeCanvas(400, 800)
+            this.canvas = makeCanvas()
             basemaps.push(this)
         }
         addControl() {}
@@ -81,22 +81,16 @@ vi.mock('maplibre-gl', () => {
     }
 })
 
-// A canvas whose drawing buffer is `bufferWidth` wide while it lays out
-// `cssWidth` wide, as on a display with devicePixelRatio bufferWidth/cssWidth.
-function makeCanvas(cssWidth, bufferWidth) {
+function makeCanvas() {
     return {
-        clientWidth: cssWidth,
-        width: bufferWidth,
-        height: bufferWidth / 2,
+        width: 800,
+        height: 400,
         toBlob: (cb) => cb(new Blob(['png'], { type: 'image/png' })),
     }
 }
 
 const { DeckGLAdapter } = await import(
     '../../src/essence/Basics/MapEngines/Adapters/DeckGLAdapter.ts'
-)
-const { webMercatorMetersPerPixel } = await import(
-    '../../src/essence/Basics/MapEngines/Adapters/DeckGLHelpers.ts'
 )
 
 function makeContainer() {
@@ -130,74 +124,6 @@ const overlay = () => {
     })
     return { adapter, basemap: basemaps[0] }
 }
-
-test.describe('webMercatorMetersPerPixel', () => {
-    test('zoom 0 at the equator spans the world in 512 pixels', () => {
-        expect(webMercatorMetersPerPixel(0, 0)).toBeCloseTo(78271.517, 3)
-    })
-
-    test('shrinks with the cosine of latitude, clamped at the Mercator limit', () => {
-        expect(webMercatorMetersPerPixel(60, 3)).toBeCloseTo(
-            webMercatorMetersPerPixel(0, 3) / 2,
-            6,
-        )
-        expect(webMercatorMetersPerPixel(90, 3)).toBe(
-            webMercatorMetersPerPixel(85.051129, 3),
-        )
-        expect(webMercatorMetersPerPixel(90, 3)).toBeGreaterThan(0)
-    })
-})
-
-test.describe('DeckGLAdapter.getMetersPerPixel', () => {
-    test('standalone mode reads the camera', () => {
-        expect(standalone({ lat: 0, lng: 0 }, 0).getMetersPerPixel()).toBeCloseTo(
-            78271.517,
-            3,
-        )
-        expect(
-            standalone({ lat: 45, lng: 10 }, 10).getMetersPerPixel(),
-        ).toBeCloseTo(54.05, 2)
-    })
-
-    test('overlay mode reads the basemap camera', () => {
-        const { adapter, basemap } = overlay()
-        basemap.center = { lat: 45, lng: 0 }
-        basemap.zoom = 10
-        expect(adapter.getMetersPerPixel()).toBeCloseTo(54.05, 2)
-    })
-
-    test('reads null before the map exists', () => {
-        expect(new DeckGLAdapter().getMetersPerPixel()).toBeNull()
-    })
-})
-
-test.describe('DeckGLAdapter.captureScreenshot scale', () => {
-    // The image is twice the CSS width (devicePixelRatio 2), so each image
-    // pixel spans half the ground a CSS pixel does.
-    test('standalone mode stamps the scale in image pixels', async () => {
-        const adapter = standalone({ lat: 0, lng: 0 }, 4)
-        const shot = await adapter.captureScreenshot()
-        expect(shot.width).toBe(800)
-        expect(shot.metersPerPixel).toBeCloseTo(adapter.getMetersPerPixel() / 2, 9)
-    })
-
-    test('overlay mode stamps the scale in image pixels', async () => {
-        const { adapter, basemap } = overlay()
-        basemap.center = { lat: 60, lng: 0 }
-        basemap.zoom = 12
-        const shot = await adapter.captureScreenshot()
-        expect(shot.metersPerPixel).toBeCloseTo(
-            webMercatorMetersPerPixel(60, 12) / 2,
-            9,
-        )
-    })
-
-    test('a canvas that has not laid out stamps no scale', async () => {
-        const adapter = standalone({ lat: 0, lng: 0 }, 4)
-        adapter._deck.canvas.clientWidth = 0
-        expect((await adapter.captureScreenshot()).metersPerPixel).toBeNull()
-    })
-})
 
 test.describe('DeckGLAdapter overlay move events', () => {
     // A live scale bar follows the camera while it moves, not only when the

@@ -2,7 +2,7 @@
     "defaultIcon": "ruler",
     "description": "A scale bar for the 2D map, in metric or imperial units. Exported PNGs and PDFs carry the same bar.",
     "descriptionFull": {
-        "title": "Shows a scale bar, typically in a float-bottom-left panel over the map. The bar is labelled with a round distance (1, 2, 5, 10, ...) and follows the map as it zooms and pans, switching from metres to kilometres or from feet to miles as the view widens. While the bar is shown, PNG and PDF exports from the Share button draw a matching bar, measured for the exported image, over the map's bottom-left corner. Leave the tool out of the layout to show no bar on the map or in exports. When the map is tilted, the bar is exact at the centre of the view.",
+        "title": "Shows a scale bar, typically in a float-bottom-left panel over the map. The bar is labelled with a round distance (1, 2, 5, 10, ...) and follows the map as it zooms and pans, switching from metres to kilometres or from feet to miles as the view widens. While the bar is shown, PNG and PDF exports from the Share button draw a matching bar, measured for the exported image, over the map's bottom-left corner. Leave the tool out of the layout to show no bar on the map or in exports. The scale is measured where the bar sits, on the mission's planet, so it holds at wide zooms. The bar hides while the map is tilted more than 10°, where no single scale fits the view, and exports of a tilted view carry no bar.",
         "example": {
             "units": "metric"
         }

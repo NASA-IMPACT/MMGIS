@@ -1,5 +1,6 @@
 import L_ from '../Basics/Layers_/Layers_'
 import F_ from '../Basics/Formulae_/Formulae_'
+import { captureScreenshotWithScale } from '../Basics/MapEngines/mapScale'
 import ToolController_ from '../Basics/ToolController_/ToolController_'
 import QueryURL from '../Ancillary/QueryURL'
 import TimeControl from '../Basics/TimeControl_/TimeControl'
@@ -488,15 +489,13 @@ var mmgisAPI_ = {
     getMapScreenshot: function () {
         // Capture is engine-specific (Leaflet DOM rasterization vs deck.gl
         // canvas readback); delegate to the active IMapEngine adapter. A
-        // missing engine means no map is loaded yet.
+        // missing engine means no map is loaded yet. The scale stamped on the
+        // result is measured the same way for every engine. Being async,
+        // captureScreenshotWithScale turns a sync engine throw into a
+        // rejection.
         const engine = L_.Map_ && L_.Map_.engine
         if (engine && typeof engine.captureScreenshot === 'function') {
-            // Convert a sync engine throw into a rejection.
-            try {
-                return Promise.resolve(engine.captureScreenshot())
-            } catch (err) {
-                return Promise.reject(err)
-            }
+            return captureScreenshotWithScale(engine)
         }
         return Promise.reject(
             new Error('getMapScreenshot: no active map engine to capture')
@@ -821,7 +820,7 @@ var mmgisAPI = {
      * that the deck.gl capture is limited to the GL canvas and does not include
      * HTML overlays/markers layered on top. Asynchronous; requires no backend
      * call. Rejects if no map engine is active.
-     * @returns {Promise<{blob: Blob, mimeType: 'image/png', extension: 'png', width: number, height: number, metersPerPixel: number|null}>} - resolves to a PNG Blob plus image metadata. `metersPerPixel` is the ground distance one *image* pixel spans at the image centre, null when the engine cannot say.
+     * @returns {Promise<{blob: Blob, mimeType: 'image/png', extension: 'png', width: number, height: number, metersPerPixel: number|null}>} - resolves to a PNG Blob plus image metadata. `metersPerPixel` is the ground distance one *image* pixel spans near the image's bottom-left corner, null when the map cannot measure it.
      * Plugins should prefer `mmgisAPI.request('map:getScreenshot')`.
      */
     getMapScreenshot: mmgisAPI_.getMapScreenshot,

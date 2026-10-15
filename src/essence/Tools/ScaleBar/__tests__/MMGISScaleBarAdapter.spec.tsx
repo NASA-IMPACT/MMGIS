@@ -90,6 +90,24 @@ describe('MMGISScaleBarAdapter', () => {
         },
     )
 
+    // Map scale varies across the screen, so the bar asks for it where its
+    // rule starts: the host's bottom-left corner.
+    test('asks for the scale at its own position on the page', async () => {
+        const { container, unmount } = await mount(<MMGISScaleBarAdapter />)
+        showHost(container)
+        const host = container.querySelector('.blocks-scale-bar-host') as HTMLElement
+        host.getBoundingClientRect = () => ({ left: 24, bottom: 580 }) as DOMRect
+        await fire('map:move')
+        const request = (window as unknown as {
+            mmgisAPI: { request: ReturnType<typeof vi.fn> }
+        }).mmgisAPI.request
+        expect(request).toHaveBeenLastCalledWith('map:getMetersPerPixel', {
+            clientX: 24,
+            clientY: 580,
+        })
+        await unmount()
+    })
+
     // A map whose basemap loads asynchronously has no scale when the plugin
     // first asks; the bar appears once it does, without a zoom or pan.
     test('keeps asking until the map has a scale', async () => {

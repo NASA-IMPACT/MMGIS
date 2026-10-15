@@ -27,6 +27,14 @@ const SCALE_RETRY_LIMIT = 80
 const isOnScreen = (el: HTMLElement | null): boolean =>
     !!el && el.getClientRects().length > 0
 
+// The bar's rule starts at the host's bottom-left corner. Map scale varies
+// across the screen, so it is measured there rather than at the centre.
+const ruleStart = (el: HTMLElement | null) => {
+    if (!isOnScreen(el)) return undefined
+    const rect = el!.getBoundingClientRect()
+    return { clientX: rect.left, clientY: rect.bottom }
+}
+
 export function MMGISScaleBarAdapter() {
     const vars = useMMGISToolVars<ToolVars>('scalebar')
     const units = resolveScaleUnits(vars.units)
@@ -41,7 +49,7 @@ export function MMGISScaleBarAdapter() {
     const refresh = useCallback(async () => {
         let next: number | null = null
         try {
-            next = await mmgisGetMetersPerPixel()
+            next = await mmgisGetMetersPerPixel(ruleStart(hostRef.current))
         } catch (err) {
             console.warn('ScaleBar: reading the map scale failed', err)
         }

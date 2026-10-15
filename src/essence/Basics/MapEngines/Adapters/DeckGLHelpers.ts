@@ -84,19 +84,6 @@ export function resolvePadding(
     return padding
 }
 
-const EARTH_CIRCUMFERENCE_M = 40075016.686
-const MAX_MERCATOR_LATITUDE = 85.051129
-
-/**
- * Ground metres per pixel at `latDeg` and `zoom` on deck.gl/MapLibre's Web
- * Mercator, which lays the world out on 512-pixel tiles. Always Earth,
- * whatever the mission's planet radius.
- */
-export function webMercatorMetersPerPixel(latDeg: number, zoom: number): number {
-    const lat = Math.max(-MAX_MERCATOR_LATITUDE, Math.min(MAX_MERCATOR_LATITUDE, latDeg))
-    return (EARTH_CIRCUMFERENCE_M * Math.cos((lat * Math.PI) / 180)) / (512 * Math.pow(2, zoom))
-}
-
 /**
  * Builds a WebMercatorViewport from the given state and container size.
  * Pass `zoom` to override `state.zoom`.

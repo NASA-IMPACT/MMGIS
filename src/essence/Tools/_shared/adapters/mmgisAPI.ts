@@ -26,7 +26,8 @@ export type MapScreenshotResult = {
     extension: 'png'
     width: number
     height: number
-    /** Ground metres per image pixel at the centre, at capture time. */
+    /** Ground metres per image pixel near the image's bottom-left corner, at
+     *  capture time. */
     metersPerPixel?: number | null
 }
 
@@ -158,9 +159,16 @@ export const mmgisGetMapScreenshot = (): Promise<
     return mmgisRequestIfProvided<MapScreenshotResult>('map:getScreenshot')
 }
 
-/** Ground metres per CSS pixel at the view centre; null before the map exists. */
-export const mmgisGetMetersPerPixel = (): Promise<number | null> => {
-    return mmgisRequestIfProvided<number>('map:getMetersPerPixel')
+/**
+ * Ground metres per CSS pixel at a page position (e.g. a DOM rect's corner),
+ * or near the map's bottom-left corner when `at` is omitted. Null before the
+ * map exists or where it cannot measure.
+ */
+export const mmgisGetMetersPerPixel = (at?: {
+    clientX: number
+    clientY: number
+}): Promise<number | null> => {
+    return mmgisRequestIfProvided<number>('map:getMetersPerPixel', at)
 }
 
 export type ScaleBarSettings = { units: 'metric' | 'imperial' }

@@ -511,11 +511,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         }
     }
 
-    /** The scale bar supports the deck.gl engine only. */
-    getMetersPerPixel(): number | null {
-        return null
-    }
-
     /** The attribution control is removed at init; nothing sits at the bottom. */
     getChromeInsets(): MapChromeInsets {
         return { bottomLeft: 0, bottomRight: 0 }

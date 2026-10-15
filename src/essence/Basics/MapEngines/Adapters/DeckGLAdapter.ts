@@ -68,7 +68,6 @@ import {
     resolveLayerId,
     pickInfoToResult,
     buildDeckLayer,
-    webMercatorMetersPerPixel,
 } from './DeckGLHelpers'
 import {
     TerraDraw,
@@ -273,21 +272,7 @@ const isTerraDrawLayer = (id: string): boolean => id.startsWith(`${TERRA_DRAW_PR
  */
 const UNRANKED_Z_INDEX = Number.MAX_SAFE_INTEGER
 
-/** The on-screen scale converted to the canvas's drawing-buffer pixels,
- *  which outnumber CSS pixels by the device pixel ratio. */
-function imageMetersPerPixel(
-    canvas: HTMLCanvasElement,
-    cssMetersPerPixel: number | null
-): number | null {
-    const cssWidth = canvas.clientWidth
-    if (cssMetersPerPixel == null || !(cssWidth > 0) || !(canvas.width > 0)) return null
-    return (cssMetersPerPixel * cssWidth) / canvas.width
-}
-
-function canvasToPngScreenshot(
-    canvas: HTMLCanvasElement,
-    cssMetersPerPixel: number | null = null
-): Promise<MapScreenshotResult> {
+function canvasToPngScreenshot(canvas: HTMLCanvasElement): Promise<MapScreenshotResult> {
     return new Promise((resolve, reject) => {
         if (typeof canvas.toBlob !== 'function') {
             reject(new Error('[DeckGLAdapter] captureScreenshot: canvas.toBlob is unavailable'))
@@ -304,7 +289,6 @@ function canvasToPngScreenshot(
                 extension: 'png',
                 width: canvas.width,
                 height: canvas.height,
-                metersPerPixel: imageMetersPerPixel(canvas, cssMetersPerPixel),
             })
         }, 'image/png')
     })
@@ -806,10 +790,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                     const basemap = this._basemap
                     const onRender = () => {
                         clearTimeout(timeout)
-                        canvasToPngScreenshot(
-                            basemap.getCanvas(),
-                            this.getMetersPerPixel()
-                        ).then(resolve, reject)
+                        canvasToPngScreenshot(basemap.getCanvas()).then(
+                            resolve,
+                            reject
+                        )
                     }
                     const timeout = setTimeout(() => {
                         // Unhook, or the listener stays armed to fire a wasted
@@ -840,7 +824,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                     )
                     return
                 }
-                canvasToPngScreenshot(canvas, this.getMetersPerPixel()).then(resolve, reject)
+                canvasToPngScreenshot(canvas).then(resolve, reject)
             } catch (err) {
                 reject(err as Error)
             }
@@ -1072,16 +1056,6 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         return {
             southWest: { lat: Math.min(...lats), lng: Math.min(...lngs) },
             northEast: { lat: Math.max(...lats), lng: Math.max(...lngs) },
-        }
-    }
-
-    getMetersPerPixel(): number | null {
-        if (this._isOverlayMode ? !this._basemap : !this._deck) return null
-        // A screenshot asks for this; a failure here must not fail the capture.
-        try {
-            return webMercatorMetersPerPixel(this.getCenter().lat, this.getZoom())
-        } catch {
-            return null
         }
     }
 
