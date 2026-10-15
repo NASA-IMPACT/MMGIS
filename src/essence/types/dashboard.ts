@@ -71,6 +71,9 @@ export interface PanelSettings {
 
     /** Layout style ('overlay' | 'compact') */
     layoutStyle?: LayoutStyle;
+
+    /** Pixels the bottom floating panels sit above the map's bottom edge */
+    floatingBottomOffset?: number;
 }
 
 /**

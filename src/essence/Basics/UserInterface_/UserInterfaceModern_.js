@@ -16,6 +16,7 @@ const DEFAULT_MAX_PANEL_SIZE = 9999;
 // --- Module-Level State ---
 let panels = []
 let layoutStyle = ''
+let floatBottomOffset = 0
 let toolLoadQueue = []
 let cleanupLayoutListener = null
 let _resizeObserver = null
@@ -111,10 +112,13 @@ const _createPanelHeader = (panel) => {
     return header
 }
 
-const _renderFloatRegions = (floatPanels) => {
+const _renderFloatRegions = (floatPanels, bottomOffset = 0) => {
     if (!floatPanels || floatPanels.length === 0) return null
 
     const fragment = $('<div class="ui-float-regions"></div>')
+    if (bottomOffset > 0) {
+        fragment[0].style.setProperty('--ui-float-bottom-offset', `${bottomOffset}px`)
+    }
 
     // Group panels by their float position (validator enforces at most one per position)
     const byPosition = {}
@@ -276,10 +280,12 @@ const UserInterfaceModern_ = {
      * @param {Array} panelsArr - Array of panel objects (parsed from config & PanelManager)
      * @param {string} style - The layout style ('overlay' | 'compact')
      * @param {string} theme - The theme identifier (e.g. 'default', 'disasters')
+     * @param {number|string} bottomOffset - Pixels the bottom float zones sit above the map's bottom edge; an unusable value means 0
      */
-    init: function (panelsArr, style = 'overlay', theme = 'default') {
+    init: function (panelsArr, style = 'overlay', theme = 'default', bottomOffset = 0) {
         panels = panelsArr
         layoutStyle = style
+        floatBottomOffset = toPixelNumber(bottomOffset) ?? 0
 
         // Dynamic import() so webpack emits one lazy CSS chunk per theme and
         // only the configured one is fetched (a sync require() here bundled
@@ -613,7 +619,7 @@ const UserInterfaceModern_ = {
             }
         }
 
-        const floatRegions = _renderFloatRegions(floatPanels)
+        const floatRegions = _renderFloatRegions(floatPanels, floatBottomOffset)
         if (floatRegions) {
             centralArea.append(floatRegions)
         }
@@ -870,4 +876,4 @@ const UserInterfaceModern_ = {
 }
 
 export default UserInterfaceModern_
-export { _createPanelHeader, _createPanelIconTray, _renderRegion }
+export { _createPanelHeader, _createPanelIconTray, _renderRegion, _renderFloatRegions }

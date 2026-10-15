@@ -91,6 +91,35 @@ test.describe('DashboardConfigValidator', () => {
             expect(result.errors[0]).toMatch(/panelSettings.layoutStyle must be one of/);
         });
 
+        test('warns on an unusable floatingBottomOffset and accepts a pixel count', () => {
+            const config = (floatingBottomOffset) => ({
+                panelSettings: {
+                    floatingBottomOffset,
+                    panels: [
+                        {
+                            id: 'panel-1',
+                            position: 'left',
+                            priority: 1,
+                            layoutType: 'stacked',
+                            stateConstraints: {
+                                allowedStates: ['expanded'],
+                                defaultState: 'expanded'
+                            }
+                        }
+                    ]
+                }
+            });
+
+            expect(validateModernConfig(config(24)).warnings).toHaveLength(0);
+            expect(validateModernConfig(config('')).warnings).toHaveLength(0);
+            expect(validateModernConfig(config('24')).warnings).toHaveLength(0);
+            expect(validateModernConfig(config(Infinity)).warnings).toHaveLength(1);
+            expect(validateModernConfig(config('1e400')).warnings).toHaveLength(1);
+            const result = validateModernConfig(config(-5));
+            expect(result.valid).toBe(true);
+            expect(result.warnings[0]).toMatch(/floatingBottomOffset must be a non-negative number/);
+        });
+
         test('catches defaultState not in allowedStates', () => {
             const config = {
                 panelSettings: {

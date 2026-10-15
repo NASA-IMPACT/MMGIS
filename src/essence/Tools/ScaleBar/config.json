@@ -1,0 +1,46 @@
+{
+    "defaultIcon": "ruler",
+    "description": "A scale bar for the 2D map, in metric or imperial units. Exported PNGs and PDFs carry the same bar.",
+    "descriptionFull": {
+        "title": "Shows a scale bar, typically in a float-bottom-left panel over the map. The bar is labelled with a round distance (1, 2, 5, 10, ...), in metres and kilometres or feet and miles, and gives the scale under the pointer, or at the map's centre while the pointer is off the map. While the bar is shown, PNG and PDF exports from the Share button draw a matching bar at the same spot on the map, measured there; leave the tool out of the layout for no bar on the map or in exports. Exports carry no bar when the map is tilted more than 10° or zoomed out so far that the scale varies widely across the view.",
+        "example": {
+            "units": "metric"
+        }
+    },
+    "hasVars": true,
+    "name": "ScaleBar",
+    "toolbarPriority": 6,
+    "paths": {
+        "ScaleBarTool": "essence/Tools/ScaleBar/ScaleBarTool"
+    },
+    "metadata": {
+        "icon": "ruler",
+        "compatiblePositions": [
+            "float-top-left",
+            "float-top-center",
+            "float-top-right",
+            "float-bottom-left",
+            "float-bottom-center",
+            "float-bottom-right"
+        ],
+        "preferredPosition": "float-bottom-left",
+        "modernLayoutSupport": true
+    },
+    "config": {
+        "rows": [
+            {
+                "components": [
+                    {
+                        "field": "variables.units",
+                        "name": "Units",
+                        "description": "Metric labels the bar in metres and kilometres; imperial in feet and miles. Exports use the same units.",
+                        "type": "dropdown",
+                        "width": 4,
+                        "options": ["metric", "imperial"],
+                        "default": "metric"
+                    }
+                ]
+            }
+        ]
+    }
+}

@@ -9,7 +9,7 @@
     "defaultIcon": "share-variant",
     "description": "A \"Share map\" button that opens a menu to share the current view as a link, PNG, or PDF.",
     "descriptionFull": {
-        "title": "Adds a \"Share map\" button, typically placed in a floating panel over the map (e.g. float-top-right). Clicking it opens a compact dropdown menu. \"Copy link to view\" copies a complete, self-contained URL (layers, place, zoom, time) to the clipboard. \"Export as PNG\" downloads a snapshot of the current map, and \"Export as PDF\" embeds that same snapshot centered on a portrait page. Both exports append a legend band below the map — the name of every layer that is toggled on, with its color bar, range and unit — which can be toggled off. The PNG and PDF items can each be toggled on or off per-dashboard; the share link is always available.",
+        "title": "Adds a \"Share map\" button, typically placed in a floating panel over the map (e.g. float-top-right). Clicking it opens a compact dropdown menu. \"Copy link to view\" copies a complete, self-contained URL (layers, place, zoom, time) to the clipboard. \"Export as PNG\" downloads a snapshot of the current map, and \"Export as PDF\" embeds that same snapshot centered on a portrait page. Both exports append a legend band below the map — the name of every layer that is toggled on, with its color bar, range and unit — which can be toggled off. While the ScaleBar tool shows a scale bar on the map, both exports draw a matching bar at the same spot on the map. The PNG and PDF items can each be toggled on or off per-dashboard; the share link is always available.",
         "example": {
             "exportPng": true,
             "exportPdf": true,
