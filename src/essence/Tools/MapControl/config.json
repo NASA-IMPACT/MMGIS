@@ -1,8 +1,8 @@
 {
     "defaultIcon": "layers",
-    "description": "Floating map control bar: basemap switcher, search, measure, zoom, share, and a configurable action button.",
+    "description": "Floating map control bar: basemap switcher, search, measure, zoom, compass, share, and a configurable action button.",
     "descriptionFull": {
-        "title": "A floating horizontal toolbar rendered over the map. Basemap switcher, search, measure, zoom and share each have their own toggle; the action button appears whenever Button Link is set. The basemap switcher's popover also carries a Labels checkbox that shows or hides the basemap's place names on a map whose basemap is a vector style (deck.gl); raster basemaps have no such control."
+        "title": "A floating horizontal toolbar rendered over the map. Basemap switcher, search, measure, zoom, compass and share each have their own toggle; the action button appears whenever Button Link is set. The basemap switcher's popover also carries a Labels checkbox that shows or hides the basemap's place names on a map whose basemap is a vector style (deck.gl); raster basemaps have no such control."
     },
     "hasVars": true,
     "name": "MapControl",
@@ -55,6 +55,14 @@
                         "field": "variables.showZoom",
                         "name": "Zoom",
                         "description": "Show the zoom in / zoom out buttons.",
+                        "type": "checkbox",
+                        "width": 3,
+                        "defaultChecked": true
+                    },
+                    {
+                        "field": "variables.showCompass",
+                        "name": "Compass",
+                        "description": "Show a compass whose needle points north and tips with the map's tilt; hovering it shows the bearing and tilt. Clicking it on a deck.gl map turns the view back to north, and clicking again levels it. A Leaflet map cannot rotate, so there the compass only shows which way north is.",
                         "type": "checkbox",
                         "width": 3,
                         "defaultChecked": true

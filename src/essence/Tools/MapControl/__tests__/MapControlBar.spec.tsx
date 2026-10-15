@@ -1,5 +1,5 @@
 import React from 'react'
-import { describe, test, expect, afterEach } from 'vitest'
+import { describe, test, expect, afterEach, vi } from 'vitest'
 import { MapControlBar } from '../lib/geo/MapControlBar/MapControlBar'
 import type { ActionIcon } from '../lib/types'
 import { mount, click } from '../../_shared/__tests__/reactHarness'
@@ -257,6 +257,105 @@ describe('MapControlBar basemap labels', () => {
 
         expect(toggled).toEqual([false])
         expect(basemapPanel()).not.toBeNull()
+
+        await unmount()
+    })
+})
+
+const compassButton = (container: HTMLElement) =>
+    container.querySelector<HTMLButtonElement>('.blocks-map-control__btn--compass')
+const needle = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>('.blocks-map-control__needle')
+
+describe('MapControlBar compass', () => {
+    test('is left out when the host supplies no reset handler', async () => {
+        const { container, unmount } = await mount(
+            <MapControlBar camera={{ bearing: 30, pitch: 10 }} />,
+        )
+
+        expect(compassButton(container)).toBeNull()
+
+        await unmount()
+    })
+
+    test('sits right after the zoom buttons', async () => {
+        const { container, unmount } = await mount(
+            <MapControlBar
+                onZoomIn={() => {}}
+                onZoomOut={() => {}}
+                onResetNorth={() => {}}
+                endSlot={<div className="spec-end-slot" />}
+            />,
+        )
+
+        const children = barChildren(container)
+        const zoom = slotOf(children, container.querySelector('[title="Zoom in"]')!)
+        const compass = slotOf(children, compassButton(container)!)
+        const endSlot = slotOf(children, container.querySelector('.spec-end-slot')!)
+
+        expect(compass).toBe(zoom + 1)
+        expect(endSlot).toBe(compass + 1)
+
+        await unmount()
+    })
+
+    test('draws the needle north-up and flat before the camera is known', async () => {
+        const { container, unmount } = await mount(
+            <MapControlBar onResetNorth={() => {}} camera={null} />,
+        )
+
+        expect(needle(container)!.style.transform).toBe('rotateX(0deg) rotateZ(0deg)')
+        expect(compassButton(container)!.title).toBe('Bearing 0°, tilt 0°')
+
+        await unmount()
+    })
+
+    // A map turned clockwise by its bearing turns geographic north
+    // counter-clockwise on screen, so the needle turns by -bearing.
+    test('turns the needle against the bearing and tips it by the pitch', async () => {
+        const { container, unmount } = await mount(
+            <MapControlBar onResetNorth={() => {}} camera={{ bearing: 45, pitch: 30 }} />,
+        )
+
+        expect(needle(container)!.style.transform).toBe('rotateX(30deg) rotateZ(-45deg)')
+
+        await unmount()
+    })
+
+    test('follows the camera as it changes', async () => {
+        const { container, rerender, unmount } = await mount(
+            <MapControlBar onResetNorth={() => {}} camera={{ bearing: 10, pitch: 0 }} />,
+        )
+        await rerender(
+            <MapControlBar onResetNorth={() => {}} camera={{ bearing: -90, pitch: 60 }} />,
+        )
+
+        expect(needle(container)!.style.transform).toBe('rotateX(60deg) rotateZ(90deg)')
+
+        await unmount()
+    })
+
+    test('shows the bearing as a compass heading and the tilt on hover', async () => {
+        const { container, unmount } = await mount(
+            <MapControlBar onResetNorth={() => {}} camera={{ bearing: -45.4, pitch: 29.6 }} />,
+        )
+
+        const button = compassButton(container)!
+        expect(button.title).toBe('Bearing 315°, tilt 30°')
+        expect(button.getAttribute('aria-label')).toBe('Reset to north. Bearing 315°, tilt 30°')
+
+        await unmount()
+    })
+
+    test('calls the reset handler when clicked', async () => {
+        const onResetNorth = vi.fn()
+        const { container, unmount } = await mount(
+            <MapControlBar onResetNorth={onResetNorth} camera={{ bearing: 20, pitch: 0 }} />,
+        )
+
+        await click(compassButton(container)!)
+
+        expect(onResetNorth).toHaveBeenCalledTimes(1)
 
         await unmount()
     })

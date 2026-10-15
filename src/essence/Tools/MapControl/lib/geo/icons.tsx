@@ -72,3 +72,16 @@ export function MinusIcon() {
         </Icon>
     )
 }
+
+/**
+ * A north/south needle pointing up the viewBox. The north half carries its own
+ * class so the stylesheet can color it apart from the button's currentColor.
+ */
+export function CompassNeedleIcon() {
+    return (
+        <Icon>
+            <path className="blocks-map-control__needle-north" d="M10 1.5L14 10H6L10 1.5Z" />
+            <path d="M10 18.5L6 10H14L10 18.5Z" />
+        </Icon>
+    )
+}

@@ -21,6 +21,7 @@ import {
     setBasemapLabelsVisible,
     zoomIn,
     zoomOut,
+    resetNorth,
     subscribeToMap,
     drawOverlay,
     removeOverlay,
@@ -29,12 +30,14 @@ import {
     setCursor,
     flyToResult,
 } from './adapters/handlers'
+import { useMapCamera } from './adapters/useMapCamera'
 
 type ToolVars = {
     showBasemapSwitcher?: unknown
     showSearch?: unknown
     showMeasure?: unknown
     showZoom?: unknown
+    showCompass?: unknown
     showShare?: unknown
     includeLegend?: unknown
     actionButtonText?: unknown
@@ -136,7 +139,10 @@ export function MMGISMapControlAdapter() {
     const showSearch = !isFalsy(vars.showSearch)
     const showMeasure = !isFalsy(vars.showMeasure)
     const showZoom = !isFalsy(vars.showZoom)
+    const showCompass = !isFalsy(vars.showCompass)
     const showShare = !isFalsy(vars.showShare)
+
+    const camera = useMapCamera(showCompass)
 
     const actionLink = asText(vars.actionButtonLink)
     const actionText = asText(vars.actionButtonText)
@@ -198,6 +204,8 @@ export function MMGISMapControlAdapter() {
             onToggleBasemapLabels={showBasemapSwitcher ? onToggleBasemapLabels : undefined}
             onZoomIn={showZoom ? zoomIn : undefined}
             onZoomOut={showZoom ? zoomOut : undefined}
+            camera={showCompass ? camera : null}
+            onResetNorth={showCompass ? resetNorth : undefined}
             subscribeToMap={showMeasure ? subscribeToMap : undefined}
             onDrawOverlay={showMeasure ? drawOverlay : undefined}
             onRemoveOverlay={showMeasure ? removeOverlay : undefined}
