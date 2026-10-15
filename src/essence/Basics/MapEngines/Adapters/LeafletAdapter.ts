@@ -7,7 +7,7 @@
  * 
  */
 
-import { IMapEngine, MapScreenshotResult } from '../IMapEngine'
+import { IMapEngine, MapChromeInsets, MapScreenshotResult } from '../IMapEngine'
 import {
     LatLng,
     LatLngLike,
@@ -509,6 +509,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             southWest: { lat: bounds.getSouth(), lng: bounds.getWest() },
             northEast: { lat: bounds.getNorth(), lng: bounds.getEast() }
         }
+    }
+
+    /** The attribution control is removed at init; nothing sits at the bottom. */
+    getChromeInsets(): MapChromeInsets {
+        return { bottomLeft: 0, bottomRight: 0 }
     }
 
     /**
