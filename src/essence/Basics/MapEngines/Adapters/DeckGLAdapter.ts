@@ -37,6 +37,7 @@ import type {
     MapChromeInsets,
     MapScreenshotResult 
 } from '../IMapEngine'
+import { NO_CHROME_INSETS } from '../IMapEngine'
 import { MAP_ENGINE } from '../types/engine'
 import type { MapEngineType } from '../types/engine'
 import type { LatLng, LatLngLike, BoundsLike, PointLike } from '../types/geometry'
@@ -456,7 +457,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /** Watches the basemap's bottom control corners (logo, attribution). */
     private _chromeObserver: ResizeObserver | null = null
-    private _chromeInsets: MapChromeInsets = { bottomLeft: 0, bottomRight: 0 }
+    private _chromeInsets: MapChromeInsets = { ...NO_CHROME_INSETS }
 
     // ── Side-by-side comparison state ─────────────────────────────────────────
     // The other way of splitting the viewport: rather than one camera drawn
@@ -633,7 +634,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
         this._chromeObserver?.disconnect()
         this._chromeObserver = null
-        this._chromeInsets = { bottomLeft: 0, bottomRight: 0 }
+        this._chromeInsets = { ...NO_CHROME_INSETS }
 
         if (this._isOverlayMode) {
             if (this._basemap) {
@@ -2458,15 +2459,29 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const left = corner('left')
         const right = corner('right')
         // A corner's box includes its controls' margins; an empty one has no height.
-        const reach = (el: HTMLElement | null): number => {
-            if (!el) return 0
-            const rect = el.getBoundingClientRect()
-            if (rect.height === 0) return 0
-            return Math.max(0, Math.ceil(this._container.getBoundingClientRect().bottom - rect.top))
+        const measure = (el: HTMLElement | null, map: DOMRect) => {
+            const rect = el?.getBoundingClientRect()
+            if (!rect || rect.height === 0) return { up: 0, left: 0, right: 0 }
+            return {
+                up: Math.max(0, Math.ceil(map.bottom - rect.top)),
+                left: Math.max(0, Math.ceil(rect.right - map.left)),
+                right: Math.max(0, Math.ceil(map.right - rect.left)),
+            }
         }
         this._chromeObserver = new ResizeObserver(() => {
-            this._chromeInsets = { bottomLeft: reach(left), bottomRight: reach(right) }
-            this._emitEvent('chromeinsetschange', { ...this._chromeInsets })
+            const map = this._container.getBoundingClientRect()
+            const l = measure(left, map)
+            const r = measure(right, map)
+            const next: MapChromeInsets = {
+                bottomLeft: l.up,
+                bottomRight: r.up,
+                bottomLeftWidth: l.left,
+                bottomRightWidth: r.right,
+            }
+            const prev = this._chromeInsets
+            if ((Object.keys(next) as (keyof MapChromeInsets)[]).every((k) => next[k] === prev[k])) return
+            this._chromeInsets = next
+            this._emitEvent('chromeinsetschange', { ...next })
         })
         if (left) this._chromeObserver.observe(left)
         if (right) this._chromeObserver.observe(right)

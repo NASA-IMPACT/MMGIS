@@ -30,11 +30,20 @@ export interface MapScreenshotResult {
 }
 
 /** How far, in CSS pixels, the basemap's logo and attribution reach up from
- *  the map's bottom edge on each side. */
+ *  the map's bottom edge on each side, and in from that side's edge. */
 export interface MapChromeInsets {
     bottomLeft: number
     bottomRight: number
+    bottomLeftWidth: number
+    bottomRightWidth: number
 }
+
+export const NO_CHROME_INSETS: Readonly<MapChromeInsets> = Object.freeze({
+    bottomLeft: 0,
+    bottomRight: 0,
+    bottomLeftWidth: 0,
+    bottomRightWidth: 0,
+})
 
 /**
  * Core map engine contract.

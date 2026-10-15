@@ -20,7 +20,7 @@ let toolLoadQueue = []
 let cleanupLayoutListener = null
 let _resizeObserver = null
 let cleanupChromeListener = null
-let mapChromeInsets = { bottomLeft: 0, bottomRight: 0 }
+let mapChromeInsets = null
 
 const CHROME_INSET_VARS = {
     bottomLeft: '--ui-map-chrome-bottom-left',
@@ -28,18 +28,23 @@ const CHROME_INSET_VARS = {
 }
 
 // Lifts the bottom float zones above the basemap's logo and attribution. The
-// chrome is measured from the map's bottom edge; when a panel overlays the
-// bottom of the map, the part it covers needs no clearing.
+// chrome is measured from the map's edges. A zone needs no lift for chrome
+// that sits beside it, under a side panel, or the part under a bottom panel.
 const _applyMapChromeInsets = () => {
     const center = document.getElementById('ui-modern-center')
     const map = document.getElementById('map')
-    const covered =
-        center && map
-            ? Math.max(0, map.getBoundingClientRect().bottom - center.getBoundingClientRect().bottom)
-            : 0
+    const lifts = { bottomLeft: 0, bottomRight: 0 }
+    if (center && map && mapChromeInsets) {
+        const m = map.getBoundingClientRect()
+        const c = center.getBoundingClientRect()
+        const covered = Math.max(0, m.bottom - c.bottom)
+        if (c.left < m.left + (mapChromeInsets.bottomLeftWidth || 0))
+            lifts.bottomLeft = Math.max(0, mapChromeInsets.bottomLeft - covered)
+        if (c.right > m.right - (mapChromeInsets.bottomRightWidth || 0))
+            lifts.bottomRight = Math.max(0, mapChromeInsets.bottomRight - covered)
+    }
     Object.entries(CHROME_INSET_VARS).forEach(([side, name]) => {
-        const lift = Math.max(0, mapChromeInsets[side] - covered)
-        document.documentElement.style.setProperty(name, `${lift}px`)
+        document.documentElement.style.setProperty(name, `${lifts[side]}px`)
     })
 }
 
@@ -389,7 +394,7 @@ const UserInterfaceModern_ = {
             cleanupChromeListener()
             cleanupChromeListener = null
         }
-        mapChromeInsets = { bottomLeft: 0, bottomRight: 0 }
+        mapChromeInsets = null
         Object.values(CHROME_INSET_VARS).forEach((name) =>
             document.documentElement.style.removeProperty(name)
         )

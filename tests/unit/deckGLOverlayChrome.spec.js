@@ -92,6 +92,7 @@ function makeCanvas() {
 const { DeckGLAdapter } = await import(
     '../../src/essence/Basics/MapEngines/Adapters/DeckGLAdapter.ts'
 )
+const { NO_CHROME_INSETS } = await import('../../src/essence/Basics/MapEngines/IMapEngine.ts')
 
 function makeContainer() {
     let el = document.getElementById('map')
@@ -161,8 +162,8 @@ test.describe('DeckGLAdapter basemap chrome', () => {
         }
     })
 
-    const rect = (el, top, bottom) => {
-        el.getBoundingClientRect = () => ({ top, bottom, height: bottom - top })
+    const rect = (el, top, bottom, left = 0, right = 800) => {
+        el.getBoundingClientRect = () => ({ top, bottom, left, right, height: bottom - top })
     }
 
     test('reports how far the logo and attribution reach up from the bottom', () => {
@@ -176,11 +177,17 @@ test.describe('DeckGLAdapter basemap chrome', () => {
 
         const changes = []
         adapter.on('chromeinsetschange', (e) => changes.push(e))
-        rect(left, 569, 600)
-        rect(right, 578.5, 600)
+        rect(left, 569, 600, 0, 97.5)
+        rect(right, 578.5, 600, 580, 800)
         observers[0].cb()
-        expect(adapter.getChromeInsets()).toEqual({ bottomLeft: 31, bottomRight: 22 })
-        expect(changes).toEqual([{ bottomLeft: 31, bottomRight: 22 }])
+        const insets = { bottomLeft: 31, bottomRight: 22, bottomLeftWidth: 98, bottomRightWidth: 220 }
+        expect(adapter.getChromeInsets()).toEqual(insets)
+        expect(changes).toEqual([insets])
+
+        // A resize that leaves the rounded reach unchanged is not announced.
+        rect(left, 569.2, 600, 0, 97.6)
+        observers[0].cb()
+        expect(changes).toHaveLength(1)
     })
 
     test('an empty corner reaches nowhere', () => {
@@ -191,14 +198,11 @@ test.describe('DeckGLAdapter basemap chrome', () => {
         rect(container.querySelector('.maplibregl-ctrl-bottom-left'), 600, 600)
         rect(container.querySelector('.maplibregl-ctrl-bottom-right'), 600, 600)
         observers[0].cb()
-        expect(adapter.getChromeInsets()).toEqual({ bottomLeft: 0, bottomRight: 0 })
+        expect(adapter.getChromeInsets()).toEqual(NO_CHROME_INSETS)
     })
 
     test('standalone mode has no basemap chrome', () => {
-        expect(standalone({ lat: 0, lng: 0 }, 2).getChromeInsets()).toEqual({
-            bottomLeft: 0,
-            bottomRight: 0,
-        })
+        expect(standalone({ lat: 0, lng: 0 }, 2).getChromeInsets()).toEqual(NO_CHROME_INSETS)
         expect(observers).toHaveLength(0)
     })
 })

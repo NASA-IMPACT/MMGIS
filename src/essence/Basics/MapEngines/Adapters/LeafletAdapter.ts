@@ -7,7 +7,7 @@
  * 
  */
 
-import { IMapEngine, MapChromeInsets, MapScreenshotResult } from '../IMapEngine'
+import { IMapEngine, MapChromeInsets, MapScreenshotResult, NO_CHROME_INSETS } from '../IMapEngine'
 import {
     LatLng,
     LatLngLike,
@@ -511,9 +511,10 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         }
     }
 
-    /** The attribution control is removed at init; nothing sits at the bottom. */
+    /** The attribution control is removed at init. The scale factor control
+     *  Map_ adds when `mapscale` is configured is not measured. */
     getChromeInsets(): MapChromeInsets {
-        return { bottomLeft: 0, bottomRight: 0 }
+        return { ...NO_CHROME_INSETS }
     }
 
     /**
