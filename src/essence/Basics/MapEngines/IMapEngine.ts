@@ -160,6 +160,14 @@ export interface IMapEngine<
     flyTo(options: FlyToOptions): void
 
     /**
+     * Ease the camera one step back toward a flat, north-up view: a rotated
+     * view turns to north and keeps its tilt; a view already facing north
+     * levels out. Returns false when there is nothing to undo, or the engine
+     * cannot rotate or tilt (Leaflet).
+     */
+    resetNorth(options?: ViewOptions): boolean
+
+    /**
      * Pan to a new center with animation.
      */
     panTo(center: LatLngLike, options?: ViewOptions): void

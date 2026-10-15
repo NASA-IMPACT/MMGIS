@@ -78,6 +78,10 @@ export type ViewState = {
     time: string | null
     center: { lat: number; lng: number } | null
     zoom: number | null
+    /** Direction the top of the screen faces, degrees clockwise from north. */
+    bearing: number | null
+    /** Camera tilt from straight down, in degrees; always 0 on Leaflet. */
+    pitch: number | null
 }
 
 declare global {
@@ -201,7 +205,20 @@ export const mmgisGetScaleBarSettings = (): Promise<ScaleBarSettings | null> => 
     return mmgisRequestIfProvided<ScaleBarSettings>(EXPORT_SCALE_BAR_REQUEST)
 }
 
-/** View metadata (mission, time, center, zoom); fields null until loaded. */
+/**
+ * Which way the camera faces, from `map:getCamera`. `rotatable` is false on an
+ * engine that cannot rotate or tilt (Leaflet), where `map:resetNorth` never
+ * moves the view.
+ */
+export type CameraState = { bearing: number; pitch: number; rotatable: boolean }
+
+/** The camera's bearing and pitch; null until the engine can answer. */
+export const mmgisGetCamera = (): Promise<CameraState | null> => {
+    return mmgisRequestIfProvided<CameraState>('map:getCamera')
+}
+
+/** View metadata (mission, time, center, zoom, bearing, pitch); fields null
+ *  until loaded. */
 export const mmgisGetViewState = (): Promise<ViewState | null> => {
     return mmgisRequestIfProvided<ViewState>('map:getViewState')
 }

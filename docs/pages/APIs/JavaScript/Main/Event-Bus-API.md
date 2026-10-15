@@ -283,6 +283,7 @@ window.mmgisAPI.on('layer:visibilityChange', ({ layerName, on }) => {
 
 | Event | Payload | Description |
 |-------|---------|-------------|
+| `map:ready` | none | Fired each time the map finishes (re)initializing and its `map:` providers answer for the new engine. A listener that holds map state re-reads it here |
 | `map:move` | engine view event | Fired on every frame the camera moves, including moves made in code |
 | `map:moveend` | engine view event | Fired once the camera settles after a move |
 | `map:mousemove` | `{ latlng, containerPoint, ... }` | Fired as the pointer moves over the map. `containerPoint` is in CSS pixels from the map's top-left corner |
@@ -412,6 +413,8 @@ has already delivered — the request can resolve after a later event lands.
 | `map:showPopup` | `MapPopupRequest` | `MapPopupResult` | Show a map-anchored card, replacing any current one. Answers only once it closes. `latlng` is required, and so is one of `title` (text) and `html` (sanitized); each action carries a `label`, and focus lands on the first one when the card opens |
 | `map:hidePopup` | none | `true` | Take the current card down, resolving its request with `{ action: 'closed' }` |
 | `map:getScreenshot` | `{ scaleAt }` (optional) | `MapScreenshotResult` | The map as a PNG: `{ blob, mimeType, extension, width, height, metersPerPixel, scaleAnchor }`. `metersPerPixel` is the ground metres one *image* pixel spans at `scaleAt` (a page position, `{ clientX, clientY }`), or near the image's bottom-left corner without it. It is null when the map is tilted more than 10°, when the view spans too wide a range of latitudes for one scale, or when the map cannot measure it. `scaleAnchor` is `scaleAt` in image pixels, absent without it |
+| `map:getCamera` | none | `{ bearing, pitch, rotatable } \| null` | Which way the camera faces: `bearing` in degrees clockwise from north, `pitch` the tilt from straight down. `rotatable` is false on an engine that cannot rotate (Leaflet). Null until the engine can answer |
+| `map:resetNorth` | none | `boolean` | Ease one step toward a flat, north-up view: a rotated map turns to north and keeps its tilt, a north-facing one levels out. False when there is nothing to undo or the engine cannot rotate |
 | `map:getEngineType` | none | `'leaflet' \| 'deckgl' \| null` | Which engine is drawing the map, for a plugin whose behaviour differs by engine. Null until the mission has built one |
 
 ```javascript
