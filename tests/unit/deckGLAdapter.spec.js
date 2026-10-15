@@ -946,6 +946,7 @@ test.describe('DeckGLAdapter', () => {
                 extension: 'png',
                 width: 256,
                 height: 128,
+                metersPerPixel: null,
             })
         })
 
@@ -1025,6 +1026,9 @@ test.describe('DeckGLAdapter', () => {
                 extension: 'png',
                 width: 300,
                 height: 200,
+                // The fake canvas never laid out (no clientWidth), so the
+                // image scale is unknown.
+                metersPerPixel: null,
             })
         })
 

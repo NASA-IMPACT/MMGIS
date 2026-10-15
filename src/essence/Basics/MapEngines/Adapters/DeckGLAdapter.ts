@@ -34,6 +34,7 @@ import type {
     IMapEngine, 
     ComparisonConfig, 
     ComparisonLayout,
+    MapChromeInsets,
     MapScreenshotResult 
 } from '../IMapEngine'
 import { MAP_ENGINE } from '../types/engine'
@@ -67,6 +68,7 @@ import {
     resolveLayerId,
     pickInfoToResult,
     buildDeckLayer,
+    webMercatorMetersPerPixel,
 } from './DeckGLHelpers'
 import {
     TerraDraw,
@@ -271,7 +273,21 @@ const isTerraDrawLayer = (id: string): boolean => id.startsWith(`${TERRA_DRAW_PR
  */
 const UNRANKED_Z_INDEX = Number.MAX_SAFE_INTEGER
 
-function canvasToPngScreenshot(canvas: HTMLCanvasElement): Promise<MapScreenshotResult> {
+/** The on-screen scale converted to the canvas's drawing-buffer pixels,
+ *  which outnumber CSS pixels by the device pixel ratio. */
+function imageMetersPerPixel(
+    canvas: HTMLCanvasElement,
+    cssMetersPerPixel: number | null
+): number | null {
+    const cssWidth = canvas.clientWidth
+    if (cssMetersPerPixel == null || !(cssWidth > 0) || !(canvas.width > 0)) return null
+    return (cssMetersPerPixel * cssWidth) / canvas.width
+}
+
+function canvasToPngScreenshot(
+    canvas: HTMLCanvasElement,
+    cssMetersPerPixel: number | null = null
+): Promise<MapScreenshotResult> {
     return new Promise((resolve, reject) => {
         if (typeof canvas.toBlob !== 'function') {
             reject(new Error('[DeckGLAdapter] captureScreenshot: canvas.toBlob is unavailable'))
@@ -288,6 +304,7 @@ function canvasToPngScreenshot(canvas: HTMLCanvasElement): Promise<MapScreenshot
                 extension: 'png',
                 width: canvas.width,
                 height: canvas.height,
+                metersPerPixel: imageMetersPerPixel(canvas, cssMetersPerPixel),
             })
         }, 'image/png')
     })
@@ -453,6 +470,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     private _comparisonResizeObserver: ResizeObserver | null = null
 
+    /** Watches the basemap's bottom control corners (logo, attribution). */
+    private _chromeObserver: ResizeObserver | null = null
+    private _chromeInsets: MapChromeInsets = { bottomLeft: 0, bottomRight: 0 }
+
     // ── Side-by-side comparison state ─────────────────────────────────────────
     // The other way of splitting the viewport: rather than one camera drawn
     // twice and wiped between, each half gets a map of its own — basemap
@@ -510,9 +531,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /**
      * Bound handler kept as a class field for clean removal.
-     * Silently keeps `_viewState` in sync during animations so that
+     * Keeps `_viewState` in sync during animations so that
      * {@link projectCoordinates} and {@link unprojectCoordinates} remain
-     * accurate while the camera is moving.
+     * accurate while the camera is moving, and emits `'move'`.
      */
     private _onBasemapMove = (): void => {
         if (this._sbsSyncing) return
@@ -526,6 +547,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             pitch: this._basemap!.getPitch(),
         }
         if (this._comparisonEnabled) this._syncComparisonCamera()
+        this._emitEvent('move', this._viewState)
     }
 
     /**
@@ -624,6 +646,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
         this._comparisonEnabled = false
         this._destroyComparisonSurfaces()
+
+        this._chromeObserver?.disconnect()
+        this._chromeObserver = null
+        this._chromeInsets = { bottomLeft: 0, bottomRight: 0 }
 
         if (this._isOverlayMode) {
             if (this._basemap) {
@@ -780,10 +806,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                     const basemap = this._basemap
                     const onRender = () => {
                         clearTimeout(timeout)
-                        canvasToPngScreenshot(basemap.getCanvas()).then(
-                            resolve,
-                            reject
-                        )
+                        canvasToPngScreenshot(
+                            basemap.getCanvas(),
+                            this.getMetersPerPixel()
+                        ).then(resolve, reject)
                     }
                     const timeout = setTimeout(() => {
                         // Unhook, or the listener stays armed to fire a wasted
@@ -814,7 +840,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                     )
                     return
                 }
-                canvasToPngScreenshot(canvas).then(resolve, reject)
+                canvasToPngScreenshot(canvas, this.getMetersPerPixel()).then(resolve, reject)
             } catch (err) {
                 reject(err as Error)
             }
@@ -1046,6 +1072,16 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         return {
             southWest: { lat: Math.min(...lats), lng: Math.min(...lngs) },
             northEast: { lat: Math.max(...lats), lng: Math.max(...lngs) },
+        }
+    }
+
+    getMetersPerPixel(): number | null {
+        if (this._isOverlayMode ? !this._basemap : !this._deck) return null
+        // A screenshot asks for this; a failure here must not fail the capture.
+        try {
+            return webMercatorMetersPerPixel(this.getCenter().lat, this.getZoom())
+        } catch {
+            return null
         }
     }
 
@@ -2429,6 +2465,41 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         // switch re-anchors the layers on the new style's labels.
         this._basemap.on('style.load', this._onBasemapLoad)
         this._basemap.on('error', this._onBasemapError)
+        this._watchBasemapChrome()
+    }
+
+    /**
+     * MapLibre and Mapbox create their corner containers with the map and
+     * fill them later (logo, attribution), so the corners are measured each
+     * time they resize.
+     */
+    private _watchBasemapChrome(): void {
+        this._chromeObserver?.disconnect()
+        this._chromeObserver = null
+        if (typeof ResizeObserver === 'undefined') return
+        const corner = (side: string) =>
+            this._container.querySelector<HTMLElement>(
+                `.maplibregl-ctrl-bottom-${side}, .mapboxgl-ctrl-bottom-${side}`
+            )
+        const left = corner('left')
+        const right = corner('right')
+        // A corner's box includes its controls' margins; an empty one has no height.
+        const reach = (el: HTMLElement | null): number => {
+            if (!el) return 0
+            const rect = el.getBoundingClientRect()
+            if (rect.height === 0) return 0
+            return Math.max(0, Math.ceil(this._container.getBoundingClientRect().bottom - rect.top))
+        }
+        this._chromeObserver = new ResizeObserver(() => {
+            this._chromeInsets = { bottomLeft: reach(left), bottomRight: reach(right) }
+            this._emitEvent('chromeinsetschange', { ...this._chromeInsets })
+        })
+        if (left) this._chromeObserver.observe(left)
+        if (right) this._chromeObserver.observe(right)
+    }
+
+    getChromeInsets(): MapChromeInsets {
+        return { ...this._chromeInsets }
     }
 
     /**

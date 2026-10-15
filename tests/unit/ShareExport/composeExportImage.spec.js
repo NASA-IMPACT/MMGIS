@@ -95,4 +95,90 @@ describe('composeExportImage', () => {
             screenshot.width,
         ])
     })
+
+    describe('scale bar', () => {
+        const compose = async (model, scaleBar, scale = 1) => {
+            const calls = []
+            const canvas = makeCanvas(calls)
+            const result = await composeExportImage(screenshot, model, {
+                createBitmap: async () => ({ close: vi.fn() }),
+                createCanvas: () => canvas,
+                scale,
+                scaleBar,
+            })
+            return { calls, canvas, result }
+        }
+        const labels = (calls) =>
+            calls.filter((c) => c.op === 'fillText').map((c) => c.args[0])
+
+        // A scale bar alone still decorates the map, and adds no band: the
+        // image keeps the screenshot's size.
+        test('draws the bar with no legend, without growing the image', async () => {
+            const { calls, canvas, result } = await compose(null, {
+                metersPerPixel: 1,
+                units: 'metric',
+            })
+            expect([canvas.width, canvas.height]).toEqual([640, 480])
+            expect(result.height).toBe(480)
+            expect(calls[0].op).toBe('drawImage')
+            expect(labels(calls)).toEqual(['100 m'])
+        })
+
+        test('draws exactly one bar alongside the legend band', async () => {
+            const { calls } = await compose(bandModel, {
+                metersPerPixel: 20,
+                units: 'imperial',
+            })
+            expect(labels(calls).filter((t) => t === '1 mi')).toHaveLength(1)
+            expect(labels(calls)).toContain('Displacement')
+        })
+
+        test('an unknown scale draws no bar', async () => {
+            const createBitmap = vi.fn()
+            expect(
+                await composeExportImage(screenshot, null, {
+                    createBitmap,
+                    scaleBar: { metersPerPixel: 0, units: 'metric' },
+                }),
+            ).toBe(screenshot)
+            expect(createBitmap).not.toHaveBeenCalled()
+        })
+
+        // The bar's metres-per-pixel is already in image pixels, so its rule
+        // spans distance / metersPerPixel pixels at any DPR, and sits on the
+        // map rather than in the band below it.
+        test.each([1, 2])(
+            'the rule spans the labelled distance at scale %s',
+            async (scale) => {
+                const metersPerPixel = 0.5
+                const { calls } = await compose(
+                    bandModel,
+                    { metersPerPixel, units: 'metric' },
+                    scale,
+                )
+                const label = labels(calls).find((t) => / m$/.test(t))
+                const meters = Number(label.split(' ')[0])
+                const rule = calls.find(
+                    (c) =>
+                        c.op === 'fillRect' &&
+                        Math.abs(c.args[2] - meters / metersPerPixel) < 1e-9,
+                )
+                expect(rule).toBeDefined()
+                expect(rule.args[1]).toBeLessThan(screenshot.height)
+            },
+        )
+
+        test('the bar is never wider than a third of the image', async () => {
+            const narrow = { ...screenshot, width: 150 }
+            const calls = []
+            await composeExportImage(narrow, null, {
+                createBitmap: async () => ({ close: vi.fn() }),
+                createCanvas: () => makeCanvas(calls),
+                scale: 2,
+                scaleBar: { metersPerPixel: 1, units: 'metric' },
+            })
+            // 50 px max -> 50 m.
+            expect(labels(calls)).toEqual(['50 m'])
+        })
+    })
 })

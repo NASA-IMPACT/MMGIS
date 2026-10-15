@@ -26,6 +26,8 @@ export type MapScreenshotResult = {
     extension: 'png'
     width: number
     height: number
+    /** Ground metres per image pixel at the centre, at capture time. */
+    metersPerPixel?: number | null
 }
 
 /** The subset of a mission layer config that plugins read off the bus. */
@@ -154,6 +156,21 @@ export const mmgisGetMapScreenshot = (): Promise<
     MapScreenshotResult | null
 > => {
     return mmgisRequestIfProvided<MapScreenshotResult>('map:getScreenshot')
+}
+
+/** Ground metres per CSS pixel at the view centre; null before the map exists. */
+export const mmgisGetMetersPerPixel = (): Promise<number | null> => {
+    return mmgisRequestIfProvided<number>('map:getMetersPerPixel')
+}
+
+export type ScaleBarSettings = { units: 'metric' | 'imperial' }
+
+export const SCALE_BAR_SETTINGS_REQUEST = 'plugin:scalebar:getSettings'
+
+/** The ScaleBar plugin's units while its bar is on screen, otherwise null,
+ *  so exports carry a bar exactly when the map shows one. */
+export const mmgisGetScaleBarSettings = (): Promise<ScaleBarSettings | null> => {
+    return mmgisRequestIfProvided<ScaleBarSettings>(SCALE_BAR_SETTINGS_REQUEST)
 }
 
 /** View metadata (mission, time, center, zoom); fields null until loaded. */

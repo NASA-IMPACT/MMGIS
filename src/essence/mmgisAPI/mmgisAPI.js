@@ -821,7 +821,7 @@ var mmgisAPI = {
      * that the deck.gl capture is limited to the GL canvas and does not include
      * HTML overlays/markers layered on top. Asynchronous; requires no backend
      * call. Rejects if no map engine is active.
-     * @returns {Promise<{blob: Blob, mimeType: 'image/png', extension: 'png', width: number, height: number}>} - resolves to a PNG Blob plus image metadata.
+     * @returns {Promise<{blob: Blob, mimeType: 'image/png', extension: 'png', width: number, height: number, metersPerPixel: number|null}>} - resolves to a PNG Blob plus image metadata. `metersPerPixel` is the ground distance one *image* pixel spans at the image centre, null when the engine cannot say.
      * Plugins should prefer `mmgisAPI.request('map:getScreenshot')`.
      */
     getMapScreenshot: mmgisAPI_.getMapScreenshot,

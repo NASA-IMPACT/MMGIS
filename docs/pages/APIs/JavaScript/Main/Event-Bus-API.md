@@ -390,6 +390,8 @@ has already delivered — the request can resolve after a later event lands.
 | `map:getCenter` | none | `{ lat, lng }` | Get map center coordinates |
 | `map:getBounds` | none | `LatLngBounds` | Get map bounds |
 | `map:getZoom` | none | `number` | Get current zoom level |
+| `map:getMetersPerPixel` | none | `number \| null` | Ground metres per CSS pixel at the view centre. Exact at the centre only when the view is tilted. Null before the map exists, or when the engine cannot measure distance |
+| `map:getChromeInsets` | none | `{ bottomLeft, bottomRight }` | How far, in CSS pixels, the basemap's own logo and attribution reach up from the bottom edge of the map on each side. Zero where there is none. `map:chromeInsetsChange` carries the same shape whenever it changes |
 | `map:setView` | `{ center, zoom }` | `true` | Set map view |
 | `map:fitBounds` | `bounds` | `true` | Fit map to bounds |
 | `map:panTo` | `{ lat, lng }` | `true` | Pan map to coordinates |

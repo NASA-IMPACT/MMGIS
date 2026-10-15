@@ -260,6 +260,8 @@ let Map_ = {
                 window.mmgisAPI.provide('map:getCenter', () => engine.getCenter()),
                 window.mmgisAPI.provide('map:getBounds', () => engine.getBounds()),
                 window.mmgisAPI.provide('map:getZoom', () => engine.getZoom()),
+                window.mmgisAPI.provide('map:getMetersPerPixel', () => engine.getMetersPerPixel()),
+                window.mmgisAPI.provide('map:getChromeInsets', () => engine.getChromeInsets()),
                 window.mmgisAPI.provide('map:setView', ({ center, zoom } = {}) => {
                     if (!center) return false
                     engine.setView(center, zoom)
@@ -407,6 +409,7 @@ let Map_ = {
             reEmit('drawcancel', 'map:drawcancel')
             reEmit('move', 'map:move')
             reEmit('moveend', 'map:moveend')
+            reEmit('chromeinsetschange', 'map:chromeInsetsChange')
             // Pointer streams consumed by plugins (e.g. measure tools, overlays).
             reEmit('click', 'map:click')
             reEmit('mousemove', 'map:mousemove')

@@ -23,6 +23,16 @@ export interface MapScreenshotResult {
     extension: 'png'
     width: number
     height: number
+    /** Ground metres per *image* pixel at the centre, at capture time.
+     *  Null or absent when the engine cannot say. */
+    metersPerPixel?: number | null
+}
+
+/** How far, in CSS pixels, the basemap's logo and attribution reach up from
+ *  the map's bottom edge on each side. */
+export interface MapChromeInsets {
+    bottomLeft: number
+    bottomRight: number
 }
 
 /**
@@ -128,6 +138,15 @@ export interface IMapEngine<
      * Get the full camera state including bearing and pitch.
      */
     getViewState(): ViewState
+
+    /**
+     * Ground metres per CSS pixel at the view centre (exact there only when
+     * tilted). Null before the map exists or when the engine cannot say.
+     */
+    getMetersPerPixel(): number | null
+
+    /** Bottom corner chrome; `'chromeinsetschange'` is emitted when it changes. */
+    getChromeInsets(): MapChromeInsets
 
     /**
      * Set the full camera state. Leaflet adapter ignores bearing and pitch.

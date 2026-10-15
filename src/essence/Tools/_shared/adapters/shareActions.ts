@@ -3,12 +3,18 @@ import {
     mmgisGetMapScreenshot,
     mmgisGetViewState,
     mmgisCopyText,
+    mmgisGetScaleBarSettings,
     type MapScreenshotResult,
+    type ScaleBarSettings,
     type ViewState,
 } from './mmgisAPI'
 import { buildSharePdf, type JsPdfLike } from './sharePdf'
 import { blobToDataUrl, downloadBlob } from './download'
-import { composeExportImage } from '../legend/composeExportImage'
+import {
+    composeExportImage,
+    type ComposeDeps,
+    type ExportScaleBar,
+} from '../legend/composeExportImage'
 import {
     getExportLegendModel,
     type ExportLegendModel,
@@ -68,28 +74,60 @@ export async function copyShareLink(
 export type LegendDeps = {
     includeLegend?: boolean
     getLegendModel?: () => Promise<ExportLegendModel>
+    getScaleBarSettings?: () => Promise<ScaleBarSettings | null>
     compose?: (
         screenshot: MapScreenshotResult,
-        model: ExportLegendModel,
+        model: ExportLegendModel | null,
+        deps?: ComposeDeps,
     ) => Promise<MapScreenshotResult>
 }
 
-// The export must never fail because the legend did — deliver the plain map
-// and log, rather than surfacing a broken download.
-async function applyLegend(
+// Uses the capture's own scale, which is in image pixels and of that exact view.
+async function resolveExportScaleBar(
+    screenshot: MapScreenshotResult,
+    getScaleBarSettings: () => Promise<ScaleBarSettings | null>,
+): Promise<ExportScaleBar | null> {
+    try {
+        const settings = await getScaleBarSettings()
+        if (!settings) return null
+        const { metersPerPixel } = screenshot
+        if (typeof metersPerPixel !== 'number' || !(metersPerPixel > 0)) {
+            console.warn('Share export: scale bar omitted, the map gave no scale')
+            return null
+        }
+        return { metersPerPixel, units: settings.units }
+    } catch (err) {
+        console.warn('Share export: scale bar omitted', err)
+        return null
+    }
+}
+
+// The export must never fail because a decoration did — deliver what can be
+// drawn and log the rest, rather than surfacing a broken download.
+async function applyDecorations(
     screenshot: MapScreenshotResult,
     deps: LegendDeps,
 ): Promise<MapScreenshotResult> {
     const {
         includeLegend = true,
         getLegendModel = getExportLegendModel,
+        getScaleBarSettings = mmgisGetScaleBarSettings,
         compose = composeExportImage,
     } = deps
-    if (!includeLegend) return screenshot
+    const scaleBar = await resolveExportScaleBar(screenshot, getScaleBarSettings)
+    let model: ExportLegendModel | null = null
+    if (includeLegend) {
+        try {
+            model = await getLegendModel()
+        } catch (err) {
+            console.warn('Share export: legend omitted', err)
+        }
+    }
+    if (!model && !scaleBar) return screenshot
     try {
-        return await compose(screenshot, await getLegendModel())
+        return await compose(screenshot, model, { scaleBar })
     } catch (err) {
-        console.warn('Share export: legend omitted', err)
+        console.warn('Share export: legend and scale bar omitted', err)
         return screenshot
     }
 }
@@ -114,7 +152,7 @@ export async function downloadSharePng(
     } = deps
     const screenshot = await getScreenshot()
     if (!screenshot) throw new Error('No screenshot available')
-    const composed = await applyLegend(screenshot, deps)
+    const composed = await applyDecorations(screenshot, deps)
     const filename =
         deps.filename ??
         buildExportFilename(composed.extension, await getViewState())
@@ -150,7 +188,7 @@ export async function downloadSharePdf(
     } = deps
     const screenshot = await getScreenshot()
     if (!screenshot) throw new Error('No screenshot available')
-    const composed = await applyLegend(screenshot, deps)
+    const composed = await applyDecorations(screenshot, deps)
     const dataUrl = await convertBlobToDataUrl(composed.blob)
     const doc = await buildPdf(dataUrl, composed.width, composed.height)
     const filename =
