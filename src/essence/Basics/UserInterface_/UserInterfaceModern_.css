@@ -555,13 +555,14 @@ body.ui-is-dragging .ui-modern-grid .ui-panel {
     padding: var(--ui-float-outer-gap);
 }
 
-/* Zone positions */
+/* Zone positions. The bottom zones sit --ui-float-bottom-offset above the
+   map's bottom edge (panelSettings.floatingBottomOffset). */
 .ui-float-zone-top-left     { top: 0; left: 0; }
 .ui-float-zone-top-center   { top: 0; left: 50%; transform: translateX(-50%); }
 .ui-float-zone-top-right    { top: 0; right: 0; }
-.ui-float-zone-bottom-left  { bottom: 0; left: 0; }
-.ui-float-zone-bottom-center { bottom: 0; left: 50%; transform: translateX(-50%); }
-.ui-float-zone-bottom-right { bottom: 0; right: 0; }
+.ui-float-zone-bottom-left  { bottom: var(--ui-float-bottom-offset, 0px); left: 0; }
+.ui-float-zone-bottom-center { bottom: var(--ui-float-bottom-offset, 0px); left: 50%; transform: translateX(-50%); }
+.ui-float-zone-bottom-right { bottom: var(--ui-float-bottom-offset, 0px); right: 0; }
 
 /* Float panels re-enable pointer events */
 .ui-float-panel {

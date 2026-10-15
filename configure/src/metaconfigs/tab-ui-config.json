@@ -246,6 +246,15 @@
       "name": "Floating Panels (Center Area)",
       "components": [
         {
+          "field": "panelSettings.floatingBottomOffset",
+          "name": "Bottom Offset (px)",
+          "description": "Raises the bottom-left, bottom-center and bottom-right floating panels this many pixels above the map's bottom edge, e.g. to keep them clear of the basemap's logo and attribution.",
+          "type": "number",
+          "default": 0,
+          "width": 6,
+          "min": 0
+        },
+        {
           "field": "panelSettings.floatingPanels",
           "name": "Floating Panels",
           "description": "Panels that float over the center map area. Each floating panel is anchored to one of six positions. At most one panel per position is allowed.",
