@@ -40,6 +40,18 @@ export const VALID_LAYOUT_STYLES = ['overlay', 'compact'] as const;
 export type LayoutStyle = typeof VALID_LAYOUT_STYLES[number];
 
 /**
+ * The sides panelSettings.floatingOffset lists, in CSS shorthand order.
+ */
+export const FLOAT_OFFSET_SIDES = ['top', 'right', 'bottom', 'left'] as const;
+export type FloatOffsetSide = typeof FLOAT_OFFSET_SIDES[number];
+
+/**
+ * Largest value of each panelSettings.floatingOffset entry, in pixels. The
+ * Configure fields (tab-ui-config.json) carry the same max.
+ */
+export const MAX_FLOAT_OFFSET = 200;
+
+/**
  * Mission, Site, Venue configuration object
  */
 export interface MSVConfig {
@@ -71,6 +83,14 @@ export interface PanelSettings {
 
     /** Layout style ('overlay' | 'compact') */
     layoutStyle?: LayoutStyle;
+
+    /**
+     * Pixels the floating panels sit in from each edge of the map, as
+     * [top, right, bottom, left]. Each entry is a number or a numeric/'px'
+     * string ('24', '24px'); a missing, null or '' entry (a cleared Configure
+     * field) means 0. Each entry is capped at MAX_FLOAT_OFFSET.
+     */
+    floatingOffset?: Array<number | string | null>;
 }
 
 /**
