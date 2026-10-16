@@ -14,7 +14,7 @@
 
 import { PANEL_POSITION, PANEL_STATE, PANEL_LAYOUT_TYPE, FLOAT_POSITIONS } from '../Basics/PanelManager_/types/layout'
 import { TOOL_ORIENTATION } from '../Basics/ToolController_/types/tool'
-import { VALID_MODES, VALID_LAYOUT_STYLES, MAX_FLOAT_BOTTOM_OFFSET } from '../types/dashboard'
+import { VALID_MODES, VALID_LAYOUT_STYLES, FLOAT_OFFSET_SIDES, MAX_FLOAT_OFFSET } from '../types/dashboard'
 import { isDimensionSet, toCssDimension, toPixelNumber, DIMENSION_HINT } from '../Basics/PanelManager_/dimensions'
 
 // Extract valid values from TypeScript constants
@@ -76,16 +76,33 @@ export function validateModernConfig(config) {
         )
     }
 
-    // Validate floatingBottomOffset (optional, defaults to 0)
-    const offset = panelSettings.floatingBottomOffset
-    if (isDimensionSet(offset)) {
-        const offsetPx = toPixelNumber(offset, { allowZero: true })
-        if (offsetPx === null) {
-            warnings.push('panelSettings.floatingBottomOffset must be a non-negative number of pixels; using 0')
-        } else if (offsetPx > MAX_FLOAT_BOTTOM_OFFSET) {
+    // Validate floatingOffset (optional [top, right, bottom, left], each defaults to 0)
+    const offsets = panelSettings.floatingOffset
+    if (offsets !== undefined && offsets !== null) {
+        if (!Array.isArray(offsets)) {
             warnings.push(
-                `panelSettings.floatingBottomOffset must be at most ${MAX_FLOAT_BOTTOM_OFFSET} pixels; using ${MAX_FLOAT_BOTTOM_OFFSET}`
+                'panelSettings.floatingOffset must be an array of [top, right, bottom, left] pixels; using 0 on every side'
             )
+        } else {
+            if (offsets.length > FLOAT_OFFSET_SIDES.length) {
+                warnings.push(
+                    `panelSettings.floatingOffset has more than ${FLOAT_OFFSET_SIDES.length} entries; extra entries are ignored`
+                )
+            }
+            FLOAT_OFFSET_SIDES.forEach((side, i) => {
+                const offset = offsets[i]
+                if (!isDimensionSet(offset)) return
+                const offsetPx = toPixelNumber(offset, { allowZero: true })
+                if (offsetPx === null) {
+                    warnings.push(
+                        `panelSettings.floatingOffset[${i}] (${side}) must be a non-negative number of pixels; using 0`
+                    )
+                } else if (offsetPx > MAX_FLOAT_OFFSET) {
+                    warnings.push(
+                        `panelSettings.floatingOffset[${i}] (${side}) must be at most ${MAX_FLOAT_OFFSET} pixels; using ${MAX_FLOAT_OFFSET}`
+                    )
+                }
+            })
         }
     }
 

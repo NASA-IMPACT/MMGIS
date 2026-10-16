@@ -532,10 +532,18 @@ body.ui-is-dragging .ui-modern-grid .ui-panel {
     --ui-float-outer-gap: var(--theme-spacing-2, 1rem);
 }
 
-/* Invisible wrapper that holds all float zones */
+/* Invisible wrapper that holds all float zones. It sits
+   --ui-float-offset-{top,right,bottom,left} in from the map's edges
+   (panelSettings.floatingOffset), so every zone moves with it and the center
+   zones stay centered between the side offsets. Each side is capped at a
+   quarter of the map's size so large offsets on a small viewport still leave
+   the zones room. */
 .ui-float-regions {
     position: absolute;
-    inset: 0;
+    top: min(var(--ui-float-offset-top, 0px), 25%);
+    right: min(var(--ui-float-offset-right, 0px), 25%);
+    bottom: min(var(--ui-float-offset-bottom, 0px), 25%);
+    left: min(var(--ui-float-offset-left, 0px), 25%);
     pointer-events: none;
     z-index: 5;
 }
@@ -555,16 +563,13 @@ body.ui-is-dragging .ui-modern-grid .ui-panel {
     padding: var(--ui-float-outer-gap);
 }
 
-/* Zone positions. The bottom zones sit --ui-float-bottom-offset above the
-   map's bottom edge (panelSettings.floatingBottomOffset), capped at half the
-   map's height so a large offset on a short viewport cannot push them into
-   the top zones or off the map. */
+/* Zone positions */
 .ui-float-zone-top-left     { top: 0; left: 0; }
 .ui-float-zone-top-center   { top: 0; left: 50%; transform: translateX(-50%); }
 .ui-float-zone-top-right    { top: 0; right: 0; }
-.ui-float-zone-bottom-left  { bottom: min(var(--ui-float-bottom-offset, 0px), 50%); left: 0; }
-.ui-float-zone-bottom-center { bottom: min(var(--ui-float-bottom-offset, 0px), 50%); left: 50%; transform: translateX(-50%); }
-.ui-float-zone-bottom-right { bottom: min(var(--ui-float-bottom-offset, 0px), 50%); right: 0; }
+.ui-float-zone-bottom-left  { bottom: 0; left: 0; }
+.ui-float-zone-bottom-center { bottom: 0; left: 50%; transform: translateX(-50%); }
+.ui-float-zone-bottom-right { bottom: 0; right: 0; }
 
 /* Float panels re-enable pointer events */
 .ui-float-panel {

@@ -91,10 +91,10 @@ test.describe('DashboardConfigValidator', () => {
             expect(result.errors[0]).toMatch(/panelSettings.layoutStyle must be one of/);
         });
 
-        test('warns on an unusable floatingBottomOffset and accepts a pixel count', () => {
-            const config = (floatingBottomOffset) => ({
+        test('warns on an unusable floatingOffset and accepts pixel counts per side', () => {
+            const config = (floatingOffset) => ({
                 panelSettings: {
-                    floatingBottomOffset,
+                    floatingOffset,
                     panels: [
                         {
                             id: 'panel-1',
@@ -109,19 +109,23 @@ test.describe('DashboardConfigValidator', () => {
                     ]
                 }
             });
+            const warningsFor = (offset) => validateModernConfig(config(offset)).warnings;
 
-            expect(validateModernConfig(config(24)).warnings).toHaveLength(0);
-            expect(validateModernConfig(config('')).warnings).toHaveLength(0);
-            expect(validateModernConfig(config('24')).warnings).toHaveLength(0);
-            expect(validateModernConfig(config(Infinity)).warnings).toHaveLength(1);
-            expect(validateModernConfig(config('1e400')).warnings).toHaveLength(1);
-            expect(validateModernConfig(config(200)).warnings).toHaveLength(0);
-            expect(validateModernConfig(config('201px')).warnings[0]).toMatch(
-                /floatingBottomOffset must be at most 200 pixels/
+            expect(warningsFor(undefined)).toHaveLength(0);
+            expect(warningsFor([0, 0, 24, 0])).toHaveLength(0);
+            expect(warningsFor(['8', '16px', 200, 0])).toHaveLength(0);
+            expect(warningsFor([null, null, 32])).toHaveLength(0);
+            expect(warningsFor(['', '', '', ''])).toHaveLength(0);
+            expect(warningsFor([Infinity, 0, '1e400', 0])).toHaveLength(2);
+            expect(warningsFor([0, 0, '201px', 0])[0]).toMatch(
+                /floatingOffset\[2\] \(bottom\) must be at most 200 pixels/
             );
-            const result = validateModernConfig(config(-5));
-            expect(result.valid).toBe(true);
-            expect(result.warnings[0]).toMatch(/floatingBottomOffset must be a non-negative number/);
+            expect(warningsFor([0, 0, 0, -5])[0]).toMatch(
+                /floatingOffset\[3\] \(left\) must be a non-negative number/
+            );
+            expect(warningsFor(24)[0]).toMatch(/floatingOffset must be an array/);
+            expect(warningsFor([1, 2, 3, 4, 5])[0]).toMatch(/more than 4 entries/);
+            expect(validateModernConfig(config([0, 0, 0, -5])).valid).toBe(true);
         });
 
         test('catches defaultState not in allowedStates', () => {

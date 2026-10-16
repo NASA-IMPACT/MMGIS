@@ -6,7 +6,7 @@ import { getValidIconClass } from '../ToolController_/ToolMetadataUtils'
 import { createLogger } from '../Logger_/Logger_'
 import { PANEL_STATE, FLOAT_POSITIONS } from '../PanelManager_/types/layout'
 import { toCssDimension, toPixelNumber } from '../PanelManager_/dimensions'
-import { MAX_FLOAT_BOTTOM_OFFSET } from '../../types/dashboard'
+import { FLOAT_OFFSET_SIDES, MAX_FLOAT_OFFSET } from '../../types/dashboard'
 import './UserInterfaceModern_.css'
 
 const logger = createLogger('UserInterfaceModern')
@@ -17,7 +17,7 @@ const DEFAULT_MAX_PANEL_SIZE = 9999;
 // --- Module-Level State ---
 let panels = []
 let layoutStyle = ''
-let floatBottomOffset = 0
+let floatOffsets = [0, 0, 0, 0]
 let toolLoadQueue = []
 let cleanupLayoutListener = null
 let _resizeObserver = null
@@ -113,13 +113,27 @@ const _createPanelHeader = (panel) => {
     return header
 }
 
-const _renderFloatRegions = (floatPanels, bottomOffset = 0) => {
+/**
+ * panelSettings.floatingOffset as four pixel counts in [top, right, bottom,
+ * left] order. A missing or unusable entry is 0; each is capped at
+ * MAX_FLOAT_OFFSET.
+ */
+const _toFloatOffsets = (value) => {
+    const entries = Array.isArray(value) ? value : []
+    return FLOAT_OFFSET_SIDES.map((_, i) =>
+        Math.min(toPixelNumber(entries[i], { allowZero: true }) ?? 0, MAX_FLOAT_OFFSET)
+    )
+}
+
+const _renderFloatRegions = (floatPanels, offsets = []) => {
     if (!floatPanels || floatPanels.length === 0) return null
 
     const fragment = $('<div class="ui-float-regions"></div>')
-    if (bottomOffset > 0) {
-        fragment[0].style.setProperty('--ui-float-bottom-offset', `${bottomOffset}px`)
-    }
+    FLOAT_OFFSET_SIDES.forEach((side, i) => {
+        if (offsets[i] > 0) {
+            fragment[0].style.setProperty(`--ui-float-offset-${side}`, `${offsets[i]}px`)
+        }
+    })
 
     // Group panels by their float position (validator enforces at most one per position)
     const byPosition = {}
@@ -281,12 +295,12 @@ const UserInterfaceModern_ = {
      * @param {Array} panelsArr - Array of panel objects (parsed from config & PanelManager)
      * @param {string} style - The layout style ('overlay' | 'compact')
      * @param {string} theme - The theme identifier (e.g. 'default', 'disasters')
-     * @param {number|string} bottomOffset - Pixels the bottom float zones sit above the map's bottom edge; an unusable value means 0, and it is capped at MAX_FLOAT_BOTTOM_OFFSET
+     * @param {Array<number|string>} floatOffset - Pixels the float zones sit in from each edge of the map, as [top, right, bottom, left]; a missing or unusable entry means 0, and each is capped at MAX_FLOAT_OFFSET
      */
-    init: function (panelsArr, style = 'overlay', theme = 'default', bottomOffset = 0) {
+    init: function (panelsArr, style = 'overlay', theme = 'default', floatOffset = []) {
         panels = panelsArr
         layoutStyle = style
-        floatBottomOffset = Math.min(toPixelNumber(bottomOffset) ?? 0, MAX_FLOAT_BOTTOM_OFFSET)
+        floatOffsets = _toFloatOffsets(floatOffset)
 
         // Dynamic import() so webpack emits one lazy CSS chunk per theme and
         // only the configured one is fetched (a sync require() here bundled
@@ -620,7 +634,7 @@ const UserInterfaceModern_ = {
             }
         }
 
-        const floatRegions = _renderFloatRegions(floatPanels, floatBottomOffset)
+        const floatRegions = _renderFloatRegions(floatPanels, floatOffsets)
         if (floatRegions) {
             centralArea.append(floatRegions)
         }
@@ -877,4 +891,4 @@ const UserInterfaceModern_ = {
 }
 
 export default UserInterfaceModern_
-export { _createPanelHeader, _createPanelIconTray, _renderRegion, _renderFloatRegions }
+export { _createPanelHeader, _createPanelIconTray, _renderRegion, _renderFloatRegions, _toFloatOffsets }
