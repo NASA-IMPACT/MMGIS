@@ -29,10 +29,13 @@ Bus-only — no core imports.
   emits `seriesCleared`, so the previous chart never sits under an error.
 - Changing the range refetches the same feature, 400 ms after the last
   change, and emits `seriesReady` again, so the chart replaces its card.
-- Start and End use the Timeline's date picker (calendar plus a UTC time, to
-  the minute). Each is bounded by the other, so the range cannot be
-  reversed; End also stops at the end of today. A picked End covers its
-  whole minute (`…:59`), a picked Start begins on it (`…:00`).
+- Start and End use the Timeline's date picker, stepping at the layer's
+  **Cadence**: to the minute (hour, the default), or by day, month or year.
+  Each is bounded by the other, so the range cannot be reversed; End also
+  stops at the end of today. A picked Start opens its step and a picked End
+  closes it: a day runs `T00:00:00` to `T23:59:59`, a month its first to its
+  last day, a year Jan 1 to Dec 31; in hour mode a picked End covers its
+  whole minute (`…:59`) and a picked Start begins on it (`…:00`).
 - A new request aborts any in-flight fetch and replaces the chart (single
   `chartId: 'vector-timeseries'`). The chart stays until the next request
   replaces it, EXIT clears it, or a fetch fails. Fetches time out after 30
@@ -122,6 +125,7 @@ vector-tile layer's page. The fields write the block below.
 | `xKey` / `yKey` | no | Dot-paths to a point's time and value (defaults `datetime` and `value`), resolved at the point's top level and under `properties.`, so GeoJSON observation features need nothing set. Time values are ISO datetime strings or epoch milliseconds. |
 | `groupBy` | no | Dot-path whose distinct values split the response into one series each (e.g. one line per measured parameter). |
 | `unitKey` | no | Dot-path to a point's unit, carried onto its series; SeriesChart shows it in the card footer next to the variable name. |
+| `cadence` | no | How often the series has a value: `hour` (default), `day`, `month` or `year`. Sets the step of the Start and End pickers. Declared here rather than read from the layer's Data Time Interval, since an hourly layer can feed a daily series. |
 
 ## Working demo: EPA AQS stations (dev.openveda.cloud)
 

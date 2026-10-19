@@ -4,6 +4,9 @@ import {
     templateUrl,
     seedRange,
     parseSpan,
+    parseCadence,
+    cadenceStart,
+    cadenceEnd,
     subtractSpan,
     pageInfo,
     resolvePageUrl,
@@ -208,6 +211,43 @@ describe('fetchTimeseries lib', () => {
                 expect(parseSpan(value)).toBeNull()
             },
         )
+    })
+
+    describe('parseCadence', () => {
+        test.each([
+            ['hour', 'HOUR'],
+            ['day', 'DAY'],
+            ['month', 'MONTH'],
+            ['year', 'YEAR'],
+            [' Day ', 'DAY'],
+            ['YEAR', 'YEAR'],
+        ])('reads %s', (value, mode) => {
+            expect(parseCadence(value)).toBe(mode)
+        })
+
+        test.each(['', 'daily', 'P1D', '1 day', 12, null, undefined])('rejects %s', (value) => {
+            expect(parseCadence(value)).toBeNull()
+        })
+    })
+
+    describe('cadenceStart and cadenceEnd', () => {
+        const at = new Date('2024-02-10T14:37:21Z')
+
+        test.each([
+            ['HOUR', '2024-02-10T14:37:00.000Z', '2024-02-10T14:37:59.000Z'],
+            ['DAY', '2024-02-10T00:00:00.000Z', '2024-02-10T23:59:59.000Z'],
+            ['MONTH', '2024-02-01T00:00:00.000Z', '2024-02-29T23:59:59.000Z'],
+            ['YEAR', '2024-01-01T00:00:00.000Z', '2024-12-31T23:59:59.000Z'],
+        ])('%s opens and closes the step holding the instant', (mode, start, end) => {
+            expect(cadenceStart(at, mode).toISOString()).toBe(start)
+            expect(cadenceEnd(at, mode).toISOString()).toBe(end)
+        })
+
+        test('the last step of a year closes on Dec 31', () => {
+            const at = new Date('2023-12-31T08:00:00Z')
+            expect(cadenceEnd(at, 'MONTH').toISOString()).toBe('2023-12-31T23:59:59.000Z')
+            expect(cadenceEnd(at, 'DAY').toISOString()).toBe('2023-12-31T23:59:59.000Z')
+        })
     })
 
     describe('subtractSpan', () => {

@@ -3,6 +3,7 @@
 // into the shared chart-series payload. No MMGIS, no DOM, no fetch — the
 // tool entry owns I/O, everything here is unit-testable.
 
+import type { TimeMode } from '../../Timeline/lib'
 import {
     isRecord,
     type ChartPoint,
@@ -47,6 +48,9 @@ export interface TimeseriesConfig {
      *  '1 day', '1 week', '1 month' or '1 year' (default), or an ISO
      *  duration such as P7D. */
     defaultSpan?: string
+    /** How often the series has a value: 'hour' (default), 'day', 'month'
+     *  or 'year'. The step of the card's Start and End pickers. */
+    cadence?: string
 }
 
 export interface FeatureLike {
@@ -122,6 +126,40 @@ export const startOfUtcDay = (d: Date) =>
     new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
 export const endOfUtcDay = (d: Date) =>
     new Date(startOfUtcDay(d).getTime() + DAY_MS - 1000)
+
+export const DEFAULT_TIME_MODE: TimeMode = 'HOUR'
+
+export function parseCadence(value: unknown): TimeMode | null {
+    if (typeof value !== 'string') return null
+    const mode = value.trim().toUpperCase()
+    return mode === 'HOUR' || mode === 'DAY' || mode === 'MONTH' || mode === 'YEAR'
+        ? mode
+        : null
+}
+
+// The step a picker in `mode` commits; HOUR mode reads to the minute.
+const stepParts = (d: Date, mode: TimeMode) => ({
+    y: d.getUTCFullYear(),
+    mo: mode === 'YEAR' ? 0 : d.getUTCMonth(),
+    day: mode === 'YEAR' || mode === 'MONTH' ? 1 : d.getUTCDate(),
+    h: mode === 'HOUR' ? d.getUTCHours() : 0,
+    mi: mode === 'HOUR' ? d.getUTCMinutes() : 0,
+})
+
+export function cadenceStart(date: Date, mode: TimeMode): Date {
+    const { y, mo, day, h, mi } = stepParts(date, mode)
+    return new Date(Date.UTC(y, mo, day, h, mi))
+}
+
+export function cadenceEnd(date: Date, mode: TimeMode): Date {
+    const { y, mo, day, h, mi } = stepParts(date, mode)
+    let next: number
+    if (mode === 'YEAR') next = Date.UTC(y + 1, 0, 1)
+    else if (mode === 'MONTH') next = Date.UTC(y, mo + 1, 1)
+    else if (mode === 'DAY') next = Date.UTC(y, mo, day + 1)
+    else next = Date.UTC(y, mo, day, h, mi + 1)
+    return new Date(next - 1000)
+}
 
 const parseInstant = (value: string | null | undefined): Date | null => {
     if (!value) return null

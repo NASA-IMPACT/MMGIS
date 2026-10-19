@@ -94,6 +94,33 @@ describe('FetchTimeseriesTool', () => {
         )
     }
 
+    /** Picks `YYYY-MM-DD` through a day-stepped field's calendar; the day
+     *  click closes it. */
+    const pickDay = async (label, value) => {
+        const [year, month, day] = value.split('-').map(Number)
+        await act(() => field(label).querySelector('.date-selector-main-button').click())
+        await act(() => setValue(popover().querySelector('input[aria-label="Year"]'), String(year)))
+        await act(() =>
+            setValue(popover().querySelector('select[aria-label="Month"]'), String(month - 1), 'change'),
+        )
+        await act(() =>
+            [...popover().querySelectorAll('.day-calendar-cell')]
+                .find((b) => b.textContent === String(day))
+                .click(),
+        )
+    }
+
+    /** Picks a month by its short name through a month-stepped field, in the
+     *  year the field already shows; the click closes it. */
+    const pickMonth = async (label, monthShort) => {
+        await act(() => field(label).querySelector('.date-selector-main-button').click())
+        await act(() =>
+            [...popover().querySelectorAll('.month-grid-cell')]
+                .find((b) => b.textContent === monthShort)
+                .click(),
+        )
+    }
+
     /** Whether the field's calendar refuses a day, opened on that day's month. */
     const dayDisabled = async (label, value) => {
         const [year, month, day] = value.split('-').map(Number)
@@ -555,6 +582,42 @@ describe('FetchTimeseriesTool', () => {
         await request()
         expect(await dayDisabled('End', '2026-09-24')).toBe(false)
         expect(await dayDisabled('End', '2026-09-25')).toBe(true)
+    })
+
+    test('a day cadence shows days only; a picked Start opens its day and a picked End closes it', async () => {
+        layerConfigs[LAYER].variables.timeseries.cadence = 'day'
+        await request()
+        expect(shownOf('Start')).toBe('Sep 25, 2025')
+        expect(shownOf('End')).toBe('Sep 24, 2026')
+        await pickDay('Start', '2026-03-01')
+        await pickDay('End', '2026-03-10')
+        await settle()
+        expect(filterOf(fetchMock.mock.calls[1][0])).toBe(
+            "datetime >= '2026-03-01T00:00:00' AND datetime <= '2026-03-10T23:59:59'",
+        )
+    })
+
+    test('a month cadence runs from the 1st to the last day, and End never passes today', async () => {
+        layerConfigs[LAYER].variables.timeseries.cadence = 'month'
+        await request()
+        expect(shownOf('End')).toBe('September 2026')
+        await pickMonth('Start', 'Nov')
+        await pickMonth('End', 'Apr')
+        await settle()
+        expect(valueOf('Start')).toBe('2025-11-01T00:00:00')
+        expect(valueOf('End')).toBe('2026-04-30T23:59:59')
+        await pickMonth('End', 'Sep')
+        await settle()
+        expect(valueOf('End')).toBe('2026-09-24T23:59:59')
+    })
+
+    test('an unreadable cadence warns and keeps the hour picker', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        layerConfigs[LAYER].variables.timeseries.cadence = 'fortnight'
+        await request()
+        expect(shownOf('Start')).toBe('Sep 25, 2025, 00:00')
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('unreadable cadence'))
+        warn.mockRestore()
     })
 
     test('an End time picked before Start on the same day snaps to the minute Start begins', async () => {
