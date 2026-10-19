@@ -65,7 +65,11 @@ canvas, a sparse unnamed y-axis, a preview zoom strip (the
 series ghosted inside the slider; its end handles resize the window, its
 middle moves it with a grab cursor; the window's start and end dates sit
 above the strip's left and right ends at all times), and a footer chip naming the variable
-and unit beside a Download CSV link. How to read and zoom the chart sits
+and unit beside a Download CSV link. The file is named after the card:
+title, section heading and variable, so one site's download is told from
+another's (`Washington_Georgia_Site_1_AQS_Surface_PM2.5_Concentration_24-HR_BLK_AVG.csv`;
+a part that is missing or repeats the one before it is left out). How to
+read and zoom the chart sits
 behind an info button by the title, as on the Timeline. The hover tooltip is
 attached to the page body, so it is never clipped by the panel, and lists
 the hovered time's value once (only the time axis triggers it).

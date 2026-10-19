@@ -6,6 +6,7 @@ import {
     buildChartOption,
     buildChart,
     seriesToCsv,
+    csvFileName,
 } from '../../src/essence/Tools/SeriesChart/lib/chartData.ts'
 
 const THEME = {
@@ -291,4 +292,40 @@ describe('seriesChart chartData', () => {
         })
     })
 
+    describe('csvFileName', () => {
+        test('names the file after the card: title, section heading, variable', () => {
+            expect(
+                csvFileName([
+                    'Washington, Georgia · Site 1',
+                    'AQS Surface PM₂.₅ Concentration',
+                    '24-HR BLK AVG',
+                ]),
+            ).toBe(
+                'Washington_Georgia_Site_1_AQS_Surface_PM2.5_Concentration_24-HR_BLK_AVG.csv',
+            )
+        })
+
+        test('skips a missing heading and a variable that repeats it', () => {
+            expect(csvFileName(['Site 1', undefined, 'O3'])).toBe('Site_1_O3.csv')
+            // An ungrouped series is labelled with the layer name, which is
+            // also the heading.
+            expect(
+                csvFileName([
+                    'Site 1',
+                    'AQS Surface O₃ Concentration',
+                    'AQS Surface O₃ Concentration',
+                ]),
+            ).toBe('Site_1_AQS_Surface_O3_Concentration.csv')
+        })
+
+        test('accents and bracketing punctuation leave clean words', () => {
+            expect(csvFileName(['Montréal (Site 1)', undefined, 'PM10'])).toBe(
+                'Montreal_Site_1_PM10.csv',
+            )
+        })
+
+        test('falls back when every part is empty', () => {
+            expect(csvFileName(['', undefined, ''])).toBe('series.csv')
+        })
+    })
 })
