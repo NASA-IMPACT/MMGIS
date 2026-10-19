@@ -655,6 +655,20 @@
                 "1 month",
                 "1 year"
               ]
+            },
+            {
+              "field": "variables.timeseries.cadence",
+              "name": "Cadence",
+              "description": "How often the series has a value: hour, day, month or year. Not always the layer's own Data Time Interval, since an hourly layer can feed a daily series. Sets the step of the card's Start and End pickers: a picked day runs 00:00:00 to 23:59:59 UTC, a month its first to its last day. Default 'hour'.",
+              "type": "dropdown",
+              "width": 4,
+              "default": "hour",
+              "options": [
+                "hour",
+                "day",
+                "month",
+                "year"
+              ]
             }
           ]
         }
