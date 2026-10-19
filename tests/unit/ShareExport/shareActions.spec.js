@@ -1,4 +1,4 @@
-import { test, expect } from 'vitest'
+import { test, expect, vi } from 'vitest'
 import {
     copyShareLink,
     downloadSharePng,
@@ -383,6 +383,182 @@ test.describe('legend compositing in the downloads', () => {
             getLegendModel: async () => emptyModel,
             compose: async () => composed,
         })
+        expect(buildArgs).toEqual([{ w: composed.width, h: composed.height }])
+    })
+})
+
+test.describe('scale bar in the downloads', () => {
+    const screenshot = {
+        blob: new Blob(['png'], { type: 'image/png' }),
+        mimeType: 'image/png',
+        extension: 'png',
+        width: 640,
+        height: 480,
+        metersPerPixel: 2.5,
+    }
+    const composed = { ...screenshot, blob: new Blob(['composed']) }
+    const recordCompose = (calls) => async (shot, model, deps) => {
+        calls.push({ shot, model, deps })
+        return composed
+    }
+
+    test('draws the bar in the units the plugin shows, at the capture scale', async () => {
+        const calls = []
+        await downloadSharePng({
+            getScreenshot: async () => screenshot,
+            download: () => {},
+            includeLegend: false,
+            getScaleBarSettings: async () => ({ units: 'imperial' }),
+            compose: recordCompose(calls),
+        })
+        expect(calls).toEqual([
+            {
+                shot: screenshot,
+                model: null,
+                deps: { scaleBar: { metersPerPixel: 2.5, units: 'imperial' } },
+            },
+        ])
+    })
+
+    // The capture measures where the on-screen bar sits, and the export
+    // draws its bar at that same spot.
+    test('captures at the on-screen bar and draws at the anchor it returns', async () => {
+        const calls = []
+        const asked = []
+        const at = { clientX: 40, clientY: 90 }
+        const anchor = { x: 80, y: 180 }
+        await downloadSharePng({
+            getScreenshot: async (options) => {
+                asked.push(options)
+                return { ...screenshot, scaleAnchor: anchor }
+            },
+            download: () => {},
+            includeLegend: false,
+            getScaleBarSettings: async () => ({ units: 'metric', at }),
+            compose: recordCompose(calls),
+        })
+        expect(asked).toEqual([{ scaleAt: at }])
+        expect(calls[0].deps.scaleBar).toEqual({
+            metersPerPixel: 2.5,
+            units: 'metric',
+            anchor,
+        })
+    })
+
+    test('a failing plugin still exports the map', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        try {
+            const result = await downloadSharePng({
+                getScreenshot: async () => screenshot,
+                download: () => {},
+                includeLegend: false,
+                getScaleBarSettings: async () => {
+                    throw new Error('plugin blew up')
+                },
+                compose: () => {
+                    throw new Error('should not be called')
+                },
+            })
+            expect(result).toBe(screenshot)
+        } finally {
+            warn.mockRestore()
+        }
+    })
+
+    // No plugin answering means no bar on the map, so none in the export.
+    test('no plugin, no bar', async () => {
+        const result = await downloadSharePng({
+            getScreenshot: async () => screenshot,
+            download: () => {},
+            includeLegend: false,
+            getScaleBarSettings: async () => null,
+            compose: () => {
+                throw new Error('should not be called')
+            },
+        })
+        expect(result).toBe(screenshot)
+    })
+
+    test('the bus wrapper asks whichever plugin draws the scale bar', async () => {
+        const { api, requests } = makeBusApi({
+            'export:getScaleBar': { units: 'metric' },
+            'map:getScreenshot': screenshot,
+        })
+        window.mmgisAPI = api
+        try {
+            const calls = []
+            await downloadSharePng({
+                download: () => {},
+                includeLegend: false,
+                getViewState: async () => null,
+                compose: recordCompose(calls),
+            })
+            expect(requests.map((r) => r.name)).toContain(
+                'export:getScaleBar',
+            )
+            expect(calls[0].deps.scaleBar.units).toBe('metric')
+        } finally {
+            delete window.mmgisAPI
+        }
+    })
+
+    // A tilted or continent-wide view has no scale by design, not by failure.
+    test('a capture without a scale downloads without a bar, quietly', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        try {
+            const { metersPerPixel, ...unscaled } = screenshot
+            const result = await downloadSharePng({
+                getScreenshot: async () => unscaled,
+                download: () => {},
+                includeLegend: false,
+                getScaleBarSettings: async () => ({ units: 'metric' }),
+                compose: () => {
+                    throw new Error('should not be called')
+                },
+            })
+            expect(result).toBe(unscaled)
+            expect(warn).not.toHaveBeenCalled()
+        } finally {
+            warn.mockRestore()
+        }
+    })
+
+    test('a legend failure still leaves the scale bar', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        try {
+            const calls = []
+            await downloadSharePng({
+                getScreenshot: async () => screenshot,
+                download: () => {},
+                getLegendModel: async () => {
+                    throw new Error('legend model blew up')
+                },
+                getScaleBarSettings: async () => ({ units: 'metric' }),
+                compose: recordCompose(calls),
+            })
+            expect(calls).toHaveLength(1)
+            expect(calls[0].model).toBeNull()
+            expect(calls[0].deps.scaleBar).not.toBeNull()
+        } finally {
+            warn.mockRestore()
+        }
+    })
+
+    test('the PDF embeds the decorated image', async () => {
+        const calls = []
+        const buildArgs = []
+        await downloadSharePdf({
+            getScreenshot: async () => screenshot,
+            blobToDataUrl: async () => 'data:image/png;base64,x',
+            buildPdf: (data, w, h) => {
+                buildArgs.push({ w, h })
+                return { save: () => {} }
+            },
+            includeLegend: false,
+            getScaleBarSettings: async () => ({ units: 'metric' }),
+            compose: recordCompose(calls),
+        })
+        expect(calls).toHaveLength(1)
         expect(buildArgs).toEqual([{ w: composed.width, h: composed.height }])
     })
 })
