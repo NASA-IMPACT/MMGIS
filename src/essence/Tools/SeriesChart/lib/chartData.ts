@@ -331,3 +331,19 @@ export function seriesToCsv(s: ChartSeries): string {
     const rows = s.points.map((p) => `${esc(String(p.x))},${p.y ?? ''}`)
     return [`timestamp,${esc(s.label)}`, ...rows].join('\n')
 }
+
+export function csvFileName(parts: Array<string | undefined>): string {
+    // NFKD turns PM₂.₅ into PM2.5 and é into e + accent; the accent then
+    // goes with the rest of the punctuation.
+    const safe = (s: string) =>
+        s
+            .normalize('NFKD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^\w.-]+/g, '_')
+            .replace(/^_+|_+$/g, '')
+    const stem = parts
+        .map((p) => safe(p ?? ''))
+        .filter((p, i, all) => p !== '' && p !== all[i - 1])
+        .join('_')
+    return `${stem || 'series'}.csv`
+}

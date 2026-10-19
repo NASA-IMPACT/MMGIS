@@ -5,7 +5,12 @@ import type {
     ChartSeriesPayload,
 } from '../../../_shared/types/chartSeries'
 import type { ChartCard, ChartLayout, ChartTheme } from '../types'
-import { buildChart, seriesToCsv, WINDOW_LABEL_LAYOUT } from '../chartData'
+import {
+    buildChart,
+    csvFileName,
+    seriesToCsv,
+    WINDOW_LABEL_LAYOUT,
+} from '../chartData'
 import { grabCursorOnSlider } from '../sliderCursors'
 import { FloatingPopover } from '../../../Timeline/lib'
 
@@ -197,7 +202,15 @@ function ReadyCard({
             )}
             <section className="series-chart__plot">
                 <SeriesCanvas series={picked} index={index} />
-                <CardFooter series={picked} index={index} />
+                <CardFooter
+                    series={picked}
+                    index={index}
+                    fileName={csvFileName([
+                        payload.title,
+                        payload.subtitle,
+                        picked.label,
+                    ])}
+                />
             </section>
         </>
     )
@@ -282,12 +295,12 @@ function SeriesCanvas({ series, index }: { series: ChartSeries; index: number })
     )
 }
 
-function downloadCsv(s: ChartSeries) {
+function downloadCsv(fileName: string, s: ChartSeries) {
     const blob = new Blob([seriesToCsv(s)], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${s.label.replace(/[^\w.-]+/g, '_') || 'series'}.csv`
+    a.download = fileName
     // Safari and some Firefox builds start the download asynchronously and
     // need the anchor in the document; revoking on the next tick lets it read.
     document.body.appendChild(a)
@@ -298,7 +311,15 @@ function downloadCsv(s: ChartSeries) {
 
 /** Colored dot naming the variable (with unit), then that variable's CSV
  *  download. */
-function CardFooter({ series, index }: { series: ChartSeries; index: number }) {
+function CardFooter({
+    series,
+    index,
+    fileName,
+}: {
+    series: ChartSeries
+    index: number
+    fileName: string
+}) {
     return (
         <footer className="series-chart__variable-footer">
             <span className="series-chart__variable-chip">
@@ -325,7 +346,7 @@ function CardFooter({ series, index }: { series: ChartSeries; index: number }) {
                 <button
                     type="button"
                     className="series-chart__csv-link"
-                    onClick={() => downloadCsv(series)}
+                    onClick={() => downloadCsv(fileName, series)}
                 >
                     Download CSV
                 </button>
