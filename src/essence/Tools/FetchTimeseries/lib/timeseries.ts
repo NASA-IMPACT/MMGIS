@@ -5,6 +5,7 @@
 
 import type { TimeMode } from '../../Timeline/lib'
 import {
+    type ChartCadence,
     isRecord,
     type ChartPoint,
     type ChartSeriesPayload,
@@ -546,6 +547,9 @@ export function buildPayload(args: {
     const mapped = mapResponseSeries(args.response, args.config)
     const pointCount = mapped.reduce((n, m) => n + m.points.length, 0)
     const note = truncationNote(args.response, pointCount)
+    // Only a declared cadence travels: without one the chart keeps its own
+    // default, as the pickers keep theirs.
+    const cadence = parseCadence(args.config.cadence)
     // Slugged group keys can collide (e.g. two all-non-ASCII parameter
     // names) and the chart rejects duplicate ids — suffix them apart.
     const usedIds = new Set<string>()
@@ -553,6 +557,7 @@ export function buildPayload(args: {
         chartId: args.chartId,
         title: note ? `${args.title} (${note})` : args.title,
         subtitle: args.layerDisplayName,
+        ...(cadence ? { cadence: cadence.toLowerCase() as ChartCadence } : {}),
         series: mapped.map((m) => {
             const base = m.key === '' ? 'timeseries' : slug(m.key) || 'series'
             let id = base
