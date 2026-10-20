@@ -291,6 +291,14 @@ window.mmgisAPI.on('tool:change', ({ toolName }) => {
 })
 ```
 
+### Map Events
+
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `map:ready` | none | Fired each time the map finishes (re)initializing and its `map:` providers answer for the new engine. A listener that holds map state re-reads it here |
+| `map:move` | engine view state | Fired on each frame while the camera moves |
+| `map:moveend` | engine view state | Fired when the camera settles |
+
 ### Feature Events
 
 | Event | Payload | Description |
@@ -395,6 +403,8 @@ has already delivered — the request can resolve after a later event lands.
 | `map:panTo` | `{ lat, lng }` | `true` | Pan map to coordinates |
 | `map:showPopup` | `MapPopupRequest` | `MapPopupResult` | Show a map-anchored card, replacing any current one. Answers only once it closes. `latlng` is required, and so is one of `title` (text) and `html` (sanitized); each action carries a `label`, and focus lands on the first one when the card opens |
 | `map:hidePopup` | none | `true` | Take the current card down, resolving its request with `{ action: 'closed' }` |
+| `map:getCamera` | none | `{ bearing, pitch, rotatable } \| null` | Which way the camera faces: `bearing` in degrees clockwise from north, `pitch` the tilt from straight down. `rotatable` is false on an engine that cannot rotate (Leaflet). Null until the engine can answer |
+| `map:resetNorth` | none | `boolean` | Ease one step toward a flat, north-up view: a rotated map turns to north and keeps its tilt, a north-facing one levels out. False when there is nothing to undo or the engine cannot rotate |
 | `map:getEngineType` | none | `'leaflet' \| 'deckgl' \| null` | Which engine is drawing the map, for a plugin whose behaviour differs by engine. Null until the mission has built one |
 
 ```javascript

@@ -199,6 +199,30 @@
         background: var(--theme-color-base-lighter, #e3e3e3);
     }
 
+    /* The compass button's perspective gives the needle's rotateX depth, so a
+       tilted map reads as the needle tipping away rather than shortening. */
+    &__btn--compass {
+        perspective: 100px;
+    }
+
+    /* The compass as an indicator only, on a map that cannot rotate: drawn as
+       a button but with nothing to press. */
+    &__btn--static {
+        cursor: default;
+
+        &:hover {
+            background: transparent;
+            color: var(--theme-color-base-darker, #444447);
+        }
+    }
+
+    /* Follows the camera frame by frame, so it takes no transition of its own:
+       one would trail behind every gesture. */
+    &__needle {
+        display: flex;
+        transform-origin: center;
+    }
+
     // The hosted share control's slot in the bar, drawn as a bare glyph so it
     // reads as one of the bar's icon buttons. Its colors, square corners and
     // interaction states come from the component's own tokens, which resolve to

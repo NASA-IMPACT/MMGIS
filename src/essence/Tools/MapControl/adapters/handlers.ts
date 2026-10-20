@@ -28,6 +28,10 @@ export const zoomOut = (): void => {
     void mmgisRequest('map:zoomOut')
 }
 
+export const resetNorth = (): void => {
+    void mmgisRequest('map:resetNorth')
+}
+
 /** Subscribe to map click/move; returns an unsubscribe fn. */
 export const subscribeToMap = (handlers: MapSubscribeHandlers): (() => void) => {
     const offClick = mmgisOn('map:click', (e) => handlers.onClick(e as LatLng))

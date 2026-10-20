@@ -53,6 +53,8 @@ test.describe('mmgisAPI.getViewState (issue #143)', () => {
             time: null,
             center: null,
             zoom: null,
+            bearing: null,
+            pitch: null,
         })
     })
 
@@ -70,6 +72,83 @@ test.describe('mmgisAPI.getViewState (issue #143)', () => {
             time: '2026-07-01T12:00:00Z',
             center: { lat: 4.5, lng: 137.4 },
             zoom: 7,
+            bearing: null,
+            pitch: null,
         })
+    })
+
+    test('reports the engine bearing and pitch', () => {
+        L_.Map_ = {
+            map: {
+                getCenter: () => ({ lat: 4.5, lng: 137.4 }),
+                getZoom: () => 7,
+            },
+            engine: {
+                getViewState: () => ({
+                    center: { lat: 4.5, lng: 137.4 },
+                    zoom: 7,
+                    bearing: -42,
+                    pitch: 35,
+                }),
+            },
+        }
+        expect(mmgisAPI.getViewState()).toMatchObject({
+            bearing: -42,
+            pitch: 35,
+        })
+    })
+
+    test('reports a projection bearing with zero pitch on an engine that cannot tilt', () => {
+        L_.Map_ = {
+            map: {
+                getCenter: () => ({ lat: -80, lng: 0 }),
+                getZoom: () => 3,
+            },
+            engine: {
+                getViewState: () => ({
+                    center: { lat: -80, lng: 0 },
+                    zoom: 3,
+                    bearing: 120,
+                    pitch: 0,
+                }),
+            },
+        }
+        expect(mmgisAPI.getViewState()).toMatchObject({
+            bearing: 120,
+            pitch: 0,
+        })
+    })
+
+    test('leaves bearing and pitch null, and still answers the rest, when the engine throws', () => {
+        L_.Map_ = {
+            map: {
+                getCenter: () => ({ lat: 4.5, lng: 137.4 }),
+                getZoom: () => 7,
+            },
+            engine: {
+                getViewState: () => {
+                    throw new Error('no view yet')
+                },
+            },
+        }
+        expect(mmgisAPI.getViewState()).toMatchObject({
+            center: { lat: 4.5, lng: 137.4 },
+            zoom: 7,
+            bearing: null,
+            pitch: null,
+        })
+    })
+})
+
+test.describe('mmgisAPI.resetNorth', () => {
+    test('asks the map for map:resetNorth', async () => {
+        const handler = vi.fn(() => true)
+        const off = mmgisAPI.provide('map:resetNorth', handler)
+        try {
+            await expect(mmgisAPI.resetNorth()).resolves.toBe(true)
+            expect(handler).toHaveBeenCalledTimes(1)
+        } finally {
+            off()
+        }
     })
 })
