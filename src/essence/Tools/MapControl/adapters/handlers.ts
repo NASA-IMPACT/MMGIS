@@ -1,6 +1,6 @@
 // MapControl actions, each translating a lib callback into event-bus calls.
 // MMGIS-coupled — stays in MMGIS.
-import { mmgisOn, mmgisRequest } from './mmgisAPI'
+import { mmgisOn, mmgisRequest } from '../../_shared/adapters/mmgisAPI'
 import type {
     BasemapStyle,
     GeocodeResult,
