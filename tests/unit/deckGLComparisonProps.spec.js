@@ -237,6 +237,48 @@ describe('comparison prop overrides', () => {
         expect(right[0].props.data).toBe('https://host/JUN')
     })
 
+    // deck.gl stops drawing a layer marked `visible: false` but still runs its
+    // lifecycle, so a hidden tile layer handed to a side would go on
+    // requesting tiles it never draws. Each side leaves it out, as the primary
+    // map does.
+    test('a layer hidden on a side is left out of that side', () => {
+        const adapter = makeAdapter()
+        adapter._layers.set('co2', fakeLayer('co2', { data: 'https://host/a' }))
+        adapter._layers.set('roads', fakeLayer('roads', { visible: false }))
+
+        adapter.enableComparison({
+            leftLayerIds: ['co2', 'roads'],
+            rightLayerIds: ['co2', 'roads'],
+            layout: 'swipe',
+            leftLayerProps: { co2: { visible: false } },
+            rightLayerProps: { roads: { visible: true } },
+        })
+
+        const ids = (layers) => layers.map((layer) => layer.id)
+        const { left, right } = rendered(adapter)
+        expect(ids(left)).toEqual([])
+        expect(ids(right)).toEqual(['co2', 'roads'])
+    })
+
+    test('a layer hidden on a side is left out of its side-by-side pane', () => {
+        const adapter = makeAdapter()
+        adapter._layers.set('co2', fakeLayer('co2', { data: 'https://host/a' }))
+        adapter._createSideBySidePanes = function () {
+            this._sbsPanes = [fakePane(), fakePane()]
+        }
+
+        adapter.enableComparison({
+            leftLayerIds: ['co2'],
+            rightLayerIds: ['co2'],
+            layout: 'sideBySide',
+            rightLayerProps: { co2: { visible: false } },
+        })
+
+        const [leftPane, rightPane] = adapter._sbsPanes
+        expect(leftPane.overlay.props.layers).toHaveLength(1)
+        expect(rightPane.overlay.props.layers).toHaveLength(0)
+    })
+
     test('overrides do not carry into the next comparison', () => {
         const adapter = makeAdapter()
         adapter._layers.set('co2', fakeLayer('co2', { data: 'https://host/a' }))
