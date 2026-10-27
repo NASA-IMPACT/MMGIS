@@ -6,7 +6,8 @@
  * same instant unless something replaces the prop the layer reads its data
  * from. This module derives that prop: it shallow-clones a layer's config with
  * the pinned times in place and runs it back through the tile-URL pipeline that
- * built the original.
+ * built the original. It also derives the layer's visibility at the pinned
+ * date, since the live layer's reflects whether it has data at the global one.
  *
  * The clone is the point. `L_.layers.data[id]` is what the live map renders
  * from, and writing pinned times onto it would drag the primary view to the
@@ -32,6 +33,10 @@ import {
 } from '../Layers_/tileLayerSource'
 import { MAP_ENGINE, toCanonicalLayerType } from '../MapEngines/types/engine'
 import { fillRunPlaceholders } from '../TimeControl_/layerRunSource'
+import {
+    evaluateLayerDataCoverage,
+    isCoverageGated,
+} from '../TimeControl_/layerDataCoverage'
 
 /** The window one comparison side pins its layers to. */
 export type TimePin = {
@@ -89,18 +94,46 @@ export function buildTimePinnedProps(
     for (const id of layerIds) {
         const layerObj = L_.layers?.data?.[id]
         if (!layerObj || layerObj.time?.enabled !== true) continue
-        const patch = patchFor(layerObj, pin)
-        if (patch) patches[id] = patch
+        const pinned = withPinnedTime(layerObj, pin)
+        const patch = sourcePatchFor(layerObj, pinned)
+        if (patch) patches[id] = { ...patch, ...visibilityAt(id, pinned) }
     }
     return patches
 }
 
-/** The patch for one layer, or null when its source cannot carry a time. */
-function patchFor(
+/**
+ * The layer's visibility at the pinned date, by the rule TimeControl applies
+ * to the primary map at the global instant: a switched-on layer is drawn
+ * unless the coverage gate finds it holds no data there.
+ *
+ * The clone otherwise inherits the live layer's visibility, which reflects the
+ * global instant. A layer with no data at the primary date would then stay
+ * hidden on a side pinned to a date it does have data for, and one with data
+ * there would request tiles on a side pinned to a date it has none for.
+ *
+ * A layer the gate does not reach gets no visibility at all, since core never
+ * hid it for coverage and the clone keeps whatever the live layer has.
+ */
+function visibilityAt(
+    id: string,
+    pinned: Record<string, any>,
+): { visible?: boolean } {
+    if (!isCoverageGated(pinned)) return {}
+    return {
+        visible:
+            L_.layers?.on?.[id] === true &&
+            !evaluateLayerDataCoverage(pinned).outOfDataRange,
+    }
+}
+
+/**
+ * The prop one layer reads its source from, redrawn at the pinned window, or
+ * null when its source cannot carry a time.
+ */
+function sourcePatchFor(
     layerObj: Record<string, any>,
-    pin: TimePin,
+    pinned: Record<string, any>,
 ): Record<string, unknown> | null {
-    const pinned = withPinnedTime(layerObj, pin)
     switch (toCanonicalLayerType(layerObj.type)) {
         case 'tile': {
             const source = resolveTileLayerSource(pinned)
