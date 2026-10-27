@@ -213,12 +213,6 @@ describe('a layer pinned to a model run', () => {
     })
 })
 
-/**
- * The primary map hides a time-enabled layer at an instant it has no data for,
- * and a pinned side clones that hidden layer. Its visibility is therefore part
- * of the patch, decided by the layer's coverage at the pinned date rather than
- * at the primary one.
- */
 describe('visibility at the pinned date', () => {
     const PIN = { start: START, end: END }
 
@@ -246,8 +240,6 @@ describe('visibility at the pinned date', () => {
         expect(buildTimePinnedProps(['raster'], PIN).raster.visible).toBe(false)
     })
 
-    // Core never hides these for coverage, so the pin leaves their visibility
-    // to whatever the live layer already has.
     test('a layer the coverage gate does not reach keeps its own visibility', () => {
         configs.raster.time.dataDates = ['2024-10-30']
         configs.raster.variables = { dynamicExtent: true }

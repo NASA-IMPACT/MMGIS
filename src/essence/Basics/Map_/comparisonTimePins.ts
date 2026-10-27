@@ -6,8 +6,7 @@
  * same instant unless something replaces the prop the layer reads its data
  * from. This module derives that prop: it shallow-clones a layer's config with
  * the pinned times in place and runs it back through the tile-URL pipeline that
- * built the original. It also derives the layer's visibility at the pinned
- * date, since the live layer's reflects whether it has data at the global one.
+ * built the original.
  *
  * The clone is the point. `L_.layers.data[id]` is what the live map renders
  * from, and writing pinned times onto it would drag the primary view to the
@@ -102,17 +101,8 @@ export function buildTimePinnedProps(
 }
 
 /**
- * The layer's visibility at the pinned date, by the rule TimeControl applies
- * to the primary map at the global instant: a switched-on layer is drawn
- * unless the coverage gate finds it holds no data there.
- *
- * The clone otherwise inherits the live layer's visibility, which reflects the
- * global instant. A layer with no data at the primary date would then stay
- * hidden on a side pinned to a date it does have data for, and one with data
- * there would request tiles on a side pinned to a date it has none for.
- *
- * A layer the gate does not reach gets no visibility at all, since core never
- * hid it for coverage and the clone keeps whatever the live layer has.
+ * Drawn when switched on and in coverage at the pinned date. Layers the
+ * coverage gate never hides get no `visible`, so they keep the live layer's.
  */
 function visibilityAt(
     id: string,
@@ -126,10 +116,7 @@ function visibilityAt(
     }
 }
 
-/**
- * The prop one layer reads its source from, redrawn at the pinned window, or
- * null when its source cannot carry a time.
- */
+/** The layer's source prop at the pinned window, or null if it has no time. */
 function sourcePatchFor(
     layerObj: Record<string, any>,
     pinned: Record<string, any>,

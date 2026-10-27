@@ -1964,9 +1964,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * `ids` lists them, so each side stacks its layers exactly as the primary
      * map does.
      *
-     * A clone hidden on its side is left out, as `_syncLayers` leaves hidden
-     * layers out of the primary map: deck.gl would still run its lifecycle and
-     * request tiles it never draws.
+     * Hidden clones are left out, as in `_syncLayers`: deck.gl still fetches
+     * their tiles.
      */
     private _comparisonClonesFor(
         ids: string[],
@@ -1976,7 +1975,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         return [...this._layers.entries()]
             .filter(([id]) => wanted.has(id))
             .map(([id, layer]) => layer.clone(overrides[id] ?? {}) as Layer)
-            .filter((layer) => (layer.props as { visible?: boolean })?.visible !== false)
+            .filter((layer) => layer.props.visible !== false)
     }
 
     /** Apply the divider position the way the active layout reads it. */

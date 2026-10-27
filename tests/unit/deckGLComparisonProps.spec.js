@@ -237,10 +237,6 @@ describe('comparison prop overrides', () => {
         expect(right[0].props.data).toBe('https://host/JUN')
     })
 
-    // deck.gl stops drawing a layer marked `visible: false` but still runs its
-    // lifecycle, so a hidden tile layer handed to a side would go on
-    // requesting tiles it never draws. Each side leaves it out, as the primary
-    // map does.
     test('a layer hidden on a side is left out of that side', () => {
         const adapter = makeAdapter()
         adapter._layers.set('co2', fakeLayer('co2', { data: 'https://host/a' }))
