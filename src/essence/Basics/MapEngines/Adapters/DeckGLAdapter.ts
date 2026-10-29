@@ -2561,9 +2561,18 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * terra-draw session anchors on its own bottom-most layer instead, since
      * the interleaved overlay lifts unanchored layers back to the top of the
      * style on every `styledata` and would bury the drawing.
+     *
+     * A map whose style has not finished loading (a freshly built side-by-side
+     * pane, for one) throws from `getStyle()`. Its layers go out unanchored
+     * rather than not at all; the map's `style.load` re-sends them anchored.
      */
     private _anchorBelowLabels(layers: Layer[], map: BasemapInstance | null): Layer[] {
-        const style = map?.getStyle?.()
+        let style: BasemapStyle | undefined
+        try {
+            style = map?.getStyle?.()
+        } catch {
+            return layers
+        }
         if (style?.imports?.length) {
             return layers.map((layer) => layer.clone({ slot: 'middle' } as any))
         }
