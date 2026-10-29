@@ -1,58 +1,61 @@
 import { hexToRgba } from '../MapEngines/Adapters/DeckGLHelpers'
+import HighlightLineWidthExtension from '../MapEngines/Adapters/HighlightLineWidthExtension'
 
-/**
- * The highlight a layer gets when its mission chose no colour: black at a
- * tenth, which darkens a feature of any hue without recolouring it. deck's own
- * default is a half-opaque navy, which reads as a bruise over a warm palette
- * and vanishes into a cool one.
- */
+// Black at a tenth darkens any hue; deck's default navy clashes with warm palettes.
 const DEFAULT_HIGHLIGHT = [0, 0, 0, 26]
 
-/**
- * The deck.gl props that decide whether, and how, a vector tile feature
- * highlights under the cursor, read from the layer's configured style.
- *
- * deck's MVTLayer does not use the ordinary auto-highlight: it sets
- * `autoHighlight` to false on the sub-layers it renders and highlights through
- * `uniqueIdProperty` instead, matching the hovered feature by that property's
- * value so a feature split across tiles highlights as one shape. With no such
- * property the match answers undefined and nothing highlights, whatever the
- * checkbox says — so the mission's chosen id key has to travel with it.
- *
- * Lives outside Map_ so the mapping can be read and tested on its own; Map_
- * spreads the result into the layer's native options.
- *
- * @param {object} [style] - The layer's configured `style` block.
- * @returns {{autoHighlight: boolean, uniqueIdProperty: string|undefined,
- *            highlightColor: [number, number, number, number]}}
- */
-export function vectorTileHighlightOptions(style) {
-    const vtId = typeof style?.vtId === 'string' ? style.vtId.trim() : ''
+// One unit of alpha: invisible, but keeps luma's highlight blend
+// (a / (a + fillAlpha * (1 - a))) away from 0/0 on a transparent fill.
+const UNTINTED_HIGHLIGHT = [0, 0, 0, 1]
 
-    return {
-        autoHighlight: style?.hoverHighlight === true,
-        // Undefined rather than '': deck reads an empty key as "no key", and
-        // passing the empty string through would only restate its own default.
-        uniqueIdProperty: vtId === '' ? undefined : vtId,
-        highlightColor: highlightColor(style),
-    }
+const STROKE_ONLY_SUBLAYER_PROPS = {
+    'polygons-fill': { highlightColor: UNTINTED_HIGHLIGHT },
 }
 
 /**
- * The configured highlight colour as deck's four channels, falling back to the
- * default for a field left empty and for a colour that cannot be read — the
- * helper answers its fallback for one it fails to parse, which is exactly the
- * answer wanted here.
+ * deck.gl props for hovering a vector tile feature, from the layer's style.
  *
- * Opacity rides along in the colour: the picker writes `rgba(...)` as soon as
- * a colour is less than fully opaque, and the colour helper reads the alpha
- * back out. A fill keeps opacity in a field of its own because Leaflet styles
- * take the two apart; nothing here does.
+ * MVTLayer matches the hovered feature by `uniqueIdProperty`, so without a
+ * vtId nothing highlights. Polygons highlight only their outline when one
+ * shows on hover, and otherwise tint their fill so the hover stays visible.
+ * Points draw fill and stroke in one sub-layer, so they still tint whole.
  */
-function highlightColor(style) {
-    const configured = style?.hoverHighlightColor
-    if (typeof configured !== 'string' || configured.trim() === '') {
-        return DEFAULT_HIGHLIGHT
+export function vectorTileHighlightOptions(style) {
+    const vtId = typeof style?.vtId === 'string' ? style.vtId.trim() : ''
+    const strokeWidth = strokeWidthOptions(style)
+
+    return {
+        autoHighlight: style?.hoverHighlight === true,
+        uniqueIdProperty: vtId === '' ? undefined : vtId,
+        highlightColor: highlightColor(style),
+        ...(hoverStrokeVisible(style, strokeWidth.highlightLineWidth)
+            ? { _subLayerProps: STROKE_ONLY_SUBLAYER_PROPS }
+            : {}),
+        ...strokeWidth,
     }
-    return hexToRgba(configured.trim(), undefined, DEFAULT_HIGHLIGHT)
+}
+
+// Whether the hovered outline draws: a non-zero opacity and either a styled
+// weight or a highlight width that widens a zero-weight stroke into view.
+// Defaults match the stroke DeckGLHelpers resolves from the same style.
+function hoverStrokeVisible(style, highlightLineWidth) {
+    const opacity = style?.opacity !== undefined ? Number(style.opacity) : 1
+    const weight = style?.weight !== undefined ? Number(style.weight) : 1
+    return opacity > 0 && (weight > 0 || highlightLineWidth > 0)
+}
+
+function strokeWidthOptions(style) {
+    const width = Number(style?.hoverHighlightWidth)
+    if (!(width > 0)) return {}
+    return {
+        extensions: [new HighlightLineWidthExtension()],
+        highlightLineWidth: width,
+    }
+}
+
+// The picker writes opacity into the colour as rgba(), so it needs no field of its own.
+function highlightColor(style) {
+    const configured = style?.hoverHighlightColor?.trim?.()
+    if (!configured) return DEFAULT_HIGHLIGHT
+    return hexToRgba(configured, undefined, DEFAULT_HIGHLIGHT)
 }
