@@ -16,9 +16,11 @@ layout(std140) uniform highlightLineWidthUniforms {
 
 // `size` is the half width, in pixels when billboarded and in common space otherwise.
 // `geometry.pickingColor` is raw; the picking module normalizes it only later, in DECKGL_FILTER_COLOR.
+// The picking pass keeps the styled width so the hover target matches what is drawn.
 const injectSize = /* glsl */ `
   if (
     highlightLineWidth.widthPixels > 0.0 &&
+    picking.isActive < 0.5 &&
     isVertexHighlighted(picking_normalizeColor(geometry.pickingColor))
   ) {
     vec2 halfWidth = vec2(highlightLineWidth.widthPixels / 2.0);

@@ -100,7 +100,19 @@ test('falls back when the configured colour cannot be read', () => {
 describe('vectorTileHighlightOptions strokes only', () => {
     test('leaves the polygon fill untinted', () => {
         const o = vectorTileHighlightOptions({ hoverHighlightColor: '#ff0000' })
-        expect(o._subLayerProps['polygons-fill'].highlightColor).toEqual([0, 0, 0, 0])
+        expect(o._subLayerProps['polygons-fill'].highlightColor).toEqual([0, 0, 0, 1])
+    })
+
+    test.each([{ weight: 0 }, { weight: '0' }, { opacity: 0 }, { opacity: 0, hoverHighlightWidth: 3 }])(
+        'tints the fill when no outline shows on hover: %p',
+        (style) => {
+            expect(vectorTileHighlightOptions(style)._subLayerProps).toBeUndefined()
+        }
+    )
+
+    test('highlights the outline when the hover width widens a zero-weight stroke', () => {
+        const o = vectorTileHighlightOptions({ weight: 0, hoverHighlightWidth: 3 })
+        expect(o._subLayerProps['polygons-fill'].highlightColor).toEqual([0, 0, 0, 1])
     })
 
     test('adds the line width extension with the configured width', () => {
