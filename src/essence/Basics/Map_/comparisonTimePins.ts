@@ -32,6 +32,10 @@ import {
 } from '../Layers_/tileLayerSource'
 import { MAP_ENGINE, toCanonicalLayerType } from '../MapEngines/types/engine'
 import { fillRunPlaceholders } from '../TimeControl_/layerRunSource'
+import {
+    evaluateLayerDataCoverage,
+    isCoverageGated,
+} from '../TimeControl_/layerDataCoverage'
 
 /** The window one comparison side pins its layers to. */
 export type TimePin = {
@@ -89,18 +93,34 @@ export function buildTimePinnedProps(
     for (const id of layerIds) {
         const layerObj = L_.layers?.data?.[id]
         if (!layerObj || layerObj.time?.enabled !== true) continue
-        const patch = patchFor(layerObj, pin)
-        if (patch) patches[id] = patch
+        const pinned = withPinnedTime(layerObj, pin)
+        const patch = sourcePatchFor(layerObj, pinned)
+        if (patch) patches[id] = { ...patch, ...visibilityAt(id, pinned) }
     }
     return patches
 }
 
-/** The patch for one layer, or null when its source cannot carry a time. */
-function patchFor(
+/**
+ * Drawn when switched on and in coverage at the pinned date. Layers the
+ * coverage gate never hides get no `visible`, so they keep the live layer's.
+ */
+function visibilityAt(
+    id: string,
+    pinned: Record<string, any>,
+): { visible?: boolean } {
+    if (!isCoverageGated(pinned)) return {}
+    return {
+        visible:
+            L_.layers?.on?.[id] === true &&
+            !evaluateLayerDataCoverage(pinned).outOfDataRange,
+    }
+}
+
+/** The layer's source prop at the pinned window, or null if it has no time. */
+function sourcePatchFor(
     layerObj: Record<string, any>,
-    pin: TimePin,
+    pinned: Record<string, any>,
 ): Record<string, unknown> | null {
-    const pinned = withPinnedTime(layerObj, pin)
     switch (toCanonicalLayerType(layerObj.type)) {
         case 'tile': {
             const source = resolveTileLayerSource(pinned)

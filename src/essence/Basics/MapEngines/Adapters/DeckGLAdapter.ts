@@ -1963,6 +1963,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * Clones are drawn in the registry's z-index order rather than the order
      * `ids` lists them, so each side stacks its layers exactly as the primary
      * map does.
+     *
+     * Hidden clones are left out, as in `_syncLayers`: deck.gl still fetches
+     * their tiles.
      */
     private _comparisonClonesFor(
         ids: string[],
@@ -1971,6 +1974,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const wanted = new Set(ids)
         return [...this._layers.entries()]
             .filter(([id]) => wanted.has(id))
+            .filter(
+                ([id, layer]) =>
+                    (overrides[id]?.visible ??
+                        (layer.props as { visible?: boolean })?.visible) !==
+                    false
+            )
             .map(([id, layer]) => layer.clone(overrides[id] ?? {}) as Layer)
     }
 
