@@ -358,3 +358,51 @@ test.describe('DeckGLAdapter side-by-side comparison', () => {
         expect(setProps).toHaveBeenCalledWith({ layers: [{ id: 'co2-clone' }] })
     })
 })
+
+/**
+ * A pane's map is built with its style still loading, and mapbox-gl throws
+ * from `getStyle()` until it lands. Entering side-by-side straight away must
+ * not trip over that.
+ */
+test.describe('DeckGLAdapter side-by-side before a pane style loads', () => {
+    /** A basemap whose style is a single label layer, readable only once loaded. */
+    class LoadingBasemap extends FakeBasemap {
+        styleLoaded = false
+        getStyle() {
+            if (!this.styleLoaded) throw new Error('Style is not done loading')
+            return { layers: [{ id: 'place-labels', type: 'symbol', layout: { 'text-field': '{name}' } }] }
+        }
+        getLayer(id) { return id === 'place-labels' ? {} : undefined }
+    }
+
+    const makeLoadingAdapter = () => {
+        const adapter = makeAdapter()
+        adapter._basemapCtor = LoadingBasemap
+        const layer = {
+            id: 'co2',
+            clone: (props = {}) => ({ id: 'co2', ...props, clone: layer.clone }),
+        }
+        adapter._layers.set('co2', layer)
+        return adapter
+    }
+
+    test('enabling side-by-side does not throw while pane styles load', () => {
+        const adapter = makeLoadingAdapter()
+        expect(() => sideBySide(adapter)).not.toThrow()
+        expect(adapter.isComparisonEnabled()).toBe(true)
+        expect(panesIn()).toHaveLength(2)
+    })
+
+    test('a pane draws its layers unanchored, then under the labels once loaded', () => {
+        const adapter = makeLoadingAdapter()
+        sideBySide(adapter)
+        const [leftPane] = adapter._sbsPanes
+        const setProps = vi.spyOn(leftPane.overlay, 'setProps')
+
+        leftPane.map.styleLoaded = true
+        leftPane.map.fire('style.load')
+
+        const [{ layers }] = setProps.mock.calls.at(-1)
+        expect(layers.map((l) => l.beforeId)).toEqual(['place-labels'])
+    })
+})
