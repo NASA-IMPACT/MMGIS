@@ -1974,8 +1974,13 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const wanted = new Set(ids)
         return [...this._layers.entries()]
             .filter(([id]) => wanted.has(id))
+            .filter(
+                ([id, layer]) =>
+                    (overrides[id]?.visible ??
+                        (layer.props as { visible?: boolean })?.visible) !==
+                    false
+            )
             .map(([id, layer]) => layer.clone(overrides[id] ?? {}) as Layer)
-            .filter((layer) => layer.props.visible !== false)
     }
 
     /** Apply the divider position the way the active layout reads it. */
