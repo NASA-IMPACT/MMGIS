@@ -272,6 +272,8 @@ const MyPluginTool = {
 | `layer:refreshStatusChange` | `{ layerName, failed }` | Fired when a layer refresh succeeds or fails |
 | `layer:headerStateChange` | `{ header_id, onState }` | Fired when a layer group header is expanded/collapsed |
 | `layers:orderChanged` | `{ order }` | Fired after the draw order changes: a reorder, or a layer added or removed. `order` lists layer UUIDs top first |
+| `layers:valueFetchStart` | `{ layerName, latlng }` | Fired when core asks a pickable tile layer's service for its value at a clicked point. `latlng` is `{ lat, lng }` |
+| `layers:valueFetchEnd` | `{ layerName, latlng, value, failed }` | Fired when that request settles. `value` is the number at the point, or null when there is none; `failed` is true when the request itself failed or timed out |
 
 ```javascript
 window.mmgisAPI.on('layer:visibilityChange', ({ layerName, on }) => {
