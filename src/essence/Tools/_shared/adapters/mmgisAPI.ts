@@ -1,4 +1,5 @@
 import type { LayerLegend } from '../../../Basics/Layers_/legend/types'
+import type { ScaleUnits } from '../scale/scaleBarModel'
 
 type EventCleanup = () => void
 
@@ -26,7 +27,15 @@ export type MapScreenshotResult = {
     extension: 'png'
     width: number
     height: number
+    /** Ground metres per image pixel at the requested `scaleAt`, or near the
+     *  image's bottom-left corner without it, at capture time. */
+    metersPerPixel?: number | null
+    /** `scaleAt` in image pixels; null or absent when none was requested. */
+    scaleAnchor?: { x: number; y: number } | null
 }
+
+/** A position on the page, in CSS pixels, as a DOM rectangle or event gives it. */
+export type ClientPoint = { clientX: number; clientY: number }
 
 /** The subset of a mission layer config that plugins read off the bus. */
 export type LayerConfig = {
@@ -149,11 +158,47 @@ export const mmgisWriteCoordinateURL = (): Promise<string | null> => {
     return mmgisRequestIfProvided<string>('map:writeCoordinateURL')
 }
 
-/** The current map as a PNG Blob plus image metadata. */
-export const mmgisGetMapScreenshot = (): Promise<
-    MapScreenshotResult | null
-> => {
-    return mmgisRequestIfProvided<MapScreenshotResult>('map:getScreenshot')
+/**
+ * The current map as a PNG Blob plus image metadata. `scaleAt` picks the page
+ * position its `metersPerPixel` is measured at.
+ */
+export const mmgisGetMapScreenshot = (options?: {
+    scaleAt?: ClientPoint
+}): Promise<MapScreenshotResult | null> => {
+    return mmgisRequestIfProvided<MapScreenshotResult>('map:getScreenshot', options)
+}
+
+/**
+ * Ground metres per CSS pixel at a map container point (e.g. a pointer
+ * event's `containerPoint`), or at the map's centre when `at` is omitted. Null
+ * before the map exists or where it cannot measure.
+ */
+export const mmgisGetMetersPerPixel = (
+    at?: { x: number; y: number },
+): Promise<number | null> => {
+    return mmgisRequestIfProvided<number>('map:getMetersPerPixel', at)
+}
+
+/** Which engine draws the map; null until the mission has built one. */
+export const mmgisGetEngineType = (): Promise<'leaflet' | 'deckgl' | null> => {
+    return mmgisRequestIfProvided<'leaflet' | 'deckgl'>('map:getEngineType')
+}
+
+export type ScaleBarSettings = {
+    units: ScaleUnits
+    /** Where the on-screen bar's backing box has its bottom-left corner on
+     *  the page, so an export can draw and measure its bar at the same spot. */
+    at?: ClientPoint
+}
+
+/** Provided by whichever plugin draws a scale bar on the map, and asked by
+ *  exports so they carry a matching bar. */
+export const EXPORT_SCALE_BAR_REQUEST = 'export:getScaleBar'
+
+/** The on-screen scale bar's settings while one is drawn, otherwise null, so
+ *  exports carry a bar exactly when the map shows one. */
+export const mmgisGetScaleBarSettings = (): Promise<ScaleBarSettings | null> => {
+    return mmgisRequestIfProvided<ScaleBarSettings>(EXPORT_SCALE_BAR_REQUEST)
 }
 
 /** View metadata (mission, time, center, zoom); fields null until loaded. */

@@ -271,6 +271,24 @@ const isTerraDrawLayer = (id: string): boolean => id.startsWith(`${TERRA_DRAW_PR
  */
 const UNRANKED_Z_INDEX = Number.MAX_SAFE_INTEGER
 
+/** What deck.gl's controller is doing with the camera, as it reports it. */
+type DeckInteractionState = {
+    inTransition?: boolean
+    isDragging?: boolean
+    isPanning?: boolean
+    isRotating?: boolean
+    isZooming?: boolean
+}
+
+// Whether a gesture, its inertia or a transition is still moving the camera.
+const isInteracting = (state: DeckInteractionState | undefined): boolean =>
+    !!state &&
+    !!(state.inTransition || state.isDragging || state.isPanning || state.isRotating || state.isZooming)
+
+// Whether deck.gl will animate to this view state, reporting each frame.
+const isAnimated = ({ transitionDuration }: DeckViewState): boolean =>
+    transitionDuration === 'auto' || (transitionDuration ?? 0) > 0
+
 function canvasToPngScreenshot(canvas: HTMLCanvasElement): Promise<MapScreenshotResult> {
     return new Promise((resolve, reject) => {
         if (typeof canvas.toBlob !== 'function') {
@@ -466,6 +484,16 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * `move` those copies raise is ignored rather than echoed back.
      */
     private _sbsSyncing = false
+    /**
+     * Whether a standalone `Deck` camera has moved since the last `'moveend'`,
+     * so a controller going idle reports the end of a move exactly once.
+     */
+    private _cameraUnsettled = false
+    /** The last viewport built for `_viewState`, reused by {@link _currentViewport}. */
+    private _viewportCache: {
+        viewState: DeckViewState
+        viewport: ReturnType<typeof makeViewport>
+    } | null = null
 
     /**
      * The basemap constructor and options the panes rebuild from. Overlay mode
@@ -510,9 +538,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /**
      * Bound handler kept as a class field for clean removal.
-     * Silently keeps `_viewState` in sync during animations so that
+     * Keeps `_viewState` in sync during animations so that
      * {@link projectCoordinates} and {@link unprojectCoordinates} remain
-     * accurate while the camera is moving.
+     * accurate while the camera is moving, and emits `'move'`.
      */
     private _onBasemapMove = (): void => {
         if (this._sbsSyncing) return
@@ -526,6 +554,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             pitch: this._basemap!.getPitch(),
         }
         if (this._comparisonEnabled) this._syncComparisonCamera()
+        this._emitEvent('move', this._viewState)
     }
 
     /**
@@ -568,6 +597,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             throw new Error(`DeckGLAdapter: container element #${options.containerId} not found`)
         }
         this._container = container
+        container.addEventListener('mouseleave', this._onContainerMouseLeave)
         this._minZoom = options.minZoom ?? 0
         this._maxZoom = options.maxZoom ?? 20
         this._maxBounds = options.maxBounds ?? null
@@ -614,6 +644,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
         this._drawEndClick.dispose()
         this._drawPointers.stop()
+        this._container?.removeEventListener('mouseleave', this._onContainerMouseLeave)
 
         if (this._terraDraw) {
             this._terraDrawListeners.forEach((off) => { try { off() } catch { /* ignore */ } })
@@ -1716,12 +1747,33 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     /**
+     * The viewport for the current camera, or for `zoom` when given. The
+     * current one is shared until the camera or the container size changes,
+     * so a burst of projections in one frame builds it once.
+     */
+    private _currentViewport(zoom?: number): ReturnType<typeof makeViewport> {
+        if (zoom != null) return makeViewport(this._viewState, this._container, zoom)
+        const cached = this._viewportCache
+        if (
+            cached &&
+            cached.viewState === this._viewState &&
+            cached.viewport.width === this._container.offsetWidth &&
+            cached.viewport.height === this._container.offsetHeight
+        ) {
+            return cached.viewport
+        }
+        const viewport = makeViewport(this._viewState, this._container)
+        this._viewportCache = { viewState: this._viewState, viewport }
+        return viewport
+    }
+
+    /**
      * Project geographic coordinates to container pixel coordinates using the
      * current viewport. Pass `zoom` to override the viewport zoom.
      */
     projectCoordinates(latLng: LatLngLike, zoom?: number): PointLike {
         const { lat, lng } = resolveLatLng(latLng)
-        const [x, y] = makeViewport(this._viewState, this._container, zoom).project([
+        const [x, y] = this._currentViewport(zoom).project([
             lng,
             lat,
         ]) as [number, number]
@@ -1730,7 +1782,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     unprojectCoordinates(point: PointLike, zoom?: number): LatLngLike {
         const { x, y } = resolvePoint(point)
-        const [lng, lat] = makeViewport(this._viewState, this._container, zoom).unproject([
+        const [lng, lat] = this._currentViewport(zoom).unproject([
             x,
             y,
         ]) as [number, number]
@@ -1739,6 +1791,11 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     containerPointToLatLng(point: PointLike): LatLngLike {
         return this.unprojectCoordinates(point)
+    }
+
+    /** deck.gl's map view and its basemaps are always Web Mercator. */
+    isWebMercator(): boolean {
+        return true
     }
 
     latLngToContainerPoint(latLng: LatLngLike): PointLike {
@@ -2175,13 +2232,20 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                 views: new MapView({ repeat: true }),
                 viewState: this._viewState,
                 layers: [],
-                onViewStateChange: ({ viewState }: { viewState: DeckViewState }) => {
+                onViewStateChange: ({
+                    viewState,
+                    interactionState,
+                }: {
+                    viewState: DeckViewState
+                    interactionState?: DeckInteractionState
+                }) => {
                     if (this._sbsSyncing) return
                     this._viewState = this._clampToMaxBounds(viewState)
                     pane.deck?.setProps({ viewState: this._viewState } as any)
                     this._syncComparisonCamera(pane)
-                    this._emitEvent('moveend', this._viewState)
+                    this._onDeckCameraChange(interactionState)
                 },
+                onInteractionStateChange: this._onDeckInteractionChange,
             } as any)
         }
 
@@ -2240,9 +2304,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * Adopt a pane's camera as the shared one and copy it everywhere else.
      *
      * Either pane may be dragged, so whichever moved becomes the source and the
-     * rest follow. `settled` separates the frames during a gesture — which only
-     * need the cameras to stay locked — from its end, which is what the rest of
-     * MMGIS listens for.
+     * rest follow. `settled` separates the frames during a gesture, reported
+     * as `'move'`, from its end, reported as `'moveend'`.
      */
     private _onPaneCameraChange(source: SideBySidePane, settled: boolean): void {
         if (this._sbsSyncing || !source.map) return
@@ -2258,6 +2321,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         }
         this._syncComparisonCamera(source)
         if (settled) this._emitEvent('moveend', this._viewState)
+        else this._emitEvent('move', this._viewState)
     }
 
     /** Finalize both panes, detach their listeners and remove their DOM nodes. */
@@ -2296,13 +2360,20 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             controller: true,
             layers: [],
             viewState: this._viewState,
-            onViewStateChange: ({ viewState }: { viewState: DeckViewState }) => {
+            onViewStateChange: ({
+                viewState,
+                interactionState,
+            }: {
+                viewState: DeckViewState
+                interactionState?: DeckInteractionState
+            }) => {
                 const clamped = this._clampToMaxBounds(viewState)
                 this._viewState = clamped
                 this._deckSetProps({ viewState: clamped })
                 if (this._comparisonEnabled) this._syncComparisonCamera()
-                this._emitEvent('moveend', clamped)
+                this._onDeckCameraChange(interactionState)
             },
+            onInteractionStateChange: this._onDeckInteractionChange,
             onClick: this._onPointerClick,
             onHover: this._onPointerHover,
             getCursor: this._cursorFor,
@@ -2338,6 +2409,32 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         isDragging: boolean
         isHovering: boolean
     }): string => (isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab')
+
+    /**
+     * Reports a standalone `Deck` camera change: `'move'` on every frame, and
+     * `'moveend'` once the controller is idle (no gesture, inertia or
+     * transition under way), as Leaflet and MapLibre do.
+     */
+    private _onDeckCameraChange(interaction: DeckInteractionState | undefined): void {
+        this._emitEvent('move', this._viewState)
+        this._cameraUnsettled = true
+        if (!isInteracting(interaction)) this._settleCamera()
+    }
+
+    private _onDeckInteractionChange = (interaction: DeckInteractionState): void => {
+        if (!isInteracting(interaction)) this._settleCamera()
+    }
+
+    private _settleCamera(): void {
+        if (!this._cameraUnsettled) return
+        this._cameraUnsettled = false
+        this._emitEvent('moveend', this._viewState)
+    }
+
+    /** Reports the pointer leaving the map as `'mouseout'`, as Leaflet does. */
+    private _onContainerMouseLeave = (): void => {
+        this._emitEvent('mouseout')
+    }
 
     private _onPointerHover = (info: PickingInfo): void => {
         if (this._drawingShape) return
@@ -2458,9 +2555,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         }
         this._viewState = nextState
         this._deckSetProps({ viewState: nextState })
-        // A zero-duration move raises no `onViewStateChange`, so this is the
-        // only place the comparison surfaces hear about it.
+        // An animated move reports itself through `onViewStateChange` frame by
+        // frame. A zero-duration one raises nothing, so this is the only place
+        // the comparison surfaces and the engine's listeners hear about it.
+        if (isAnimated(nextState)) return
         if (this._comparisonEnabled) this._syncComparisonCamera()
+        this._onDeckCameraChange(undefined)
     }
 
     /**

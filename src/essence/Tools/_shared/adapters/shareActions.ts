@@ -3,12 +3,19 @@ import {
     mmgisGetMapScreenshot,
     mmgisGetViewState,
     mmgisCopyText,
+    mmgisGetScaleBarSettings,
+    type ClientPoint,
     type MapScreenshotResult,
+    type ScaleBarSettings,
     type ViewState,
 } from './mmgisAPI'
 import { buildSharePdf, type JsPdfLike } from './sharePdf'
 import { blobToDataUrl, downloadBlob } from './download'
-import { composeExportImage } from '../legend/composeExportImage'
+import {
+    composeExportImage,
+    type ComposeDeps,
+    type ExportScaleBar,
+} from '../legend/composeExportImage'
 import {
     getExportLegendModel,
     type ExportLegendModel,
@@ -65,37 +72,98 @@ export async function copyShareLink(
     return url
 }
 
-export type LegendDeps = {
+export type DecorationDeps = {
     includeLegend?: boolean
     getLegendModel?: () => Promise<ExportLegendModel>
+    getScaleBarSettings?: () => Promise<ScaleBarSettings | null>
     compose?: (
         screenshot: MapScreenshotResult,
-        model: ExportLegendModel,
+        model: ExportLegendModel | null,
+        deps?: ComposeDeps,
     ) => Promise<MapScreenshotResult>
 }
 
-// The export must never fail because the legend did — deliver the plain map
-// and log, rather than surfacing a broken download.
-async function applyLegend(
+type GetScreenshot = (options?: {
+    scaleAt?: ClientPoint
+}) => Promise<MapScreenshotResult | null>
+
+async function readScaleBarSettings(
+    getScaleBarSettings: () => Promise<ScaleBarSettings | null>,
+): Promise<ScaleBarSettings | null> {
+    try {
+        return await getScaleBarSettings()
+    } catch (err) {
+        console.warn('Share export: scale bar omitted', err)
+        return null
+    }
+}
+
+// Uses the capture's own scale, which is in image pixels and of that exact
+// view, measured where the on-screen bar sits when the capture was given it.
+// A tilted or continent-wide view has no scale by design, so a capture
+// without one is not logged; the capture logs a failure to measure itself.
+function resolveExportScaleBar(
     screenshot: MapScreenshotResult,
-    deps: LegendDeps,
+    settings: ScaleBarSettings | null,
+): ExportScaleBar | null {
+    if (!settings) return null
+    const { metersPerPixel, scaleAnchor } = screenshot
+    if (typeof metersPerPixel !== 'number' || !(metersPerPixel > 0)) return null
+    return {
+        metersPerPixel,
+        units: settings.units,
+        ...(scaleAnchor ? { anchor: scaleAnchor } : {}),
+    }
+}
+
+// The export must never fail because a decoration did — deliver what can be
+// drawn and log the rest, rather than surfacing a broken download.
+async function applyDecorations(
+    screenshot: MapScreenshotResult,
+    settings: ScaleBarSettings | null,
+    deps: DecorationDeps,
 ): Promise<MapScreenshotResult> {
     const {
         includeLegend = true,
         getLegendModel = getExportLegendModel,
         compose = composeExportImage,
     } = deps
-    if (!includeLegend) return screenshot
+    const scaleBar = resolveExportScaleBar(screenshot, settings)
+    let model: ExportLegendModel | null = null
+    if (includeLegend) {
+        try {
+            model = await getLegendModel()
+        } catch (err) {
+            console.warn('Share export: legend omitted', err)
+        }
+    }
+    if (!model && !scaleBar) return screenshot
     try {
-        return await compose(screenshot, await getLegendModel())
+        return await compose(screenshot, model, { scaleBar })
     } catch (err) {
-        console.warn('Share export: legend omitted', err)
+        console.warn('Share export: legend and scale bar omitted', err)
         return screenshot
     }
 }
 
-export type DownloadSharePngDeps = LegendDeps & {
-    getScreenshot?: () => Promise<MapScreenshotResult | null>
+// The ScaleBar plugin's settings are read before the capture, so the capture
+// measures the scale where the on-screen bar sits.
+async function captureDecorated(
+    getScreenshot: GetScreenshot,
+    deps: DecorationDeps,
+): Promise<MapScreenshotResult> {
+    const settings = await readScaleBarSettings(
+        deps.getScaleBarSettings ?? mmgisGetScaleBarSettings,
+    )
+    const screenshot = await getScreenshot(
+        settings?.at ? { scaleAt: settings.at } : undefined,
+    )
+    if (!screenshot) throw new Error('No screenshot available')
+    return applyDecorations(screenshot, settings, deps)
+}
+
+export type DownloadSharePngDeps = DecorationDeps & {
+    getScreenshot?: GetScreenshot
     download?: (blob: Blob, filename: string) => void
     getViewState?: () => Promise<ViewState | null>
     filename?: string
@@ -112,9 +180,7 @@ export async function downloadSharePng(
         download = downloadBlob,
         getViewState = mmgisGetViewState,
     } = deps
-    const screenshot = await getScreenshot()
-    if (!screenshot) throw new Error('No screenshot available')
-    const composed = await applyLegend(screenshot, deps)
+    const composed = await captureDecorated(getScreenshot, deps)
     const filename =
         deps.filename ??
         buildExportFilename(composed.extension, await getViewState())
@@ -122,8 +188,8 @@ export async function downloadSharePng(
     return composed
 }
 
-export type DownloadSharePdfDeps = LegendDeps & {
-    getScreenshot?: () => Promise<MapScreenshotResult | null>
+export type DownloadSharePdfDeps = DecorationDeps & {
+    getScreenshot?: GetScreenshot
     blobToDataUrl?: (blob: Blob) => Promise<string>
     buildPdf?: (
         dataUrl: string,
@@ -148,9 +214,7 @@ export async function downloadSharePdf(
         buildPdf = buildSharePdf,
         getViewState = mmgisGetViewState,
     } = deps
-    const screenshot = await getScreenshot()
-    if (!screenshot) throw new Error('No screenshot available')
-    const composed = await applyLegend(screenshot, deps)
+    const composed = await captureDecorated(getScreenshot, deps)
     const dataUrl = await convertBlobToDataUrl(composed.blob)
     const doc = await buildPdf(dataUrl, composed.width, composed.height)
     const filename =
