@@ -655,6 +655,22 @@ describe('fetchTimeseries lib', () => {
             })
         })
 
+        test('a declared cadence rides on the payload; none declared, none sent', () => {
+            const build = (config) =>
+                buildPayload({
+                    chartId: 'c',
+                    response: [{ datetime: '2026-01-01', value: 1 }],
+                    config,
+                    title: 'Station 42',
+                    layerDisplayName: 'L',
+                    layerName: 'uuid-1',
+                })
+            expect(build({ url: 'x', cadence: 'Day' }).cadence).toBe('day')
+            expect(build({ url: 'x', cadence: 'fortnight' })).not.toHaveProperty('cadence')
+            expect(build({ url: 'x' })).not.toHaveProperty('cadence')
+            expect(isChartSeriesPayload(build({ url: 'x', cadence: 'month' }))).toBe(true)
+        })
+
         test('grouped responses become one labeled series per group', () => {
             const payload = buildPayload({
                 chartId: 'vector-timeseries',

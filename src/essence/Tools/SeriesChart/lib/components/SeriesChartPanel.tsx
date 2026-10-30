@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useRef, useState } from 'react'
 import * as echarts from 'echarts'
 import type {
+    ChartCadence,
     ChartSeries,
     ChartSeriesPayload,
 } from '../../../_shared/types/chartSeries'
@@ -201,7 +202,7 @@ function ReadyCard({
                 </label>
             )}
             <section className="series-chart__plot">
-                <SeriesCanvas series={picked} index={index} />
+                <SeriesCanvas series={picked} index={index} cadence={payload.cadence} />
                 <CardFooter
                     series={picked}
                     index={index}
@@ -244,7 +245,15 @@ function themeFromCss(el: HTMLElement): ChartTheme {
     }
 }
 
-function SeriesCanvas({ series, index }: { series: ChartSeries; index: number }) {
+function SeriesCanvas({
+    series,
+    index,
+    cadence,
+}: {
+    series: ChartSeries
+    index: number
+    cadence?: ChartCadence
+}) {
     const hostRef = useRef<HTMLDivElement>(null)
     const [windowDates, setWindowDates] = useState<[string, string] | null>(null)
 
@@ -252,7 +261,7 @@ function SeriesCanvas({ series, index }: { series: ChartSeries; index: number })
         const host = hostRef.current
         if (!host) return
         const chart = echarts.init(host)
-        const { option, windowText } = buildChart(series, themeFromCss(host), index)
+        const { option, windowText } = buildChart(series, themeFromCss(host), index, cadence)
         chart.setOption(option as never)
         setWindowDates(windowText(0, 100))
         // The window dates follow every zoom, whether from the strip or from
@@ -275,7 +284,7 @@ function SeriesCanvas({ series, index }: { series: ChartSeries; index: number })
             observer.disconnect()
             chart.dispose()
         }
-    }, [series, index])
+    }, [series, index, cadence])
 
     const { side, bottom } = WINDOW_LABEL_LAYOUT
     return (

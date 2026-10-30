@@ -52,6 +52,10 @@ describe('chartSeries contract', () => {
             expect(isChartSeriesPayload(multi)).toBe(true)
         })
 
+        test('accepts a cadence word', () => {
+            expect(isChartSeriesPayload({ ...validPayload, cadence: 'day' })).toBe(true)
+        })
+
         test.each([
             ['null', null],
             ['non-object', 'nope'],
@@ -100,6 +104,7 @@ describe('chartSeries contract', () => {
                     ],
                 },
             ],
+            ['an unknown cadence', { ...validPayload, cadence: 'fortnight' }],
         ])('rejects %s', (_name, payload) => {
             expect(isChartSeriesPayload(payload)).toBe(false)
         })
