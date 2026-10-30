@@ -28,6 +28,9 @@
  * Requests:
  *   - layers:getAllConfigs / map:getEngineType
  *   - map:showPopup (resolves with how the card closed) / map:hidePopup
+ *   - map:createLayer / map:removeLayer  the clicked feature, drawn as an
+ *                                        outline that outlives the card and
+ *                                        goes on the next click opening none
  */
 
 import {
@@ -49,6 +52,9 @@ const PLUGIN_ID = 'feature-popup'
  * through the event bus alone, and what comes back over it is data.
  */
 const LEAFLET = 'leaflet'
+
+const HIGHLIGHT_LAYER_ID = 'feature-popup-highlight'
+const HIGHLIGHT_CASING_LAYER_ID = 'feature-popup-highlight-casing'
 
 const FeaturePopupTool = {
     made: false,
@@ -103,6 +109,7 @@ const FeaturePopupTool = {
         })
         this._cleanups = []
         this._hideOwnCard()
+        this._removeHighlight()
         this._configs = new Map()
         this._api = null
         this._readToken += 1
@@ -144,11 +151,13 @@ const FeaturePopupTool = {
         // rather than to a library default nothing here pins.
         if (!info?.feature) {
             this._hideOwnCard()
+            this._removeHighlight()
             return
         }
         const config = this._configs.get(info.layerId)
         if (!config) {
             this._hideOwnCard()
+            this._removeHighlight()
             return
         }
 
@@ -160,8 +169,11 @@ const FeaturePopupTool = {
         // the feature it describes.
         if (title == null && html == null) {
             this._hideOwnCard()
+            this._removeHighlight()
             return
         }
+
+        this._showHighlight(info.feature)
 
         const actions = config.actions
         const card = {}
@@ -231,6 +243,53 @@ const FeaturePopupTool = {
         this._openCard = null
         mmgisRequest('map:hidePopup').catch(() => {})
     },
+
+    // Casing first: layers added after the mission stack keep insertion
+    // order, so the wide white stroke stays under the narrow colored one.
+    _showHighlight(feature) {
+        const geojson = { type: 'FeatureCollection', features: [feature] }
+        const layers = [
+            [HIGHLIGHT_CASING_LAYER_ID, highlightCasingStyle()],
+            [HIGHLIGHT_LAYER_ID, highlightStyle()],
+        ]
+        layers.forEach(([id, style]) => {
+            mmgisRequest('map:createLayer', {
+                id,
+                type: 'vector',
+                geojson,
+                style,
+                // Click-transparent, so the next click reaches the feature under it.
+                interactive: false,
+            }).catch((err) =>
+                console.warn('[FeaturePopup] could not highlight the feature', err)
+            )
+        })
+    },
+
+    _removeHighlight() {
+        ;[HIGHLIGHT_CASING_LAYER_ID, HIGHLIGHT_LAYER_ID].forEach((id) => {
+            mmgisRequest('map:removeLayer', { id }).catch(() => {})
+        })
+    },
+}
+
+function themeToken(name, fallback) {
+    if (typeof window === 'undefined' || !window.getComputedStyle) return fallback
+    const value = window
+        .getComputedStyle(document.documentElement)
+        .getPropertyValue(name)
+        .trim()
+    return value || fallback
+}
+
+function highlightStyle() {
+    const color = themeToken('--theme-color-primary', '#1c67e3')
+    return { color, weight: 3, fillColor: color, fillOpacity: 0, radius: 12 }
+}
+
+function highlightCasingStyle() {
+    const color = themeToken('--theme-color-white', '#ffffff')
+    return { color, weight: 6, fillColor: color, fillOpacity: 0, radius: 12 }
 }
 
 /**
