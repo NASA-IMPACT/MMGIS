@@ -75,13 +75,21 @@ describe('seriesChart chartData', () => {
     })
 
     describe('formatTooltipTime', () => {
-        test('prints the UTC date only, no clock', () => {
+        test('prints the UTC date without a cadence, as for a daily one', () => {
             expect(formatTooltipTime(Date.parse('2026-03-04T14:30:00Z'))).toBe(
                 'Mar 4, 2026',
             )
             expect(formatTooltipTime(Date.parse('2026-03-04T23:30:00-05:00'))).toBe(
                 'Mar 5, 2026',
             )
+        })
+
+        test('prints at the cadence: a clock for hourly, no day for monthly, the year alone for yearly', () => {
+            const ms = Date.parse('2026-03-04T14:30:00Z')
+            expect(formatTooltipTime(ms, 'hour')).toBe('Mar 4, 2026, 14:30')
+            expect(formatTooltipTime(ms, 'day')).toBe('Mar 4, 2026')
+            expect(formatTooltipTime(ms, 'month')).toBe('Mar 2026')
+            expect(formatTooltipTime(ms, 'year')).toBe('2026')
         })
     })
 
@@ -142,6 +150,13 @@ describe('seriesChart chartData', () => {
             ])
             expect(html).toContain('Jan 1, 2026<br/>')
             expect(html).not.toContain('14:30')
+        })
+
+        test('an hourly cadence puts the clock in the tooltip title', () => {
+            const html = buildChartOption(series(), THEME, 0, 'hour').tooltip.formatter([
+                { marker: '·', seriesName: 'S1', value: [Date.parse('2026-01-01T14:30:00Z'), 1] },
+            ])
+            expect(html).toContain('Jan 1, 2026, 14:30<br/>')
         })
 
         test('the palette slot follows the variable index, explicit color wins', () => {
@@ -239,6 +254,23 @@ describe('seriesChart chartData', () => {
         test('the window dates stay date-only inside a short span too', () => {
             const [start] = buildChart(series(), THEME, 0).windowText(50, 100)
             expect(start).toBe('Jan 1, 2026')
+        })
+
+        test('the window dates print at the cadence', () => {
+            const long = series({
+                points: [
+                    { x: '2026-01-01T00:00:00Z', y: 1 },
+                    { x: '2026-12-01T00:00:00Z', y: 2 },
+                ],
+            })
+            expect(buildChart(long, THEME, 0, 'month').windowText(0, 100)).toEqual([
+                'Jan 2026',
+                'Dec 2026',
+            ])
+            expect(buildChart(long, THEME, 0, 'hour').windowText(0, 100)).toEqual([
+                'Jan 1, 2026, 00:00',
+                'Dec 1, 2026, 00:00',
+            ])
         })
 
         test('a series with no readable times has no window dates', () => {

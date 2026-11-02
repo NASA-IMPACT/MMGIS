@@ -30,14 +30,17 @@ each value in the tooltip. One variable renders at a time: a
 payload with several series gets a variable picker above the chart (see
 `layout` below), and the chart, footer chip and CSV follow the pick. Mixed units therefore never need
 a dual y-axis. The payload's `subtitle` renders under the title as the
-section heading (FetchTimeseries sends the layer's display name); `meta` is
-carried but not rendered.
+section heading (FetchTimeseries sends the layer's display name); `cadence`
+(hour, day, month or year) sets how precisely times print, see below;
+`meta` is carried but not rendered.
 
 Time axes render on a linear epoch-ms scale with UTC tick/tooltip
 formatting; timezone-less ISO datetimes are read as UTC. The tooltip title
-and the zoom window's ends print the date only (`Feb 28, 2026`), never a
-clock: the feeds charted so far are daily summaries whose times are all
-midnight. Axis ticks still show hours inside a one-day span.
+and the zoom window's ends print at the payload's `cadence`: `Feb 28, 2026`
+for a daily series, `Feb 28, 2026, 14:00` for an hourly one, `Feb 2026` for
+a monthly one, `2026` for a yearly one, and the date when the payload
+carries none. Axis ticks are not tied to it and still show hours inside a
+one-day span.
 
 ## Configuration
 
