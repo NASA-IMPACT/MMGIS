@@ -91,6 +91,16 @@ test.describe('DeckGLHelpers', () => {
             expect(pickInfoToResult({ picked: false })).toEqual({ feature: null })
         })
 
+        test('an empty pick still says where it landed', () => {
+            expect(
+                pickInfoToResult({ picked: false, coordinate: [-97.5, 35], x: 10, y: 20 })
+            ).toEqual({
+                feature: null,
+                latlng: { lat: 35, lng: -97.5 },
+                pixel: { x: 10, y: 20 },
+            })
+        })
+
         test('maps a picked PickingInfo to FeaturePickResult', () => {
             const info = {
                 picked: true,

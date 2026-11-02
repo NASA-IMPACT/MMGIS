@@ -750,6 +750,64 @@
               ]
             }
           ]
+        },
+        {
+          "subname": "Value On Click",
+          "components": [
+            {
+              "field": "pickable",
+              "name": "Pick Value On Click",
+              "description": "Let a click on the map read this layer's value at that point, asked of the service that serves its tiles at its point endpoint. Works for TiTiler-family services (TiTiler, TiTiler-pgSTAC, TiTiler-multidim), whose point endpoint takes the same parameters as their tiles; other tile servers cannot answer. The topmost layer under the cursor with something at that point answers the click, so a layer drawn above this one wins. Requires the deck.gl map engine.",
+              "type": "checkbox",
+              "width": 3,
+              "defaultChecked": false
+            },
+            {
+              "field": "variables.featurePopup.enabled",
+              "name": "Show Feature Popup",
+              "description": "Show a popup card with the value when this layer answers a click. Nothing below takes effect until this and Pick Value On Click are ticked. Requires the deck.gl map engine.",
+              "type": "checkbox",
+              "width": 3,
+              "defaultChecked": false
+            },
+            {
+              "field": "variables.featurePopup.title",
+              "name": "Card Heading",
+              "description": "The card's heading, written as a template. Text appears as written and every '{prop}' is replaced with that property of the answer: 'Ozone at {asOf}'. Leave empty for a card with no heading.",
+              "type": "text",
+              "width": 6
+            },
+            {
+              "field": "variables.featurePopup.properties",
+              "name": "Properties To List",
+              "description": "Which properties of the answer the card lists, in this order. The answer carries 'value' (the number at the point), 'location' (the clicked point as 'lat, lng'), 'asOf' (the time slice the service chose, when it says), 'band' and 'item' (the mosaic item the value came from, when any). Add a display label after a pipe, which is where the unit goes: 'value|Ozone (ppb)'; without one, the row shows the property name. Leave empty to list every property the answer carries.",
+              "type": "textarray",
+              "width": 12
+            },
+            {
+              "field": "variables.featurePopup.actions",
+              "name": "Card Actions",
+              "description": "Buttons on the card, at most two. Pressing one closes the card and emits 'plugin:feature-popup:<event>' on the event bus, carrying the answer as a point feature, for another plugin to act on.",
+              "type": "objectarray",
+              "width": 12,
+              "object": [
+                {
+                  "field": "label",
+                  "name": "Button Label",
+                  "description": "The text on the button.",
+                  "type": "text",
+                  "width": 4
+                },
+                {
+                  "field": "event",
+                  "name": "Event Name",
+                  "description": "The event emitted when the button is pressed, carrying the answer. A bare name is this plugin's own event and goes out under its address: 'analyzeFeature' is emitted as 'plugin:feature-popup:analyzeFeature'. A name carrying a namespace is sent exactly as written, so 'plugin:aoi:analyze' reaches the AOI plugin.",
+                  "type": "text",
+                  "width": 8
+                }
+              ]
+            }
+          ]
         }
       ]
     },

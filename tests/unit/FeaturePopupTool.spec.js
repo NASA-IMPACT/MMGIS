@@ -119,6 +119,233 @@ test('lists the configured properties, and leaves the rest off', async () => {
     expect(html).not.toContain('internal_id')
 })
 
+test('renders a raster value the core resolved into a feature, unchanged', async () => {
+    LAYER_CONFIGS.naqfc = {
+        name: 'naqfc',
+        type: 'tile',
+        pickable: true,
+        variables: {
+            featurePopup: {
+                enabled: true,
+                title: 'NAQFC Surface O₃',
+                properties: ['value|Ozone (ppb)', 'asOf|As of'],
+            },
+        },
+    }
+    await start()
+
+    api.emit('map:featureClick', {
+        feature: {
+            type: 'Feature',
+            properties: { value: 27.005, asOf: '2026-08-25T17:40:45Z', band: 'b1' },
+            geometry: { type: 'Point', coordinates: [CLICK.lng, CLICK.lat] },
+        },
+        layerId: 'naqfc',
+        latlng: CLICK,
+    })
+    await flushBus()
+
+    const { title, html } = api.namesOf('map:showPopup')[0].payload
+    expect(title).toBe('NAQFC Surface O₃')
+    expect(html).toContain('Ozone (ppb)')
+    expect(html).toContain('27.005')
+    expect(html).toContain('As of')
+    expect(html).not.toContain('b1')
+})
+
+/** A tile layer that opted in, as core resolves its clicks. */
+const rasterConfig = () => ({
+    name: 'naqfc',
+    type: 'tile',
+    pickable: true,
+    variables: {
+        featurePopup: { enabled: true, title: 'NAQFC Surface O₃', properties: ['value|Ozone (ppb)'] },
+    },
+})
+
+const rasterPick = (layerId = 'naqfc') => ({
+    feature: {
+        type: 'Feature',
+        properties: { value: 27.005 },
+        geometry: { type: 'Point', coordinates: [CLICK.lng, CLICK.lat] },
+    },
+    layerId,
+    latlng: CLICK,
+})
+
+test('holds the spot with a reading card while core fetches a raster value', async () => {
+    LAYER_CONFIGS.naqfc = rasterConfig()
+    await start()
+
+    api.emit('layers:valueFetchStart', { layerName: 'naqfc', latlng: CLICK })
+    await flushBus()
+
+    expect(api.namesOf('map:showPopup')).toHaveLength(1)
+    expect(api.namesOf('map:showPopup')[0].payload).toEqual({
+        latlng: CLICK,
+        html: 'Reading value…',
+    })
+})
+
+test('shows no reading card for a raster that did not opt in', async () => {
+    LAYER_CONFIGS.naqfc = rasterConfig()
+    LAYER_CONFIGS.naqfc.variables.featurePopup.enabled = false
+    await start()
+
+    api.emit('layers:valueFetchStart', { layerName: 'naqfc', latlng: CLICK })
+    api.emit('layers:valueFetchStart', { layerName: 'unknown', latlng: CLICK })
+    await flushBus()
+
+    expect(api.namesOf('map:showPopup')).toHaveLength(0)
+})
+
+test('asks for one reading card when two rasters are fetched for one click', async () => {
+    LAYER_CONFIGS.naqfc = rasterConfig()
+    LAYER_CONFIGS.tempo = { ...rasterConfig(), name: 'tempo' }
+    await start()
+
+    api.emit('layers:valueFetchStart', { layerName: 'tempo', latlng: CLICK })
+    await flushBus()
+    api.emit('layers:valueFetchStart', { layerName: 'naqfc', latlng: CLICK })
+    await flushBus()
+
+    expect(api.namesOf('map:showPopup')).toHaveLength(1)
+})
+
+test('the resolved value replaces the reading card, and an empty click takes it down', async () => {
+    LAYER_CONFIGS.naqfc = rasterConfig()
+    await start()
+
+    api.emit('layers:valueFetchStart', { layerName: 'naqfc', latlng: CLICK })
+    await flushBus()
+    api.emit('map:featureClick', rasterPick())
+    await flushBus()
+
+    expect(api.namesOf('map:showPopup')).toHaveLength(2)
+    expect(api.openPopupPayload()).toMatchObject({ title: 'NAQFC Surface O₃' })
+    expect(api.openPopupPayload().html).toContain('27.005')
+    api.reset()
+
+    api.emit('layers:valueFetchStart', { layerName: 'naqfc', latlng: CLICK })
+    await flushBus()
+    api.emit('map:featureClick', { feature: null, latlng: CLICK })
+    await flushBus()
+
+    expect(api.namesOf('map:hidePopup')).toHaveLength(1)
+    expect(api.hasOpenPopup()).toBe(false)
+})
+
+test('a reading card closed by replacement emits no action', async () => {
+    LAYER_CONFIGS.naqfc = rasterConfig()
+    LAYER_CONFIGS.naqfc.variables.featurePopup.actions = [
+        { label: 'Analyze', event: 'analyze' },
+    ]
+    await start()
+
+    api.emit('layers:valueFetchStart', { layerName: 'naqfc', latlng: CLICK })
+    await flushBus()
+    api.emit('map:featureClick', rasterPick())
+    await flushBus()
+
+    expect(api.emitsOf('plugin:feature-popup:analyze')).toHaveLength(0)
+})
+
+test('says so when the clicked spot has no value, and keeps saying it through the empty click', async () => {
+    LAYER_CONFIGS.naqfc = rasterConfig()
+    await start()
+
+    api.emit('layers:valueFetchStart', { layerName: 'naqfc', latlng: CLICK })
+    await flushBus()
+    api.emit('layers:valueFetchEnd', { layerName: 'naqfc', latlng: CLICK, value: null, failed: false })
+    await flushBus()
+    api.emit('map:featureClick', { feature: null, latlng: CLICK })
+    await flushBus()
+
+    expect(api.namesOf('map:showPopup')).toHaveLength(2)
+    expect(api.openPopupPayload()).toEqual({
+        latlng: CLICK,
+        title: 'NAQFC Surface O₃',
+        html: 'No data at this point.',
+    })
+    expect(api.namesOf('map:hidePopup')).toHaveLength(0)
+})
+
+test('says the value could not be read when the request failed', async () => {
+    LAYER_CONFIGS.naqfc = rasterConfig()
+    LAYER_CONFIGS.naqfc.variables.featurePopup.title = 'Ozone at {asOf}'
+    await start()
+
+    api.emit('layers:valueFetchStart', { layerName: 'naqfc', latlng: CLICK })
+    await flushBus()
+    api.emit('layers:valueFetchEnd', { layerName: 'naqfc', latlng: CLICK, value: null, failed: true })
+    await flushBus()
+
+    expect(api.openPopupPayload()).toEqual({
+        latlng: CLICK,
+        title: undefined,
+        html: 'The value could not be read.',
+    })
+})
+
+test('the next click elsewhere takes the no-data card down', async () => {
+    LAYER_CONFIGS.naqfc = rasterConfig()
+    await start()
+
+    api.emit('layers:valueFetchStart', { layerName: 'naqfc', latlng: CLICK })
+    api.emit('layers:valueFetchEnd', { layerName: 'naqfc', latlng: CLICK, value: null, failed: false })
+    await flushBus()
+    api.emit('map:featureClick', { feature: null, latlng: { lat: 1, lng: 2 } })
+    await flushBus()
+
+    expect(api.namesOf('map:hidePopup')).toHaveLength(1)
+    expect(api.hasOpenPopup()).toBe(false)
+})
+
+test('ignores a null answer for a spot no longer shown, and one with a value', async () => {
+    LAYER_CONFIGS.naqfc = rasterConfig()
+    await start()
+    const ELSEWHERE = { lat: 1, lng: 2 }
+
+    api.emit('layers:valueFetchStart', { layerName: 'naqfc', latlng: CLICK })
+    api.emit('layers:valueFetchStart', { layerName: 'naqfc', latlng: ELSEWHERE })
+    await flushBus()
+    api.reset()
+    api.emit('layers:valueFetchEnd', { layerName: 'naqfc', latlng: CLICK, value: null, failed: false })
+    api.emit('layers:valueFetchEnd', { layerName: 'naqfc', latlng: ELSEWHERE, value: 3, failed: false })
+    await flushBus()
+
+    expect(api.namesOf('map:showPopup')).toHaveLength(0)
+    expect(api.openPopupPayload()).toMatchObject({ latlng: ELSEWHERE, html: 'Reading value…' })
+})
+
+test('asks the next raster after one said nothing, and shows its value', async () => {
+    LAYER_CONFIGS.naqfc = rasterConfig()
+    LAYER_CONFIGS.tempo = { ...rasterConfig(), name: 'tempo' }
+    await start()
+
+    api.emit('layers:valueFetchStart', { layerName: 'tempo', latlng: CLICK })
+    api.emit('layers:valueFetchEnd', { layerName: 'tempo', latlng: CLICK, value: null, failed: false })
+    await flushBus()
+    api.emit('layers:valueFetchStart', { layerName: 'naqfc', latlng: CLICK })
+    await flushBus()
+    expect(api.openPopupPayload()).toMatchObject({ html: 'Reading value…' })
+
+    api.emit('map:featureClick', rasterPick())
+    await flushBus()
+    expect(api.openPopupPayload()).toMatchObject({ title: 'NAQFC Surface O₃' })
+})
+
+test('shows no reading card on Leaflet', async () => {
+    LAYER_CONFIGS.naqfc = rasterConfig()
+    api.requestImpl.set('map:getEngineType', () => 'leaflet')
+    await start()
+
+    api.emit('layers:valueFetchStart', { layerName: 'naqfc', latlng: CLICK })
+    await flushBus()
+
+    expect(api.namesOf('map:showPopup')).toHaveLength(0)
+})
+
 test('shows nothing for a pick that reports a layer but no feature', async () => {
     await start()
 
