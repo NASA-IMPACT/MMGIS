@@ -13,6 +13,14 @@ export interface EntryDisplay {
     /** e.g. "Jan 5 – Mar 31, 2025", "Dec 1, 2024 – Feb 1, 2025", "Jun 1, 2025 – present". */
     dateRange: string
     isActive: boolean
+    /** `properties.egis_url` when it is an http(s) URL; null otherwise. */
+    egisUrl: string | null
+}
+
+function httpUrl(value: unknown): string | null {
+    return typeof value === 'string' && /^https?:\/\//i.test(value)
+        ? value
+        : null
 }
 
 const MONTH_DAY = new Intl.DateTimeFormat('en-US', {
@@ -62,6 +70,7 @@ export function buildEntryDisplays(
                 : String(new Date(startMs).getUTCFullYear()),
             dateRange: formatDateRange(entry.start, entry.end),
             isActive: entry.start != null && isOngoing(entry.end, now),
+            egisUrl: httpUrl(entry.properties.egis_url),
         }
     }
     return byId

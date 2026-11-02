@@ -167,6 +167,7 @@ derived from the data (§2).
                 "hazards": ["Wildfire"],
                 "start_datetime": "2025-01-05T00:00:00Z",
                 "end_datetime": "2025-03-31T00:00:00Z",
+                "egis_url": "https://gis.earthdata.nasa.gov/portal/home/group.html?id=c3a8e74d6c374e4db0e4f9185f44d876",
                 "layers": [
                     { "key": "fire-extent", "defaultOn": true },
                     { "key": "active-fire-detections", "defaultOn": true, "opacity": 0.8 },
@@ -197,6 +198,10 @@ derived from the data (§2).
   activation is ~a STAC Item, so a future STAC-backed catalogue is a
   loader swap, not a migration.
 - `end_datetime: null` ⇒ ACTIVE.
+- `egis_url` (optional) — the event's EGIS portal group. When present and
+  http(s), the picked entry shows an "EGIS services" link, opened in a new
+  tab, beside its date range. Absent ⇒ no link; one flat field on purpose,
+  so presence alone decides display.
 - The `layers[]` entries are the ACTIVATION_LAYER association rows.
 
 ## 6. Genericity (Air4US etc.)

@@ -380,17 +380,37 @@
     &__entry-meta {
         display: flex;
         align-items: center;
+        justify-content: flex-end;
         gap: var(--theme-spacing-1, 8px);
         padding: 0 var(--theme-spacing-05, 4px);
     }
 
     &__entry-dates {
+        margin-right: auto;
         color: var(--theme-color-base-dark, #565c65);
         font-size: var(--theme-font-size-3xs, 12px);
     }
 
+    &__entry-link {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--theme-spacing-05, 4px);
+        color: var(--theme-color-primary, #005ea2);
+        font-size: var(--theme-font-size-3xs, 12px);
+        text-decoration: none;
+        white-space: nowrap;
+
+        &:hover,
+        &:focus-visible {
+            text-decoration: underline;
+        }
+    }
+
+    &__external-icon {
+        @include masked-icon('open-in-new.svg', 12px);
+    }
+
     &__pill {
-        margin-left: auto;
         padding: 0 var(--theme-spacing-1, 8px);
         background: var(--theme-color-primary-lightest, #e6f4f6);
         border-radius: var(--theme-radius-0, 0);
