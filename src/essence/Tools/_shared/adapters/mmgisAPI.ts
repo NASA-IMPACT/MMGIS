@@ -418,6 +418,12 @@ export type ComparisonState = {
     right: ComparisonSideState
 }
 
+/** What the opening link said about a tool, by module name; null when the
+ *  link named none, or before mission load registers the handler. */
+export const mmgisGetToolUrlState = (toolName: string): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('tool:getUrlState', toolName)
+}
+
 /** The comparison as core holds it; null before core provides it. */
 export const mmgisGetComparisonState = (): Promise<ComparisonState | null> => {
     return mmgisRequestIfProvided<ComparisonState>('map:comparison:getState')
