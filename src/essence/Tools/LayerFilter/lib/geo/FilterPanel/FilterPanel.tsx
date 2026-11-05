@@ -359,7 +359,7 @@ function EntryField({
                             target="_blank"
                             rel="noopener noreferrer"
                         >
-                            EGIS services
+                            View GIS Services
                             <span
                                 className="blocks-layer-filter__external-icon"
                                 aria-hidden="true"
