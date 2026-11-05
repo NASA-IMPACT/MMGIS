@@ -20,6 +20,9 @@ import {
     mmgisGetDataCoverage,
     mmgisFormatTime,
     mmgisGetTimeZone,
+    mmgisGetComparisonState,
+    type ComparisonSideState,
+    type ComparisonState,
     type CoverageSpan,
     type Duration,
     type LayerConfig,
@@ -28,8 +31,12 @@ import {
     type TemporalExtent,
 } from '../adapters/mmgisAPI'
 
+/** The side of a comparison a row belongs to, named as its caption reads;
+ *  absent outside a comparison. */
+type RowSide = { side?: string | null }
+
 export type ExportLegendRow =
-    | {
+    | (RowSide & {
           kind: 'gradient'
           title: string
           dateLine: string | null
@@ -37,20 +44,20 @@ export type ExportLegendRow =
           min: number | null
           max: number | null
           unit: string | null
-      }
-    | {
+      })
+    | (RowSide & {
           kind: 'categorical'
           title: string
           dateLine: string | null
           stops: LegendSwatch[]
-      }
+      })
     /** A layer with nothing to draw: it is still on the map, so it is still
      *  on the band, as a name and its date line. */
-    | {
+    | (RowSide & {
           kind: 'plain'
           title: string
           dateLine: string | null
-      }
+      })
 
 /** A labelled date printed under the mission name. The renderer prints the
  *  label and value without knowing which is the cursor and which the export. */
@@ -135,6 +142,15 @@ const dataCoverage = async (): Promise<Record<
  * nothing, and any `Collected` range would name pixels that are not there.
  */
 const NO_DATA_AT_CURSOR = 'No data at cursor'
+
+const comparisonState = async (): Promise<ComparisonState | null> => {
+    try {
+        return await mmgisGetComparisonState()
+    } catch (err) {
+        console.warn('[export legend] core reported no comparison state', err)
+        return null
+    }
+}
 
 /**
  * A dated span, worded. Both ends of a span print at the same precision, so
@@ -361,6 +377,74 @@ const dateLineFor = (
  * is the one date always available, so an unformattable one prints as the raw
  * ISO string, which carries its own zone.
  */
+/**
+ * The date line of a layer drawn at a side's pinned date rather than at the
+ * global cursor: the pin is the request, and a pin outside the layer's
+ * coverage is what the screen shows as an empty side.
+ */
+const pinnedDateLine = (
+    cfg: LayerConfig | undefined,
+    extent: TemporalExtent | undefined,
+    pinned: string,
+): string | null => {
+    const precision = extent?.interval ?? null
+    if (!cfg?.time || cfg.time.enabled !== true) {
+        return extentDateLine(extent, precision)
+    }
+    const pinMs = parseInstant(pinned)?.ms
+    const startMs = parseInstant(extent?.start)?.ms
+    const endMs = parseInstant(extent?.end)?.ms
+    if (
+        pinMs !== undefined &&
+        ((startMs !== undefined && pinMs < startMs) || (endMs !== undefined && pinMs > endMs))
+    ) {
+        const at = formatAtPrecision(precision, pinned) ?? pinned
+        return `No data at ${at}`
+    }
+    return dateLineFor(cfg, extent, undefined, {
+        cursor: pinned,
+        windowStart: null,
+        mode: 'point',
+    })
+}
+
+const SIDE_FALLBACK: Record<'left' | 'right', string> = { left: 'Left', right: 'Right' }
+
+/**
+ * With comparison on, the band describes what each side draws rather than
+ * what the layer panel has switched on: one row per layer per side, under the
+ * side's caption, dated at the side's pin or, for an unpinned side, as the
+ * global cursor dates it.
+ */
+const comparisonRows = (
+    comparison: ComparisonState,
+    layers: LayerWithLegend[],
+    layerConfigs: Record<string, LayerConfig> | null,
+    extents: Record<string, TemporalExtent> | null,
+    coverages: Record<string, LayerDataCoverage> | null,
+    globalCursor: TimeCursor,
+): ExportLegendRow[] => {
+    const byId = new Map(layers.map((layer) => [layer.id, layer]))
+    const rows: ExportLegendRow[] = []
+    const sides: Array<['left' | 'right', ComparisonSideState]> = [
+        ['left', comparison.left],
+        ['right', comparison.right],
+    ]
+    for (const [key, side] of sides) {
+        const caption = side.label?.trim() || SIDE_FALLBACK[key]
+        for (const id of side.layerIds) {
+            const layer = byId.get(id)
+            if (!layer || layer.opacity === 0) continue
+            const dateLine =
+                side.date != null
+                    ? pinnedDateLine(layerConfigs?.[id], extents?.[id], side.date)
+                    : dateLineFor(layerConfigs?.[id], extents?.[id], coverages?.[id], globalCursor)
+            rows.push({ ...toRow(layer, dateLine), side: caption })
+        }
+    }
+    return rows
+}
+
 const buildHeaderFacts = async (): Promise<ExportHeaderFact[]> => {
     const facts: ExportHeaderFact[] = []
     let zone: string | null = null
@@ -433,30 +517,37 @@ export const getExportLegendModel = async (): Promise<ExportLegendModel> => {
     // The configs are asked for once and handed to the row assembly, which
     // would otherwise request them again for itself.
     const layerConfigs = await mmgisGetLayerConfigs()
+    const comparison = await comparisonState()
+    const comparing = comparison?.enabled === true
     const [viewState, layers, headerFacts, globalCursor, extents, coverages] =
         await Promise.all([
             mmgisGetViewState(),
-            getLayersWithLegends({ showOnlyVisible: true, layerConfigs }),
+            // A comparison's sides may hold a layer the panel has off, so the
+            // sides are read from every layer and filtered by id.
+            getLayersWithLegends({ showOnlyVisible: !comparing, layerConfigs }),
             buildHeaderFacts(),
             globalTimeCursor(),
             temporalExtents(),
             dataCoverage(),
         ])
+    const rows = comparing
+        ? comparisonRows(comparison!, layers, layerConfigs, extents, coverages, globalCursor)
+        : layers
+              .filter((layer) => layer.opacity !== 0)
+              .map((layer) =>
+                  toRow(
+                      layer,
+                      dateLineFor(
+                          layerConfigs?.[layer.id],
+                          extents?.[layer.id],
+                          coverages?.[layer.id],
+                          globalCursor,
+                      ),
+                  ),
+              )
     return {
         missionName: viewState?.missionName ?? null,
         headerFacts,
-        rows: layers
-            .filter((layer) => layer.opacity !== 0)
-            .map((layer) =>
-                toRow(
-                    layer,
-                    dateLineFor(
-                        layerConfigs?.[layer.id],
-                        extents?.[layer.id],
-                        coverages?.[layer.id],
-                        globalCursor,
-                    ),
-                ),
-            ),
+        rows,
     }
 }
