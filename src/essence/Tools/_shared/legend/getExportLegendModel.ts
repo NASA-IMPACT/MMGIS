@@ -377,10 +377,20 @@ const dateLineFor = (
  * is the one date always available, so an unformattable one prints as the raw
  * ISO string, which carries its own zone.
  */
+/** Whether a pinned instant falls outside what the layer's extent covers. */
+const pinnedOutOfRange = (extent: TemporalExtent | undefined, pinned: string): boolean => {
+    const pinMs = parseInstant(pinned)?.ms
+    if (pinMs === undefined) return false
+    const startMs = parseInstant(extent?.start)?.ms
+    const endMs = parseInstant(extent?.end)?.ms
+    return (startMs !== undefined && pinMs < startMs) || (endMs !== undefined && pinMs > endMs)
+}
+
 /**
  * The date line of a layer drawn at a side's pinned date rather than at the
- * global cursor: the pin is the request, and a pin outside the layer's
- * coverage is what the screen shows as an empty side.
+ * global cursor. The pin is the whole request, so it is handed to the line
+ * builder directly: the layer's own time window, which the global path
+ * prefers, is the cursor's, not the pin's.
  */
 const pinnedDateLine = (
     cfg: LayerConfig | undefined,
@@ -391,30 +401,26 @@ const pinnedDateLine = (
     if (!cfg?.time || cfg.time.enabled !== true) {
         return extentDateLine(extent, precision)
     }
-    const pinMs = parseInstant(pinned)?.ms
-    const startMs = parseInstant(extent?.start)?.ms
-    const endMs = parseInstant(extent?.end)?.ms
-    if (
-        pinMs !== undefined &&
-        ((startMs !== undefined && pinMs < startMs) || (endMs !== undefined && pinMs > endMs))
-    ) {
-        const at = formatAtPrecision(precision, pinned) ?? pinned
-        return `No data at ${at}`
+    if (pinnedOutOfRange(extent, pinned)) {
+        return `No data at ${formatAtPrecision(precision, pinned) ?? pinned}`
     }
-    return dateLineFor(cfg, extent, undefined, {
-        cursor: pinned,
-        windowStart: null,
-        mode: 'point',
-    })
+    return cursorDateLine({ start: null, end: pinned, periodic: false }, extent, precision)
 }
 
 const SIDE_FALLBACK: Record<'left' | 'right', string> = { left: 'Left', right: 'Right' }
 
+const sameLayers = (a: string[], b: string[]): boolean =>
+    a.length === b.length && a.every((id, i) => id === b[i])
+
 /**
  * With comparison on, the band describes what each side draws rather than
- * what the layer panel has switched on: one row per layer per side, under the
- * side's caption, dated at the side's pin or, for an unpinned side, as the
- * global cursor dates it.
+ * what the layer panel has switched on.
+ *
+ * Two different layer sets (layers mode) give one row per layer per side,
+ * under the side's caption and dated as that side is. The same layers on both
+ * sides (dates mode) give each layer once: its colours are the same either
+ * side, and only the dates differ, so the row's date line names both sides'
+ * dates, and says which has nothing at its date.
  */
 const comparisonRows = (
     comparison: ComparisonState,
@@ -425,13 +431,38 @@ const comparisonRows = (
     globalCursor: TimeCursor,
 ): ExportLegendRow[] => {
     const byId = new Map(layers.map((layer) => [layer.id, layer]))
-    const rows: ExportLegendRow[] = []
     const sides: Array<['left' | 'right', ComparisonSideState]> = [
         ['left', comparison.left],
         ['right', comparison.right],
     ]
-    for (const [key, side] of sides) {
-        const caption = side.label?.trim() || SIDE_FALLBACK[key]
+    const captionOf = ([key, side]: (typeof sides)[number]) =>
+        side.label?.trim() || SIDE_FALLBACK[key]
+    const rows: ExportLegendRow[] = []
+
+    if (sameLayers(comparison.left.layerIds, comparison.right.layerIds)) {
+        // What a side shows of this layer at its date, in the caption's words.
+        const sideText = (entry: (typeof sides)[number], id: string): string => {
+            const [, side] = entry
+            const caption = captionOf(entry)
+            const timed = layerConfigs?.[id]?.time?.enabled === true
+            const empty =
+                timed &&
+                (side.date != null
+                    ? pinnedOutOfRange(extents?.[id], side.date)
+                    : coverages?.[id]?.outOfDataRange === true)
+            return empty ? `No data at ${caption}` : caption
+        }
+        for (const id of comparison.left.layerIds) {
+            const layer = byId.get(id)
+            if (!layer || layer.opacity === 0) continue
+            rows.push(toRow(layer, sides.map((entry) => sideText(entry, id)).join(' · ')))
+        }
+        return rows
+    }
+
+    for (const entry of sides) {
+        const [, side] = entry
+        const caption = captionOf(entry)
         for (const id of side.layerIds) {
             const layer = byId.get(id)
             if (!layer || layer.opacity === 0) continue
