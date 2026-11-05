@@ -16,6 +16,13 @@ const makeCtx = (calls) => ({
     save: vi.fn(),
     restore: vi.fn(),
     drawImage: (...args) => calls.push({ op: 'drawImage', args }),
+    translate: (...args) => calls.push({ op: 'translate', args }),
+    rotate: (...args) => calls.push({ op: 'rotate', args }),
+    beginPath: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    closePath: vi.fn(),
+    fill: (...args) => calls.push({ op: 'fill', args }),
 })
 
 const makeCanvas = (calls) => ({
@@ -137,6 +144,46 @@ describe('composeExportImage', () => {
         const labels = calls.filter((c) => c.op === 'fillText').map((c) => c.args[0])
         expect(labels).toContain('2 km')
         expect(labels).toContain('Displacement')
+    })
+
+    // The arrow follows the bar along the bottom edge, so an export with
+    // both reads bar-then-arrow, and one with only a compass still gets its
+    // arrow at the corner.
+    test('a captured compass is drawn as a north arrow to the right of the bar, turned by the bearing', async () => {
+        const calls = []
+        const canvas = makeCanvas(calls)
+        const shot = {
+            ...screenshot,
+            scaleBar: { label: '500 m', widthPx: 160 },
+            compass: { bearing: 90 },
+        }
+        await composeExportImage(shot, null, {
+            createBitmap: async () => ({ close: vi.fn() }),
+            createCanvas: () => canvas,
+            scale: 1,
+        })
+        expect(canvas.height).toBe(screenshot.height)
+        const rule = calls.find((c) => c.op === 'fillRect' && c.args[2] === 160)
+        const [{ args: [cx] }] = calls.filter((c) => c.op === 'translate')
+        expect(cx).toBeGreaterThan(rule.args[0] + 160)
+        const [{ args: [angle] }] = calls.filter((c) => c.op === 'rotate')
+        expect(angle).toBeCloseTo(-Math.PI / 2)
+        expect(calls.some((c) => c.op === 'fill')).toBe(true)
+        expect(calls.filter((c) => c.op === 'fillText').map((c) => c.args[0])).toEqual(['500 m', 'N'])
+    })
+
+    test('a compass alone is drawn at the bottom-left margin', async () => {
+        const calls = []
+        const canvas = makeCanvas(calls)
+        await composeExportImage({ ...screenshot, compass: { bearing: 0 } }, null, {
+            createBitmap: async () => ({ close: vi.fn() }),
+            createCanvas: () => canvas,
+            scale: 1,
+        })
+        const [{ args: [cx, cy] }] = calls.filter((c) => c.op === 'translate')
+        expect(cx).toBeLessThan(screenshot.width / 4)
+        expect(cy).toBeGreaterThan(screenshot.height * 0.9)
+        expect(cy).toBeLessThan(screenshot.height)
     })
 
     test('a screenshot with scaleBar null and no rows is returned untouched', async () => {

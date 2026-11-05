@@ -23,6 +23,9 @@ export type ScopedMMGISAPI = {
 /** The on-screen scale bar as captured: its label and length in image pixels. */
 export type ExportScaleBar = { label: string; widthPx: number }
 
+/** The camera's bearing at capture, degrees clockwise from north. */
+export type ExportCompass = { bearing: number }
+
 export type MapScreenshotResult = {
     blob: Blob
     mimeType: 'image/png'
@@ -31,6 +34,8 @@ export type MapScreenshotResult = {
     height: number
     /** Null or absent when the map shows no bar or cannot vouch for one. */
     scaleBar?: ExportScaleBar | null
+    /** Null or absent when the map shows no compass. */
+    compass?: ExportCompass | null
 }
 
 /** The subset of a mission layer config that plugins read off the bus. */

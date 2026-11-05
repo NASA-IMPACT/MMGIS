@@ -972,6 +972,7 @@ test.describe('DeckGLAdapter', () => {
                 width: 256,
                 height: 128,
                 scaleBar: null,
+                compass: null,
             })
         })
 
@@ -1029,6 +1030,37 @@ test.describe('DeckGLAdapter', () => {
 
             test('is null when the library has drawn no bar yet', async () => {
                 expect(await captureWith({ controls: { scaleBar: {} } })).toBeNull()
+            })
+        })
+
+        // A north arrow needs only the bearing, which the adapter already
+        // holds; it is reported exactly when a compass is configured.
+        test.describe('compass', () => {
+            const captureWith = async ({ controls, bearing = 0 }) => {
+                const adapter = makeAdapter()
+                adapter._viewState.bearing = bearing
+                adapter._isOverlayMode = true
+                adapter._basemapOptions = { provider: 'maplibre', style: 'style://a', ...(controls ? { controls } : {}) }
+                adapter._container = document.createElement('div')
+                let renderHandler = null
+                adapter._basemap = {
+                    once: (_type, handler) => { renderHandler = handler },
+                    triggerRepaint: () => renderHandler(),
+                    getCanvas: () => ({
+                        width: 100,
+                        height: 50,
+                        toBlob: (callback, type) => callback(new Blob(['x'], { type })),
+                    }),
+                }
+                return (await adapter.captureScreenshot()).compass
+            }
+
+            test('reports the bearing when a compass is configured', async () => {
+                expect(await captureWith({ controls: { compass: {} }, bearing: 37 })).toEqual({ bearing: 37 })
+            })
+
+            test('is null without a configured compass', async () => {
+                expect(await captureWith({ controls: { scaleBar: {} }, bearing: 37 })).toBeNull()
             })
         })
 
@@ -1110,6 +1142,7 @@ test.describe('DeckGLAdapter', () => {
                 width: 300,
                 height: 200,
                 scaleBar: null,
+                compass: null,
             })
         })
 

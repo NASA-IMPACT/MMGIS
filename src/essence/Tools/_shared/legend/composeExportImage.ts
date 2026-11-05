@@ -2,7 +2,12 @@ import type { MapScreenshotResult } from '../adapters/mmgisAPI'
 import { measureLegendBand, drawLegendBand } from './renderLegendBand'
 import type { ExportLegendModel } from './getExportLegendModel'
 import { resolveBandTheme, loadBandFonts, type BandTheme } from './bandTheme'
-import { drawScaleBar, SCALE_BAR_MARGIN } from './renderScaleBar'
+import {
+    drawNorthArrow,
+    drawScaleBar,
+    measureScaleBar,
+    SCALE_BAR_MARGIN,
+} from './renderScaleBar'
 
 export type ComposeDeps = {
     createBitmap?: (blob: Blob) => Promise<ImageBitmap>
@@ -13,7 +18,8 @@ export type ComposeDeps = {
 
 /**
  * Decorates a captured map image: the scale bar the screen showed, painted at
- * the map's bottom-left corner, and the legend band appended below the map.
+ * the map's bottom-left corner with a north arrow beside it, and the legend
+ * band appended below the map.
  * The screenshot blob is the plugin/core boundary — decode it, draw onto a
  * canvas, re-encode in the same mime type. With neither a bar nor a legend
  * row to draw, the screenshot is returned untouched.
@@ -25,7 +31,8 @@ export async function composeExportImage(
 ): Promise<MapScreenshotResult> {
     const hasLegend = !!model && model.rows.length > 0
     const scaleBar = screenshot.scaleBar ?? null
-    if (!hasLegend && !scaleBar) return screenshot
+    const compass = screenshot.compass ?? null
+    if (!hasLegend && !scaleBar && !compass) return screenshot
     const {
         createBitmap = (blob: Blob) => createImageBitmap(blob),
         createCanvas = () => document.createElement('canvas'),
@@ -56,14 +63,15 @@ export async function composeExportImage(
         canvas.width = screenshot.width
         canvas.height = screenshot.height + bandHeight
         ctx.drawImage(bitmap, 0, 0)
+        const margin = SCALE_BAR_MARGIN * scale
+        const bottom = screenshot.height - margin
+        let left = margin
         if (scaleBar) {
-            const margin = SCALE_BAR_MARGIN * scale
-            drawScaleBar(ctx, scaleBar, {
-                left: margin,
-                bottom: screenshot.height - margin,
-                scale,
-                theme,
-            })
+            drawScaleBar(ctx, scaleBar, { left, bottom, scale, theme })
+            left += measureScaleBar(ctx, scaleBar, scale, theme).width + margin
+        }
+        if (compass) {
+            drawNorthArrow(ctx, compass, { left, bottom, scale, theme })
         }
         if (hasLegend) {
             drawLegendBand(

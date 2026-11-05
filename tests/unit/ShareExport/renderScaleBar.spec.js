@@ -1,5 +1,10 @@
 import { describe, test, expect } from 'vitest'
-import { drawScaleBar, measureScaleBar } from '../../../src/essence/Tools/_shared/legend/renderScaleBar.ts'
+import {
+    drawNorthArrow,
+    drawScaleBar,
+    measureScaleBar,
+    NORTH_ARROW_SIZE,
+} from '../../../src/essence/Tools/_shared/legend/renderScaleBar.ts'
 
 const makeCtx = () => {
     const fillRects = []
@@ -65,5 +70,43 @@ describe('drawScaleBar', () => {
         const { ctx } = makeCtx()
         const short = { widthPx: 20, label: '5,000 km' }
         expect(measureScaleBar(ctx, short, 1).width).toBeGreaterThanOrEqual('5,000 km'.length * 6)
+    })
+})
+
+describe('drawNorthArrow', () => {
+    const makeArrowCtx = () => {
+        const { ctx, fillRects, fillTexts } = makeCtx()
+        const ops = []
+        Object.assign(ctx, {
+            textAlign: 'left',
+            save: () => ops.push('save'),
+            restore: () => ops.push('restore'),
+            translate: (x, y) => ops.push(['translate', x, y]),
+            rotate: (a) => ops.push(['rotate', a]),
+            beginPath: () => ops.push('beginPath'),
+            moveTo: (x, y) => ops.push(['moveTo', x, y]),
+            lineTo: (x, y) => ops.push(['lineTo', x, y]),
+            closePath: () => ops.push('closePath'),
+            fill: () => ops.push('fill'),
+        })
+        return { ctx, fillRects, fillTexts, ops }
+    }
+
+    test('turns against the bearing about the centre of its square backing', () => {
+        const { ctx, fillRects, ops } = makeArrowCtx()
+        drawNorthArrow(ctx, { bearing: 45 }, { left: 20, bottom: 120, scale: 1 })
+        expect(fillRects[0].args).toEqual([20, 120 - NORTH_ARROW_SIZE, NORTH_ARROW_SIZE, NORTH_ARROW_SIZE])
+        expect(ops).toContainEqual(['translate', 20 + NORTH_ARROW_SIZE / 2, 120 - NORTH_ARROW_SIZE / 2])
+        const [, angle] = ops.find((o) => o[0] === 'rotate')
+        expect(angle).toBeCloseTo(-Math.PI / 4)
+    })
+
+    test('restores the context after drawing and labels the tip N', () => {
+        const { ctx, fillTexts, ops } = makeArrowCtx()
+        drawNorthArrow(ctx, { bearing: 0 }, { left: 0, bottom: 100, scale: 2 })
+        expect(ops[0]).toBe('save')
+        expect(ops.at(-1)).toBe('restore')
+        expect(fillTexts.map(({ args }) => args[0])).toEqual(['N'])
+        expect(fontPx(fillTexts[0].font)).toBe(20)
     })
 })

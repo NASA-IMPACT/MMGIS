@@ -26,6 +26,11 @@ export interface ExportScaleBar {
     widthPx: number
 }
 
+/** The camera's bearing at capture, degrees clockwise from north, for a north arrow. */
+export interface ExportCompass {
+    bearing: number
+}
+
 export interface MapScreenshotResult {
     blob: Blob
     mimeType: 'image/png'
@@ -35,6 +40,8 @@ export interface MapScreenshotResult {
     /** Null when no bar is configured, or the view is tilted so one bar
      *  cannot describe it. Absent from engines that draw no bar. */
     scaleBar?: ExportScaleBar | null
+    /** Null when no compass is configured. Absent from engines that draw none. */
+    compass?: ExportCompass | null
 }
 
 /**

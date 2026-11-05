@@ -39,6 +39,7 @@ import type {
     IMapEngine, 
     ComparisonConfig, 
     ComparisonLayout,
+    ExportCompass,
     ExportScaleBar,
     MapScreenshotResult 
 } from '../IMapEngine'
@@ -817,7 +818,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                     const onRender = () => {
                         clearTimeout(timeout)
                         canvasToPngScreenshot(basemap.getCanvas()).then(
-                            (shot) => resolve({ ...shot, scaleBar: this._readScaleBar(shot.width) }),
+                            (shot) =>
+                                resolve({
+                                    ...shot,
+                                    scaleBar: this._readScaleBar(shot.width),
+                                    compass: this._readCompass(),
+                                }),
                             reject
                         )
                     }
@@ -850,9 +856,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                     )
                     return
                 }
-                // Standalone mode has no basemap, and so no scale bar to read.
+                // Standalone mode has no basemap, and so no controls to read.
                 canvasToPngScreenshot(canvas).then(
-                    (shot) => resolve({ ...shot, scaleBar: null }),
+                    (shot) => resolve({ ...shot, scaleBar: null, compass: null }),
                     reject
                 )
             } catch (err) {
@@ -868,6 +874,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * on a view tilted past {@link SCALE_BAR_MAX_PITCH_DEG}, or when the
      * library has not drawn one.
      */
+    /** The bearing for an export's north arrow, when a compass is configured. */
+    private _readCompass(): ExportCompass | null {
+        if (!this._basemapOptions?.controls?.compass) return null
+        return { bearing: this._viewState.bearing ?? 0 }
+    }
+
     private _readScaleBar(imageWidth: number): ExportScaleBar | null {
         if (!this._basemapOptions?.controls?.scaleBar) return null
         if (Math.abs(this._viewState.pitch ?? 0) > SCALE_BAR_MAX_PITCH_DEG) return null
