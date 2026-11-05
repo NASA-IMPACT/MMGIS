@@ -1,7 +1,7 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import FeaturePopupTool from '../FeaturePopupTool'
 
-const PIN_ID = 'feature-popup-highlight'
+const PIN_ID = 'feature-popup-pin'
 const REMOVED = [['map:removeLayer', { id: PIN_ID }]]
 const LAYER = 'lyr-opted-in'
 
@@ -85,7 +85,7 @@ afterEach(() => {
     delete window.mmgisAPI
 })
 
-describe('highlighting the clicked feature', () => {
+describe('pinning the clicked point', () => {
     test('a click on a point that opens a card drops one click-transparent pin on it', async () => {
         await click({ feature: point, layerId: LAYER, latlng: { lat: 2, lng: 2 } })
 
@@ -104,14 +104,14 @@ describe('highlighting the clicked feature', () => {
         expect(icon.iconAnchor[1]).toBeGreaterThanOrEqual(icon.iconSize[1])
     })
 
-    test('a click on a polygon opens the card without a highlight', async () => {
+    test('a click on a polygon opens the card without a pin', async () => {
         await click({ feature: polygon, layerId: LAYER, latlng: { lat: 0.5, lng: 0.5 } })
 
         expect(calls('map:showPopup')).toHaveLength(1)
         expect(calls('map:createLayer')).toHaveLength(0)
     })
 
-    test('a polygon click after a point click removes the highlight', async () => {
+    test('a polygon click after a point click removes the pin', async () => {
         await click({ feature: point, layerId: LAYER, latlng: { lat: 2, lng: 2 } })
         await click({ feature: polygon, layerId: LAYER, latlng: { lat: 0.5, lng: 0.5 } })
 
@@ -131,14 +131,14 @@ describe('highlighting the clicked feature', () => {
         expect(calls('map:removeLayer')).toHaveLength(0)
     })
 
-    test('a click on empty space removes the highlight', async () => {
+    test('a click on empty space removes the pin', async () => {
         await click({ feature: point, layerId: LAYER, latlng: { lat: 2, lng: 2 } })
         await click({ feature: null })
 
         expect(calls('map:removeLayer')).toEqual(REMOVED)
     })
 
-    test('a click on a layer without the popup removes the highlight', async () => {
+    test('a click on a layer without the popup removes the pin', async () => {
         await click({ feature: point, layerId: LAYER, latlng: { lat: 2, lng: 2 } })
         await click({ feature: point, layerId: 'lyr-plain', latlng: { lat: 2, lng: 2 } })
 
@@ -158,7 +158,7 @@ describe('highlighting the clicked feature', () => {
         expect(calls('map:removeLayer')).toHaveLength(0)
     })
 
-    test('destroy removes the highlight', async () => {
+    test('destroy removes the pin', async () => {
         await click({ feature: point, layerId: LAYER, latlng: { lat: 2, lng: 2 } })
         FeaturePopupTool.destroy()
 

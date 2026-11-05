@@ -53,7 +53,7 @@ const PLUGIN_ID = 'feature-popup'
  */
 const LEAFLET = 'leaflet'
 
-const PIN_LAYER_ID = 'feature-popup-highlight'
+const PIN_LAYER_ID = 'feature-popup-pin'
 
 const PIN_WIDTH = 20
 const PIN_HEIGHT = 28
@@ -114,7 +114,7 @@ const FeaturePopupTool = {
         })
         this._cleanups = []
         this._hideOwnCard()
-        this._removeHighlight()
+        this._removePin()
         this._configs = new Map()
         this._api = null
         this._readToken += 1
@@ -156,13 +156,13 @@ const FeaturePopupTool = {
         // rather than to a library default nothing here pins.
         if (!info?.feature) {
             this._hideOwnCard()
-            this._removeHighlight()
+            this._removePin()
             return
         }
         const config = this._configs.get(info.layerId)
         if (!config) {
             this._hideOwnCard()
-            this._removeHighlight()
+            this._removePin()
             return
         }
 
@@ -174,15 +174,15 @@ const FeaturePopupTool = {
         // the feature it describes.
         if (title == null && html == null) {
             this._hideOwnCard()
-            this._removeHighlight()
+            this._removePin()
             return
         }
 
         // Points only. A polygon or line from a vector tile layer arrives
         // clipped to the tile that was clicked, so redrawing it outlines a
         // fragment cut off at the tile edge rather than the whole feature.
-        if (isPointFeature(info.feature)) this._showHighlight(info.feature)
-        else this._removeHighlight()
+        if (isPointFeature(info.feature)) this._showPin(info.feature)
+        else this._removePin()
 
         const actions = config.actions
         const card = {}
@@ -255,7 +255,7 @@ const FeaturePopupTool = {
 
     // An icon, so deck.gl billboards it: the pin stays upright and facing
     // the camera when the map is pitched, where a circle would lie flat.
-    _showHighlight(feature) {
+    _showPin(feature) {
         mmgisRequest('map:createLayer', {
             id: PIN_LAYER_ID,
             type: 'vector',
@@ -273,11 +273,11 @@ const FeaturePopupTool = {
                 },
             },
         }).catch((err) =>
-            console.warn('[FeaturePopup] could not highlight the feature', err)
+            console.warn('[FeaturePopup] could not pin the feature', err)
         )
     },
 
-    _removeHighlight() {
+    _removePin() {
         mmgisRequest('map:removeLayer', { id: PIN_LAYER_ID }).catch(() => {})
     },
 }
