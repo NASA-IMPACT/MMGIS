@@ -1,4 +1,5 @@
 import PanelManager_ from '../PanelManager_/PanelManager_'
+import ToolController_ from './ToolController_'
 import { toolModules } from '../../../pre/tools'
 import { generateToolMetadata } from './ToolMetadataUtils'
 import { createLogger } from '../Logger_/Logger_'
@@ -411,6 +412,13 @@ const ToolControllerModern_ = {
             // Register reverse lookup (toolId -> targetId) for show/hide/unload by toolId
             toolIdToTargetId.set(toolMetadata.id, targetId)
 
+            // The share link's `tools=` entry is written by the classic
+            // controller from this list, which only its own init fills. A
+            // loaded modern tool joins it so its getUrlString() is asked.
+            if (!ToolController_.toolModuleNames.includes(toolMetadata.id)) {
+                ToolController_.toolModuleNames.push(toolMetadata.id)
+            }
+
             // Remove from deferred registry if it was queued there
             deferredTools.delete(toolMetadata.id)
 
@@ -461,6 +469,8 @@ const ToolControllerModern_ = {
             if (toolId) {
                 toolIdToTargetId.delete(toolId)
                 hiddenTools.delete(toolId)
+                const urlIndex = ToolController_.toolModuleNames.indexOf(toolId)
+                if (urlIndex !== -1) ToolController_.toolModuleNames.splice(urlIndex, 1)
             }
         }
 
