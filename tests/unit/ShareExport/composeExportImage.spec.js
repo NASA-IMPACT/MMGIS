@@ -95,4 +95,54 @@ describe('composeExportImage', () => {
             screenshot.width,
         ])
     })
+
+    // The bar is the one the screen showed, handed over by the capture, so it
+    // is painted on the map itself, never appended: an export with the legend
+    // off still carries it and keeps the map's own height.
+    test('a captured scale bar is painted over the map, at the bottom-left, with no band', async () => {
+        const calls = []
+        const canvas = makeCanvas(calls)
+        const withBar = { ...screenshot, scaleBar: { label: '500 m', widthPx: 160 } }
+        const result = await composeExportImage(withBar, null, {
+            createBitmap: async () => ({ close: vi.fn() }),
+            createCanvas: () => canvas,
+            scale: 1,
+        })
+        expect([canvas.width, canvas.height]).toEqual([screenshot.width, screenshot.height])
+        expect(result.height).toBe(screenshot.height)
+        expect(result.scaleBar).toEqual(withBar.scaleBar)
+
+        const [map] = calls.filter((c) => c.op === 'drawImage')
+        const label = calls.find((c) => c.op === 'fillText')
+        expect(label.args[0]).toBe('500 m')
+        expect(calls.indexOf(label)).toBeGreaterThan(calls.indexOf(map))
+        const rule = calls.find((c) => c.op === 'fillRect' && c.args[2] === 160)
+        expect(rule).toBeDefined()
+        // Inside the map, above its bottom edge.
+        expect(rule.args[0]).toBeGreaterThan(0)
+        expect(rule.args[1] + rule.args[3]).toBeLessThan(screenshot.height)
+    })
+
+    test('with both, the bar sits on the map and the band hangs below it', async () => {
+        const calls = []
+        const canvas = makeCanvas(calls)
+        const withBar = { ...screenshot, scaleBar: { label: '2 km', widthPx: 90 } }
+        await composeExportImage(withBar, bandModel, {
+            createBitmap: async () => ({ close: vi.fn() }),
+            createCanvas: () => canvas,
+            scale: 1,
+        })
+        const bandHeight = measureLegendBand(makeCtx([]), bandModel, screenshot.width, 1)
+        expect(canvas.height).toBe(screenshot.height + bandHeight)
+        const labels = calls.filter((c) => c.op === 'fillText').map((c) => c.args[0])
+        expect(labels).toContain('2 km')
+        expect(labels).toContain('Displacement')
+    })
+
+    test('a screenshot with scaleBar null and no rows is returned untouched', async () => {
+        const createBitmap = vi.fn()
+        const bare = { ...screenshot, scaleBar: null }
+        expect(await composeExportImage(bare, null, { createBitmap })).toBe(bare)
+        expect(createBitmap).not.toHaveBeenCalled()
+    })
 })

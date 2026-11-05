@@ -39,6 +39,7 @@ import type {
     IMapEngine, 
     ComparisonConfig, 
     ComparisonLayout,
+    ExportScaleBar,
     MapScreenshotResult 
 } from '../IMapEngine'
 import { MAP_ENGINE } from '../types/engine'
@@ -235,6 +236,16 @@ type BasemapControlCtors = {
 
 const DEFAULT_SCALE_BAR_POSITION: BasemapControlPosition = 'bottom-left'
 const DEFAULT_COMPASS_POSITION: BasemapControlPosition = 'top-right'
+
+/** The element the basemap library draws its scale bar into. */
+const SCALE_BAR_SELECTOR = '.maplibregl-ctrl-scale, .mapboxgl-ctrl-scale'
+
+/**
+ * Tilt, in degrees, beyond which a capture carries no scale bar. A tilted
+ * view's scale shrinks toward the camera and grows toward the horizon, so
+ * the one bar the library draws describes only its own row.
+ */
+const SCALE_BAR_MAX_PITCH_DEG = 10
 
 /**
  * One half of a side-by-side comparison: a clipped div holding a map of its
@@ -806,7 +817,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                     const onRender = () => {
                         clearTimeout(timeout)
                         canvasToPngScreenshot(basemap.getCanvas()).then(
-                            resolve,
+                            (shot) => resolve({ ...shot, scaleBar: this._readScaleBar(shot.width) }),
                             reject
                         )
                     }
@@ -839,11 +850,35 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                     )
                     return
                 }
-                canvasToPngScreenshot(canvas).then(resolve, reject)
+                // Standalone mode has no basemap, and so no scale bar to read.
+                canvasToPngScreenshot(canvas).then(
+                    (shot) => resolve({ ...shot, scaleBar: null }),
+                    reject
+                )
             } catch (err) {
                 reject(err as Error)
             }
         })
+    }
+
+    /**
+     * The scale bar the basemap library is drawing, scaled from CSS pixels to
+     * the pixels of an image `imageWidth` wide, so a capture carries a bar
+     * that reads exactly as the screen does. Null without a configured bar,
+     * on a view tilted past {@link SCALE_BAR_MAX_PITCH_DEG}, or when the
+     * library has not drawn one.
+     */
+    private _readScaleBar(imageWidth: number): ExportScaleBar | null {
+        if (!this._basemapOptions?.controls?.scaleBar) return null
+        if (Math.abs(this._viewState.pitch ?? 0) > SCALE_BAR_MAX_PITCH_DEG) return null
+        const el = this._container?.querySelector<HTMLElement>(SCALE_BAR_SELECTOR)
+        if (!el) return null
+        const label = (el.textContent ?? '').replace(/\u00a0/g, ' ').trim()
+        // The library sets the bar's length as an inline width.
+        const cssWidth = parseFloat(el.style.width) || el.offsetWidth
+        const containerWidth = this._container.clientWidth
+        if (!label || !(cssWidth > 0) || !(containerWidth > 0) || !(imageWidth > 0)) return null
+        return { label, widthPx: (cssWidth * imageWidth) / containerWidth }
     }
 
     /**

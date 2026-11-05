@@ -20,12 +20,17 @@ export type ScopedMMGISAPI = {
     provide: (name: string, handler: (...args: unknown[]) => unknown) => EventCleanup
 }
 
+/** The on-screen scale bar as captured: its label and length in image pixels. */
+export type ExportScaleBar = { label: string; widthPx: number }
+
 export type MapScreenshotResult = {
     blob: Blob
     mimeType: 'image/png'
     extension: 'png'
     width: number
     height: number
+    /** Null or absent when the map shows no bar or cannot vouch for one. */
+    scaleBar?: ExportScaleBar | null
 }
 
 /** The subset of a mission layer config that plugins read off the bus. */
