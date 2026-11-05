@@ -199,7 +199,7 @@ derived from the data (§2).
   loader swap, not a migration.
 - `end_datetime: null` ⇒ ACTIVE.
 - `egis_url` (optional) — the event's EGIS portal group. When present and
-  http(s), the picked entry shows an "EGIS services" link, opened in a new
+  http(s), the picked entry shows a "View GIS Services" link, opened in a new
   tab, beside its date range. Absent ⇒ no link; one flat field on purpose,
   so presence alone decides display.
 - The `layers[]` entries are the ACTIVATION_LAYER association rows.

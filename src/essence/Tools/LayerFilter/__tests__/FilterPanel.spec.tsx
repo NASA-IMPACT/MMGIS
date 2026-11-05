@@ -53,7 +53,7 @@ describe('FilterPanel picked-entry EGIS link', () => {
         expect(a.getAttribute('href')).toBe(url)
         expect(a.getAttribute('target')).toBe('_blank')
         expect(a.getAttribute('rel')).toContain('noopener')
-        expect(a.textContent).toBe('EGIS services')
+        expect(a.textContent).toBe('View GIS Services')
     })
 
     test('renders no link when egisUrl is null', async () => {
