@@ -16,10 +16,12 @@ function makeEngine({ showThrows = false, hideThrows = false } = {}) {
         latlng: { lat: number; lng: number }
         element: HTMLElement
     }> = []
+    const moves: Array<{ lat: number; lng: number }> = []
     let reportClose: (() => void) | undefined
 
     return {
         shows,
+        moves,
         /** The map library closing the card of its own accord. */
         libraryClose: () => reportClose?.(),
         engine: {
@@ -38,6 +40,9 @@ function makeEngine({ showThrows = false, hideThrows = false } = {}) {
                 if (hideThrows) throw new Error('engine destroyed')
                 reportClose = undefined
                 container.innerHTML = ''
+            },
+            movePopup(latlng: { lat: number; lng: number }) {
+                moves.push(latlng)
             },
         },
     }
@@ -240,6 +245,26 @@ describe('MapPopup_', () => {
         // Closed, never dismissed: the user did not wave the first card away.
         expect(first).toEqual(['closed'])
         expect(second).toEqual([])
+    })
+
+    it('moves the open card for map:movePopup, leaving its request pending', async () => {
+        const outcome = show(engine)
+
+        expect(MapPopup_.move({ lat: 46, lng: -121 })).toBe(true)
+        await nextTick()
+
+        expect(engine.moves).toEqual([{ lat: 46, lng: -121 }])
+        expect(engine.shows).toHaveLength(1)
+        expect(cards()).toHaveLength(1)
+        expect(outcome).toEqual([])
+    })
+
+    it('refuses a move with no card open, or without a finite pair', () => {
+        expect(MapPopup_.move({ lat: 46, lng: -121 })).toBe(false)
+        show(engine)
+        expect(MapPopup_.move({ lat: NaN, lng: -121 })).toBe(false)
+        expect(MapPopup_.move(undefined as never)).toBe(false)
+        expect(engine.moves).toEqual([])
     })
 
     it('retracts the card for map:hidePopup, resolving its request with closed', async () => {

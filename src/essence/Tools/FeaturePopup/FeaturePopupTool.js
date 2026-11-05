@@ -15,6 +15,12 @@
  *   - properties  (arr)  properties to list, each 'key' or 'key|Label';
  *                        omit to list all
  *   - actions     (arr)  up to two { label, event }
+ *   - latitudeProperty / longitudeProperty  (str)  properties holding the
+ *                        feature's exact position; when both read as numbers
+ *                        the card and pin anchor there
+ *
+ * Without those, a clicked point anchors to its geometry, re-read from the
+ * tiles drawn after each move so the anchor sharpens as the map zooms in.
  *
  * Emits, on a card button press, { feature, layerId, latlng } under:
  *   - <action.event>                    when the configured name carries a
@@ -24,10 +30,13 @@
  * Listens to:
  *   - map:featureClick    (engine bus; filtered to layers that opted in)
  *   - layers:listChanged  (a layer gained or lost, so re-read the opt-ins)
+ *   - map:moveend / layer:viewportLoaded  (re-anchor the card and pin to
+ *                                          the clicked point)
  *
  * Requests:
- *   - layers:getAllConfigs / map:getEngineType
+ *   - layers:getAllConfigs / map:getEngineType / map:getZoom
  *   - map:showPopup (resolves with how the card closed) / map:hidePopup
+ *   - map:queryRenderedFeatures / map:movePopup  re-anchoring
  *   - map:createLayer / map:removeLayer  a pin on the clicked point, which
  *                                        outlives the card and goes on the
  *                                        next click opening none
@@ -70,6 +79,17 @@ const FeaturePopupTool = {
     _openCard: null,
     /** Guards against an older config read landing after a newer one. */
     _readToken: 0,
+    /**
+     * The clicked point the card and pin are anchored to:
+     * { layerId, feature, key, latlng, zoom, zoomRead, exact }. `key` is the
+     * feature's properties in a form that compares across tiles; `zoom` is
+     * the zoom whose tiles `latlng` came from, filled in once `zoomRead`
+     * settles; `exact` marks a position read from the feature's own
+     * properties, which no tile can improve on.
+     */
+    _point: null,
+    /** Guards against an older re-anchor landing after a newer one. */
+    _reanchorToken: 0,
 
     initialize() {
         this.make(null)
@@ -99,6 +119,16 @@ const FeaturePopupTool = {
             this._cleanups.push(mmgisOn(event, handler))
         }
         subscribe('map:featureClick', (info) => this._onFeatureClick(info))
+        // A move settles before the tiles for the new view arrive, so the
+        // first look may still find the coarser tile; the second comes once
+        // the clicked layer's tiles are all in. Views served from cache never
+        // report loading, which the first look covers.
+        subscribe('map:moveend', () => this._reanchor())
+        subscribe('layer:viewportLoaded', (event) => {
+            if (event?.layerName === this._point?.layerId) {
+                this._reanchor({ settled: true })
+            }
+        })
         // A mission can gain or lose a layer after load, and with it the
         // popup a layer opted into.
         subscribe('layers:listChanged', () => this._readLayerConfigs())
@@ -178,17 +208,40 @@ const FeaturePopupTool = {
             return
         }
 
+        const exactLatLng = propertyLatLng(properties, config.popup)
+        const latlng = exactLatLng ?? cardAnchor(info.feature, info.latlng)
+
         // Points only. A polygon or line from a vector tile layer arrives
         // clipped to the tile that was clicked, so redrawing it outlines a
         // fragment cut off at the tile edge rather than the whole feature.
-        if (isPointFeature(info.feature)) this._showPin(info.feature)
-        else this._removePin()
+        let point = null
+        if (isPointFeature(info.feature)) {
+            point = {
+                layerId: info.layerId,
+                feature: info.feature,
+                key: stableStringify(properties),
+                latlng,
+                zoom: null,
+                exact: exactLatLng != null,
+            }
+            point.zoomRead = point.exact
+                ? null
+                : mmgisRequest('map:getZoom')
+                      .then((zoom) => {
+                          point.zoom = zoom
+                      })
+                      .catch(() => {})
+            this._setPoint(point)
+            this._showPin(pinFeature(point))
+        } else {
+            this._removePin()
+        }
 
         const actions = config.actions
         const card = {}
         this._openCard = card
         mmgisRequest('map:showPopup', {
-                latlng: info.latlng,
+                latlng,
                 title,
                 html,
                 // Labels only: the card is data, and the press comes back as
@@ -216,7 +269,9 @@ const FeaturePopupTool = {
                     this._emitAction(pressed.event, {
                         feature: info.feature,
                         layerId: info.layerId,
-                        latlng: info.latlng,
+                        // Re-anchoring moves the point it holds, so the
+                        // action carries where the card points now.
+                        latlng: point?.latlng ?? latlng,
                     })
                 },
                 (err) => {
@@ -278,13 +333,200 @@ const FeaturePopupTool = {
     },
 
     _removePin() {
+        this._setPoint(null)
         mmgisRequest('map:removeLayer', { id: PIN_LAYER_ID }).catch(() => {})
     },
+
+    /** Replacing the point drops any re-anchor still under way for the old one. */
+    _setPoint(point) {
+        this._point = point
+        this._reanchorToken += 1
+    },
+
+    /**
+     * Move the card and pin onto the clicked point as the map now draws it.
+     *
+     * A vector tile snaps positions to a grid that coarsens at lower zooms,
+     * so a point read zoomed out drifts from its true spot as the map zooms
+     * in. The point is looked up again in the tiles drawn now, matched to the
+     * clicked feature, and the anchor takes the finer position.
+     *
+     * `point.zoom` is the zoom whose tiles the anchor is known to come from.
+     * A move that does not zoom past it has nothing finer to offer and is
+     * skipped. A `settled` look comes once every tile in view has loaded, so
+     * its answer carries this zoom's precision and becomes the new bound; a
+     * look straight after a move may still read a coarser stand-in tile, so
+     * it never moves the bound.
+     */
+    async _reanchor({ settled = false } = {}) {
+        const point = this._point
+        if (!point || point.exact) return
+        const token = ++this._reanchorToken
+        const stale = () => token !== this._reanchorToken
+        try {
+            const [, zoom] = await Promise.all([
+                point.zoomRead,
+                mmgisRequest('map:getZoom'),
+            ])
+            if (stale()) return
+            const gained =
+                Number.isFinite(zoom) && Number.isFinite(point.zoom)
+                    ? zoom - point.zoom
+                    : 0
+            if (!settled && gained <= 0) return
+            const results = await mmgisRequest('map:queryRenderedFeatures', {
+                latlng: point.latlng,
+                radius: reanchorRadius(Math.max(0, gained)),
+                layers: [point.layerId],
+            })
+            if (stale()) return
+            const match = closestMatch(results, point)
+            if (!match) return
+            if (settled && Number.isFinite(zoom)) point.zoom = zoom
+            if (sqDist(match.latlng, point.latlng) === 0) return
+            point.latlng = match.latlng
+            point.feature = match.feature
+            if (this._openCard) {
+                mmgisRequest('map:movePopup', { latlng: point.latlng }).catch(
+                    () => {}
+                )
+            }
+            this._showPin(pinFeature(point))
+        } catch (err) {
+            console.warn('[FeaturePopup] could not re-anchor the card', err)
+        }
+    },
+}
+
+/**
+ * The position a layer says its features carry in their own properties, as
+ * configured by `latitudeProperty` and `longitudeProperty`. Exact where a
+ * tile's geometry is snapped, so it wins whenever both read as numbers in
+ * range. Numeric strings count: CSV-derived data often stores them so.
+ */
+function propertyLatLng(properties, popup) {
+    const latKey = popup?.latitudeProperty
+    const lngKey = popup?.longitudeProperty
+    if (!isNonBlank(latKey) || !isNonBlank(lngKey)) return null
+    const lat = toCoordinate(readProperty(properties, latKey.trim()))
+    const lng = toCoordinate(readProperty(properties, lngKey.trim()))
+    if (lat == null || lng == null) return null
+    if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null
+    return { lat, lng }
+}
+
+function toCoordinate(value) {
+    if (typeof value !== 'number' && !isNonBlank(value)) return null
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+}
+
+/**
+ * What the pin draws. A single point is drawn at the anchor, so pin and card
+ * always agree; a multipoint keeps its members, as last read from the map.
+ */
+function pinFeature(point) {
+    const geometry =
+        point.feature.geometry?.type === 'Point'
+            ? { type: 'Point', coordinates: [point.latlng.lng, point.latlng.lat] }
+            : point.feature.geometry
+    return { ...point.feature, geometry }
+}
+
+// Pixels searched around the anchor when re-anchoring: a floor for the
+// rendered marker's own size, plus the snapping error grown by the zoom
+// gained. A 512px tile's grid cell is 1/8px at its own zoom, so a quarter
+// pixel per doubling covers it with room to spare.
+const REANCHOR_BASE_RADIUS = 6
+const REANCHOR_MAX_RADIUS = 256
+
+function reanchorRadius(zoomGained) {
+    const grown = REANCHOR_BASE_RADIUS + 0.25 * 2 ** zoomGained
+    return Math.min(REANCHOR_MAX_RADIUS, Math.ceil(grown))
+}
+
+/**
+ * Among the features found around the anchor, the one that is the clicked
+ * feature, with its position as now drawn. Several may match: a tile's
+ * buffer repeats a feature near its edge in the neighbouring tile. The match
+ * nearest the current anchor wins.
+ */
+function closestMatch(results, point) {
+    const matches = (Array.isArray(results) ? results : [])
+        .map((result) => result?.feature)
+        .filter((feature) => feature && isClickedFeature(feature, point))
+        .map((feature) => ({ feature, latlng: cardAnchor(feature, point.latlng) }))
+    if (matches.length === 0) return null
+    return matches.reduce((best, match) =>
+        sqDist(match.latlng, point.latlng) < sqDist(best.latlng, point.latlng)
+            ? match
+            : best
+    )
+}
+
+/**
+ * Whether a pick is the clicked feature. Tiles at different zooms are
+ * separate decodes, so object identity says nothing: compare the feature id
+ * when both carry one, and otherwise the properties, key order aside.
+ */
+function isClickedFeature(feature, point) {
+    if (feature.id != null && point.feature.id != null) {
+        return feature.id === point.feature.id
+    }
+    return stableStringify(feature.properties || {}) === point.key
+}
+
+function stableStringify(value) {
+    if (value == null || typeof value !== 'object') return JSON.stringify(value)
+    if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
+    return `{${Object.keys(value)
+        .sort()
+        .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
+        .join(',')}}`
 }
 
 function isPointFeature(feature) {
     const type = feature?.geometry?.type
     return type === 'Point' || type === 'MultiPoint'
+}
+
+/**
+ * Where the card points. The click location is anywhere inside the rendered
+ * marker, so a card anchored there drifts off a point as the map zooms in; a
+ * point feature anchors to its own coordinate instead, and a multipoint to the
+ * member nearest the click. Lines and polygons have no single spot to point
+ * at, so they keep the click.
+ *
+ * The picked geometry is lng/lat for vector tiles as well as GeoJSON: deck.gl's
+ * MVTLayer converts a picked feature out of tile-local space before handing it
+ * over.
+ */
+function cardAnchor(feature, clickLatLng) {
+    const geometry = feature?.geometry
+    const toLatLng = (coord) =>
+        Array.isArray(coord) &&
+        Number.isFinite(coord[0]) &&
+        Number.isFinite(coord[1])
+            ? { lat: coord[1], lng: coord[0] }
+            : null
+
+    if (geometry?.type === 'Point') {
+        return toLatLng(geometry.coordinates) ?? clickLatLng
+    }
+    if (geometry?.type === 'MultiPoint' && Array.isArray(geometry.coordinates)) {
+        const members = geometry.coordinates.map(toLatLng).filter(Boolean)
+        if (members.length === 0) return clickLatLng
+        if (!clickLatLng) return members[0]
+        return members.reduce((best, p) =>
+            sqDist(p, clickLatLng) < sqDist(best, clickLatLng) ? p : best
+        )
+    }
+    return clickLatLng
+}
+
+/** Squared distance in degrees: enough to rank nearby candidates. */
+function sqDist(a, b) {
+    return (a.lat - b.lat) ** 2 + (a.lng - b.lng) ** 2
 }
 
 function themeToken(name, fallback) {

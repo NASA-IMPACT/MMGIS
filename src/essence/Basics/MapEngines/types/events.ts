@@ -38,6 +38,12 @@ export type FeatureInteractionHandler = (result: FeaturePickResult) => void
 export interface QueryFeaturesOptions {
     layers?: string[]
     filter?: unknown[]
+    /**
+     * Point queries only: pixel radius around the point to search, returning
+     * every feature found rather than the topmost. Ignored for box queries.
+     * Ignored on Leaflet, which tests layer bounds rather than picking.
+     */
+    radius?: number
 }
 
 /**
