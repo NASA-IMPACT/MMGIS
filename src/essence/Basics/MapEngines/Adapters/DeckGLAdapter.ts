@@ -246,6 +246,12 @@ interface SideBySidePane {
 const SCREENSHOT_RENDER_TIMEOUT_MS = 3000
 
 /**
+ * MSAA for the basemap's WebGL context, which the interleaved deck.gl overlay
+ * draws into. MapLibre 5 reads `canvasContextAttributes`, Mapbox GL `antialias`.
+ */
+const ANTIALIAS_OPTIONS = { antialias: true, canvasContextAttributes: { antialias: true } }
+
+/**
  * Prefix on the MapLibre layers terra-draw renders the in-progress drawing
  * into. Passed to `TerraDrawMapLibreGLAdapter` explicitly, so this file sets
  * the ids rather than inheriting whatever the library defaults to.
@@ -2200,6 +2206,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             minZoom: this._minZoom,
             maxZoom: this._maxZoom,
             projection: 'mercator',
+            ...ANTIALIAS_OPTIONS,
         }
         if (this._basemapOptions?.provider === 'mapbox' && this._basemapOptions.accessToken) {
             options['accessToken'] = this._basemapOptions.accessToken
@@ -2401,6 +2408,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             minZoom: this._minZoom,
             maxZoom: this._maxZoom,
             projection: 'mercator',
+            ...ANTIALIAS_OPTIONS,
             // No preserveDrawingBuffer needed: captureScreenshot() reads the
             // canvas inside a once('render') handler, in the same frame the
             // map draws — before the drawing buffer is presented and cleared.

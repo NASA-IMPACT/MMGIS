@@ -1,16 +1,35 @@
 import { distance, point } from '@turf/turf'
 import type { LatLng } from '../types'
 
-/** Leaflet-path style for the measure line + endpoints. */
-export const MEASURE_STYLE = {
-    color: '#1b1b1b',
-    weight: 2,
-    opacity: 1,
-    dashArray: '2 6',
-    lineCap: 'round',
-    radius: 4,
-    fillColor: '#1b1b1b',
-    fillOpacity: 1,
+const MEASURE_WEIGHT = 3
+const MEASURE_RADIUS = 4
+/** Width of the white edge showing on each side of the line and endpoints. */
+const CASING_WIDTH = 1
+
+function pathStyle(color: string, weight: number) {
+    return {
+        color,
+        weight,
+        opacity: 1,
+        lineCap: 'round',
+        radius: MEASURE_RADIUS,
+        fillColor: color,
+        fillOpacity: 1,
+    }
+}
+
+/** Measure line + endpoints in the theme primary. */
+export function measureStyle() {
+    const primary =
+        getComputedStyle(document.documentElement)
+            .getPropertyValue('--theme-color-primary')
+            .trim() || '#1c67e3'
+    return pathStyle(primary, MEASURE_WEIGHT)
+}
+
+/** White casing drawn beneath {@link measureStyle}. */
+export function measureCasingStyle() {
+    return pathStyle('#ffffff', MEASURE_WEIGHT + CASING_WIDTH * 2)
 }
 
 export function measureDistance(a: LatLng, b: LatLng): number {
