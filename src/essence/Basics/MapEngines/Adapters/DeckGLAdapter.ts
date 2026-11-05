@@ -27,7 +27,12 @@ import {
 } from '@deck.gl/core'
 
 import { MapboxOverlay } from '@deck.gl/mapbox'
-import { Map as MaplibreGLMap, Popup as MaplibreGLPopup } from 'maplibre-gl'
+import {
+    Map as MaplibreGLMap,
+    Popup as MaplibreGLPopup,
+    ScaleControl as MaplibreGLScaleControl,
+    NavigationControl as MaplibreGLNavigationControl,
+} from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
 import type { 
@@ -46,6 +51,7 @@ import type {
     FitBoundsOptions,
     MapInitOptions,
     BasemapOptions,
+    BasemapControlPosition,
 } from '../types/view'
 import type { LayerOptions, LayerOrderContext, OverlayOptions, RefreshContext } from '../types/layers'
 import type {
@@ -104,8 +110,8 @@ interface BasemapStyle {
 }
 
 interface BasemapInstance {
-    /** Attach a deck.gl `MapboxOverlay` (or any IControl) to the map. */
-    addControl(control: object): void
+    /** Attach a deck.gl `MapboxOverlay` (or any IControl) to the map, at a corner when given. */
+    addControl(control: object, position?: string): void
     /** Detach a previously added control from the map. */
     removeControl(control: object): void
     /** Destroy the map and release all resources. */
@@ -214,7 +220,21 @@ interface BasemapPopup {
 type MapboxGLModule = {
     Map?: new (options: Record<string, unknown>) => BasemapInstance
     Popup?: new (options: Record<string, unknown>) => BasemapPopup
+    ScaleControl?: BasemapControlCtor
+    NavigationControl?: BasemapControlCtor
 }
+
+/** A basemap library's control class (`ScaleControl`, `NavigationControl`). */
+type BasemapControlCtor = new (options: Record<string, unknown>) => object
+
+/** The control classes of the module the basemap's `Map` came from. */
+type BasemapControlCtors = {
+    ScaleControl?: BasemapControlCtor
+    NavigationControl?: BasemapControlCtor
+}
+
+const DEFAULT_SCALE_BAR_POSITION: BasemapControlPosition = 'bottom-left'
+const DEFAULT_COMPASS_POSITION: BasemapControlPosition = 'top-right'
 
 /**
  * One half of a side-by-side comparison: a clipped div holding a map of its
@@ -478,6 +498,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         | null = null
     private _basemapOptions: BasemapOptions | null = null
     private _basemapStyle: string | null = null
+    private _controlCtors: BasemapControlCtors = {}
 
     /**
      * The basemap's `Popup` class, kept for the same reason as
@@ -590,7 +611,11 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             this._setupOverlay(
                 MaplibreGLMap as unknown as new (o: Record<string, unknown>) => BasemapInstance,
                 MaplibreGLPopup as unknown as new (o: Record<string, unknown>) => BasemapPopup,
-                options.basemap
+                options.basemap,
+                {
+                    ScaleControl: MaplibreGLScaleControl as unknown as BasemapControlCtor,
+                    NavigationControl: MaplibreGLNavigationControl as unknown as BasemapControlCtor,
+                }
             )
             return
         }
@@ -2208,6 +2233,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const map = new this._basemapCtor!(options)
         const overlay = new MapboxOverlay({ interleaved: true, layers: [] })
         map.addControl(overlay as unknown as object)
+        this._addBasemapControls(map)
         if (this._maxBounds) map.setMaxBounds(resolveBounds(this._maxBounds))
 
         pane.map = map
@@ -2356,6 +2382,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         // Optional: a module that exports no Popup still gives a working map,
         // and only showPopup goes without.
         let MapboxGLPopup: (new (options: Record<string, unknown>) => BasemapPopup) | undefined
+        let controlCtors: BasemapControlCtors = {}
 
         try {
             // The stylesheet comes with the module, not with the bundle: it is
@@ -2371,6 +2398,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             if (!MapClass) throw new Error('Map not found in mapbox-gl module')
             MapboxGLMap = MapClass
             MapboxGLPopup = mapboxGL.Popup
+            controlCtors = {
+                ScaleControl: mapboxGL.ScaleControl,
+                NavigationControl: mapboxGL.NavigationControl,
+            }
         } catch {
             throw new Error(
                 'DeckGLAdapter: mapbox-gl is not installed. ' +
@@ -2378,7 +2409,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             )
         }
 
-        this._setupOverlay(MapboxGLMap, MapboxGLPopup, basemap)
+        this._setupOverlay(MapboxGLMap, MapboxGLPopup, basemap, controlCtors)
     }
 
     /**
@@ -2389,7 +2420,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _setupOverlay(
         MapClass: new (options: Record<string, unknown>) => BasemapInstance,
         PopupClass: (new (options: Record<string, unknown>) => BasemapPopup) | undefined,
-        basemap: BasemapOptions
+        basemap: BasemapOptions,
+        controlCtors: BasemapControlCtors = {}
     ): void {
         const mapOptions: Record<string, unknown> = {
             container: this._container,
@@ -2415,6 +2447,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._popupCtor = PopupClass ?? null
         this._basemapOptions = basemap
         this._basemapStyle = basemap.style
+        this._controlCtors = controlCtors
         this._isOverlayMode = true
 
         this._overlay = new MapboxOverlay({
@@ -2426,6 +2459,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         })
 
         this._basemap.addControl(this._overlay as unknown as object)
+        this._addBasemapControls(this._basemap)
 
         if (this._maxBounds) {
             this._basemap.setMaxBounds(resolveBounds(this._maxBounds))
@@ -2447,6 +2481,38 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * When `options.animate` is absent or false, transition props are cleared so the
      * camera jumps immediately.
      */
+    /**
+     * Adds the controls `basemap.controls` asks for to a basemap instance,
+     * using the control classes of the library that built it. Controls live
+     * on the map, not its style, so a style switch keeps them; a comparison
+     * pane builds its own map and so adds its own.
+     */
+    private _addBasemapControls(map: BasemapInstance): void {
+        const controls = this._basemapOptions?.controls
+        if (!controls) return
+        const { ScaleControl, NavigationControl } = this._controlCtors
+        if (controls.scaleBar) {
+            if (ScaleControl) {
+                map.addControl(
+                    new ScaleControl({ maxWidth: 100, unit: controls.scaleBar.units ?? 'metric' }),
+                    controls.scaleBar.position ?? DEFAULT_SCALE_BAR_POSITION
+                )
+            } else {
+                console.warn('DeckGLAdapter: the basemap library has no ScaleControl; scale bar not shown')
+            }
+        }
+        if (controls.compass) {
+            if (NavigationControl) {
+                map.addControl(
+                    new NavigationControl({ showCompass: true, showZoom: false, visualizePitch: true }),
+                    controls.compass.position ?? DEFAULT_COMPASS_POSITION
+                )
+            } else {
+                console.warn('DeckGLAdapter: the basemap library has no NavigationControl; compass not shown')
+            }
+        }
+    }
+
     private _applyViewState(state: DeckViewState, options?: ViewOptions): void {
         const nextState: DeckViewState = {
             ...state,

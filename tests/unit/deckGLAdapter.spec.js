@@ -44,7 +44,9 @@ vi.mock('maplibre-gl', async (importOriginal) => {
             this._canvas = document.createElement('canvas')
             this._popup = null
         }
-        addControl() {}
+        addControl(control, position) {
+            ;(this.controls ||= []).push([control, position])
+        }
         removeControl() {}
         on(type, handler) {
             ;(this._on ||= []).push([type, handler])
@@ -104,18 +106,41 @@ vi.mock('maplibre-gl', async (importOriginal) => {
             return this
         }
     }
-    return { ...actual, Map: MockMap, Popup: MockPopup }
+    class MockScaleControl {
+        constructor(options) {
+            this.options = options
+        }
+    }
+    class MockNavigationControl {
+        constructor(options) {
+            this.options = options
+        }
+    }
+    return {
+        ...actual,
+        Map: MockMap,
+        Popup: MockPopup,
+        ScaleControl: MockScaleControl,
+        NavigationControl: MockNavigationControl,
+    }
 })
 
 // A mapbox-gl exporting no Popup, which the adapter must still build a map on.
 vi.mock('mapbox-gl', () => {
     class MapboxMapWithoutPopup {
-        addControl() {}
+        addControl(control, position) {
+            ;(this.controls ||= []).push([control, position])
+        }
         on(type, handler) {
             ;(this._on ||= []).push([type, handler])
         }
     }
-    return { default: { Map: MapboxMapWithoutPopup } }
+    class MapboxScaleControl {
+        constructor(options) {
+            this.options = options
+        }
+    }
+    return { default: { Map: MapboxMapWithoutPopup, ScaleControl: MapboxScaleControl } }
 })
 
 function makeAdapter({ longitude = -120, latitude = 40, zoom = 5 } = {}) {
