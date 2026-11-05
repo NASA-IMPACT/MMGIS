@@ -32,6 +32,11 @@ export interface ChartSeriesMeta {
     featureId?: string | number
 }
 
+/** How often a series has a value. The chart prints times at this
+ *  precision; without it, it prints dates. */
+export type ChartCadence = 'hour' | 'day' | 'month' | 'year'
+export const CHART_CADENCES: readonly ChartCadence[] = ['hour', 'day', 'month', 'year']
+
 export interface ChartSeriesPayload {
     /** Slot identity: a payload with the same chartId replaces the previous
      *  chart; distinct chartIds render as separate cards. */
@@ -39,6 +44,7 @@ export interface ChartSeriesPayload {
     title: string
     /** Rendered under the title as the section heading. */
     subtitle?: string
+    cadence?: ChartCadence
     series: ChartSeries[]
     meta?: ChartSeriesMeta
 }
@@ -113,7 +119,9 @@ export function isChartSeriesPayload(value: unknown): value is ChartSeriesPayloa
         typeof value.title === 'string' &&
         Array.isArray(value.series) &&
         value.series.length > 0 &&
-        value.series.every(isChartSeries)
+        value.series.every(isChartSeries) &&
+        (value.cadence === undefined ||
+            CHART_CADENCES.includes(value.cadence as ChartCadence))
     if (!shapeOk) return false
     // ids key card lists and labels key the legend picker/footer/CSV —
     // duplicates in either collapse picker entries and mislabel the rest,

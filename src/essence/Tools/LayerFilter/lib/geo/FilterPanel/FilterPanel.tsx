@@ -342,13 +342,29 @@ function EntryField({
                     )
                 })}
             </Dropdown>
-            {selectedEntry && selectedEntry.dateRange && (
+            {selectedEntry && (selectedEntry.dateRange || selectedEntry.egisUrl) && (
                 <div className="blocks-layer-filter__entry-meta">
-                    <span className="blocks-layer-filter__entry-dates">
-                        {selectedEntry.dateRange}
-                    </span>
+                    {selectedEntry.dateRange && (
+                        <span className="blocks-layer-filter__entry-dates">
+                            {selectedEntry.dateRange}
+                        </span>
+                    )}
                     {selectedEntry.isActive && (
                         <span className="blocks-layer-filter__pill">ACTIVE</span>
+                    )}
+                    {selectedEntry.egisUrl && (
+                        <a
+                            className="blocks-layer-filter__entry-link"
+                            href={selectedEntry.egisUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                        >
+                            EGIS services
+                            <span
+                                className="blocks-layer-filter__external-icon"
+                                aria-hidden="true"
+                            />
+                        </a>
                     )}
                 </div>
             )}

@@ -23,7 +23,9 @@ Bus-only — no core imports.
   The range is seeded once per layer; a pick on another layer reseeds it. The chart below names the feature; the card
   does not. It fetches the feature's series over that range and emits `seriesReady` with the
   `ChartSeriesPayload` itself as the (flat, unenveloped) event payload (see
-  [`_shared/types/chartSeries.ts`](../_shared/types/chartSeries.ts)).
+  [`_shared/types/chartSeries.ts`](../_shared/types/chartSeries.ts)). A
+  declared **Cadence** rides on it as `cadence`, so the chart prints times
+  at the same step as the pickers.
   Loading and failure (HTTP error, timeout, bad URL template, unusable
   response shape) show on the card; neither is an event. A failure also
   emits `seriesCleared`, so the previous chart never sits under an error.
@@ -125,7 +127,7 @@ vector-tile layer's page. The fields write the block below.
 | `xKey` / `yKey` | no | Dot-paths to a point's time and value (defaults `datetime` and `value`), resolved at the point's top level and under `properties.`, so GeoJSON observation features need nothing set. Time values are ISO datetime strings or epoch milliseconds. |
 | `groupBy` | no | Dot-path whose distinct values split the response into one series each (e.g. one line per measured parameter). |
 | `unitKey` | no | Dot-path to a point's unit, carried onto its series; SeriesChart shows it in the card footer next to the variable name. |
-| `cadence` | no | How often the series has a value: `hour` (default), `day`, `month` or `year`. Sets the step of the Start and End pickers. Declared here rather than read from the layer's Data Time Interval, since an hourly layer can feed a daily series. |
+| `cadence` | no | How often the series has a value: `hour` (default), `day`, `month` or `year`. Sets the step of the Start and End pickers, and travels on the payload so the chart's tooltip and window dates print at the same step. Declared here rather than read from the layer's Data Time Interval, since an hourly layer can feed a daily series. |
 
 ## Working demo: EPA AQS stations (dev.openveda.cloud)
 

@@ -611,6 +611,14 @@ describe('FetchTimeseriesTool', () => {
         expect(valueOf('End')).toBe('2026-09-24T23:59:59')
     })
 
+    test('the emitted payload carries the layer cadence, and nothing when none is set', async () => {
+        await request()
+        expect(emittedFor(READY)[0]).not.toHaveProperty('cadence')
+        layerConfigs[LAYER].variables.timeseries.cadence = 'day'
+        await request()
+        expect(emittedFor(READY)[1].cadence).toBe('day')
+    })
+
     test('an unreadable cadence warns and keeps the hour picker', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
         layerConfigs[LAYER].variables.timeseries.cadence = 'fortnight'
