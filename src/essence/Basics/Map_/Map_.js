@@ -444,10 +444,6 @@ let Map_ = {
                 )
                 if (typeof off === 'function') _providerCleanups.push(off)
             }
-
-            // Every map handler above now answers for this engine. Sent on
-            // each init, so a listener can re-read state a re-init replaced.
-            window.mmgisAPI.emit('map:ready')
         }
 
         // Initialise comparison controller with the active engine so it can

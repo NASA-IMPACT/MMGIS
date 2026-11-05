@@ -13,10 +13,21 @@ export type MapCameraState = {
     rotatable: boolean
 }
 
+// The bearing and pitch a `map:move` or `map:moveend` payload carries, when
+// it is an engine view state (deck.gl). Leaflet's payload is its own event,
+// which carries neither, so the camera is asked for instead.
+const cameraIn = (payload: unknown): MapCamera | null => {
+    const p = payload as { bearing?: unknown; pitch?: unknown } | undefined
+    return typeof p?.bearing === 'number' && typeof p?.pitch === 'number'
+        ? { bearing: p.bearing, pitch: p.pitch }
+        : null
+}
+
 /**
  * The map's bearing and pitch, kept current while `enabled`: read once the
- * camera handler is up, again on every `map:ready` (a re-initialized map), and
- * at most once per animation frame while `map:move` or `map:moveend` fire.
+ * camera handler is up, then followed through `map:move` and `map:moveend`,
+ * at most once per animation frame. A payload that carries the camera is
+ * used as is; one that does not (Leaflet) costs a `map:getCamera` request.
  * Null until the first read lands, and whenever the map cannot report a
  * bearing.
  */
@@ -27,6 +38,8 @@ export function useMapCamera(enabled: boolean): MapCameraState | null {
         if (!enabled) return
         let live = true
         let frame: number | null = null
+        // The latest camera a move reported, applied on the next frame.
+        let pending: MapCamera | null = null
 
         const read = async () => {
             try {
@@ -44,22 +57,30 @@ export function useMapCamera(enabled: boolean): MapCameraState | null {
                 console.warn('MapControl: reading the map camera failed', err)
             }
         }
-        const readNextFrame = () => {
+        const onMove = (payload?: unknown) => {
+            pending = cameraIn(payload)
             if (frame != null) return
             frame = requestAnimationFrame(() => {
                 frame = null
-                void read()
+                const camera = pending
+                pending = null
+                if (!camera) {
+                    void read()
+                    return
+                }
+                // `rotatable` never changes for an engine, so a move only
+                // updates the camera; before the first read there is nothing
+                // to update and the read's answer arrives on its own.
+                setState((prev) => (prev ? { ...prev, camera } : prev))
             })
         }
 
         const stopWaiting = whenMMGISHandlerReady(CAMERA_HANDLER, () => void read())
-        const offReady = mmgisOn('map:ready', () => void read())
-        const offMoveEnd = mmgisOn('map:moveend', readNextFrame)
-        const offMove = mmgisOn('map:move', readNextFrame)
+        const offMoveEnd = mmgisOn('map:moveend', onMove)
+        const offMove = mmgisOn('map:move', onMove)
         return () => {
             live = false
             stopWaiting()
-            offReady()
             offMoveEnd()
             offMove()
             if (frame != null) cancelAnimationFrame(frame)

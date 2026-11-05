@@ -56,6 +56,10 @@ const ACTION_FALLBACK_LABEL = 'Analyze area'
 const isFalsy = (v: unknown) =>
     v === false || v === 'false' || v === 0 || v === '0'
 
+// For a feature that is off unless the mission switches it on.
+const isTruthy = (v: unknown) =>
+    v === true || v === 'true' || v === 1 || v === '1'
+
 // A mission JSON field may hold any JSON type. Non-strings read as unset rather
 // than being coerced, since the bar mounts with no error boundary.
 const asText = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
@@ -139,7 +143,8 @@ export function MMGISMapControlAdapter() {
     const showSearch = !isFalsy(vars.showSearch)
     const showMeasure = !isFalsy(vars.showMeasure)
     const showZoom = !isFalsy(vars.showZoom)
-    const showCompass = !isFalsy(vars.showCompass)
+    // Off by default: the basemap can draw its own compass in a map corner.
+    const showCompass = isTruthy(vars.showCompass)
     const showShare = !isFalsy(vars.showShare)
 
     const cameraState = useMapCamera(showCompass)

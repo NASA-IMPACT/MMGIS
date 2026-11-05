@@ -295,7 +295,6 @@ window.mmgisAPI.on('tool:change', ({ toolName }) => {
 
 | Event | Payload | Description |
 |-------|---------|-------------|
-| `map:ready` | none | Fired each time the map finishes (re)initializing and its `map:` providers answer for the new engine. A listener that holds map state re-reads it here |
 | `map:move` | engine view state | Fired on each frame while the camera moves |
 | `map:moveend` | engine view state | Fired when the camera settles |
 

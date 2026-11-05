@@ -62,10 +62,10 @@
                     {
                         "field": "variables.showCompass",
                         "name": "Compass",
-                        "description": "Show a compass whose needle points north and tips with the map's tilt; hovering it shows the bearing and tilt. Clicking it on a deck.gl map turns the view back to north, and clicking again levels it. A Leaflet map cannot rotate, so there the compass only shows which way north is.",
+                        "description": "Show a compass in the bar whose needle points north and tips with the map's tilt; hovering it shows the bearing and tilt. Clicking it on a deck.gl map turns the view back to north, and clicking again levels it. A Leaflet map cannot rotate, so there the compass only shows which way north is. The User Interface tab's Basemap section offers a compass in a map corner instead; pick one or the other.",
                         "type": "checkbox",
                         "width": 3,
-                        "defaultChecked": true
+                        "defaultChecked": false
                     },
                     {
                         "field": "variables.showShare",
