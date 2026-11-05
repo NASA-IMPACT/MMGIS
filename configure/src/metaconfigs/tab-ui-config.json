@@ -426,7 +426,7 @@
         {
           "field": "msv.basemap.controls.scaleBar.show",
           "name": "Show Scale Bar",
-          "description": "Draw the basemap's scale bar on the map. PNG and PDF exports carry a matching bar. Needs a MapLibre or Mapbox basemap.",
+          "description": "Draw the map's scale bar. PNG and PDF exports carry a matching bar. On the deck.gl engine this needs a MapLibre or Mapbox basemap.",
           "type": "checkbox",
           "defaultChecked": false,
           "width": 2
@@ -456,7 +456,7 @@
         {
           "field": "msv.basemap.controls.compass.show",
           "name": "Show Compass",
-          "description": "Draw the basemap's compass on the map: it turns with the bearing, tips with the tilt, and resets the view to north when clicked. PNG and PDF exports carry a north arrow. Needs a MapLibre or Mapbox basemap.",
+          "description": "Draw the basemap's compass on the map: it turns with the bearing, tips with the tilt, and resets the view to north when clicked. PNG and PDF exports carry a north arrow. Needs a MapLibre or Mapbox basemap on the deck.gl engine; a Leaflet map cannot rotate and shows none.",
           "type": "checkbox",
           "defaultChecked": false,
           "width": 2
