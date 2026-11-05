@@ -28,9 +28,9 @@
  * Requests:
  *   - layers:getAllConfigs / map:getEngineType
  *   - map:showPopup (resolves with how the card closed) / map:hidePopup
- *   - map:createLayer / map:removeLayer  the clicked feature, drawn as an
- *                                        outline that outlives the card and
- *                                        goes on the next click opening none
+ *   - map:createLayer / map:removeLayer  a pin on the clicked point, which
+ *                                        outlives the card and goes on the
+ *                                        next click opening none
  */
 
 import {
@@ -53,8 +53,13 @@ const PLUGIN_ID = 'feature-popup'
  */
 const LEAFLET = 'leaflet'
 
-const HIGHLIGHT_LAYER_ID = 'feature-popup-highlight'
-const HIGHLIGHT_CASING_LAYER_ID = 'feature-popup-highlight-casing'
+const PIN_LAYER_ID = 'feature-popup-highlight'
+
+const PIN_WIDTH = 20
+const PIN_HEIGHT = 28
+// Clearance in pixels between the pin's tip and the point. Zero sets the tip
+// on the point itself.
+const PIN_LIFT = 0
 
 const FeaturePopupTool = {
     made: false,
@@ -173,7 +178,11 @@ const FeaturePopupTool = {
             return
         }
 
-        this._showHighlight(info.feature)
+        // Points only. A polygon or line from a vector tile layer arrives
+        // clipped to the tile that was clicked, so redrawing it outlines a
+        // fragment cut off at the tile edge rather than the whole feature.
+        if (isPointFeature(info.feature)) this._showHighlight(info.feature)
+        else this._removeHighlight()
 
         const actions = config.actions
         const card = {}
@@ -244,33 +253,38 @@ const FeaturePopupTool = {
         mmgisRequest('map:hidePopup').catch(() => {})
     },
 
-    // Casing first: layers added after the mission stack keep insertion
-    // order, so the wide white stroke stays under the narrow colored one.
+    // An icon, so deck.gl billboards it: the pin stays upright and facing
+    // the camera when the map is pitched, where a circle would lie flat.
     _showHighlight(feature) {
-        const geojson = { type: 'FeatureCollection', features: [feature] }
-        const layers = [
-            [HIGHLIGHT_CASING_LAYER_ID, highlightCasingStyle()],
-            [HIGHLIGHT_LAYER_ID, highlightStyle()],
-        ]
-        layers.forEach(([id, style]) => {
-            mmgisRequest('map:createLayer', {
-                id,
-                type: 'vector',
-                geojson,
-                style,
-                // Click-transparent, so the next click reaches the feature under it.
-                interactive: false,
-            }).catch((err) =>
-                console.warn('[FeaturePopup] could not highlight the feature', err)
-            )
-        })
+        mmgisRequest('map:createLayer', {
+            id: PIN_LAYER_ID,
+            type: 'vector',
+            geojson: { type: 'FeatureCollection', features: [feature] },
+            // Click-transparent, so the next click reaches the feature under it.
+            interactive: false,
+            variables: {
+                markerIcon: {
+                    iconUrl: pinIconUrl(
+                        themeToken('--theme-color-primary', '#1c67e3')
+                    ),
+                    iconSize: [PIN_WIDTH, PIN_HEIGHT],
+                    // Bottom center, so the tip marks the point.
+                    iconAnchor: [PIN_WIDTH / 2, PIN_HEIGHT + PIN_LIFT],
+                },
+            },
+        }).catch((err) =>
+            console.warn('[FeaturePopup] could not highlight the feature', err)
+        )
     },
 
     _removeHighlight() {
-        ;[HIGHLIGHT_CASING_LAYER_ID, HIGHLIGHT_LAYER_ID].forEach((id) => {
-            mmgisRequest('map:removeLayer', { id }).catch(() => {})
-        })
+        mmgisRequest('map:removeLayer', { id: PIN_LAYER_ID }).catch(() => {})
     },
+}
+
+function isPointFeature(feature) {
+    const type = feature?.geometry?.type
+    return type === 'Point' || type === 'MultiPoint'
 }
 
 function themeToken(name, fallback) {
@@ -282,14 +296,17 @@ function themeToken(name, fallback) {
     return value || fallback
 }
 
-function highlightStyle() {
-    const color = themeToken('--theme-color-primary', '#1c67e3')
-    return { color, weight: 3, fillColor: color, fillOpacity: 0, radius: 12 }
-}
-
-function highlightCasingStyle() {
-    const color = themeToken('--theme-color-white', '#ffffff')
-    return { color, weight: 6, fillColor: color, fillOpacity: 0, radius: 12 }
+/**
+ * A location pin in the theme's primary color. The white stroke keeps it
+ * legible on both dark and light basemaps.
+ */
+function pinIconUrl(color) {
+    const svg =
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${PIN_WIDTH}" height="${PIN_HEIGHT}" viewBox="0 0 24 32">` +
+        `<path d="M12 31s10-11.2 10-19A10 10 0 0 0 2 12c0 7.8 10 19 10 19z" fill="${color}" stroke="#ffffff" stroke-width="2"/>` +
+        `<circle cx="12" cy="12" r="4" fill="#ffffff"/>` +
+        `</svg>`
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
 }
 
 /**

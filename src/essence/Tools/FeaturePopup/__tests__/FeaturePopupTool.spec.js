@@ -1,8 +1,8 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import FeaturePopupTool from '../FeaturePopupTool'
 
-const HIGHLIGHT_ID = 'feature-popup-highlight'
-const CASING_ID = 'feature-popup-highlight-casing'
+const PIN_ID = 'feature-popup-highlight'
+const REMOVED = [['map:removeLayer', { id: PIN_ID }]]
 const LAYER = 'lyr-opted-in'
 
 const polygon = {
@@ -86,73 +86,82 @@ afterEach(() => {
 })
 
 describe('highlighting the clicked feature', () => {
-    test('a click that opens a card outlines the feature: a white casing under a colored ring', async () => {
-        await click({ feature: polygon, layerId: LAYER, latlng: { lat: 0.5, lng: 0.5 } })
+    test('a click on a point that opens a card drops one click-transparent pin on it', async () => {
+        await click({ feature: point, layerId: LAYER, latlng: { lat: 2, lng: 2 } })
 
         expect(calls('map:showPopup')).toHaveLength(1)
         const created = calls('map:createLayer').map(([, spec]) => spec)
-        expect(created.map((spec) => spec.id)).toEqual([CASING_ID, HIGHLIGHT_ID])
-        created.forEach((spec) => {
-            expect(spec.type).toBe('vector')
-            expect(spec.interactive).toBe(false)
-            expect(spec.geojson.features).toEqual([polygon])
-            expect(spec.style.fillOpacity).toBe(0)
-        })
-        const [casing, ring] = created
-        expect(casing.style.weight).toBeGreaterThan(ring.style.weight)
-        expect(casing.style.radius).toBe(ring.style.radius)
+        expect(created).toHaveLength(1)
+        const [pin] = created
+        expect(pin.id).toBe(PIN_ID)
+        expect(pin.type).toBe('vector')
+        expect(pin.interactive).toBe(false)
+        expect(pin.geojson.features).toEqual([point])
+        const icon = pin.variables.markerIcon
+        expect(icon.iconUrl).toMatch(/^data:image\/svg\+xml/)
+        // Anchored at the bottom center, so the tip marks the point.
+        expect(icon.iconAnchor[0]).toBe(icon.iconSize[0] / 2)
+        expect(icon.iconAnchor[1]).toBeGreaterThanOrEqual(icon.iconSize[1])
     })
 
-    test('the next card-opening click re-creates the outline under the same id', async () => {
+    test('a click on a polygon opens the card without a highlight', async () => {
         await click({ feature: polygon, layerId: LAYER, latlng: { lat: 0.5, lng: 0.5 } })
+
+        expect(calls('map:showPopup')).toHaveLength(1)
+        expect(calls('map:createLayer')).toHaveLength(0)
+    })
+
+    test('a polygon click after a point click removes the highlight', async () => {
         await click({ feature: point, layerId: LAYER, latlng: { lat: 2, lng: 2 } })
+        await click({ feature: polygon, layerId: LAYER, latlng: { lat: 0.5, lng: 0.5 } })
+
+        expect(calls('map:showPopup')).toHaveLength(2)
+        expect(calls('map:removeLayer')).toEqual(REMOVED)
+    })
+
+    test('the next point click re-creates the pin under the same id', async () => {
+        const other = { ...point, geometry: { type: 'Point', coordinates: [3, 3] } }
+        await click({ feature: point, layerId: LAYER, latlng: { lat: 2, lng: 2 } })
+        await click({ feature: other, layerId: LAYER, latlng: { lat: 3, lng: 3 } })
 
         const created = calls('map:createLayer')
-        expect(created).toHaveLength(4)
-        expect(created.slice(2).map(([, spec]) => spec.id)).toEqual([CASING_ID, HIGHLIGHT_ID])
-        created.slice(2).forEach(([, spec]) => {
-            expect(spec.geojson.features).toEqual([point])
-        })
+        expect(created).toHaveLength(2)
+        expect(created[1][1].id).toBe(PIN_ID)
+        expect(created[1][1].geojson.features).toEqual([other])
         expect(calls('map:removeLayer')).toHaveLength(0)
     })
 
-    test('a click on empty space removes the outline', async () => {
-        await click({ feature: polygon, layerId: LAYER, latlng: { lat: 0.5, lng: 0.5 } })
+    test('a click on empty space removes the highlight', async () => {
+        await click({ feature: point, layerId: LAYER, latlng: { lat: 2, lng: 2 } })
         await click({ feature: null })
 
-        expect(calls('map:removeLayer')).toEqual([
-            ['map:removeLayer', { id: CASING_ID }],
-            ['map:removeLayer', { id: HIGHLIGHT_ID }],
-        ])
+        expect(calls('map:removeLayer')).toEqual(REMOVED)
     })
 
-    test('a click on a layer without the popup removes the outline', async () => {
-        await click({ feature: polygon, layerId: LAYER, latlng: { lat: 0.5, lng: 0.5 } })
+    test('a click on a layer without the popup removes the highlight', async () => {
+        await click({ feature: point, layerId: LAYER, latlng: { lat: 2, lng: 2 } })
         await click({ feature: point, layerId: 'lyr-plain', latlng: { lat: 2, lng: 2 } })
 
-        expect(calls('map:createLayer')).toHaveLength(2)
-        expect(calls('map:removeLayer')).toHaveLength(2)
+        expect(calls('map:createLayer')).toHaveLength(1)
+        expect(calls('map:removeLayer')).toEqual(REMOVED)
     })
 
-    test('the outline outlives the card: neither dismiss nor an action removes it', async () => {
-        await click({ feature: polygon, layerId: LAYER, latlng: { lat: 0.5, lng: 0.5 } })
+    test('the pin outlives the card: neither dismiss nor an action removes it', async () => {
+        await click({ feature: point, layerId: LAYER, latlng: { lat: 2, lng: 2 } })
         popupSettle({ action: 'dismiss' })
         await flush()
         expect(calls('map:removeLayer')).toHaveLength(0)
 
-        await click({ feature: polygon, layerId: LAYER, latlng: { lat: 0.5, lng: 0.5 } })
+        await click({ feature: point, layerId: LAYER, latlng: { lat: 2, lng: 2 } })
         popupSettle({ action: 'primary' })
         await flush()
         expect(calls('map:removeLayer')).toHaveLength(0)
     })
 
-    test('destroy removes the outline', async () => {
-        await click({ feature: polygon, layerId: LAYER, latlng: { lat: 0.5, lng: 0.5 } })
+    test('destroy removes the highlight', async () => {
+        await click({ feature: point, layerId: LAYER, latlng: { lat: 2, lng: 2 } })
         FeaturePopupTool.destroy()
 
-        expect(calls('map:removeLayer')).toEqual([
-            ['map:removeLayer', { id: CASING_ID }],
-            ['map:removeLayer', { id: HIGHLIGHT_ID }],
-        ])
+        expect(calls('map:removeLayer')).toEqual(REMOVED)
     })
 })
