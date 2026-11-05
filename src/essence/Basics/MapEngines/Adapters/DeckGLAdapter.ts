@@ -876,12 +876,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     /** The bearing for an export's north arrow, when a compass is configured. */
     private _readCompass(): ExportCompass | null {
-        if (!this._basemapOptions?.controls?.compass) return null
+        if (!this._basemapOptions?.controls?.compass?.show) return null
         return { bearing: this._viewState.bearing ?? 0 }
     }
 
     private _readScaleBar(imageWidth: number): ExportScaleBar | null {
-        if (!this._basemapOptions?.controls?.scaleBar) return null
+        if (!this._basemapOptions?.controls?.scaleBar?.show) return null
         if (Math.abs(this._viewState.pitch ?? 0) > SCALE_BAR_MAX_PITCH_DEG) return null
         const el = this._container?.querySelector<HTMLElement>(SCALE_BAR_SELECTOR)
         if (!el) return null
@@ -2538,7 +2538,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const controls = this._basemapOptions?.controls
         if (!controls) return
         const { ScaleControl, NavigationControl } = this._controlCtors
-        if (controls.scaleBar) {
+        if (controls.scaleBar?.show) {
             if (ScaleControl) {
                 map.addControl(
                     new ScaleControl({ maxWidth: 100, unit: controls.scaleBar.units ?? 'metric' }),
@@ -2548,7 +2548,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                 console.warn('DeckGLAdapter: the basemap library has no ScaleControl; scale bar not shown')
             }
         }
-        if (controls.compass) {
+        if (controls.compass?.show) {
             if (NavigationControl) {
                 map.addControl(
                     new NavigationControl({ showCompass: true, showZoom: false, visualizePitch: true }),

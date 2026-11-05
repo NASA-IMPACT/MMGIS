@@ -1010,26 +1010,28 @@ test.describe('DeckGLAdapter', () => {
 
             test("reports the library's label and the bar's length in image pixels", async () => {
                 const bar = await captureWith({
-                    controls: { scaleBar: {} },
+                    controls: { scaleBar: { show: true } },
                     bar: { width: '80px', html: '500&nbsp;m' },
                 })
                 expect(bar).toEqual({ label: '500 m', widthPx: 160 })
             })
 
             test('is null without a configured bar, even if one is in the DOM', async () => {
-                expect(await captureWith({ bar: { width: '80px', html: '500&nbsp;m' } })).toBeNull()
+                const bar = { width: '80px', html: '500&nbsp;m' }
+                expect(await captureWith({ bar })).toBeNull()
+                expect(await captureWith({ controls: { scaleBar: { show: false } }, bar })).toBeNull()
             })
 
             test('is null when the view is tilted past 10 degrees', async () => {
                 expect(await captureWith({
-                    controls: { scaleBar: {} },
+                    controls: { scaleBar: { show: true } },
                     pitch: 11,
                     bar: { width: '80px', html: '500&nbsp;m' },
                 })).toBeNull()
             })
 
             test('is null when the library has drawn no bar yet', async () => {
-                expect(await captureWith({ controls: { scaleBar: {} } })).toBeNull()
+                expect(await captureWith({ controls: { scaleBar: { show: true } } })).toBeNull()
             })
         })
 
@@ -1056,11 +1058,11 @@ test.describe('DeckGLAdapter', () => {
             }
 
             test('reports the bearing when a compass is configured', async () => {
-                expect(await captureWith({ controls: { compass: {} }, bearing: 37 })).toEqual({ bearing: 37 })
+                expect(await captureWith({ controls: { compass: { show: true } }, bearing: 37 })).toEqual({ bearing: 37 })
             })
 
             test('is null without a configured compass', async () => {
-                expect(await captureWith({ controls: { scaleBar: {} }, bearing: 37 })).toBeNull()
+                expect(await captureWith({ controls: { scaleBar: { show: true }, compass: { show: false } }, bearing: 37 })).toBeNull()
             })
         })
 

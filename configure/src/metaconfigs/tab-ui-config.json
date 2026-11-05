@@ -421,6 +421,58 @@
       ]
     },
     {
+      "subname": "Basemap Controls",
+      "components": [
+        {
+          "field": "msv.basemap.controls.scaleBar.show",
+          "name": "Show Scale Bar",
+          "description": "Draw the basemap's scale bar on the map. PNG and PDF exports carry a matching bar. Needs a MapLibre or Mapbox basemap.",
+          "type": "checkbox",
+          "defaultChecked": false,
+          "width": 2
+        },
+        {
+          "field": "msv.basemap.controls.scaleBar.position",
+          "name": "Scale Bar Position",
+          "description": "The corner of the map the scale bar sits in.",
+          "type": "dropdown",
+          "options": ["bottom-left", "bottom-right", "top-left", "top-right"],
+          "default": "bottom-left",
+          "width": 3
+        },
+        {
+          "field": "msv.basemap.controls.scaleBar.units",
+          "name": "Scale Bar Units",
+          "description": "Metric labels the bar in metres and kilometres; imperial in feet and miles.",
+          "type": "dropdown",
+          "options": ["metric", "imperial"],
+          "default": "metric",
+          "width": 2
+        },
+        {
+          "type": "gap",
+          "width": 1
+        },
+        {
+          "field": "msv.basemap.controls.compass.show",
+          "name": "Show Compass",
+          "description": "Draw the basemap's compass on the map: it turns with the bearing, tips with the tilt, and resets the view to north when clicked. PNG and PDF exports carry a north arrow. Needs a MapLibre or Mapbox basemap.",
+          "type": "checkbox",
+          "defaultChecked": false,
+          "width": 2
+        },
+        {
+          "field": "msv.basemap.controls.compass.position",
+          "name": "Compass Position",
+          "description": "The corner of the map the compass sits in.",
+          "type": "dropdown",
+          "options": ["top-right", "top-left", "bottom-left", "bottom-right"],
+          "default": "top-right",
+          "width": 2
+        }
+      ]
+    },
+    {
       "subname": "Max Bounds",
       "components": [
         {

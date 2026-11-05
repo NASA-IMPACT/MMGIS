@@ -94,7 +94,7 @@ afterEach(() => {
 
 test.describe('basemap controls', () => {
     test('a scale bar is added at the bottom-left in metric by default', () => {
-        const adapter = makeAdapter({ scaleBar: {} })
+        const adapter = makeAdapter({ scaleBar: { show: true } })
         const [[bar, position]] = controlsOf(adapter._basemap, FakeScaleControl)
         expect(bar.options).toEqual({ maxWidth: 100, unit: 'metric' })
         expect(position).toBe('bottom-left')
@@ -102,14 +102,14 @@ test.describe('basemap controls', () => {
     })
 
     test('the scale bar takes its units and corner from the config', () => {
-        const adapter = makeAdapter({ scaleBar: { units: 'imperial', position: 'bottom-right' } })
+        const adapter = makeAdapter({ scaleBar: { show: true, units: 'imperial', position: 'bottom-right' } })
         const [[bar, position]] = controlsOf(adapter._basemap, FakeScaleControl)
         expect(bar.options.unit).toBe('imperial')
         expect(position).toBe('bottom-right')
     })
 
     test('a compass is a navigation control with only the compass, following pitch, top-right by default', () => {
-        const adapter = makeAdapter({ compass: {} })
+        const adapter = makeAdapter({ compass: { show: true } })
         const [[compass, position]] = controlsOf(adapter._basemap, FakeNavigationControl)
         expect(compass.options).toEqual({ showCompass: true, showZoom: false, visualizePitch: true })
         expect(position).toBe('top-right')
@@ -117,7 +117,7 @@ test.describe('basemap controls', () => {
     })
 
     test('the compass takes its corner from the config', () => {
-        const adapter = makeAdapter({ compass: { position: 'top-left' } })
+        const adapter = makeAdapter({ compass: { show: true, position: 'top-left' } })
         const [[, position]] = controlsOf(adapter._basemap, FakeNavigationControl)
         expect(position).toBe('top-left')
     })
@@ -128,9 +128,21 @@ test.describe('basemap controls', () => {
         expect(adapter._basemap.controls[0][0]).not.toBeInstanceOf(FakeScaleControl)
     })
 
+    // `show` is the switch Configure writes, so a control configured but
+    // switched off, or with no switch at all, is not drawn.
+    test('a control with show false or no show flag is not drawn', () => {
+        for (const controls of [
+            { scaleBar: { show: false, units: 'imperial' }, compass: { show: false } },
+            { scaleBar: { units: 'imperial' }, compass: { position: 'top-left' } },
+        ]) {
+            const adapter = makeAdapter(controls)
+            expect(adapter._basemap.controls).toHaveLength(1)
+        }
+    })
+
     test('a library without the control class warns and shows nothing, and the map still builds', () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-        const adapter = makeAdapter({ scaleBar: {}, compass: {} }, {})
+        const adapter = makeAdapter({ scaleBar: { show: true }, compass: { show: true } }, {})
         expect(adapter._basemap).not.toBeNull()
         expect(adapter._basemap.controls).toHaveLength(1)
         expect(warn.mock.calls.map(([m]) => m)).toEqual([
@@ -141,7 +153,7 @@ test.describe('basemap controls', () => {
     })
 
     test('each side-by-side pane draws its own scale bar and compass', () => {
-        const adapter = makeAdapter({ scaleBar: { units: 'imperial' }, compass: {} })
+        const adapter = makeAdapter({ scaleBar: { show: true, units: 'imperial' }, compass: { show: true } })
         adapter._overlay = { props: { layers: [] }, setProps(p) { Object.assign(this.props, p) } }
         adapter.enableComparison({ leftLayerIds: ['a'], rightLayerIds: ['b'], layout: 'sideBySide' })
 

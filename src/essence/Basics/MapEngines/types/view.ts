@@ -94,10 +94,12 @@ export type ScaleBarUnits = 'metric' | 'imperial'
  * A control is shown only when its key is present.
  */
 export interface BasemapControls {
-    /** A scale bar; metric (m/km) unless `units` says imperial (ft/mi). */
-    scaleBar?: { units?: ScaleBarUnits; position?: BasemapControlPosition }
-    /** A compass that follows bearing and pitch, and resets north on click. */
-    compass?: { position?: BasemapControlPosition }
+    /** A scale bar, shown only when `show` is true; metric (m/km) unless
+     *  `units` says imperial (ft/mi). */
+    scaleBar?: { show?: boolean; units?: ScaleBarUnits; position?: BasemapControlPosition }
+    /** A compass that follows bearing and pitch and resets north on click,
+     *  shown only when `show` is true. */
+    compass?: { show?: boolean; position?: BasemapControlPosition }
 }
 
 export interface BasemapOptions {
