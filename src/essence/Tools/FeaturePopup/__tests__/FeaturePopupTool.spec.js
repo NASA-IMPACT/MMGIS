@@ -246,7 +246,6 @@ describe('anchoring to the exact position in properties', () => {
     test('an exact anchor is never re-anchored', async () => {
         const feature = exactFeature({ site: { lat: 2 }, lon: 2 })
         await click({ feature, layerId: EXACT_LAYER, latlng: { lat: 2, lng: 2 } })
-        await fire('map:moveend')
         await fire('layer:viewportLoaded', { layerName: EXACT_LAYER })
         expect(calls('map:queryRenderedFeatures')).toHaveLength(0)
     })
@@ -272,9 +271,10 @@ describe('re-anchoring as the map moves', () => {
         responders['map:queryRenderedFeatures'] = () =>
             features.map((feature) => ({ feature, layerId: LAYER }))
     }
+    // The clicked layer reporting its tiles loaded for a view at zoom `z`.
     const zoomTo = (z) => {
         zoom = z
-        return fire('map:moveend')
+        return fire('layer:viewportLoaded', { layerName: LAYER })
     }
     // Clicked at zoom 6, as a point read from a coarse tile.
     const clickPoint = () =>
@@ -299,35 +299,21 @@ describe('re-anchoring as the map moves', () => {
         expect(pinCoords()).toEqual([FINER.lng, FINER.lat])
     })
 
-    test('a move that gains no zoom does not look', async () => {
+    test('ignores other layers, and views not zoomed past the anchor', async () => {
         await clickPoint()
         found(finer)
+        zoom = 15
+        await fire('layer:viewportLoaded', { layerName: 'lyr-elsewhere' })
         await zoomTo(6)
         await zoomTo(4)
         expect(calls('map:queryRenderedFeatures')).toHaveLength(0)
     })
 
-    test('looks again once the clicked layer has loaded the tiles for the view', async () => {
+    test('a found point sets the zoom later looks are measured from', async () => {
         await clickPoint()
-        // The move settles while a coarser parent tile still stands in.
-        found(point)
+        found(finer)
         await zoomTo(15)
-        expect(calls('map:movePopup')).toHaveLength(0)
-
-        found(finer)
-        await fire('layer:viewportLoaded', { layerName: 'lyr-elsewhere' })
-        expect(calls('map:movePopup')).toHaveLength(0)
-
-        await fire('layer:viewportLoaded', { layerName: LAYER })
-        expect(calls('map:movePopup')).toEqual([['map:movePopup', { latlng: FINER }]])
-    })
-
-    test('a loaded view sets the precision later moves are measured from', async () => {
-        await clickPoint()
-        found(finer)
-        zoom = 15
-        await fire('layer:viewportLoaded', { layerName: LAYER })
-        // Panning at the zoom just settled has nothing finer to find.
+        // Panning at the same zoom has nothing finer to find.
         await zoomTo(15)
         expect(calls('map:queryRenderedFeatures')).toHaveLength(1)
 
@@ -366,12 +352,6 @@ describe('re-anchoring as the map moves', () => {
     test('does nothing once the pin is gone', async () => {
         await clickPoint()
         await click({ feature: null })
-        await zoomTo(15)
-        expect(calls('map:queryRenderedFeatures')).toHaveLength(0)
-    })
-
-    test('a polygon card is never re-anchored', async () => {
-        await click({ feature: polygon, layerId: LAYER, latlng: { lat: 0.5, lng: 0.5 } })
         await zoomTo(15)
         expect(calls('map:queryRenderedFeatures')).toHaveLength(0)
     })

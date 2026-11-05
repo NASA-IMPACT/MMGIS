@@ -215,11 +215,7 @@ const MapPopup_ = {
         ) {
             return false
         }
-        try {
-            open.engine.movePopup({ lat: latlng.lat, lng: latlng.lng })
-        } catch {
-            return false
-        }
+        open.engine.movePopup({ lat: latlng.lat, lng: latlng.lng })
         return true
     },
 

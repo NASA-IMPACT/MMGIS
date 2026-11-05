@@ -272,7 +272,7 @@ const MyPluginTool = {
 | `layer:refreshStatusChange` | `{ layerName, failed }` | Fired when a layer refresh succeeds or fails |
 | `layer:headerStateChange` | `{ header_id, onState }` | Fired when a layer group header is expanded/collapsed |
 | `layers:orderChanged` | `{ order }` | Fired after the draw order changes: a reorder, or a layer added or removed. `order` lists layer UUIDs top first |
-| `layer:viewportLoaded` | `{ layerName }` | deck.gl only. Fired when a vector tile layer has every tile the current view needs. Until then the map may draw coarser parent tiles in their place, whose positions are less precise. A view served wholly from cache does not fire it |
+| `layer:viewportLoaded` | `{ layerName }` | deck.gl only. Fired when every tile a vector tile layer draws for the view has loaded, each time that set of tiles changes. Until then the map may draw coarser parent tiles in their place, whose positions are less precise |
 
 ```javascript
 window.mmgisAPI.on('layer:visibilityChange', ({ layerName, on }) => {

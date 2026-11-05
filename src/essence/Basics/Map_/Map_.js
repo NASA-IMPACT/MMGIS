@@ -828,9 +828,8 @@ let Map_ = {
 //Takes an array of layer objects and makes them map layers
 /**
  * The features drawn within `radius` pixels of a map coordinate, as plain
- * GeoJSON. Each feature's geometry is copied out: a vector tile pick hands
- * back coordinates behind a getter, which a structured clone or a JSON
- * round-trip across the bus would drop.
+ * GeoJSON. Coordinates are read out explicitly: a vector tile pick keeps them
+ * behind a getter, which a JSON round-trip of the geometry would drop.
  */
 function queryRenderedFeaturesAt(engine, latlng, radius, layers) {
     if (!engine || !Number.isFinite(latlng?.lat) || !Number.isFinite(latlng?.lng)) {
@@ -843,22 +842,19 @@ function queryRenderedFeaturesAt(engine, latlng, radius, layers) {
             radius,
             layers: Array.isArray(layers) ? layers : undefined,
         })
-        .filter((result) => result?.feature)
         .map(({ feature, layerId }) => ({
             layerId,
-            feature: {
-                type: 'Feature',
-                ...(feature.id != null ? { id: feature.id } : {}),
-                properties: { ...(feature.properties || {}) },
-                geometry: feature.geometry
-                    ? {
-                          type: feature.geometry.type,
-                          coordinates: JSON.parse(
-                              JSON.stringify(feature.geometry.coordinates ?? null)
-                          ),
-                      }
-                    : null,
-            },
+            feature: JSON.parse(
+                JSON.stringify({
+                    type: 'Feature',
+                    id: feature.id,
+                    properties: feature.properties || {},
+                    geometry: feature.geometry && {
+                        type: feature.geometry.type,
+                        coordinates: feature.geometry.coordinates,
+                    },
+                })
+            ),
         }))
 }
 
@@ -1905,9 +1901,9 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
                 // Both props together: deck's MVTLayer highlights through the
                 // id key, so the flag alone highlights nothing.
                 ...vectorTileHighlightOptions(layerObj.style),
-                // Every tile the view needs has arrived. A feature read from
-                // the map before this may still come from a coarser parent
-                // tile standing in while the finer ones load.
+                // Fires each time the drawn tile set changes and every tile
+                // in it has loaded, so features read then carry this zoom's
+                // precision rather than a coarser parent tile's.
                 onViewportLoad: () =>
                     window.mmgisAPI?.emit('layer:viewportLoaded', {
                         layerName: layerObj.name,

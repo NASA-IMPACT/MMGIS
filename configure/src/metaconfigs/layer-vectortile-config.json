@@ -1029,7 +1029,7 @@
             {
               "field": "variables.featurePopup.latitudeProperty",
               "name": "Latitude Property",
-              "description": "The property holding each feature's exact latitude, in decimal degrees. Set it with Longitude Property to anchor the card and pin there. A vector tile stores positions snapped to a grid that coarsens at lower zooms, so without these a point clicked zoomed out is re-found in the finer tiles drawn as the map zooms in. Dot notation reaches a nested property.",
+              "description": "Property holding each feature's exact latitude in decimal degrees. With Longitude Property set, the card and pin anchor there instead of the drawn geometry. Dot notation reaches nested properties.",
               "type": "text",
               "width": 6
             },

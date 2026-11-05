@@ -1719,11 +1719,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             area = { x: Math.min(x1, x2), y: Math.min(y1, y2), radius: Math.abs(x2 - x1) }
         } else {
             const { x, y } = resolvePoint(geometry as PointLike)
-            if (!((options?.radius ?? 0) > 0)) {
+            const radius = options?.radius
+            if (!radius) {
                 const pick = deck.pickObject({ x, y, radius: 1, layerIds })
                 return pick ? [pickInfoToResult(pick)] : []
             }
-            area = { x, y, radius: options!.radius! }
+            area = { x, y, radius }
         }
         return deck.pickMultipleObjects({ ...area, layerIds }).map(pickInfoToResult)
     }
