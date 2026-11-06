@@ -65,6 +65,7 @@ The mission configuration controls the layout and behavior of panels in modern i
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `layoutStyle` | String | No | `"overlay"` (default) or `"compact"` layout style |
+| `floatingOffset` | Array | No | Pixels the floating panels sit in from each edge of the map, as `[top, right, bottom, left]`, e.g. `[0, 0, 32, 0]` to clear the basemap's logo and attribution. Missing entries are `0`; each entry is at most `200`. The center zones stay centered between the left and right offsets |
 | `panels` | Array | Yes | Array of panel configuration objects |
 
 ## Panel Configuration

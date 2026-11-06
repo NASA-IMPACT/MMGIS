@@ -246,6 +246,42 @@
       "name": "Floating Panels (Center Area)",
       "components": [
         {
+          "field": "panelSettings.floatingOffset.0",
+          "name": "Top Offset (px)",
+          "description": "Moves the top-left, top-center and top-right floating panels this many pixels below the map's top edge.",
+          "type": "number",
+          "width": 3,
+          "min": 0,
+          "max": 200
+        },
+        {
+          "field": "panelSettings.floatingOffset.1",
+          "name": "Right Offset (px)",
+          "description": "Moves the top-right and bottom-right floating panels this many pixels in from the map's right edge.",
+          "type": "number",
+          "width": 3,
+          "min": 0,
+          "max": 200
+        },
+        {
+          "field": "panelSettings.floatingOffset.2",
+          "name": "Bottom Offset (px)",
+          "description": "Moves the bottom-left, bottom-center and bottom-right floating panels this many pixels above the map's bottom edge, e.g. to keep them clear of the basemap's logo and attribution.",
+          "type": "number",
+          "width": 3,
+          "min": 0,
+          "max": 200
+        },
+        {
+          "field": "panelSettings.floatingOffset.3",
+          "name": "Left Offset (px)",
+          "description": "Moves the top-left and bottom-left floating panels this many pixels in from the map's left edge.",
+          "type": "number",
+          "width": 3,
+          "min": 0,
+          "max": 200
+        },
+        {
           "field": "panelSettings.floatingPanels",
           "name": "Floating Panels",
           "description": "Panels that float over the center map area. Each floating panel is anchored to one of six positions. At most one panel per position is allowed.",

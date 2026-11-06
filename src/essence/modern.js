@@ -235,9 +235,10 @@ class ModernInterface {
 
         const layoutStyle = this.configData?.panelSettings?.layoutStyle || 'overlay'
         const theme = this.configData?.msv?.theme || 'default'
+        const floatOffset = this.configData?.panelSettings?.floatingOffset
 
         // Initialize the User Interface with the sorted panels from PanelManager
-        UserInterfaceModern_.init(activePanels, layoutStyle, theme)
+        UserInterfaceModern_.init(activePanels, layoutStyle, theme, floatOffset)
 
         // TimeControl must initialize ahead of Map_ because it seeds each
         // time-enabled layer's time window, which Map_.init reads when it
