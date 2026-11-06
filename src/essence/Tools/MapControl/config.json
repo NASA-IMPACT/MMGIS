@@ -62,7 +62,7 @@
                     {
                         "field": "variables.showShare",
                         "name": "Share",
-                        "description": "Show the share button (copy link, export PNG/PDF).",
+                        "description": "Show the share button (copy link, export PNG/PDF). While the ScaleBar tool shows a scale bar on the map, exports draw a matching one.",
                         "type": "checkbox",
                         "width": 3,
                         "defaultChecked": true

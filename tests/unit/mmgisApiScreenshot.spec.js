@@ -39,7 +39,8 @@ test.describe('mmgisAPI.getMapScreenshot delegation (issue #143)', () => {
         const result = await mmgisAPI.getMapScreenshot()
 
         expect(capture).toHaveBeenCalledTimes(1)
-        expect(result).toBe(screenshot)
+        // This engine stub has no container to measure, so no scale.
+        expect(result).toEqual({ ...screenshot, metersPerPixel: null })
     })
 
     test('rejects when no engine is active', async () => {

@@ -667,6 +667,16 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     }
 
     /**
+     * Leaflet's default CRS, or a custom one built from a `+proj=merc`
+     * definition.
+     */
+    isWebMercator(): boolean {
+        const crs = this._map?.options?.crs
+        if (typeof crs?.projString === 'string') return /\+proj=merc\b/.test(crs.projString)
+        return crs === L.CRS.EPSG3857
+    }
+
+    /**
      * Convert geographic coordinates to container pixel position
      */
     latLngToContainerPoint(latLng: LatLngLike): PointLike {

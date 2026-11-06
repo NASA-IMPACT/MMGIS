@@ -23,6 +23,13 @@ export interface MapScreenshotResult {
     extension: 'png'
     width: number
     height: number
+    /** Ground metres per *image* pixel at `scaleAnchor`, or near the image's
+     *  bottom-left corner without one, at capture time. Stamped by mmgisAPI,
+     *  not by the engine; null or absent when the map cannot measure it. */
+    metersPerPixel?: number | null
+    /** The image pixel `metersPerPixel` was measured at, when the capture
+     *  was asked to measure at a page position; otherwise null or absent. */
+    scaleAnchor?: { x: number; y: number } | null
 }
 
 /**
@@ -363,6 +370,13 @@ export interface IMapEngine<
      * Convert container pixel position to geographic coordinates.
      */
     containerPointToLatLng(point: PointLike): LatLngLike
+
+    /**
+     * Whether the map draws in Web Mercator. Its world ends at about ±85°
+     * latitude, and points past the world's top or bottom edge unproject
+     * toward the pole rather than failing.
+     */
+    isWebMercator(): boolean
 
     /**
      * Convert geographic coordinates to container pixel position.

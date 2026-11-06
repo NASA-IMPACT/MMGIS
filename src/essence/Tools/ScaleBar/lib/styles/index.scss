@@ -1,0 +1,29 @@
+/* Scale bar: a bracket under its distance; the rule's width is set inline. */
+.blocks-scale-bar {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: var(--theme-spacing-05, 0.25rem) var(--theme-spacing-1, 0.5rem);
+    background: rgba(255, 255, 255, 0.8);
+    border-radius: var(--theme-radius-sm, 2px);
+    font-family: var(--theme-font-ui, 'Public Sans Web', 'Helvetica Neue', sans-serif);
+    font-size: var(--theme-font-size-3xs, 0.75rem);
+    font-weight: var(--theme-font-weight-semibold, 600);
+    line-height: 1.2;
+    color: var(--theme-color-ink, #1b1b1b);
+    pointer-events: none;
+    user-select: none;
+
+    &__label {
+        padding-left: 8px;
+        white-space: nowrap;
+    }
+
+    &__rule {
+        box-sizing: border-box;
+        height: 8px;
+        border: 2px solid currentColor;
+        border-top: none;
+    }
+}

@@ -296,6 +296,32 @@ test.describe('DeckGLAdapter side-by-side comparison', () => {
         expect(moves).toEqual([])
     })
 
+    // Live readouts such as the scale bar follow the camera during a drag.
+    test("frames mid-drag announce 'move' from the dragged pane", () => {
+        const adapter = makeAdapter()
+        sideBySide(adapter)
+        const [, right] = paneMaps(adapter)
+
+        const frames = []
+        adapter.on('move', () => frames.push(adapter.getCenter()))
+
+        right.center = { lng: -90, lat: 35 }
+        right.fire('move')
+
+        expect(frames).toEqual([{ lat: 35, lng: -90 }])
+    })
+
+    test("re-clipping does not announce 'move'", () => {
+        const adapter = makeAdapter()
+        sideBySide(adapter)
+
+        const frames = []
+        adapter.on('move', () => frames.push(adapter.getCenter()))
+        adapter.setComparisonDivider(0.8)
+
+        expect(frames).toEqual([])
+    })
+
     test('a basemap swap follows into both panes', () => {
         const adapter = makeAdapter()
         sideBySide(adapter)
