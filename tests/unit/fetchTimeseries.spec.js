@@ -4,6 +4,9 @@ import {
     templateUrl,
     seedRange,
     parseSpan,
+    parseCadence,
+    cadenceStart,
+    cadenceEnd,
     subtractSpan,
     pageInfo,
     resolvePageUrl,
@@ -208,6 +211,43 @@ describe('fetchTimeseries lib', () => {
                 expect(parseSpan(value)).toBeNull()
             },
         )
+    })
+
+    describe('parseCadence', () => {
+        test.each([
+            ['hour', 'HOUR'],
+            ['day', 'DAY'],
+            ['month', 'MONTH'],
+            ['year', 'YEAR'],
+            [' Day ', 'DAY'],
+            ['YEAR', 'YEAR'],
+        ])('reads %s', (value, mode) => {
+            expect(parseCadence(value)).toBe(mode)
+        })
+
+        test.each(['', 'daily', 'P1D', '1 day', 12, null, undefined])('rejects %s', (value) => {
+            expect(parseCadence(value)).toBeNull()
+        })
+    })
+
+    describe('cadenceStart and cadenceEnd', () => {
+        const at = new Date('2024-02-10T14:37:21Z')
+
+        test.each([
+            ['HOUR', '2024-02-10T14:37:00.000Z', '2024-02-10T14:37:59.000Z'],
+            ['DAY', '2024-02-10T00:00:00.000Z', '2024-02-10T23:59:59.000Z'],
+            ['MONTH', '2024-02-01T00:00:00.000Z', '2024-02-29T23:59:59.000Z'],
+            ['YEAR', '2024-01-01T00:00:00.000Z', '2024-12-31T23:59:59.000Z'],
+        ])('%s opens and closes the step holding the instant', (mode, start, end) => {
+            expect(cadenceStart(at, mode).toISOString()).toBe(start)
+            expect(cadenceEnd(at, mode).toISOString()).toBe(end)
+        })
+
+        test('the last step of a year closes on Dec 31', () => {
+            const at = new Date('2023-12-31T08:00:00Z')
+            expect(cadenceEnd(at, 'MONTH').toISOString()).toBe('2023-12-31T23:59:59.000Z')
+            expect(cadenceEnd(at, 'DAY').toISOString()).toBe('2023-12-31T23:59:59.000Z')
+        })
     })
 
     describe('subtractSpan', () => {
@@ -615,6 +655,22 @@ describe('fetchTimeseries lib', () => {
             })
         })
 
+        test('a declared cadence rides on the payload; none declared, none sent', () => {
+            const build = (config) =>
+                buildPayload({
+                    chartId: 'c',
+                    response: [{ datetime: '2026-01-01', value: 1 }],
+                    config,
+                    title: 'Station 42',
+                    layerDisplayName: 'L',
+                    layerName: 'uuid-1',
+                })
+            expect(build({ url: 'x', cadence: 'Day' }).cadence).toBe('day')
+            expect(build({ url: 'x', cadence: 'fortnight' })).not.toHaveProperty('cadence')
+            expect(build({ url: 'x' })).not.toHaveProperty('cadence')
+            expect(isChartSeriesPayload(build({ url: 'x', cadence: 'month' }))).toBe(true)
+        })
+
         test('grouped responses become one labeled series per group', () => {
             const payload = buildPayload({
                 chartId: 'vector-timeseries',
@@ -698,5 +754,96 @@ describe('fetchTimeseries lib', () => {
             })
             expect(payload.series[0].label).toBe('Air Stations')
         })
+    })
+})
+
+describe('buildPayload groups (per-series display label and title)', () => {
+    const response = [
+        { datetime: '2026-01-01', value: 1, duration: '1 HOUR' },
+        { datetime: '2026-01-01', value: 2, duration: '8-HR RUN AVG END HOUR' },
+    ]
+    const build = (groups) =>
+        buildPayload({
+            chartId: 'c',
+            response,
+            config: { url: 'x', groupBy: 'duration', groups },
+            title: 'Los Angeles, California · Site 1103',
+            layerDisplayName: 'AQS Surface CO Concentration',
+            layerName: 'uuid-co',
+        })
+
+    test('a matched row stamps displayLabel and title; the button label stays raw', () => {
+        const payload = build([
+            {
+                value: '1 HOUR',
+                label: 'First Daily Maximum',
+                title: 'First Daily Maximum AQS Surface CO Concentration',
+            },
+            {
+                value: '8-HR RUN AVG END HOUR',
+                label: 'First Maximum Daily 8 Hour Average',
+                title: 'First Maximum Daily 8 Hour Average AQS Surface CO Concentration',
+            },
+        ])
+        expect(isChartSeriesPayload(payload)).toBe(true)
+        expect(payload.series.map((s) => s.label)).toEqual([
+            '1 HOUR',
+            '8-HR RUN AVG END HOUR',
+        ])
+        expect(payload.series.map((s) => s.displayLabel)).toEqual([
+            'First Daily Maximum',
+            'First Maximum Daily 8 Hour Average',
+        ])
+        expect(payload.series[0].title).toBe(
+            'First Daily Maximum AQS Surface CO Concentration',
+        )
+        // The group title names layer and statistic, so the site drops to
+        // the subtitle in place of the layer name; the payload title stays
+        // as the fallback for an untitled series.
+        expect(payload.title).toBe('Los Angeles, California · Site 1103')
+        expect(payload.subtitle).toBe('Los Angeles, California · Site 1103')
+    })
+
+    test('no groups → payload shape unchanged (no new keys, layer name subtitle)', () => {
+        const payload = build(undefined)
+        expect(payload.subtitle).toBe('AQS Surface CO Concentration')
+        for (const s of payload.series) {
+            expect('displayLabel' in s).toBe(false)
+            expect('title' in s).toBe(false)
+        }
+    })
+
+    test('an unmatched series is left alone; a label-only row sets no title and keeps the layer subtitle', () => {
+        const payload = build([{ value: '1 HOUR', label: 'First Daily Maximum' }])
+        expect(payload.series[0].displayLabel).toBe('First Daily Maximum')
+        expect('title' in payload.series[0]).toBe(false)
+        expect('displayLabel' in payload.series[1]).toBe(false)
+        expect(payload.subtitle).toBe('AQS Surface CO Concentration')
+    })
+
+    test('values match case-insensitively; malformed rows are ignored', () => {
+        const payload = build([
+            null,
+            { label: 'no value' },
+            { value: '', label: 'empty value' },
+            { value: '1 hour', label: 'First Daily Maximum' },
+        ])
+        expect(payload.series[0].displayLabel).toBe('First Daily Maximum')
+        expect('displayLabel' in payload.series[1]).toBe(false)
+    })
+
+    test('a truncation note rides on the series title too', () => {
+        const payload = buildPayload({
+            chartId: 'c',
+            response: { numberMatched: 5, features: [
+                { properties: { datetime: '2026-01-01', value: 1, duration: '1 HOUR' } },
+            ] },
+            config: { url: 'x', groupBy: 'duration', groups: [{ value: '1 HOUR', title: 'T' }] },
+            title: 'Site',
+            layerDisplayName: 'Layer',
+            layerName: 'uuid',
+        })
+        expect(payload.title).toMatch(/^Site \(/)
+        expect(payload.series[0].title).toMatch(/^T \(/)
     })
 })

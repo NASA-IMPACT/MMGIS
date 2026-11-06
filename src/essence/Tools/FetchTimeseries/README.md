@@ -23,16 +23,21 @@ Bus-only — no core imports.
   The range is seeded once per layer; a pick on another layer reseeds it. The chart below names the feature; the card
   does not. It fetches the feature's series over that range and emits `seriesReady` with the
   `ChartSeriesPayload` itself as the (flat, unenveloped) event payload (see
-  [`_shared/types/chartSeries.ts`](../_shared/types/chartSeries.ts)).
+  [`_shared/types/chartSeries.ts`](../_shared/types/chartSeries.ts)). A
+  declared **Cadence** rides on it as `cadence`, so the chart prints times
+  at the same step as the pickers.
   Loading and failure (HTTP error, timeout, bad URL template, unusable
   response shape) show on the card; neither is an event. A failure also
   emits `seriesCleared`, so the previous chart never sits under an error.
 - Changing the range refetches the same feature, 400 ms after the last
   change, and emits `seriesReady` again, so the chart replaces its card.
-- Start and End use the Timeline's date picker (calendar plus a UTC time, to
-  the minute). Each is bounded by the other, so the range cannot be
-  reversed; End also stops at the end of today. A picked End covers its
-  whole minute (`…:59`), a picked Start begins on it (`…:00`).
+- Start and End use the Timeline's date picker, stepping at the layer's
+  **Cadence**: to the minute (hour, the default), or by day, month or year.
+  Each is bounded by the other, so the range cannot be reversed; End also
+  stops at the end of today. A picked Start opens its step and a picked End
+  closes it: a day runs `T00:00:00` to `T23:59:59`, a month its first to its
+  last day, a year Jan 1 to Dec 31; in hour mode a picked End covers its
+  whole minute (`…:59`) and a picked Start begins on it (`…:00`).
 - A new request aborts any in-flight fetch and replaces the chart (single
   `chartId: 'vector-timeseries'`). The chart stays until the next request
   replaces it, EXIT clears it, or a fetch fails. Fetches time out after 30
@@ -122,6 +127,8 @@ vector-tile layer's page. The fields write the block below.
 | `xKey` / `yKey` | no | Dot-paths to a point's time and value (defaults `datetime` and `value`), resolved at the point's top level and under `properties.`, so GeoJSON observation features need nothing set. Time values are ISO datetime strings or epoch milliseconds. |
 | `groupBy` | no | Dot-path whose distinct values split the response into one series each (e.g. one line per measured parameter). |
 | `unitKey` | no | Dot-path to a point's unit, carried onto its series; SeriesChart shows it in the card footer next to the variable name. |
+| `groups` | no | Per `groupBy` value `{ value, label?, title? }`: `label` becomes the series' `displayLabel` (legend, tooltip, footer, CSV header; the button keeps the raw value) and `title` the card title while that series is picked. When any row carries a title, the feature title moves to the payload `subtitle` in place of the layer name. Matched exactly, then case-insensitively. |
+| `cadence` | no | How often the series has a value: `hour` (default), `day`, `month` or `year`. Sets the step of the Start and End pickers, and travels on the payload so the chart's tooltip and window dates print at the same step. Declared here rather than read from the layer's Data Time Interval, since an hourly layer can feed a daily series. |
 
 ## Working demo: EPA AQS stations (dev.openveda.cloud)
 

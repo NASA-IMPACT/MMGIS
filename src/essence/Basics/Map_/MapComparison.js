@@ -147,19 +147,24 @@ function enable({
     // it is told this one before it draws anything.
     _applyDividerPosition(_state.dividerPosition)
 
-    _engine.enableComparison({
-        leftLayerIds: leftLayers,
-        rightLayerIds: rightLayers,
-        ..._sideProps('leftLayerProps', leftLayers, leftDate),
-        ..._sideProps('rightLayerProps', rightLayers, rightDate),
-        layout: _state.layout,
-    })
+    // The engine may already have split the map when it throws, so the divider
+    // and the enabled flag go up regardless: the user keeps a handle to drag
+    // and an Exit that reaches the engine.
+    try {
+        _engine.enableComparison({
+            leftLayerIds: leftLayers,
+            rightLayerIds: rightLayers,
+            ..._sideProps('leftLayerProps', leftLayers, leftDate),
+            ..._sideProps('rightLayerProps', rightLayers, rightDate),
+            layout: _state.layout,
+        })
+    } finally {
+        if (!_state.enabled) _createDivider()
+        _applyDividerLayout()
+        _applyLabels()
 
-    if (!_state.enabled) _createDivider()
-    _applyDividerLayout()
-    _applyLabels()
-
-    _state.enabled = true
+        _state.enabled = true
+    }
 
     window.mmgisAPI?.emit('map:comparison:enabled', {
         leftLayers,
@@ -204,8 +209,11 @@ function setLayout(layout) {
         // Changing layout rebuilds the engine's rendering surfaces around the
         // divider, so it is handed the position the divider keeps.
         _applyDividerPosition(_state.dividerPosition)
-        _engine.setComparisonLayout(next)
-        _applyDividerLayout()
+        try {
+            _engine.setComparisonLayout(next)
+        } finally {
+            _applyDividerLayout()
+        }
     }
 
     window.mmgisAPI?.emit('map:comparison:layoutChanged', { layout: next })
@@ -261,9 +269,14 @@ function _applyLabels() {
     if (_labelEls.right) _labelEls.right.textContent = _state.right.label ?? ''
 }
 
-/** Disable comparison mode and restore the normal single-viewport view. */
+/**
+ * Disable comparison mode and restore the normal single-viewport view.
+ *
+ * The engine is asked as well as the controller, so a split the controller
+ * never recorded as on is still taken down.
+ */
 function disable() {
-    if (!_state.enabled) return
+    if (!_state.enabled && !_engine?.isComparisonEnabled?.()) return
 
     _engine?.disableComparison?.()
     _destroyDivider()

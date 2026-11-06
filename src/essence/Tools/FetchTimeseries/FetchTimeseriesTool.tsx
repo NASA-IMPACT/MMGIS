@@ -55,6 +55,8 @@ import {
     pageInfo,
     resolvePageUrl,
     mergePages,
+    parseCadence,
+    DEFAULT_TIME_MODE,
     TemplateError,
     MappingError,
     type DateRange,
@@ -114,6 +116,8 @@ const FetchTimeseriesTool = {
     _range: null as DateRange | null,
     /** The layer the range was seeded for; a pick on another layer reseeds. */
     _rangeLayer: null as string | null,
+    /** The pickers' step, from the seeded layer's cadence. */
+    _timeMode: DEFAULT_TIME_MODE,
     _refetchTimer: null as number | null,
     /** Bumped per fetch request, and by destroy and EXIT: a lookup that
      *  finishes after a newer request started, or after the card was torn
@@ -160,6 +164,7 @@ const FetchTimeseriesTool = {
         this._selection = null
         this._range = null
         this._rangeLayer = null
+        this._timeMode = DEFAULT_TIME_MODE
         this._status = { kind: 'idle' }
         // The data source is going away: remove its card rather than strand
         // a stale chart.
@@ -179,6 +184,7 @@ const FetchTimeseriesTool = {
                 start={range?.start ?? ''}
                 end={range?.end ?? ''}
                 status={this._status}
+                timeMode={this._timeMode}
                 onRangeChange={(start, end) => this._onRangeChange(start, end)}
                 onExit={() => this._onExit()}
             />,
@@ -203,6 +209,13 @@ const FetchTimeseriesTool = {
                 `[FetchTimeseries] unreadable defaultSpan ${JSON.stringify(config.defaultSpan)} on layer ${layerName}; using a year`,
             )
         }
+        const mode = parseCadence(config.cadence)
+        if (mode == null && config.cadence != null && config.cadence !== '') {
+            console.warn(
+                `[FetchTimeseries] unreadable cadence ${JSON.stringify(config.cadence)} on layer ${layerName}; using hour`,
+            )
+        }
+        this._timeMode = mode ?? DEFAULT_TIME_MODE
         const extent = await mmgisGetLayerTemporalExtent(layerName)
         let window: { start: string | null; end: string | null } | null = null
         if ((await mmgisIsTimeEnabled()) === true) {

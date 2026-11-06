@@ -246,6 +246,12 @@ interface SideBySidePane {
 const SCREENSHOT_RENDER_TIMEOUT_MS = 3000
 
 /**
+ * MSAA for the basemap's WebGL context, which the interleaved deck.gl overlay
+ * draws into. MapLibre 5 reads `canvasContextAttributes`, Mapbox GL `antialias`.
+ */
+const ANTIALIAS_OPTIONS = { antialias: true, canvasContextAttributes: { antialias: true } }
+
+/**
  * Prefix on the MapLibre layers terra-draw renders the in-progress drawing
  * into. Passed to `TerraDrawMapLibreGLAdapter` explicitly, so this file sets
  * the ids rather than inheriting whatever the library defaults to.
@@ -510,9 +516,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /**
      * Bound handler kept as a class field for clean removal.
-     * Silently keeps `_viewState` in sync during animations so that
-     * {@link projectCoordinates} and {@link unprojectCoordinates} remain
-     * accurate while the camera is moving.
+     * Keeps `_viewState` in sync on every camera frame, so that
+     * {@link projectCoordinates} and {@link unprojectCoordinates} stay
+     * accurate while the camera moves. Then emits the engine-level `'move'`
+     * event, which anchored HTML overlays use to follow the map.
      */
     private _onBasemapMove = (): void => {
         if (this._sbsSyncing) return
@@ -526,6 +533,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             pitch: this._basemap!.getPitch(),
         }
         if (this._comparisonEnabled) this._syncComparisonCamera()
+        this._emitEvent('move', this._viewState)
     }
 
     /**
@@ -946,6 +954,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         if (!popup) return
         this._popup = null
         popup.remove()
+    }
+
+    movePopup(latlng: LatLngLike): void {
+        if (!this._popup) return
+        const { lat, lng } = resolveLatLng(latlng)
+        this._popup.setLngLat([lng, lat])
     }
 
     setView(center: LatLngLike, zoom?: number, options?: ViewOptions): void {
@@ -1677,18 +1691,20 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     /**
      * Pick features at a pixel point or within a pixel bounding box.
      *
-     * - Point form: calls `deck.pickObject` with radius 1.
+     * - Point form: calls `deck.pickObject` with radius 1, or, given
+     *   `options.radius`, `deck.pickMultipleObjects` within that radius.
      * - Box form `[topLeft, bottomRight]`: calls `deck.pickMultipleObjects`.
      *
-     * In overlay mode, the internal `Deck` instance is accessed via `_overlay.deck`.
+     * In overlay mode the overlay picks: it exposes the same picking methods
+     * and keeps its `Deck` private.
      */
     queryRenderedFeatures(
         geometry: PointLike | [PointLike, PointLike],
         options?: QueryFeaturesOptions
     ): FeaturePickResult[] {
-        const deck = this._isOverlayMode
-            ? (this._overlay as unknown as { deck: Deck })?.deck
-            : this._deck
+        const deck = (
+            this._isOverlayMode ? this._overlay : this._deck
+        ) as Pick<Deck, 'pickObject' | 'pickMultipleObjects'> | null
         if (!deck) return []
 
         const isBox =
@@ -1696,23 +1712,23 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             (Array.isArray((geometry as unknown[])[0]) ||
                 typeof (geometry as unknown[])[0] === 'object')
 
+        const layerIds = options?.layers
+        let area: { x: number; y: number; radius: number }
         if (isBox) {
             const [p1, p2] = geometry as [PointLike, PointLike]
             const { x: x1, y: y1 } = resolvePoint(p1)
             const { x: x2, y: y2 } = resolvePoint(p2)
-            return deck
-                .pickMultipleObjects({
-                    x: Math.min(x1, x2),
-                    y: Math.min(y1, y2),
-                    radius: Math.abs(x2 - x1),
-                    layerIds: options?.layers,
-                })
-                .map(pickInfoToResult)
+            area = { x: Math.min(x1, x2), y: Math.min(y1, y2), radius: Math.abs(x2 - x1) }
+        } else {
+            const { x, y } = resolvePoint(geometry as PointLike)
+            const radius = options?.radius
+            if (!radius) {
+                const pick = deck.pickObject({ x, y, radius: 1, layerIds })
+                return pick ? [pickInfoToResult(pick)] : []
+            }
+            area = { x, y, radius }
         }
-
-        const { x, y } = resolvePoint(geometry as PointLike)
-        const pick = deck.pickObject({ x, y, radius: 1, layerIds: options?.layers })
-        return pick ? [pickInfoToResult(pick)] : []
+        return deck.pickMultipleObjects({ ...area, layerIds }).map(pickInfoToResult)
     }
 
     /**
@@ -1963,6 +1979,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * Clones are drawn in the registry's z-index order rather than the order
      * `ids` lists them, so each side stacks its layers exactly as the primary
      * map does.
+     *
+     * Hidden clones are left out, as in `_syncLayers`: deck.gl still fetches
+     * their tiles.
      */
     private _comparisonClonesFor(
         ids: string[],
@@ -1971,6 +1990,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const wanted = new Set(ids)
         return [...this._layers.entries()]
             .filter(([id]) => wanted.has(id))
+            .filter(
+                ([id, layer]) =>
+                    (overrides[id]?.visible ??
+                        (layer.props as { visible?: boolean })?.visible) !==
+                    false
+            )
             .map(([id, layer]) => layer.clone(overrides[id] ?? {}) as Layer)
     }
 
@@ -2191,6 +2216,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             minZoom: this._minZoom,
             maxZoom: this._maxZoom,
             projection: 'mercator',
+            ...ANTIALIAS_OPTIONS,
         }
         if (this._basemapOptions?.provider === 'mapbox' && this._basemapOptions.accessToken) {
             options['accessToken'] = this._basemapOptions.accessToken
@@ -2231,9 +2257,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * Adopt a pane's camera as the shared one and copy it everywhere else.
      *
      * Either pane may be dragged, so whichever moved becomes the source and the
-     * rest follow. `settled` separates the frames during a gesture — which only
-     * need the cameras to stay locked — from its end, which is what the rest of
-     * MMGIS listens for.
+     * rest follow. Frames during a gesture emit `'move'`; its end, which is
+     * what most of MMGIS listens for, emits `'moveend'`.
      */
     private _onPaneCameraChange(source: SideBySidePane, settled: boolean): void {
         if (this._sbsSyncing || !source.map) return
@@ -2248,7 +2273,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             pitch: source.map.getPitch(),
         }
         this._syncComparisonCamera(source)
-        if (settled) this._emitEvent('moveend', this._viewState)
+        this._emitEvent(settled ? 'moveend' : 'move', this._viewState)
     }
 
     /** Finalize both panes, detach their listeners and remove their DOM nodes. */
@@ -2392,6 +2417,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             minZoom: this._minZoom,
             maxZoom: this._maxZoom,
             projection: 'mercator',
+            ...ANTIALIAS_OPTIONS,
             // No preserveDrawingBuffer needed: captureScreenshot() reads the
             // canvas inside a once('render') handler, in the same frame the
             // map draws — before the drawing buffer is presented and cleared.
@@ -2552,9 +2578,18 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * terra-draw session anchors on its own bottom-most layer instead, since
      * the interleaved overlay lifts unanchored layers back to the top of the
      * style on every `styledata` and would bury the drawing.
+     *
+     * A map whose style has not finished loading (a freshly built side-by-side
+     * pane, for one) throws from `getStyle()`. Its layers go out unanchored
+     * rather than not at all; the map's `style.load` re-sends them anchored.
      */
     private _anchorBelowLabels(layers: Layer[], map: BasemapInstance | null): Layer[] {
-        const style = map?.getStyle?.()
+        let style: BasemapStyle | undefined
+        try {
+            style = map?.getStyle?.()
+        } catch {
+            return layers
+        }
         if (style?.imports?.length) {
             return layers.map((layer) => layer.clone({ slot: 'middle' } as any))
         }

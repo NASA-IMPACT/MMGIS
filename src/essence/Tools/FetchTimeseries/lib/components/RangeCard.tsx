@@ -1,5 +1,6 @@
 import React, { useId } from 'react'
-import { DateSelector } from '../../../Timeline/lib'
+import { DateSelector, type TimeMode } from '../../../Timeline/lib'
+import { cadenceEnd, cadenceStart, isoInstant } from '../timeseries'
 
 export type RangeStatus =
     | { kind: 'idle' }
@@ -12,6 +13,8 @@ export interface RangeCardProps {
     start: string
     end: string
     status: RangeStatus
+    /** The step of both pickers: the series' cadence. */
+    timeMode: TimeMode
     onRangeChange: (start: string, end: string) => void
     /** Closes this card and the chart it feeds. */
     onExit: () => void
@@ -21,12 +24,6 @@ export interface RangeCardProps {
 const MIN_INSTANT = '1000-01-01T00:00:00'
 
 const toDate = (instant: string) => new Date(`${instant}Z`)
-
-/** The picker works to the minute; the range is held to the second so
- *  `{start}`/`{end}` expand the same way. A picked End covers its whole
- *  minute, so a day picked as End still reaches 23:59:59. */
-const toInstant = (date: Date, edge: 'start' | 'end') =>
-    `${date.toISOString().slice(0, 16)}:${edge === 'end' ? '59' : '00'}`
 
 /** The last second of the current UTC day: End's ceiling, unless the range
  *  already reaches past it. */
@@ -42,12 +39,14 @@ function RangeField({
     value,
     min,
     max,
+    timeMode,
     onPick,
 }: {
     label: string
     value: string
     min: Date
     max: Date
+    timeMode: TimeMode
     onPick: (date: Date) => void
 }) {
     const labelId = useId()
@@ -62,7 +61,7 @@ function RangeField({
                     selectedDate={toDate(value)}
                     startTime={min}
                     endTime={max}
-                    timeMode="HOUR"
+                    timeMode={timeMode}
                     onDateChange={onPick}
                 />
             ) : (
@@ -80,6 +79,7 @@ export function RangeCard({
     start,
     end,
     status,
+    timeMode,
     onRangeChange,
     onExit,
 }: RangeCardProps) {
@@ -87,6 +87,14 @@ export function RangeCard({
     const endDate = end ? toDate(end) : null
     const today = endOfToday()
     const ceiling = endDate && endDate > today ? endDate : today
+    // A picked Start opens its step and a picked End closes it; the range is
+    // held to the second so `{start}`/`{end}` expand the same way. End never
+    // passes its ceiling.
+    const openStart = (date: Date) => isoInstant(cadenceStart(date, timeMode))
+    const closeEnd = (date: Date) => {
+        const last = cadenceEnd(date, timeMode)
+        return isoInstant(last > ceiling ? ceiling : last)
+    }
 
     return (
         <div className="range-card">
@@ -102,14 +110,16 @@ export function RangeCard({
                     value={start}
                     min={toDate(MIN_INSTANT)}
                     max={endDate ?? ceiling}
-                    onPick={(date) => onRangeChange(toInstant(date, 'start'), end)}
+                    timeMode={timeMode}
+                    onPick={(date) => onRangeChange(openStart(date), end)}
                 />
                 <RangeField
                     label="End (UTC)"
                     value={end}
                     min={startDate ?? toDate(MIN_INSTANT)}
                     max={ceiling}
-                    onPick={(date) => onRangeChange(start, toInstant(date, 'end'))}
+                    timeMode={timeMode}
+                    onPick={(date) => onRangeChange(start, closeEnd(date))}
                 />
             </div>
             {status.kind === 'loading' && (

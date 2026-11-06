@@ -315,6 +315,14 @@ let Map_ = {
                     MapPopup_.hide()
                     return true
                 }),
+                window.mmgisAPI.provide('map:movePopup', ({ latlng } = {}) =>
+                    MapPopup_.move(latlng)
+                ),
+                window.mmgisAPI.provide(
+                    'map:queryRenderedFeatures',
+                    ({ latlng, radius, layers } = {}) =>
+                        queryRenderedFeaturesAt(engine, latlng, radius, layers)
+                ),
                 window.mmgisAPI.provide('map:setBasemap', (styleName) => {
                     const index = _basemap.styles.findIndex((s) => s.name === styleName)
                     if (index === -1) {
@@ -818,6 +826,38 @@ let Map_ = {
 }
 
 //Takes an array of layer objects and makes them map layers
+/**
+ * The features drawn within `radius` pixels of a map coordinate, as plain
+ * GeoJSON. Coordinates are read out explicitly: a vector tile pick keeps them
+ * behind a getter, which a JSON round-trip of the geometry would drop.
+ */
+function queryRenderedFeaturesAt(engine, latlng, radius, layers) {
+    if (!engine || !Number.isFinite(latlng?.lat) || !Number.isFinite(latlng?.lng)) {
+        return []
+    }
+    const point = engine.latLngToContainerPoint(latlng)
+    if (!point) return []
+    return engine
+        .queryRenderedFeatures(point, {
+            radius,
+            layers: Array.isArray(layers) ? layers : undefined,
+        })
+        .map(({ feature, layerId }) => ({
+            layerId,
+            feature: JSON.parse(
+                JSON.stringify({
+                    type: 'Feature',
+                    id: feature.id,
+                    properties: feature.properties || {},
+                    geometry: feature.geometry && {
+                        type: feature.geometry.type,
+                        coordinates: feature.geometry.coordinates,
+                    },
+                })
+            ),
+        }))
+}
+
 /**
  * Hand a layer that has just been built to the main map's engine, in the
  * state the mission configured it. See handOffLayerToEngine. Layers that were
@@ -1861,6 +1901,13 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
                 // Both props together: deck's MVTLayer highlights through the
                 // id key, so the flag alone highlights nothing.
                 ...vectorTileHighlightOptions(layerObj.style),
+                // Fires each time the drawn tile set changes and every tile
+                // in it has loaded, so features read then carry this zoom's
+                // precision rather than a coarser parent tile's.
+                onViewportLoad: () =>
+                    window.mmgisAPI?.emit('layer:viewportLoaded', {
+                        layerName: layerObj.name,
+                    }),
                 onHover: (info) => {
                     const properties = info?.object?.properties
                     const vtKey = layerObj.style?.vtKey

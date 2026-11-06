@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { LatLng, MapOverlayOpts, MapSubscribeHandlers } from '../types'
-import { MEASURE_STYLE, formatDistance, measureDistance } from '../utils/measure'
+import {
+    formatDistance,
+    measureCasingStyle,
+    measureDistance,
+    measureStyle,
+} from '../utils/measure'
 
 const MEASURE_OVERLAY_ID = 'plugin:mapcontrol:measure'
+const MEASURE_CASING_OVERLAY_ID = 'plugin:mapcontrol:measure-casing'
 
 export type MeasureCallbacks = {
     subscribeToMap?: (handlers: MapSubscribeHandlers) => () => void
@@ -79,6 +85,7 @@ export function useMeasure({
         if (!onDrawOverlay || !onRemoveOverlay) return
         if (!measuring || points.length === 0) {
             onRemoveOverlay(MEASURE_OVERLAY_ID)
+            onRemoveOverlay(MEASURE_CASING_OVERLAY_ID)
             return
         }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -100,11 +107,11 @@ export function useMeasure({
                 properties: {},
             })
         }
-        onDrawOverlay({
-            id: MEASURE_OVERLAY_ID,
-            geojson: { type: 'FeatureCollection', features },
-            style: MEASURE_STYLE,
-        })
+        const geojson = { type: 'FeatureCollection', features }
+        // Casing first: overlays keep insertion order, so the wide white
+        // stroke stays under the primary-colored line.
+        onDrawOverlay({ id: MEASURE_CASING_OVERLAY_ID, geojson, style: measureCasingStyle() })
+        onDrawOverlay({ id: MEASURE_OVERLAY_ID, geojson, style: measureStyle() })
         // mouseLatLng intentionally in deps — redraws the preview line on move.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [measuring, points, mouseLatLng, onDrawOverlay, onRemoveOverlay])
@@ -113,6 +120,7 @@ export function useMeasure({
     useEffect(
         () => () => {
             onRemoveOverlay?.(MEASURE_OVERLAY_ID)
+            onRemoveOverlay?.(MEASURE_CASING_OVERLAY_ID)
             onRemoveMeasureLabel?.()
         },
         [onRemoveOverlay, onRemoveMeasureLabel]

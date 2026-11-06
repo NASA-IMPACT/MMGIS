@@ -21,7 +21,10 @@ One card per `chartId` per source plugin; a new payload from the same plugin
 with the same `chartId` replaces the previous chart. Malformed payloads are dropped with a console warning
 (`isChartSeriesPayload` guard) — they never crash the panel. Series `id`s
 and `label`s must be unique within a payload; duplicates count as malformed
-(the label is what the Variable dropdown, footer, and CSV key on).
+(the label is what the Variable dropdown, footer, and CSV key on). A series
+may add `displayLabel` (shown in the footer, tooltip and CSV header instead of
+`label`, which stays the picker text) and `title` (the card title while it is
+picked, else the payload's).
 
 Payload capabilities: multiple series per chart, `y: null` gaps (not
 interpolated), per-series `line`/`area`/`bar` style and color, and per-series
@@ -30,14 +33,17 @@ each value in the tooltip. One variable renders at a time: a
 payload with several series gets a variable picker above the chart (see
 `layout` below), and the chart, footer chip and CSV follow the pick. Mixed units therefore never need
 a dual y-axis. The payload's `subtitle` renders under the title as the
-section heading (FetchTimeseries sends the layer's display name); `meta` is
-carried but not rendered.
+section heading (FetchTimeseries sends the layer's display name); `cadence`
+(hour, day, month or year) sets how precisely times print, see below;
+`meta` is carried but not rendered.
 
 Time axes render on a linear epoch-ms scale with UTC tick/tooltip
 formatting; timezone-less ISO datetimes are read as UTC. The tooltip title
-and the zoom window's ends print the date only (`Feb 28, 2026`), never a
-clock: the feeds charted so far are daily summaries whose times are all
-midnight. Axis ticks still show hours inside a one-day span.
+and the zoom window's ends print at the payload's `cadence`: `Feb 28, 2026`
+for a daily series, `Feb 28, 2026, 14:00` for an hourly one, `Feb 2026` for
+a monthly one, `2026` for a yearly one, and the date when the payload
+carries none. Axis ticks are not tied to it and still show hours inside a
+one-day span.
 
 ## Configuration
 
@@ -65,7 +71,11 @@ canvas, a sparse unnamed y-axis, a preview zoom strip (the
 series ghosted inside the slider; its end handles resize the window, its
 middle moves it with a grab cursor; the window's start and end dates sit
 above the strip's left and right ends at all times), and a footer chip naming the variable
-and unit beside a Download CSV link. How to read and zoom the chart sits
+and unit beside a Download CSV link. The file is named after the card:
+title, section heading and variable, so one site's download is told from
+another's (`Washington_Georgia_Site_1_AQS_Surface_PM2.5_Concentration_24-HR_BLK_AVG.csv`;
+a part that is missing or repeats the one before it is left out). How to
+read and zoom the chart sits
 behind an info button by the title, as on the Timeline. The hover tooltip is
 attached to the page body, so it is never clipped by the panel, and lists
 the hovered time's value once (only the time axis triggers it).

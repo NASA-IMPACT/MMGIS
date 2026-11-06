@@ -6,6 +6,7 @@ import {
     buildChartOption,
     buildChart,
     seriesToCsv,
+    csvFileName,
 } from '../../src/essence/Tools/SeriesChart/lib/chartData.ts'
 
 const THEME = {
@@ -74,13 +75,21 @@ describe('seriesChart chartData', () => {
     })
 
     describe('formatTooltipTime', () => {
-        test('prints the UTC date only, no clock', () => {
+        test('prints the UTC date without a cadence, as for a daily one', () => {
             expect(formatTooltipTime(Date.parse('2026-03-04T14:30:00Z'))).toBe(
                 'Mar 4, 2026',
             )
             expect(formatTooltipTime(Date.parse('2026-03-04T23:30:00-05:00'))).toBe(
                 'Mar 5, 2026',
             )
+        })
+
+        test('prints at the cadence: a clock for hourly, no day for monthly, the year alone for yearly', () => {
+            const ms = Date.parse('2026-03-04T14:30:00Z')
+            expect(formatTooltipTime(ms, 'hour')).toBe('Mar 4, 2026, 14:30')
+            expect(formatTooltipTime(ms, 'day')).toBe('Mar 4, 2026')
+            expect(formatTooltipTime(ms, 'month')).toBe('Mar 2026')
+            expect(formatTooltipTime(ms, 'year')).toBe('2026')
         })
     })
 
@@ -141,6 +150,13 @@ describe('seriesChart chartData', () => {
             ])
             expect(html).toContain('Jan 1, 2026<br/>')
             expect(html).not.toContain('14:30')
+        })
+
+        test('an hourly cadence puts the clock in the tooltip title', () => {
+            const html = buildChartOption(series(), THEME, 0, 'hour').tooltip.formatter([
+                { marker: '·', seriesName: 'S1', value: [Date.parse('2026-01-01T14:30:00Z'), 1] },
+            ])
+            expect(html).toContain('Jan 1, 2026, 14:30<br/>')
         })
 
         test('the palette slot follows the variable index, explicit color wins', () => {
@@ -240,6 +256,23 @@ describe('seriesChart chartData', () => {
             expect(start).toBe('Jan 1, 2026')
         })
 
+        test('the window dates print at the cadence', () => {
+            const long = series({
+                points: [
+                    { x: '2026-01-01T00:00:00Z', y: 1 },
+                    { x: '2026-12-01T00:00:00Z', y: 2 },
+                ],
+            })
+            expect(buildChart(long, THEME, 0, 'month').windowText(0, 100)).toEqual([
+                'Jan 2026',
+                'Dec 2026',
+            ])
+            expect(buildChart(long, THEME, 0, 'hour').windowText(0, 100)).toEqual([
+                'Jan 1, 2026, 00:00',
+                'Dec 1, 2026, 00:00',
+            ])
+        })
+
         test('a series with no readable times has no window dates', () => {
             const empty = series({ points: [{ x: 'not a time', y: 1 }] })
             expect(buildChart(empty, THEME, 0).windowText(0, 100)).toBeNull()
@@ -291,4 +324,40 @@ describe('seriesChart chartData', () => {
         })
     })
 
+    describe('csvFileName', () => {
+        test('names the file after the card: title, section heading, variable', () => {
+            expect(
+                csvFileName([
+                    'Washington, Georgia · Site 1',
+                    'AQS Surface PM₂.₅ Concentration',
+                    '24-HR BLK AVG',
+                ]),
+            ).toBe(
+                'Washington_Georgia_Site_1_AQS_Surface_PM2.5_Concentration_24-HR_BLK_AVG.csv',
+            )
+        })
+
+        test('skips a missing heading and a variable that repeats it', () => {
+            expect(csvFileName(['Site 1', undefined, 'O3'])).toBe('Site_1_O3.csv')
+            // An ungrouped series is labelled with the layer name, which is
+            // also the heading.
+            expect(
+                csvFileName([
+                    'Site 1',
+                    'AQS Surface O₃ Concentration',
+                    'AQS Surface O₃ Concentration',
+                ]),
+            ).toBe('Site_1_AQS_Surface_O3_Concentration.csv')
+        })
+
+        test('accents and bracketing punctuation leave clean words', () => {
+            expect(csvFileName(['Montréal (Site 1)', undefined, 'PM10'])).toBe(
+                'Montreal_Site_1_PM10.csv',
+            )
+        })
+
+        test('falls back when every part is empty', () => {
+            expect(csvFileName(['', undefined, ''])).toBe('series.csv')
+        })
+    })
 })

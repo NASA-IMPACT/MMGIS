@@ -14,12 +14,16 @@ const END = '2024-10-31T14:30:00Z'
 let buildTimePinnedProps
 let pinWindowFor
 let configs
+let on
 
 const load = async () => {
     vi.resetModules()
     vi.doMock('../../src/essence/Basics/Layers_/Layers_', () => ({
         default: {
-            layers: { get data() { return configs } },
+            layers: {
+                get data() { return configs },
+                get on() { return on },
+            },
             // Core's getUrl strips the service prefix off a COG source so the
             // bare file URL is what the client-side renderer reads.
             getUrl: (_type, url) =>
@@ -40,6 +44,7 @@ const load = async () => {
 }
 
 beforeEach(async () => {
+    on = {}
     configs = {
         raster: {
             name: 'raster',
@@ -205,6 +210,42 @@ describe('a layer pinned to a model run', () => {
             'reference_time=nearest::MMGIS_UNRESOLVED',
         )
         expect(props.forecast.data).toContain('lead=nearest::MMGIS_UNRESOLVED')
+    })
+})
+
+describe('visibility at the pinned date', () => {
+    const PIN = { start: START, end: END }
+
+    beforeEach(() => {
+        on = { raster: true }
+        configs.raster.time.dataDates = ['2024-10-31']
+    })
+
+    test('a layer with data on the pinned date is drawn', () => {
+        expect(buildTimePinnedProps(['raster'], PIN).raster.visible).toBe(true)
+    })
+
+    test('a layer with no data on the pinned date is not drawn', () => {
+        configs.raster.time.dataDates = ['2024-10-30', '2024-11-01']
+        expect(buildTimePinnedProps(['raster'], PIN).raster.visible).toBe(false)
+    })
+
+    test('a layer that declares no coverage is drawn', () => {
+        delete configs.raster.time.dataDates
+        expect(buildTimePinnedProps(['raster'], PIN).raster.visible).toBe(true)
+    })
+
+    test('a layer switched off stays off whatever its coverage', () => {
+        on.raster = false
+        expect(buildTimePinnedProps(['raster'], PIN).raster.visible).toBe(false)
+    })
+
+    test('a layer the coverage gate does not reach keeps its own visibility', () => {
+        configs.raster.time.dataDates = ['2024-10-30']
+        configs.raster.variables = { dynamicExtent: true }
+        expect(buildTimePinnedProps(['raster'], PIN).raster).not.toHaveProperty(
+            'visible',
+        )
     })
 })
 

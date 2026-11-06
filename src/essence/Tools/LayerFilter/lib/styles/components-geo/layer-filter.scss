@@ -247,7 +247,7 @@
         overflow-y: auto;
     }
 
-    // Single-select / entry rows inside the menu.
+    // Menu rows for every enumerated filter and the entry picker.
     &__row {
         box-sizing: border-box;
         display: flex;
@@ -291,27 +291,6 @@
         font-size: var(--theme-font-size-3xs, 12px);
         font-weight: var(--theme-font-weight-semibold, 600);
         line-height: 1;
-    }
-
-    // Multi-select facets: checkbox rows with per-option counts.
-    &__option {
-        display: flex;
-        align-items: center;
-        gap: var(--theme-spacing-1, 8px);
-        padding: var(--theme-spacing-1, 8px) var(--theme-spacing-105, 12px);
-        border-radius: var(--theme-radius-0, 0);
-        color: var(--theme-color-ink, #1c1d1f);
-        font-size: var(--theme-font-size-2xs, 14px);
-        cursor: pointer;
-
-        &:hover {
-            background: var(--theme-color-primary-lightest, #e6f4f6);
-        }
-
-        // Per-option counts sit hard right, clear of the value text.
-        .blocks-layer-filter__badge {
-            margin-left: auto;
-        }
     }
 
     // Count / selected-count chip (trigger and menu rows).
@@ -379,9 +358,22 @@
     // Selected entry's date range + status, under the picker.
     &__entry-meta {
         display: flex;
-        align-items: center;
+        align-items: flex-start;
+        justify-content: flex-end;
         gap: var(--theme-spacing-1, 8px);
         padding: 0 var(--theme-spacing-05, 4px);
+    }
+
+    // Dates and the ongoing-status mark read as one unit on the left; when
+    // the row runs short of room, the status drops under the dates rather
+    // than squeezing either of them.
+    &__entry-when {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 2px var(--theme-spacing-1, 8px);
+        min-width: 0;
+        margin-right: auto;
     }
 
     &__entry-dates {
@@ -389,15 +381,56 @@
         font-size: var(--theme-font-size-3xs, 12px);
     }
 
-    &__pill {
-        margin-left: auto;
-        padding: 0 var(--theme-spacing-1, 8px);
-        background: var(--theme-color-primary-lightest, #e6f4f6);
-        border-radius: var(--theme-radius-0, 0);
-        color: var(--theme-color-primary-dark, #0d313d);
+    &__entry-link {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--theme-spacing-05, 4px);
+        color: var(--theme-color-primary, #005ea2);
+        font-size: var(--theme-font-size-3xs, 12px);
+        text-decoration: none;
+        white-space: nowrap;
+
+        // Keeps the primary color through visited/active states, which
+        // global anchor rules would otherwise recolor.
+        &:visited,
+        &:active,
+        &:hover,
+        &:focus-visible {
+            color: var(--theme-color-primary, #005ea2);
+        }
+
+        &:hover,
+        &:focus-visible {
+            text-decoration: underline;
+        }
+    }
+
+    &__external-icon {
+        @include masked-icon('open-in-new.svg', 12px);
+    }
+
+    // Ongoing-event mark: a live dot plus a single word that never breaks.
+    &__status {
+        display: inline-flex;
+        flex: none;
+        align-items: center;
+        gap: var(--theme-spacing-05, 4px);
+        color: var(--theme-color-primary-dark, #1a4480);
         font-size: var(--theme-font-size-3xs, 12px);
         font-weight: var(--theme-font-weight-semibold, 600);
-        letter-spacing: 0.06em;
+        white-space: nowrap;
+    }
+
+    &__status-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--theme-color-primary, #005ea2);
+        animation: blocks-layer-filter-live 2s ease-out infinite;
+
+        @media (prefers-reduced-motion: reduce) {
+            animation: none;
+        }
     }
 
     // ── Geocode filter: chosen-place chip… ──────────────────────────────
@@ -471,5 +504,16 @@
     &__hint {
         color: var(--theme-color-base-dark, #565c65);
         font-size: var(--theme-font-size-3xs, 12px);
+    }
+}
+
+// Expanding ring behind the ongoing-status dot.
+@keyframes blocks-layer-filter-live {
+    0% {
+        box-shadow: 0 0 0 0 color-mix(in srgb, var(--theme-color-primary, #005ea2) 45%, transparent);
+    }
+    70%,
+    100% {
+        box-shadow: 0 0 0 5px color-mix(in srgb, var(--theme-color-primary, #005ea2) 0%, transparent);
     }
 }

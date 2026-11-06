@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'vitest'
 
 import { vectorTileHighlightOptions } from '../../src/essence/Basics/Layers_/deckVectorTileHighlight'
+import HighlightLineWidthExtension from '../../src/essence/Basics/MapEngines/Adapters/HighlightLineWidthExtension'
 
 /**
  * deck's MVTLayer does its own highlighting: it disables autoHighlight on the
@@ -94,4 +95,39 @@ test('falls back when the configured colour cannot be read', () => {
         hoverHighlightColor: 'not a colour',
     })
     expect(o.highlightColor).toEqual([0, 0, 0, 26])
+})
+
+describe('vectorTileHighlightOptions strokes only', () => {
+    test('leaves the polygon fill untinted', () => {
+        const o = vectorTileHighlightOptions({ hoverHighlightColor: '#ff0000' })
+        expect(o._subLayerProps['polygons-fill'].highlightColor).toEqual([0, 0, 0, 1])
+    })
+
+    test.each([{ weight: 0 }, { weight: '0' }, { opacity: 0 }, { opacity: 0, hoverHighlightWidth: 3 }])(
+        'tints the fill when no outline shows on hover: %p',
+        (style) => {
+            expect(vectorTileHighlightOptions(style)._subLayerProps).toBeUndefined()
+        }
+    )
+
+    test('highlights the outline when the hover width widens a zero-weight stroke', () => {
+        const o = vectorTileHighlightOptions({ weight: 0, hoverHighlightWidth: 3 })
+        expect(o._subLayerProps['polygons-fill'].highlightColor).toEqual([0, 0, 0, 1])
+    })
+
+    test('adds the line width extension with the configured width', () => {
+        const o = vectorTileHighlightOptions({ hoverHighlightWidth: '2.5' })
+        expect(o.extensions).toHaveLength(1)
+        expect(o.extensions[0]).toBeInstanceOf(HighlightLineWidthExtension)
+        expect(o.highlightLineWidth).toBe(2.5)
+    })
+
+    test.each([undefined, '', 'wide', 0, -3])(
+        'adds no extension for a width of %p',
+        (hoverHighlightWidth) => {
+            const o = vectorTileHighlightOptions({ hoverHighlightWidth })
+            expect(o.extensions).toBeUndefined()
+            expect(o.highlightLineWidth).toBeUndefined()
+        }
+    )
 })

@@ -1,11 +1,17 @@
 import React, { useEffect, useId, useRef, useState } from 'react'
 import * as echarts from 'echarts'
 import type {
+    ChartCadence,
     ChartSeries,
     ChartSeriesPayload,
 } from '../../../_shared/types/chartSeries'
 import type { ChartCard, ChartLayout, ChartTheme } from '../types'
-import { buildChart, seriesToCsv, WINDOW_LABEL_LAYOUT } from '../chartData'
+import {
+    buildChart,
+    csvFileName,
+    seriesToCsv,
+    WINDOW_LABEL_LAYOUT,
+} from '../chartData'
 import { grabCursorOnSlider } from '../sliderCursors'
 import { FloatingPopover } from '../../../Timeline/lib'
 
@@ -154,7 +160,10 @@ function ReadyCard({
 
     return (
         <>
-            <CardHeader title={payload.title} subtitle={payload.subtitle} />
+            <CardHeader
+                title={picked.title ?? payload.title}
+                subtitle={payload.subtitle}
+            />
             {payload.series.length > 1 && layout === 'list' && (
                 <div
                     className="series-chart__variable-tabs"
@@ -196,8 +205,16 @@ function ReadyCard({
                 </label>
             )}
             <section className="series-chart__plot">
-                <SeriesCanvas series={picked} index={index} />
-                <CardFooter series={picked} index={index} />
+                <SeriesCanvas series={picked} index={index} cadence={payload.cadence} />
+                <CardFooter
+                    series={picked}
+                    index={index}
+                    fileName={csvFileName([
+                        picked.title ?? payload.title,
+                        payload.subtitle,
+                        picked.displayLabel ?? picked.label,
+                    ])}
+                />
             </section>
         </>
     )
@@ -231,7 +248,15 @@ function themeFromCss(el: HTMLElement): ChartTheme {
     }
 }
 
-function SeriesCanvas({ series, index }: { series: ChartSeries; index: number }) {
+function SeriesCanvas({
+    series,
+    index,
+    cadence,
+}: {
+    series: ChartSeries
+    index: number
+    cadence?: ChartCadence
+}) {
     const hostRef = useRef<HTMLDivElement>(null)
     const [windowDates, setWindowDates] = useState<[string, string] | null>(null)
 
@@ -239,7 +264,7 @@ function SeriesCanvas({ series, index }: { series: ChartSeries; index: number })
         const host = hostRef.current
         if (!host) return
         const chart = echarts.init(host)
-        const { option, windowText } = buildChart(series, themeFromCss(host), index)
+        const { option, windowText } = buildChart(series, themeFromCss(host), index, cadence)
         chart.setOption(option as never)
         setWindowDates(windowText(0, 100))
         // The window dates follow every zoom, whether from the strip or from
@@ -262,7 +287,7 @@ function SeriesCanvas({ series, index }: { series: ChartSeries; index: number })
             observer.disconnect()
             chart.dispose()
         }
-    }, [series, index])
+    }, [series, index, cadence])
 
     const { side, bottom } = WINDOW_LABEL_LAYOUT
     return (
@@ -282,12 +307,12 @@ function SeriesCanvas({ series, index }: { series: ChartSeries; index: number })
     )
 }
 
-function downloadCsv(s: ChartSeries) {
+function downloadCsv(fileName: string, s: ChartSeries) {
     const blob = new Blob([seriesToCsv(s)], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${s.label.replace(/[^\w.-]+/g, '_') || 'series'}.csv`
+    a.download = fileName
     // Safari and some Firefox builds start the download asynchronously and
     // need the anchor in the document; revoking on the next tick lets it read.
     document.body.appendChild(a)
@@ -298,7 +323,15 @@ function downloadCsv(s: ChartSeries) {
 
 /** Colored dot naming the variable (with unit), then that variable's CSV
  *  download. */
-function CardFooter({ series, index }: { series: ChartSeries; index: number }) {
+function CardFooter({
+    series,
+    index,
+    fileName,
+}: {
+    series: ChartSeries
+    index: number
+    fileName: string
+}) {
     return (
         <footer className="series-chart__variable-footer">
             <span className="series-chart__variable-chip">
@@ -313,7 +346,7 @@ function CardFooter({ series, index }: { series: ChartSeries; index: number }) {
                 />
                 {/* The name over its unit, both clear of the dot. */}
                 <span className="series-chart__variable-text">
-                    {series.label}
+                    {series.displayLabel ?? series.label}
                     {series.unit && (
                         <span className="series-chart__variable-unit">
                             {series.unit}
@@ -325,7 +358,7 @@ function CardFooter({ series, index }: { series: ChartSeries; index: number }) {
                 <button
                     type="button"
                     className="series-chart__csv-link"
-                    onClick={() => downloadCsv(series)}
+                    onClick={() => downloadCsv(fileName, series)}
                 >
                     Download CSV
                 </button>

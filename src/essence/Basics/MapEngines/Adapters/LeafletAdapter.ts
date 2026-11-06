@@ -1547,6 +1547,12 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         this._map?.closePopup(popup)
     }
 
+    movePopup(latlng: LatLngLike): void {
+        if (!this._popup) return
+        const ll = this._normalizeLatLng(latlng)
+        this._popup.setLatLng([ll.lat, ll.lng])
+    }
+
     updateMarker(marker: any | string, updates: Partial<MarkerOptions>): any {
         const id = resolveLeafletMarkerId(marker)
         const leafletMarker = this._markers.get(id)

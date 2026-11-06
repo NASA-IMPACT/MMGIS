@@ -1680,6 +1680,20 @@ test.describe('LeafletAdapter - popups', () => {
             .toThrow(/requires a map/)
     })
 
+    test('moving re-anchors the open popup without reopening or closing it', () => {
+        const { adapter, built, closed } = setupPopups()
+        const onClose = vi.fn()
+
+        adapter.showPopup({ lat: 40, lng: -120 }, makeCard(), onClose)
+        adapter.movePopup({ lat: 41, lng: -121 })
+
+        expect(built).toHaveLength(1)
+        expect(built[0].latlng).toEqual([41, -121])
+        expect(built[0].opens).toBe(1)
+        expect(closed).toEqual([])
+        expect(onClose).not.toHaveBeenCalled()
+    })
+
     test('hiding closes the popup and is not reported as a close', () => {
         const { adapter, built, closed } = setupPopups()
         const onClose = vi.fn()

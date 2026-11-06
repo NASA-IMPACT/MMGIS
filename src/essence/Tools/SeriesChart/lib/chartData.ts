@@ -7,7 +7,11 @@
 // counts; `useUTC` keeps those boundaries UTC, and our formatters own the
 // label text so every viewer reads the same timestamps.
 
-import type { ChartPoint, ChartSeries } from '../../_shared/types/chartSeries'
+import type {
+    ChartCadence,
+    ChartPoint,
+    ChartSeries,
+} from '../../_shared/types/chartSeries'
 import type { ChartTheme } from './types'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -71,18 +75,33 @@ export function makeTimeTickFormat(
     return (ms) => fmt.format(new Date(ms))
 }
 
-const DATE_FMT = new Intl.DateTimeFormat('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-})
+const UTC = { timeZone: 'UTC' } as const
+const TIME_FMT: Record<ChartCadence, Intl.DateTimeFormat> = {
+    hour: new Intl.DateTimeFormat('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+        ...UTC,
+    }),
+    day: new Intl.DateTimeFormat('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        ...UTC,
+    }),
+    month: new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'short', ...UTC }),
+    year: new Intl.DateTimeFormat('en-US', { year: 'numeric', ...UTC }),
+}
 
-/** The date a point falls on, in UTC, for the tooltip title and the zoom
- *  window's ends. No clock: the feeds charted are daily summaries whose
- *  times are all midnight, and a clock that never moves reads as broken. */
-export function formatTooltipTime(ms: number): string {
-    return DATE_FMT.format(new Date(ms))
+/** The time a point falls on, in UTC, at the series' cadence: a daily
+ *  series prints the date, an hourly one adds the clock, a monthly one
+ *  drops the day. Without a cadence, the date. For the tooltip title and
+ *  the zoom window's ends. */
+export function formatTooltipTime(ms: number, cadence: ChartCadence = 'day'): string {
+    return TIME_FMT[cadence].format(new Date(ms))
 }
 
 /** Axis tick labels, sized for a card a few hundred pixels wide. */
@@ -102,7 +121,7 @@ export function seriesColor(
 function seriesBase(s: ChartSeries, i: number, theme: ChartTheme) {
     const color = seriesColor(s, i, theme.palette)
     return {
-        name: s.label,
+        name: s.displayLabel ?? s.label,
         type: s.style === 'bar' ? ('bar' as const) : ('line' as const),
         ...(s.style === 'area' ? { areaStyle: {} } : {}),
         itemStyle: { color },
@@ -196,11 +215,12 @@ const HTML_ESCAPES: Record<string, string> = {
 const escapeHtml = (text: string) =>
     text.replace(/[&<>"']/g, (c) => HTML_ESCAPES[c])
 
-/** Axis tooltip whose title is the hovered UTC date, not raw epoch ms,
- *  with the value carrying the series' unit. echarts writes this string
- *  with innerHTML, and the series name and unit come off the wire (a
- *  groupBy value from the remote API), so both are escaped. */
-function makeTooltipFormatter(unit?: string) {
+/** Axis tooltip whose title is the hovered UTC time at the series'
+ *  cadence, not raw epoch ms, with the value carrying the series' unit.
+ *  echarts writes this string with innerHTML, and the series name and unit
+ *  come off the wire (a groupBy value from the remote API), so both are
+ *  escaped. */
+function makeTooltipFormatter(unit?: string, cadence?: ChartCadence) {
     const suffix = unit ? ` ${escapeHtml(unit)}` : ''
     return (params: TooltipParam[] | TooltipParam): string => {
         const list = Array.isArray(params) ? params : [params]
@@ -210,7 +230,7 @@ function makeTooltipFormatter(unit?: string) {
                 ? `${p.marker}${escapeHtml(p.seriesName)}: —`
                 : `${p.marker}${escapeHtml(p.seriesName)}: ${p.value[1]}${suffix}`,
         )
-        return [formatTooltipTime(list[0].value[0]), ...rows].join('<br/>')
+        return [formatTooltipTime(list[0].value[0], cadence), ...rows].join('<br/>')
     }
 }
 
@@ -227,8 +247,9 @@ export function buildChartOption(
     s: ChartSeries,
     theme: ChartTheme,
     index: number,
+    cadence?: ChartCadence,
 ): Record<string, any> {
-    return buildChart(s, theme, index).option
+    return buildChart(s, theme, index, cadence).option
 }
 
 export interface ChartModel {
@@ -244,6 +265,7 @@ export function buildChart(
     s: ChartSeries,
     theme: ChartTheme,
     index: number,
+    cadence?: ChartCadence,
 ): ChartModel {
     const color = seriesColor(s, index, theme.palette)
 
@@ -257,7 +279,7 @@ export function buildChart(
     const windowText = (startPct: number, endPct: number): [string, string] | null => {
         if (!xExtent) return null
         const [start, end] = windowAt(xExtent, startPct, endPct)
-        return [formatTooltipTime(start), formatTooltipTime(end)]
+        return [formatTooltipTime(start, cadence), formatTooltipTime(end, cadence)]
     }
 
     const option = {
@@ -265,7 +287,7 @@ export function buildChart(
         tooltip: {
             trigger: 'axis' as const,
             axisPointer: { type: 'cross' as const, label: { show: false } },
-            formatter: makeTooltipFormatter(s.unit),
+            formatter: makeTooltipFormatter(s.unit, cadence),
             // The panel clips its overflow; on the body the tooltip floats
             // over every panel instead of being cut off at the card's edge.
             appendTo: 'body',
@@ -329,5 +351,21 @@ export function seriesToCsv(s: ChartSeries): string {
     const esc = (v: string) =>
         /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
     const rows = s.points.map((p) => `${esc(String(p.x))},${p.y ?? ''}`)
-    return [`timestamp,${esc(s.label)}`, ...rows].join('\n')
+    return [`timestamp,${esc(s.displayLabel ?? s.label)}`, ...rows].join('\n')
+}
+
+export function csvFileName(parts: Array<string | undefined>): string {
+    // NFKD turns PM₂.₅ into PM2.5 and é into e + accent; the accent then
+    // goes with the rest of the punctuation.
+    const safe = (s: string) =>
+        s
+            .normalize('NFKD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^\w.-]+/g, '_')
+            .replace(/^_+|_+$/g, '')
+    const stem = parts
+        .map((p) => safe(p ?? ''))
+        .filter((p, i, all) => p !== '' && p !== all[i - 1])
+        .join('_')
+    return `${stem || 'series'}.csv`
 }

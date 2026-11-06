@@ -127,7 +127,7 @@
                     {
                         "field": "variables.catalog",
                         "name": "Catalogue (GeoJSON)",
-                        "description": "FeatureCollection of catalogue entries (e.g. activations): id, tag properties, datetimes, geometry, and the layer keys each entry pairs with. See SCHEMA.md.",
+                        "description": "FeatureCollection of catalogue entries (e.g. activations): id, tag properties, datetimes, geometry, and the layer keys each entry pairs with. An entry's optional <code>egis_url</code> (http/https) is shown as an 'View GIS Services' link beside its dates once it is picked. See SCHEMA.md.",
                         "type": "json",
                         "width": 12,
                         "height": "300px"

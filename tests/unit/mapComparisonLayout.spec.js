@@ -222,3 +222,66 @@ test.describe('MapComparison divider position', () => {
         expect(engine.setComparisonDivider).toHaveBeenLastCalledWith(0.25)
     })
 })
+
+/**
+ * The engine can split the map and then throw partway through drawing a side.
+ * Whatever it leaves behind, the controller must still hand the user a divider
+ * and an Exit that reaches the engine.
+ */
+test.describe('MapComparison when the engine throws', () => {
+    const failOnce = () => {
+        engine.enableComparison.mockImplementationOnce(() => {
+            engine.isComparisonEnabled = () => true
+            throw new Error('Style is not done loading')
+        })
+    }
+
+    test('a throwing enable still raises the side-by-side divider and captions', () => {
+        failOnce()
+        expect(() =>
+            MapComparison.enable({
+                leftLayers: ['co2'],
+                rightLayers: ['co2'],
+                leftLabel: 'Jan 1',
+                rightLabel: 'Jan 6',
+                layout: 'sideBySide',
+            }),
+        ).toThrow('Style is not done loading')
+
+        expect(divider()).not.toBeNull()
+        expect(isSideBySide()).toBe(true)
+        const labels = [...container.querySelectorAll('.mmgis-comparison-label')]
+        expect(labels.map((el) => el.textContent)).toEqual(['Jan 1', 'Jan 6'])
+        expect(MapComparison.isEnabled()).toBe(true)
+    })
+
+    test('exit after a throwing enable takes the engine split down', () => {
+        failOnce()
+        expect(() => enable('sideBySide')).toThrow()
+
+        MapComparison.disable()
+
+        expect(engine.disableComparison).toHaveBeenCalledTimes(1)
+        expect(divider()).toBeNull()
+        expect(MapComparison.isEnabled()).toBe(false)
+    })
+
+    test('exit reaches an engine still split when the controller is off', () => {
+        engine.isComparisonEnabled = () => true
+
+        MapComparison.disable()
+
+        expect(engine.disableComparison).toHaveBeenCalledTimes(1)
+    })
+
+    test('a throwing layout switch still re-marks the divider', () => {
+        enable()
+        engine.setComparisonLayout.mockImplementationOnce(() => {
+            throw new Error('Style is not done loading')
+        })
+
+        expect(() => MapComparison.setLayout('sideBySide')).toThrow()
+
+        expect(isSideBySide()).toBe(true)
+    })
+})
