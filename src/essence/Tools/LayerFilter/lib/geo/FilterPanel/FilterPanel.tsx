@@ -344,14 +344,22 @@ function EntryField({
             </Dropdown>
             {selectedEntry && (selectedEntry.dateRange || selectedEntry.egisUrl) && (
                 <div className="blocks-layer-filter__entry-meta">
-                    {selectedEntry.dateRange && (
-                        <span className="blocks-layer-filter__entry-dates">
-                            {selectedEntry.dateRange}
-                        </span>
-                    )}
-                    {selectedEntry.isActive && (
-                        <span className="blocks-layer-filter__pill">ACTIVE</span>
-                    )}
+                    <span className="blocks-layer-filter__entry-when">
+                        {selectedEntry.dateRange && (
+                            <span className="blocks-layer-filter__entry-dates">
+                                {selectedEntry.dateRange}
+                            </span>
+                        )}
+                        {selectedEntry.isActive && (
+                            <span className="blocks-layer-filter__status">
+                                <span
+                                    className="blocks-layer-filter__status-dot"
+                                    aria-hidden="true"
+                                />
+                                Active
+                            </span>
+                        )}
+                    </span>
                     {selectedEntry.egisUrl && (
                         <a
                             className="blocks-layer-filter__entry-link"
