@@ -555,7 +555,7 @@ let helmetConfig = {
       imgSrc: ["*", "data:", "blob:", "'unsafe-inline'"],
       styleSrc: ["*", "data:", "blob:", "'unsafe-inline'"],
       fontSrc: ["*", "data:", "blob:", "'unsafe-inline'"],
-      connectSrc: ["*"],
+      connectSrc: ["*", "data:", "blob:"],
       mediaSrc: ["*", "data:", "blob:"],
       frameAncestors: process.env.FRAME_ANCESTORS
         ? JSON.parse(process.env.FRAME_ANCESTORS)
