@@ -400,6 +400,15 @@
         text-decoration: none;
         white-space: nowrap;
 
+        // Keeps the primary color through visited/active states, which
+        // global anchor rules would otherwise recolor.
+        &:visited,
+        &:active,
+        &:hover,
+        &:focus-visible {
+            color: var(--theme-color-primary, #005ea2);
+        }
+
         &:hover,
         &:focus-visible {
             text-decoration: underline;
