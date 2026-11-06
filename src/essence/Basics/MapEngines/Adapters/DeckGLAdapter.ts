@@ -516,9 +516,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /**
      * Bound handler kept as a class field for clean removal.
-     * Silently keeps `_viewState` in sync during animations so that
-     * {@link projectCoordinates} and {@link unprojectCoordinates} remain
-     * accurate while the camera is moving.
+     * Keeps `_viewState` in sync on every camera frame, so that
+     * {@link projectCoordinates} and {@link unprojectCoordinates} stay
+     * accurate while the camera moves. Then emits the engine-level `'move'`
+     * event, which anchored HTML overlays use to follow the map.
      */
     private _onBasemapMove = (): void => {
         if (this._sbsSyncing) return
@@ -532,6 +533,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             pitch: this._basemap!.getPitch(),
         }
         if (this._comparisonEnabled) this._syncComparisonCamera()
+        this._emitEvent('move', this._viewState)
     }
 
     /**
@@ -2255,9 +2257,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * Adopt a pane's camera as the shared one and copy it everywhere else.
      *
      * Either pane may be dragged, so whichever moved becomes the source and the
-     * rest follow. `settled` separates the frames during a gesture — which only
-     * need the cameras to stay locked — from its end, which is what the rest of
-     * MMGIS listens for.
+     * rest follow. Frames during a gesture emit `'move'`; its end, which is
+     * what most of MMGIS listens for, emits `'moveend'`.
      */
     private _onPaneCameraChange(source: SideBySidePane, settled: boolean): void {
         if (this._sbsSyncing || !source.map) return
@@ -2272,7 +2273,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             pitch: source.map.getPitch(),
         }
         this._syncComparisonCamera(source)
-        if (settled) this._emitEvent('moveend', this._viewState)
+        this._emitEvent(settled ? 'moveend' : 'move', this._viewState)
     }
 
     /** Finalize both panes, detach their listeners and remove their DOM nodes. */
