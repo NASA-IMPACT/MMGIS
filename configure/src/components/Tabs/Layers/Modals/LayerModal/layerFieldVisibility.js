@@ -53,6 +53,8 @@ export const DECK_ONLY_FIELDS = {
         'variables.featurePopup.title',
         'variables.featurePopup.properties',
         'variables.featurePopup.actions',
+        'variables.featurePopup.latitudeProperty',
+        'variables.featurePopup.longitudeProperty',
         // deck.gl highlights a hovered vector tile feature through its own
         // picking; Leaflet's vector tile renderer highlights on click, in a
         // color of its own, and reads none of these. The id key beside them

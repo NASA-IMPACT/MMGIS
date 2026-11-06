@@ -272,6 +272,7 @@ const MyPluginTool = {
 | `layer:refreshStatusChange` | `{ layerName, failed }` | Fired when a layer refresh succeeds or fails |
 | `layer:headerStateChange` | `{ header_id, onState }` | Fired when a layer group header is expanded/collapsed |
 | `layers:orderChanged` | `{ order }` | Fired after the draw order changes: a reorder, or a layer added or removed. `order` lists layer UUIDs top first |
+| `layer:viewportLoaded` | `{ layerName }` | deck.gl only. Fired when every tile a vector tile layer draws for the view has loaded, each time that set of tiles changes. Until then the map may draw coarser parent tiles in their place, whose positions are less precise |
 
 ```javascript
 window.mmgisAPI.on('layer:visibilityChange', ({ layerName, on }) => {
@@ -395,6 +396,8 @@ has already delivered — the request can resolve after a later event lands.
 | `map:panTo` | `{ lat, lng }` | `true` | Pan map to coordinates |
 | `map:showPopup` | `MapPopupRequest` | `MapPopupResult` | Show a map-anchored card, replacing any current one. Answers only once it closes. `latlng` is required, and so is one of `title` (text) and `html` (sanitized); each action carries a `label`, and focus lands on the first one when the card opens |
 | `map:hidePopup` | none | `true` | Take the current card down, resolving its request with `{ action: 'closed' }` |
+| `map:movePopup` | `{ latlng }` | `boolean` | Re-anchor the open card without reopening it: its `map:showPopup` request stays pending. `false` when no card is open or `latlng` is not a finite pair |
+| `map:queryRenderedFeatures` | `{ latlng, radius?, layers? }` | `{ feature, layerId }[]` | The features drawn within `radius` pixels of a map coordinate (only the topmost one when `radius` is omitted), optionally limited to the given layer ids, each as plain GeoJSON. A vector tile feature's geometry is as precise as the tile it was drawn from, so the same point read at a higher zoom lands closer to its true position |
 | `map:getEngineType` | none | `'leaflet' \| 'deckgl' \| null` | Which engine is drawing the map, for a plugin whose behaviour differs by engine. Null until the mission has built one |
 
 ```javascript

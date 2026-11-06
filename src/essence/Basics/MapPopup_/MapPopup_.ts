@@ -201,6 +201,25 @@ const MapPopup_ = {
     },
 
     /**
+     * Re-anchor the open popup without reopening it: its request stays
+     * pending and its content, focus and close handling are untouched.
+     * Answers false when no popup is open or `latlng` is not a finite pair.
+     */
+    move(latlng: MapPopupRequest['latlng']): boolean {
+        const open = this._open
+        if (
+            !open ||
+            !latlng ||
+            !isFiniteNumber(latlng.lat) ||
+            !isFiniteNumber(latlng.lng)
+        ) {
+            return false
+        }
+        open.engine.movePopup({ lat: latlng.lat, lng: latlng.lng })
+        return true
+    },
+
+    /**
      * Close the current popup, if any, and answer its request with `action`.
      * The default covers every close code made: replacement, `map:hidePopup`
      * and map re-initialization.

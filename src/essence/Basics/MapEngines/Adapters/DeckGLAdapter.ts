@@ -954,6 +954,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         popup.remove()
     }
 
+    movePopup(latlng: LatLngLike): void {
+        if (!this._popup) return
+        const { lat, lng } = resolveLatLng(latlng)
+        this._popup.setLngLat([lng, lat])
+    }
+
     setView(center: LatLngLike, zoom?: number, options?: ViewOptions): void {
         const { lat, lng } = resolveLatLng(center)
         if (this._isOverlayMode) {
@@ -1683,18 +1689,20 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     /**
      * Pick features at a pixel point or within a pixel bounding box.
      *
-     * - Point form: calls `deck.pickObject` with radius 1.
+     * - Point form: calls `deck.pickObject` with radius 1, or, given
+     *   `options.radius`, `deck.pickMultipleObjects` within that radius.
      * - Box form `[topLeft, bottomRight]`: calls `deck.pickMultipleObjects`.
      *
-     * In overlay mode, the internal `Deck` instance is accessed via `_overlay.deck`.
+     * In overlay mode the overlay picks: it exposes the same picking methods
+     * and keeps its `Deck` private.
      */
     queryRenderedFeatures(
         geometry: PointLike | [PointLike, PointLike],
         options?: QueryFeaturesOptions
     ): FeaturePickResult[] {
-        const deck = this._isOverlayMode
-            ? (this._overlay as unknown as { deck: Deck })?.deck
-            : this._deck
+        const deck = (
+            this._isOverlayMode ? this._overlay : this._deck
+        ) as Pick<Deck, 'pickObject' | 'pickMultipleObjects'> | null
         if (!deck) return []
 
         const isBox =
@@ -1702,23 +1710,23 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             (Array.isArray((geometry as unknown[])[0]) ||
                 typeof (geometry as unknown[])[0] === 'object')
 
+        const layerIds = options?.layers
+        let area: { x: number; y: number; radius: number }
         if (isBox) {
             const [p1, p2] = geometry as [PointLike, PointLike]
             const { x: x1, y: y1 } = resolvePoint(p1)
             const { x: x2, y: y2 } = resolvePoint(p2)
-            return deck
-                .pickMultipleObjects({
-                    x: Math.min(x1, x2),
-                    y: Math.min(y1, y2),
-                    radius: Math.abs(x2 - x1),
-                    layerIds: options?.layers,
-                })
-                .map(pickInfoToResult)
+            area = { x: Math.min(x1, x2), y: Math.min(y1, y2), radius: Math.abs(x2 - x1) }
+        } else {
+            const { x, y } = resolvePoint(geometry as PointLike)
+            const radius = options?.radius
+            if (!radius) {
+                const pick = deck.pickObject({ x, y, radius: 1, layerIds })
+                return pick ? [pickInfoToResult(pick)] : []
+            }
+            area = { x, y, radius }
         }
-
-        const { x, y } = resolvePoint(geometry as PointLike)
-        const pick = deck.pickObject({ x, y, radius: 1, layerIds: options?.layers })
-        return pick ? [pickInfoToResult(pick)] : []
+        return deck.pickMultipleObjects({ ...area, layerIds }).map(pickInfoToResult)
     }
 
     /**

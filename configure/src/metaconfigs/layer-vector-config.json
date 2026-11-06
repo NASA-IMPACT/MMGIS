@@ -1131,6 +1131,20 @@
                   "width": 8
                 }
               ]
+            },
+            {
+              "field": "variables.featurePopup.latitudeProperty",
+              "name": "Latitude Property",
+              "description": "Property holding each feature's exact latitude in decimal degrees. With Longitude Property set, the card and pin anchor there instead of the drawn geometry. Dot notation reaches nested properties.",
+              "type": "text",
+              "width": 6
+            },
+            {
+              "field": "variables.featurePopup.longitudeProperty",
+              "name": "Longitude Property",
+              "description": "The property holding each feature's exact longitude, in decimal degrees. Takes effect only with Latitude Property set.",
+              "type": "text",
+              "width": 6
             }
           ]
         }

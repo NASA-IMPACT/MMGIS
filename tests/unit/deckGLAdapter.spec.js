@@ -1041,6 +1041,64 @@ test.describe('DeckGLAdapter', () => {
     // registry entry to the active engine. Such an object has no deck `id`, so
     // addLayer files it under `undefined`, and no `clone`, which the layer sync
     // calls on every entry it mounts.
+    test.describe('queryRenderedFeatures', () => {
+        const hit = {
+            picked: true,
+            object: { type: 'Feature', properties: { name: 'a' } },
+            layer: { id: 'l1' },
+            coordinate: [2, 1],
+            x: 10,
+            y: 20,
+        }
+
+        test('picks through the overlay on a basemap', () => {
+            const adapter = makeAdapter()
+            adapter._isOverlayMode = true
+            adapter._overlay = { pickObject: vi.fn(() => hit), pickMultipleObjects: vi.fn() }
+
+            const results = adapter.queryRenderedFeatures({ x: 10, y: 20 })
+
+            expect(adapter._overlay.pickObject).toHaveBeenCalledWith({
+                x: 10, y: 20, radius: 1, layerIds: undefined,
+            })
+            expect(results).toHaveLength(1)
+            expect(results[0].layerId).toBe('l1')
+        })
+
+        test('a point query with a radius returns every feature within it', () => {
+            const adapter = makeAdapter()
+            adapter._isOverlayMode = false
+            adapter._deck = { pickObject: vi.fn(), pickMultipleObjects: vi.fn(() => [hit, hit]) }
+
+            const results = adapter.queryRenderedFeatures({ x: 10, y: 20 }, { radius: 30, layers: ['l1'] })
+
+            expect(adapter._deck.pickMultipleObjects).toHaveBeenCalledWith({
+                x: 10, y: 20, radius: 30, layerIds: ['l1'],
+            })
+            expect(adapter._deck.pickObject).not.toHaveBeenCalled()
+            expect(results).toHaveLength(2)
+        })
+    })
+
+    test.describe('movePopup', () => {
+        test('re-anchors the open popup without reopening it', () => {
+            const adapter = makeAdapter()
+            const popup = { setLngLat: vi.fn(), remove: vi.fn() }
+            adapter._popup = popup
+
+            adapter.movePopup({ lat: 1, lng: 2 })
+
+            expect(popup.setLngLat).toHaveBeenCalledWith([2, 1])
+            expect(popup.remove).not.toHaveBeenCalled()
+        })
+
+        test('is a no-op with no popup open', () => {
+            const adapter = makeAdapter()
+            adapter._popup = null
+            expect(() => adapter.movePopup({ lat: 1, lng: 2 })).not.toThrow()
+        })
+    })
+
     test.describe('a registry entry that is not a deck layer', () => {
         function makeStandaloneAdapter() {
             const adapter = makeAdapter()

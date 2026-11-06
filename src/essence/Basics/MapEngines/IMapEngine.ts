@@ -482,6 +482,12 @@ export interface IMapEngine<
      */
     hidePopup(): void
 
+    /**
+     * Re-anchor the open popup to `latlng`, keeping its element, its open
+     * state and its `onClose`. No-op when no popup is open.
+     */
+    movePopup(latlng: LatLngLike): void
+
     // ── Comparison / swipe ────────────────────────────────────────────────────
 
     /**
