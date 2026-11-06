@@ -7,15 +7,17 @@ import React from 'react'
 function Icon({
     children,
     viewBox = '0 0 20 20',
+    size = 16,
 }: {
     children: React.ReactNode
     viewBox?: string
+    size?: number
 }) {
     return (
         <svg
             xmlns="http://www.w3.org/2000/svg"
-            width={16}
-            height={16}
+            width={size}
+            height={size}
             viewBox={viewBox}
             fill="currentColor"
             aria-hidden="true"
@@ -69,6 +71,20 @@ export function MinusIcon() {
                 clipRule="evenodd"
                 d="M15.8307 10.8334H4.16406V9.16675H15.8307V10.8334Z"
             />
+        </Icon>
+    )
+}
+
+/**
+ * A north/south needle pointing up the viewBox, drawn a size up from the bar's
+ * other glyphs so its two halves read at a glance. Both halves take
+ * currentColor; the south half is faded so north stands out in one color.
+ */
+export function CompassNeedleIcon() {
+    return (
+        <Icon size={20}>
+            <path d="M10 1.5L14 10H6L10 1.5Z" />
+            <path d="M10 18.5L6 10H14L10 18.5Z" opacity={0.4} />
         </Icon>
     )
 }

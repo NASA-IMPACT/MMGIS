@@ -283,6 +283,83 @@ test.describe('LeafletAdapter - View Control', () => {
     })
 })
 
+// ─── Bearing and resetNorth ──────────────────────────────────────────────────
+
+/**
+ * A north polar azimuthal projection drawn with the pole at container point
+ * `pole`, 0.1° of latitude per pixel and the 0° meridian running straight down
+ * the screen from the pole, so east is to the pole's right.
+ */
+function polarProjection(pole) {
+    return ([x, y]) => {
+        const dx = x - pole.x
+        const dy = y - pole.y
+        return {
+            lat: 90 - Math.hypot(dx, dy) * 0.1,
+            lng: (Math.atan2(dx, dy) * 180) / Math.PI,
+        }
+    }
+}
+
+test.describe('LeafletAdapter - bearing and resetNorth', () => {
+    test('a standard projection faces north, untilted', () => {
+        const { mockMap } = setup()
+        // Web Mercator-like: latitude falls down the screen, longitude rises
+        // to the right.
+        mockMap.containerPointToLatLng = ([x, y]) => ({ lat: 45 - y * 0.01, lng: x * 0.01 })
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        const state = adapter.getViewState()
+        expect(state.bearing).toBeCloseTo(0, 6)
+        expect(state.pitch).toBe(0)
+    })
+
+    test('a polar projection reports where north is at the map centre', () => {
+        const { mockMap } = setup()
+        // The 800x600 map's centre is (400, 300). With the pole straight
+        // to its right, the top of the screen faces west.
+        mockMap.containerPointToLatLng = polarProjection({ x: 700, y: 300 })
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        expect(adapter.getViewState().bearing).toBeCloseTo(-90, 0)
+    })
+
+    test('the polar bearing follows the map as it pans', () => {
+        const { mockMap } = setup()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        // Pole above the centre: up is north.
+        mockMap.containerPointToLatLng = polarProjection({ x: 400, y: 0 })
+        expect(adapter.getViewState().bearing).toBeCloseTo(0, 6)
+
+        // Pole to the centre's left: up faces east.
+        mockMap.containerPointToLatLng = polarProjection({ x: 100, y: 300 })
+        expect(adapter.getViewState().bearing).toBeCloseTo(90, 0)
+
+        // Pole below the centre: up faces south.
+        mockMap.containerPointToLatLng = polarProjection({ x: 400, y: 600 })
+        expect(Math.abs(adapter.getViewState().bearing)).toBeCloseTo(180, 6)
+    })
+
+    test('resetNorth returns false and leaves the view alone', () => {
+        const { mockMap } = setup()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map', center: { lat: 10, lng: 20 }, zoom: 4 })
+        const flyTo = vi.spyOn(mockMap, 'flyTo')
+        const setView = vi.spyOn(mockMap, 'setView')
+
+        expect(adapter.resetNorth()).toBe(false)
+
+        expect(flyTo).not.toHaveBeenCalled()
+        expect(setView).not.toHaveBeenCalled()
+        expect(mockMap._center).toEqual({ lat: 10, lng: 20 })
+        expect(mockMap._zoom).toBe(4)
+    })
+})
+
 // ─── Helpers shared by layer tests ───────────────────────────────────────────
 
 function makeMockTileLayer() {

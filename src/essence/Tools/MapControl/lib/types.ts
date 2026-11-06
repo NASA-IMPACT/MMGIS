@@ -19,6 +19,13 @@ export type MapOverlayOpts = {
     style: object
 }
 
+/**
+ * Which way the camera faces. `bearing` is the compass direction the top of
+ * the screen faces, in degrees clockwise from north; `pitch` is the tilt from
+ * straight down, in degrees.
+ */
+export type MapCamera = { bearing: number; pitch: number }
+
 export type MapSubscribeHandlers = {
     onClick: (e: LatLng) => void
     onMouseMove: (e: LatLng) => void

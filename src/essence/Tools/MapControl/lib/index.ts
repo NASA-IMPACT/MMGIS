@@ -12,6 +12,7 @@ export type {
     ActionIcon,
     LatLng,
     BasemapStyle,
+    MapCamera,
     GeocodeResult,
     MapOverlayOpts,
     MapSubscribeHandlers,

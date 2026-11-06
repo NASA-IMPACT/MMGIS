@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { act } from 'react'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { MMGISMapControlAdapter } from '../MMGISMapControlAdapter'
 import { mount, click } from '../../_shared/__tests__/reactHarness'
@@ -424,5 +424,227 @@ describe('MMGISMapControlAdapter basemap labels', () => {
         expect(requestsNamed('map:getBasemapLabelsVisible')).toHaveLength(0)
 
         await unmount()
+    })
+})
+
+/**
+ * The compass against a bus whose camera the spec sets: `map:getCamera`
+ * answers from `view` (null when `view` is), and bus events are captured from
+ * `on` so a spec can fire the map's movement.
+ */
+describe('MMGISMapControlAdapter compass', () => {
+    let vars: Record<string, unknown>
+    let view: { bearing: number; pitch: number; rotatable: boolean } | null
+    let listeners: Map<string, Set<(payload?: unknown) => void>>
+
+    const fire = async (event: string, payload?: unknown) => {
+        await act(async () => {
+            for (const handler of listeners.get(event) ?? []) handler(payload)
+        })
+    }
+    /** A deck.gl move's payload: the engine view state. */
+    const viewStateOf = (bearing: number, pitch: number) =>
+        ({ longitude: -95, latitude: 38, zoom: 4, bearing, pitch })
+    // Lets a read scheduled for the next animation frame run and settle.
+    const nextFrame = async () => {
+        await act(async () => {
+            await new Promise((resolve) => requestAnimationFrame(resolve))
+        })
+    }
+    const compassButton = (container: HTMLElement) =>
+        container.querySelector<HTMLButtonElement>('.blocks-map-control__btn--compass')
+    const needleTransform = (container: HTMLElement) =>
+        container.querySelector<HTMLElement>('.blocks-map-control__needle')?.style.transform
+
+    beforeEach(() => {
+        vars = {}
+        view = { bearing: 0, pitch: 0, rotatable: true }
+        listeners = new Map()
+        request.mockImplementation(async (name: string) => {
+            switch (name) {
+                case 'tool:getVars':
+                    return vars
+                case 'app:getMissionPath':
+                    return MISSION_PATH
+                case 'map:getBasemapStyles':
+                    return []
+                case 'map:getBasemap':
+                    return null
+                case 'map:supportsBasemapLabels':
+                    return false
+                case 'map:getCamera':
+                    return view
+                default:
+                    return true
+            }
+        })
+        ;(window as unknown as { mmgisAPI: { on: unknown } }).mmgisAPI.on = (
+            event: string,
+            handler: (payload?: unknown) => void,
+        ) => {
+            if (!listeners.has(event)) listeners.set(event, new Set())
+            listeners.get(event)!.add(handler)
+            return () => listeners.get(event)!.delete(handler)
+        }
+    })
+
+    // Off unless the mission switches it on, since the User Interface tab can
+    // put the basemap's own compass in a map corner instead.
+    test('is absent by default', async () => {
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+        expect(compassButton(container)).toBeNull()
+        expect(listeners.get('map:move')?.size ?? 0).toBe(0)
+
+        await unmount()
+    })
+
+    test.each([true, 'true', 1, '1'])('shows when showCompass is %s', async (value) => {
+        vars = { showCompass: value }
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+        expect(compassButton(container)).not.toBeNull()
+
+        await unmount()
+    })
+
+    test('shows when switched on, drawn from the camera the map reports', async () => {
+        vars = { showCompass: true }
+        view = { bearing: 30, pitch: 45, rotatable: true }
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+        expect(compassButton(container)).not.toBeNull()
+        expect(needleTransform(container)).toBe('rotateX(45deg) rotateZ(-30deg)')
+        expect(compassButton(container)!.title).toBe('Bearing 30°, tilt 45°')
+
+        await unmount()
+    })
+
+    // The variables arrive after the first render, so the camera may be read
+    // once before they say the compass is off; it is not followed after.
+    test.each([false, 'false', 0, '0'])(
+        'is absent, and does not follow the camera, when showCompass is %s',
+        async (value) => {
+            vars = { showCompass: value }
+            const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+            expect(compassButton(container)).toBeNull()
+            const before = requestsNamed('map:getCamera').length
+            await fire('map:moveend')
+            await fire('map:move')
+            await nextFrame()
+            expect(requestsNamed('map:getCamera')).toHaveLength(before)
+            expect(listeners.get('map:move')?.size ?? 0).toBe(0)
+            expect(listeners.get('map:moveend')?.size ?? 0).toBe(0)
+
+            await unmount()
+        },
+    )
+
+    test('stays when only the zoom buttons are switched off', async () => {
+        vars = { showCompass: true, showZoom: false }
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+        expect(container.querySelector('[title="Zoom in"]')).toBeNull()
+        expect(compassButton(container)).not.toBeNull()
+
+        await unmount()
+    })
+
+    // A deck.gl move carries the engine view state, so the needle follows it
+    // without asking the map again.
+    test.each(['map:move', 'map:moveend'])('follows the camera a %s payload carries, with no request', async (event) => {
+        vars = { showCompass: true }
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+        const before = requestsNamed('map:getCamera').length
+        await fire(event, viewStateOf(-60, 20))
+        await nextFrame()
+
+        expect(needleTransform(container)).toBe('rotateX(20deg) rotateZ(60deg)')
+        expect(requestsNamed('map:getCamera')).toHaveLength(before)
+
+        await unmount()
+    })
+
+    // Leaflet's move payload is its own event, with no camera in it.
+    test.each(['map:move', 'map:moveend'])('asks for the camera when a %s payload carries none', async (event) => {
+        vars = { showCompass: true }
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+        const before = requestsNamed('map:getCamera').length
+        view = { bearing: 12, pitch: 0, rotatable: false }
+        await fire(event, { target: {}, type: 'move' })
+        await nextFrame()
+
+        expect(requestsNamed('map:getCamera')).toHaveLength(before + 1)
+        expect(needleTransform(container)).toBe('rotateX(0deg) rotateZ(-12deg)')
+
+        await unmount()
+    })
+
+    test('applies at most one camera per frame, the latest, while the map moves', async () => {
+        vars = { showCompass: true }
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+        const before = requestsNamed('map:getCamera').length
+        await fire('map:move', viewStateOf(10, 0))
+        await fire('map:move', viewStateOf(20, 0))
+        await fire('map:moveend', viewStateOf(30, 5))
+        await nextFrame()
+
+        expect(needleTransform(container)).toBe('rotateX(5deg) rotateZ(-30deg)')
+        expect(requestsNamed('map:getCamera')).toHaveLength(before)
+
+        await unmount()
+    })
+
+    test('asks the map to reset north when clicked', async () => {
+        vars = { showCompass: true }
+        view = { bearing: 90, pitch: 30, rotatable: true }
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+        await click(compassButton(container)!)
+
+        expect(requestsNamed('map:resetNorth')).toHaveLength(1)
+
+        await unmount()
+    })
+
+    // Before an engine exists getCamera answers null; the compass waits.
+    test('is absent while the map has no camera to report', async () => {
+        vars = { showCompass: true }
+        view = null
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+        expect(compassButton(container)).toBeNull()
+        // A move before the first read answers has nothing to update.
+        await fire('map:move', viewStateOf(45, 0))
+        await nextFrame()
+        expect(compassButton(container)).toBeNull()
+
+        await unmount()
+    })
+
+    // Leaflet cannot rotate: reset would do nothing, so nothing offers it.
+    test('is an indicator, not a reset button, on a map that cannot rotate', async () => {
+        vars = { showCompass: true }
+        view = { bearing: 12, pitch: 0, rotatable: false }
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+        const compass = compassButton(container)!
+        expect(compass.tagName).toBe('SPAN')
+        expect(compass.getAttribute('role')).toBe('img')
+        expect(compass.getAttribute('aria-label')).toBe('Bearing 12°, tilt 0°')
+        expect(needleTransform(container)).toBe('rotateX(0deg) rotateZ(-12deg)')
+
+        await unmount()
+    })
+
+    test('stops following the camera once unmounted', async () => {
+        vars = { showCompass: true }
+        const { unmount } = await mount(<MMGISMapControlAdapter />)
+        expect(listeners.get('map:move')?.size ?? 0).toBe(1)
+        await unmount()
+
+        expect(listeners.get('map:move')?.size ?? 0).toBe(0)
+        expect(listeners.get('map:moveend')?.size ?? 0).toBe(0)
     })
 })

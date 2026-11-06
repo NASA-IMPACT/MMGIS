@@ -21,6 +21,7 @@ import {
     setBasemapLabelsVisible,
     zoomIn,
     zoomOut,
+    resetNorth,
     subscribeToMap,
     drawOverlay,
     removeOverlay,
@@ -29,12 +30,14 @@ import {
     setCursor,
     flyToResult,
 } from './adapters/handlers'
+import { useMapCamera } from './adapters/useMapCamera'
 
 type ToolVars = {
     showBasemapSwitcher?: unknown
     showSearch?: unknown
     showMeasure?: unknown
     showZoom?: unknown
+    showCompass?: unknown
     showShare?: unknown
     includeLegend?: unknown
     actionButtonText?: unknown
@@ -52,6 +55,10 @@ const ACTION_FALLBACK_LABEL = 'Analyze area'
 
 const isFalsy = (v: unknown) =>
     v === false || v === 'false' || v === 0 || v === '0'
+
+// For a feature that is off unless the mission switches it on.
+const isTruthy = (v: unknown) =>
+    v === true || v === 'true' || v === 1 || v === '1'
 
 // A mission JSON field may hold any JSON type. Non-strings read as unset rather
 // than being coerced, since the bar mounts with no error boundary.
@@ -136,7 +143,11 @@ export function MMGISMapControlAdapter() {
     const showSearch = !isFalsy(vars.showSearch)
     const showMeasure = !isFalsy(vars.showMeasure)
     const showZoom = !isFalsy(vars.showZoom)
+    // Off by default: the basemap can draw its own compass in a map corner.
+    const showCompass = isTruthy(vars.showCompass)
     const showShare = !isFalsy(vars.showShare)
+
+    const cameraState = useMapCamera(showCompass)
 
     const actionLink = asText(vars.actionButtonLink)
     const actionText = asText(vars.actionButtonText)
@@ -198,6 +209,8 @@ export function MMGISMapControlAdapter() {
             onToggleBasemapLabels={showBasemapSwitcher ? onToggleBasemapLabels : undefined}
             onZoomIn={showZoom ? zoomIn : undefined}
             onZoomOut={showZoom ? zoomOut : undefined}
+            camera={showCompass ? cameraState?.camera : undefined}
+            onResetNorth={showCompass && cameraState?.rotatable ? resetNorth : undefined}
             subscribeToMap={showMeasure ? subscribeToMap : undefined}
             onDrawOverlay={showMeasure ? drawOverlay : undefined}
             onRemoveOverlay={showMeasure ? removeOverlay : undefined}

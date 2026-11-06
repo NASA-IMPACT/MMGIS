@@ -4,6 +4,7 @@ import type {
     BasemapStyle,
     GeocodeResult,
     LatLng,
+    MapCamera,
     MapOverlayOpts,
     MapSubscribeHandlers,
 } from '../../types'
@@ -12,7 +13,14 @@ import { useMeasure } from '../../hooks/useMeasure'
 import { FloatingPopover } from '../../FloatingPopover'
 import { BasemapPanel } from '../BasemapPanel/BasemapPanel'
 import { SearchPanel } from '../SearchPanel/SearchPanel'
-import { BasemapIcon, MinusIcon, PlusIcon, RulerIcon, SearchIcon } from '../icons'
+import {
+    BasemapIcon,
+    CompassNeedleIcon,
+    MinusIcon,
+    PlusIcon,
+    RulerIcon,
+    SearchIcon,
+} from '../icons'
 
 export type MapControlBarProps = {
     // Basemap
@@ -26,6 +34,12 @@ export type MapControlBarProps = {
     // Zoom
     onZoomIn?: () => void
     onZoomOut?: () => void
+
+    // Compass — renders when either is given. With onResetNorth it is a button
+    // that resets the view; with only a camera it is an indicator.
+    /** Which way the map faces; null or undefined draws the needle north-up. */
+    camera?: MapCamera | null
+    onResetNorth?: () => void
 
     // Measure — all three (subscribe/draw/remove) needed to enable the feature
     subscribeToMap?: (handlers: MapSubscribeHandlers) => () => void
@@ -59,6 +73,30 @@ const ACTION_ICON_CLASS = 'blocks-map-control__btn-icon'
 
 /** Names a glyph-only button, the bar knowing nothing more about the action. */
 const ACTION_FALLBACK_NAME = 'Action'
+
+/** A heading as a compass reads it: whole degrees in [0, 360). */
+const compassDegrees = (deg: number) => ((Math.round(deg) % 360) + 360) % 360
+
+/**
+ * The compass button's needle. Turning it against the bearing keeps its north
+ * tip on geographic north as the map rotates, and tipping it back by the pitch
+ * (inside the button's perspective) makes a tilted view look tilted.
+ */
+function CompassNeedle({ camera }: { camera: MapCamera }) {
+    return (
+        <span
+            className="blocks-map-control__needle"
+            style={{
+                transform: `rotateX(${camera.pitch}deg) rotateZ(${-camera.bearing}deg)`,
+            }}
+            aria-hidden="true"
+        >
+            <CompassNeedleIcon />
+        </span>
+    )
+}
+
+const NORTH_UP: MapCamera = { bearing: 0, pitch: 0 }
 
 /**
  * The action button's glyph. An image is painted as a CSS mask, so it takes the
@@ -97,6 +135,8 @@ export function MapControlBar({
     onToggleBasemapLabels,
     onZoomIn,
     onZoomOut,
+    camera,
+    onResetNorth,
     subscribeToMap,
     onDrawOverlay,
     onRemoveOverlay,
@@ -154,6 +194,9 @@ export function MapControlBar({
 
     // A glyph-only button carries no text, so it would otherwise go unnamed.
     const actionName = actionLabel || ACTION_FALLBACK_NAME
+
+    const compass = camera ?? NORTH_UP
+    const compassTitle = `Bearing ${compassDegrees(compass.bearing)}°, tilt ${Math.round(compass.pitch)}°`
 
     function toggleBasemap() {
         setBasemapOpen((v) => !v)
@@ -229,6 +272,32 @@ export function MapControlBar({
                             <PlusIcon />
                         </button>
                     </div>
+                )}
+                {onResetNorth ? (
+                    <div className="blocks-map-control__group">
+                        <button
+                            type="button"
+                            className="blocks-map-control__btn blocks-map-control__btn--compass"
+                            onClick={onResetNorth}
+                            title={compassTitle}
+                            aria-label={`Reset to north. ${compassTitle}`}
+                        >
+                            <CompassNeedle camera={compass} />
+                        </button>
+                    </div>
+                ) : (
+                    camera && (
+                        <div className="blocks-map-control__group">
+                            <span
+                                className="blocks-map-control__btn blocks-map-control__btn--compass blocks-map-control__btn--static"
+                                role="img"
+                                title={compassTitle}
+                                aria-label={compassTitle}
+                            >
+                                <CompassNeedle camera={compass} />
+                            </span>
+                        </div>
+                    )
                 )}
                 {endSlot}
                 {/* Built from the bar's __group and __btn classes, so it sits in
