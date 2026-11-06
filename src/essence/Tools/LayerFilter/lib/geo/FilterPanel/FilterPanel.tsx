@@ -73,7 +73,7 @@ function FiltersIcon() {
 }
 
 /**
- * Tick marking the option a single-select filter currently holds. The glyph is
+ * Tick marking each option a filter currently holds. The glyph is
  * the design set's own file, painted as a mask so it takes the row's colour.
  */
 function CheckIcon() {
@@ -199,49 +199,41 @@ function EnumeratedField({
                 open={open}
                 setOpen={setOpen}
             >
-                {!multi && (
-                    <button
-                        type="button"
-                        className={rowClass(selected.length === 0)}
-                        onClick={() => {
-                            onChange(filter.id, '')
-                            setOpen(false)
-                        }}
-                    >
-                        <span>{filter.allLabel ?? 'All'}</span>
-                        {selected.length === 0 && <CheckIcon />}
-                    </button>
-                )}
+                {/* Multi-select menus share the single-select rows: the tick
+                    marks every held value, and a pick toggles that value while
+                    leaving the menu open for the next one. */}
+                <button
+                    type="button"
+                    className={rowClass(selected.length === 0)}
+                    aria-pressed={multi ? selected.length === 0 : undefined}
+                    onClick={() => {
+                        onChange(filter.id, multi ? [] : '')
+                        if (!multi) setOpen(false)
+                    }}
+                >
+                    <span>{filter.allLabel ?? 'All'}</span>
+                    {selected.length === 0 && <CheckIcon />}
+                </button>
                 {options.map((opt) => {
                     const isSelected = selected.includes(opt.value)
-                    if (multi) {
-                        const toggle = () => {
-                            const next = isSelected
-                                ? selected.filter((v) => v !== opt.value)
-                                : [...selected, opt.value]
-                            onChange(filter.id, next)
-                        }
-                        return (
-                            <label
-                                key={opt.value}
-                                className="blocks-layer-filter__option"
-                            >
-                                <input
-                                    type="checkbox"
-                                    checked={isSelected}
-                                    onChange={toggle}
-                                />
-                                <span>{opt.value}</span>
-                                <Badge>{opt.count}</Badge>
-                            </label>
-                        )
-                    }
                     return (
                         <button
                             key={opt.value}
                             type="button"
                             className={rowClass(isSelected)}
+                            aria-pressed={multi ? isSelected : undefined}
                             onClick={() => {
+                                if (multi) {
+                                    onChange(
+                                        filter.id,
+                                        isSelected
+                                            ? selected.filter(
+                                                  (v) => v !== opt.value,
+                                              )
+                                            : [...selected, opt.value],
+                                    )
+                                    return
+                                }
                                 onChange(filter.id, opt.value)
                                 setOpen(false)
                             }}
