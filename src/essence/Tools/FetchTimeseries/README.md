@@ -127,6 +127,7 @@ vector-tile layer's page. The fields write the block below.
 | `xKey` / `yKey` | no | Dot-paths to a point's time and value (defaults `datetime` and `value`), resolved at the point's top level and under `properties.`, so GeoJSON observation features need nothing set. Time values are ISO datetime strings or epoch milliseconds. |
 | `groupBy` | no | Dot-path whose distinct values split the response into one series each (e.g. one line per measured parameter). |
 | `unitKey` | no | Dot-path to a point's unit, carried onto its series; SeriesChart shows it in the card footer next to the variable name. |
+| `groups` | no | Per `groupBy` value `{ value, label?, title? }`: `label` becomes the series' `displayLabel` (legend, tooltip, footer, CSV header; the button keeps the raw value) and `title` the card title while that series is picked. When any row carries a title, the feature title moves to the payload `subtitle` in place of the layer name. Matched exactly, then case-insensitively. |
 | `cadence` | no | How often the series has a value: `hour` (default), `day`, `month` or `year`. Sets the step of the Start and End pickers, and travels on the payload so the chart's tooltip and window dates print at the same step. Declared here rather than read from the layer's Data Time Interval, since an hourly layer can feed a daily series. |
 
 ## Working demo: EPA AQS stations (dev.openveda.cloud)

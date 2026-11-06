@@ -313,3 +313,92 @@ describe('MMGISSeriesChartAdapter', () => {
         }
     })
 })
+
+describe('SeriesChartPanel per-series title and display label', () => {
+    let host
+    let root
+
+    beforeEach(() => {
+        globalThis.ResizeObserver = class {
+            observe() {}
+            unobserve() {}
+            disconnect() {}
+        }
+        host = document.createElement('div')
+        document.body.appendChild(host)
+        root = createRoot(host)
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        host.remove()
+    })
+
+    const groupedPayload = () => ({
+        chartId: 'co',
+        title: 'Los Angeles, California · Site 1103',
+        subtitle: 'Los Angeles, California · Site 1103',
+        series: [
+            {
+                id: 'one-hour',
+                label: '1 HOUR',
+                displayLabel: 'First Daily Maximum',
+                title: 'First Daily Maximum AQS Surface CO Concentration',
+                unit: 'Parts per million',
+                points: [{ x: '2026-01-01T00:00:00Z', y: 1.5 }],
+            },
+            {
+                id: 'eight-hour',
+                label: '8-HR RUN AVG END HOUR',
+                displayLabel: 'First Maximum Daily 8 Hour Average',
+                title: 'First Maximum Daily 8 Hour Average AQS Surface CO Concentration',
+                unit: 'Parts per million',
+                points: [{ x: '2026-01-01T00:00:00Z', y: 0.9 }],
+            },
+            {
+                id: 'plain',
+                label: 'Untitled series',
+                points: [{ x: '2026-01-01T00:00:00Z', y: 0.1 }],
+            },
+        ],
+    })
+
+    const render = (payload) =>
+        act(() =>
+            root.render(
+                React.createElement(SeriesChartPanel, {
+                    cards: [{ chartId: payload.chartId, payload }],
+                    layout: 'list',
+                }),
+            ),
+        )
+    const title = () => host.querySelector('.series-chart__title').textContent
+    const chip = () => host.querySelector('.series-chart__variable-chip').textContent
+
+    test('buttons keep the raw label; header and footer follow the picked series', () => {
+        render(groupedPayload())
+        const tabs = [...host.querySelectorAll('.series-chart__variable-tab')]
+        expect(tabs.map((t) => t.textContent)).toEqual([
+            '1 HOUR',
+            '8-HR RUN AVG END HOUR',
+            'Untitled series',
+        ])
+        expect(title()).toBe('First Daily Maximum AQS Surface CO Concentration')
+        expect(chip()).toContain('First Daily Maximum')
+        expect(chip()).not.toContain('1 HOUR')
+
+        act(() => tabs[1].click())
+        expect(title()).toBe(
+            'First Maximum Daily 8 Hour Average AQS Surface CO Concentration',
+        )
+        expect(chip()).toContain('First Maximum Daily 8 Hour Average')
+    })
+
+    test('a series without its own title falls back to the payload title and its label', () => {
+        render(groupedPayload())
+        const tabs = [...host.querySelectorAll('.series-chart__variable-tab')]
+        act(() => tabs[2].click())
+        expect(title()).toBe('Los Angeles, California · Site 1103')
+        expect(chip()).toContain('Untitled series')
+    })
+})

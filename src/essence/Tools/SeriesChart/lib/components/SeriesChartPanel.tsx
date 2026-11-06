@@ -160,7 +160,10 @@ function ReadyCard({
 
     return (
         <>
-            <CardHeader title={payload.title} subtitle={payload.subtitle} />
+            <CardHeader
+                title={picked.title ?? payload.title}
+                subtitle={payload.subtitle}
+            />
             {payload.series.length > 1 && layout === 'list' && (
                 <div
                     className="series-chart__variable-tabs"
@@ -207,9 +210,9 @@ function ReadyCard({
                     series={picked}
                     index={index}
                     fileName={csvFileName([
-                        payload.title,
+                        picked.title ?? payload.title,
                         payload.subtitle,
-                        picked.label,
+                        picked.displayLabel ?? picked.label,
                     ])}
                 />
             </section>
@@ -343,7 +346,7 @@ function CardFooter({
                 />
                 {/* The name over its unit, both clear of the dot. */}
                 <span className="series-chart__variable-text">
-                    {series.label}
+                    {series.displayLabel ?? series.label}
                     {series.unit && (
                         <span className="series-chart__variable-unit">
                             {series.unit}

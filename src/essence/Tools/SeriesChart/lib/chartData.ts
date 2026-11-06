@@ -121,7 +121,7 @@ export function seriesColor(
 function seriesBase(s: ChartSeries, i: number, theme: ChartTheme) {
     const color = seriesColor(s, i, theme.palette)
     return {
-        name: s.label,
+        name: s.displayLabel ?? s.label,
         type: s.style === 'bar' ? ('bar' as const) : ('line' as const),
         ...(s.style === 'area' ? { areaStyle: {} } : {}),
         itemStyle: { color },
@@ -351,7 +351,7 @@ export function seriesToCsv(s: ChartSeries): string {
     const esc = (v: string) =>
         /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
     const rows = s.points.map((p) => `${esc(String(p.x))},${p.y ?? ''}`)
-    return [`timestamp,${esc(s.label)}`, ...rows].join('\n')
+    return [`timestamp,${esc(s.displayLabel ?? s.label)}`, ...rows].join('\n')
 }
 
 export function csvFileName(parts: Array<string | undefined>): string {

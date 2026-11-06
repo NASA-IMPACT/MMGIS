@@ -52,6 +52,17 @@ export interface TimeseriesConfig {
     /** How often the series has a value: 'hour' (default), 'day', 'month'
      *  or 'year'. The step of the card's Start and End pickers. */
     cadence?: string
+    /** Per groupBy value: the series' display name and the card title while
+     *  it is picked. Buttons keep the raw value. */
+    groups?: TimeseriesGroup[]
+}
+
+export interface TimeseriesGroup {
+    /** The groupBy value this row applies to, matched exactly, then
+     *  case-insensitively. */
+    value: string
+    label?: string
+    title?: string
 }
 
 export interface FeatureLike {
@@ -513,6 +524,25 @@ export function mapResponseSeries(
     return series
 }
 
+function findGroup(
+    groups: unknown,
+    key: string,
+): TimeseriesGroup | undefined {
+    if (key === '' || !Array.isArray(groups)) return undefined
+    const rows = groups.filter(
+        (g): g is TimeseriesGroup =>
+            g != null &&
+            typeof g === 'object' &&
+            typeof (g as TimeseriesGroup).value === 'string' &&
+            (g as TimeseriesGroup).value !== '',
+    )
+    const lower = key.toLowerCase()
+    return (
+        rows.find((g) => g.value === key) ??
+        rows.find((g) => g.value.toLowerCase() === lower)
+    )
+}
+
 function slug(value: string): string {
     return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
@@ -550,19 +580,25 @@ export function buildPayload(args: {
     // Only a declared cadence travels: without one the chart keeps its own
     // default, as the pickers keep theirs.
     const cadence = parseCadence(args.config.cadence)
+    const withNote = (title: string) => (note ? `${title} (${note})` : title)
+    const groupFor = (key: string) => findGroup(args.config.groups, key)
+    // A group title names the layer and statistic, so the feature title
+    // (site) moves down to the subtitle in place of the layer name.
+    const anyGroupTitle = mapped.some((m) => !!groupFor(m.key)?.title)
     // Slugged group keys can collide (e.g. two all-non-ASCII parameter
     // names) and the chart rejects duplicate ids — suffix them apart.
     const usedIds = new Set<string>()
     return {
         chartId: args.chartId,
-        title: note ? `${args.title} (${note})` : args.title,
-        subtitle: args.layerDisplayName,
+        title: withNote(args.title),
+        subtitle: anyGroupTitle ? args.title : args.layerDisplayName,
         ...(cadence ? { cadence: cadence.toLowerCase() as ChartCadence } : {}),
         series: mapped.map((m) => {
             const base = m.key === '' ? 'timeseries' : slug(m.key) || 'series'
             let id = base
             for (let n = 2; usedIds.has(id); n++) id = `${base}-${n}`
             usedIds.add(id)
+            const group = groupFor(m.key)
             return {
                 id,
                 label:
@@ -571,6 +607,8 @@ export function buildPayload(args: {
                         : args.config.label || args.layerDisplayName,
                 unit: m.unit,
                 points: m.points,
+                ...(group?.label ? { displayLabel: group.label } : {}),
+                ...(group?.title ? { title: withNote(group.title) } : {}),
             }
         }),
         meta: {

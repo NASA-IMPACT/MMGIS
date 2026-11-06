@@ -21,7 +21,10 @@ One card per `chartId` per source plugin; a new payload from the same plugin
 with the same `chartId` replaces the previous chart. Malformed payloads are dropped with a console warning
 (`isChartSeriesPayload` guard) — they never crash the panel. Series `id`s
 and `label`s must be unique within a payload; duplicates count as malformed
-(the label is what the Variable dropdown, footer, and CSV key on).
+(the label is what the Variable dropdown, footer, and CSV key on). A series
+may add `displayLabel` (shown in the footer, tooltip and CSV header instead of
+`label`, which stays the picker text) and `title` (the card title while it is
+picked, else the payload's).
 
 Payload capabilities: multiple series per chart, `y: null` gaps (not
 interpolated), per-series `line`/`area`/`bar` style and color, and per-series
