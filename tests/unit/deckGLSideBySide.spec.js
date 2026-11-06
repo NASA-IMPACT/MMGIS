@@ -36,6 +36,14 @@ class FakeBasemap {
 
     static instances = []
 
+    /** The GL canvas a capture reads; tagged so a test can tell whose it is. */
+    getCanvas() {
+        if (!this._canvas) this._canvas = { width: 1000, height: 500, owner: this }
+        return this._canvas
+    }
+    /** As the real map: the next frame draws and raises `render`. */
+    triggerRepaint() { this.fire('render') }
+
     addControl(control) { this.controls.push(control) }
     removeControl(control) { this.controls = this.controls.filter((c) => c !== control) }
     remove() { this.removed = true }
@@ -56,8 +64,17 @@ class FakeBasemap {
         this.handlers.get(type).add(handler)
     }
     off(type, handler) { this.handlers.get(type)?.delete(handler) }
-    once(type, handler) { this.on(type, handler) }
-    fire(type) { this.handlers.get(type)?.forEach((h) => h()) }
+    once(type, handler) {
+        const wrapped = () => {
+            this.off(type, wrapped)
+            handler()
+        }
+        this.on(type, wrapped)
+    }
+    fire(type) {
+        // Copied first: a once-handler removes itself while the set is walked.
+        for (const handler of [...(this.handlers.get(type) ?? [])]) handler()
+    }
 
     jumpTo({ center, zoom, bearing, pitch }) {
         if (center) this.center = { lng: center[0], lat: center[1] }
@@ -404,5 +421,146 @@ test.describe('DeckGLAdapter side-by-side before a pane style loads', () => {
 
         const [{ layers }] = setProps.mock.calls.at(-1)
         expect(layers.map((l) => l.beforeId)).toEqual(['place-labels'])
+    })
+})
+
+// ─── Capture ─────────────────────────────────────────────────────────────────
+//
+// A comparison is several WebGL surfaces, each readable only inside its own
+// render step. The capture draws each one's strip into one output canvas in
+// order, then paints the divider the screen draws as DOM.
+
+/** A 2D output canvas that records what is drawn into it. */
+const makeCaptureCanvas = () => {
+    const calls = []
+    const ctx = {
+        fillStyle: null, strokeStyle: null, lineWidth: 0, font: '', textBaseline: '', textAlign: '',
+        shadowColor: '', shadowBlur: 0,
+        save() {}, restore() {}, beginPath() {}, arc() {}, fill() {}, stroke() {}, strokeRect() {},
+        fillText() {},
+        drawImage: (...args) => calls.push({ op: 'drawImage', args }),
+        fillRect: (...args) => calls.push({ op: 'fillRect', args }),
+    }
+    const canvas = {
+        width: 0,
+        height: 0,
+        getContext: () => ctx,
+        toBlob: (cb, type) => cb(new Blob(['composed'], { type })),
+    }
+    return { canvas, calls }
+}
+
+const drawn = (calls) => calls.filter((c) => c.op === 'drawImage').map(({ args: [src, sx, sy, sw, sh, dx, dy, dw, dh] }) => ({ owner: src.owner, sx, sy, sw, sh, dx, dy, dw, dh }))
+
+test.describe('captureScreenshot during a comparison', () => {
+    test('side-by-side: each pane is read inside its own render and placed at its slice', async () => {
+        const adapter = makeAdapter()
+        Object.defineProperty(container, 'clientWidth', { value: 1000, configurable: true })
+        sideBySide(adapter)
+        adapter.setComparisonDivider(0.3)
+        const { canvas, calls } = makeCaptureCanvas()
+        adapter._createCaptureCanvas = () => canvas
+        const [left, right] = paneMaps(adapter)
+
+        const result = await adapter.captureScreenshot()
+
+        expect([canvas.width, canvas.height]).toEqual([1000, 500])
+        expect(drawn(calls)).toEqual([
+            { owner: left, sx: 0, sy: 0, sw: 300, sh: 500, dx: 0, dy: 0, dw: 300, dh: 500 },
+            { owner: right, sx: 0, sy: 0, sw: 700, sh: 500, dx: 300, dy: 0, dw: 700, dh: 500 },
+        ])
+        // The rule sits on the divider, drawn after both strips.
+        const rule = calls.find((c) => c.op === 'fillRect')
+        expect(rule.args).toEqual([298.5, 0, 3, 500])
+        expect(calls.indexOf(rule)).toBeGreaterThan(calls.findIndex((c) => c.op === 'drawImage'))
+        // Sized from the primary's canvas, which is never drawn: it holds
+        // nothing while comparison is on.
+        expect(result).toMatchObject({ mimeType: 'image/png', width: 1000, height: 500 })
+        expect(drawn(calls).map((d) => d.owner)).not.toContain(adapter._basemap)
+    })
+
+    test('side-by-side: a pane that never renders times out rather than hanging', async () => {
+        vi.useFakeTimers()
+        try {
+            const adapter = makeAdapter()
+            sideBySide(adapter)
+            const { canvas } = makeCaptureCanvas()
+            adapter._createCaptureCanvas = () => canvas
+            const [left] = paneMaps(adapter)
+            left.triggerRepaint = () => {}
+
+            const capture = adapter.captureScreenshot()
+            const failed = expect(capture).rejects.toThrow(/timed out/)
+            await vi.advanceTimersByTimeAsync(3001)
+            await failed
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    test('swipe: the primary basemap under both followers, each clipped at the divider', async () => {
+        const adapter = makeAdapter()
+        Object.defineProperty(container, 'clientWidth', { value: 1000, configurable: true })
+        const fakeDeck = (name) => {
+            const canvas = { width: 1000, height: 500, owner: name }
+            return { redraws: [], redraw(reason) { this.redraws.push(reason) }, getCanvas: () => canvas }
+        }
+        adapter._comparisonEnabled = true
+        adapter._comparisonLayout = 'swipe'
+        adapter._comparisonDividerPos = 0.3
+        adapter._comparisonLeftDeck = fakeDeck('left')
+        adapter._comparisonRightDeck = fakeDeck('right')
+        const { canvas, calls } = makeCaptureCanvas()
+        adapter._createCaptureCanvas = () => canvas
+
+        await adapter.captureScreenshot()
+
+        expect(drawn(calls)).toEqual([
+            { owner: adapter._basemap, sx: 0, sy: 0, sw: 1000, sh: 500, dx: 0, dy: 0, dw: 1000, dh: 500 },
+            { owner: 'left', sx: 0, sy: 0, sw: 300, sh: 500, dx: 0, dy: 0, dw: 300, dh: 500 },
+            { owner: 'right', sx: 300, sy: 0, sw: 700, sh: 500, dx: 300, dy: 0, dw: 700, dh: 500 },
+        ])
+        expect(adapter._comparisonLeftDeck.redraws).toEqual(['screenshot'])
+    })
+
+    // The captions are DOM the screen draws; the image carries them as chips.
+    test('paints the captions where the screen shows them', async () => {
+        const adapter = makeAdapter()
+        Object.defineProperty(container, 'clientWidth', { value: 1000, configurable: true })
+        container.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 500 })
+        for (const [side, text, left] of [['left', 'PM2.5', 12], ['right', 'Ozone', 512]]) {
+            const el = document.createElement('div')
+            el.className = `mmgis-comparison-label mmgis-comparison-label--${side}`
+            el.textContent = text
+            el.getBoundingClientRect = () => ({ left, top: 12, width: 80, height: 26 })
+            container.appendChild(el)
+        }
+        sideBySide(adapter)
+        const { canvas } = makeCaptureCanvas()
+        adapter._createCaptureCanvas = () => canvas
+        const ctx = canvas.getContext()
+        const texts = []
+        ctx.fillText = (text, x, y) => texts.push([text, x, y])
+
+        await adapter.captureScreenshot()
+
+        expect(texts).toEqual([
+            ['PM2.5', 22, 25],
+            ['Ozone', 522, 25],
+        ])
+    })
+
+    test('with comparison off, the capture is the single basemap read as before', async () => {
+        const adapter = makeAdapter()
+        const basemap = adapter._basemap
+        basemap.getCanvas = () => ({
+            width: 640,
+            height: 480,
+            toBlob: (cb, type) => cb(new Blob(['one'], { type })),
+        })
+
+        const result = await adapter.captureScreenshot()
+
+        expect(result).toMatchObject({ width: 640, height: 480 })
     })
 })

@@ -775,6 +775,11 @@ const L_ = {
                     return detached(L_.layers.dataCoverage)
                 }),
                 window.mmgisAPI.provide('tool:getVars', (toolName) => L_.getToolVars(toolName)),
+                // What the opening link said about a tool, so a plugin can
+                // reopen the state it wrote through getUrlString.
+                window.mmgisAPI.provide('tool:getUrlState', (toolName) =>
+                    L_.getToolUrlState(toolName)
+                ),
                 window.mmgisAPI.provide('app:isMobile', () => L_.UserInterface_?.isMobile === true),
                 window.mmgisAPI.provide('app:getMissionPath', () => L_.missionPath),
                 // Raw mission branding fields (title/logo). Resolution policy
@@ -2865,6 +2870,18 @@ const L_ = {
                 return true
         }
         return false
+    },
+    /**
+     * The string a tool wrote into the opening link's `tools=` entry under
+     * its module name (`ComparisonTool$...`), or null when the link named
+     * none. Entries are split on commas, so a tool's string holds none.
+     */
+    getToolUrlState: function (toolName) {
+        const tools = L_.FUTURES?.tools
+        if (typeof toolName !== 'string' || !Array.isArray(tools)) return null
+        const prefix = `${toolName}$`
+        const entry = tools.find((t) => typeof t === 'string' && t.startsWith(prefix))
+        return entry ? entry.slice(prefix.length) : null
     },
     getToolVars: function (toolName, withVarsFromLayers, showWarnings) {
         let vars = {}

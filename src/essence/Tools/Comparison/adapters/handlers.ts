@@ -70,6 +70,14 @@ export const setComparisonLabels = async ({
     await mmgisRequest('map:comparison:setLabels', { left, right })
 }
 
+/**
+ * Put the divider at `pos` (0..1). Enabling resets it to the middle, so a
+ * reopened link applies this after its enable has settled.
+ */
+export const setComparisonDivider = async (pos: number): Promise<void> => {
+    await mmgisRequest('map:comparison:setDividerPosition', pos)
+}
+
 /** Tear down comparison and restore the normal single view. */
 export const disableComparison = async (): Promise<void> => {
     await mmgisRequest('map:comparison:disable')
