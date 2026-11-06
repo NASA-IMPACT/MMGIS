@@ -669,6 +669,36 @@
                 "month",
                 "year"
               ]
+            },
+            {
+              "field": "variables.timeseries.groups",
+              "name": "Series Labels",
+              "description": "One row per value of Split Series By, for series that should read differently from their raw value. The button keeps the raw value; Label replaces it in the legend, hover text, footer and CSV header, and Chart Title replaces the chart's title while that series is shown (the Title above then moves to the line beneath it). Values match exactly, then ignoring case. Rows for values the data never returns are ignored.",
+              "type": "objectarray",
+              "width": 12,
+              "object": [
+                {
+                  "field": "value",
+                  "name": "Value",
+                  "description": "The raw value of Split Series By this row applies to, e.g. '24-HR BLK AVG'.",
+                  "type": "text",
+                  "width": 3
+                },
+                {
+                  "field": "label",
+                  "name": "Label",
+                  "description": "Legend, hover, footer and CSV name for this series, e.g. 'Daily Mean'.",
+                  "type": "text",
+                  "width": 3
+                },
+                {
+                  "field": "title",
+                  "name": "Chart Title",
+                  "description": "The chart's title while this series is shown, e.g. 'Daily Mean AQS Surface PM₂.₅ Concentration'. Write subscripts directly.",
+                  "type": "text",
+                  "width": 6
+                }
+              ]
             }
           ]
         }

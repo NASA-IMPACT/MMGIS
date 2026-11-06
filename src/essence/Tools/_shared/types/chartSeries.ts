@@ -21,6 +21,12 @@ export interface ChartSeries {
     /** Measurement unit (e.g. "Parts per million"), shown in the card
      *  footer next to the variable name. */
     unit?: string
+    /** Name for the legend, tooltip, footer and CSV header when it should
+     *  differ from `label`, which stays the picker/button text. */
+    displayLabel?: string
+    /** Card title while this series is the picked one; the payload's title
+     *  otherwise. */
+    title?: string
 }
 
 /** Reserved provenance block: accepted and carried on the payload, but not

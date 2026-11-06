@@ -21,7 +21,14 @@
                     "url": "https://dev.openveda.cloud/api/features/collections/public.aqs_sites_gases/items?station_code={properties.station_code}&limit=1000&f=geojson&filter=datetime >= '{start}' AND datetime <= '{end}'&filter-lang=cql2-text",
                     "titleProp": "local_site_name",
                     "groupBy": "properties.parameter",
-                    "unitKey": "properties.units_of_measure"
+                    "unitKey": "properties.units_of_measure",
+                    "groups": [
+                        {
+                            "value": "24-HR BLK AVG",
+                            "label": "Daily Mean",
+                            "title": "Daily Mean AQS Surface PM\u2082.\u2085 Concentration"
+                        }
+                    ]
                 }
             }
         }
