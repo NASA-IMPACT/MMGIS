@@ -17,12 +17,31 @@ import {
 } from './types/events'
 import { MapEngineType } from './types/engine'
 
+/**
+ * The on-screen scale bar as the capture saw it: its label and its length in
+ * *image* pixels, so an export can paint a bar that matches the screen.
+ */
+export interface ExportScaleBar {
+    label: string
+    widthPx: number
+}
+
+/** The camera's bearing at capture, degrees clockwise from north, for a north arrow. */
+export interface ExportCompass {
+    bearing: number
+}
+
 export interface MapScreenshotResult {
     blob: Blob
     mimeType: 'image/png'
     extension: 'png'
     width: number
     height: number
+    /** Null when no bar is configured, or the view is tilted so one bar
+     *  cannot describe it. Absent from engines that draw no bar. */
+    scaleBar?: ExportScaleBar | null
+    /** Null when no compass is configured. Absent from engines that draw none. */
+    compass?: ExportCompass | null
 }
 
 /**
