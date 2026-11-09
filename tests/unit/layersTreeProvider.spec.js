@@ -1,0 +1,147 @@
+import { describe, test, expect, beforeEach, vi } from 'vitest'
+
+vi.mock('../../src/essence/Basics/Map_/Map_', () => ({ default: {} }))
+
+const { default: L_ } = await import(
+    '../../src/essence/Basics/Layers_/Layers_.js'
+)
+
+/**
+ * `layers:getTree`: the configured grouping a layer list draws from. The
+ * parsed config holds each node under its UUID as `name` and its configured
+ * name as `display_name`; the tree is read from there.
+ */
+
+let providers
+
+const node = (uuid, display, extra = {}) => ({
+    name: uuid,
+    display_name: display,
+    type: 'tile',
+    ...extra,
+})
+const header = (uuid, display, sublayers) =>
+    node(uuid, display, { type: 'header', sublayers })
+
+const load = (layers) => {
+    L_.configData = { layers }
+    L_.layers.data = {}
+    const register = (nodes) =>
+        nodes.forEach((n) => {
+            L_.layers.data[n.name] = n
+            register(n.sublayers || [])
+        })
+    register(layers)
+}
+
+beforeEach(() => {
+    providers = {}
+    window.mmgisAPI = {
+        provide: (name, fn) => {
+            providers[name] = fn
+            return () => {}
+        },
+        emit: () => {},
+    }
+    L_.fina(null, { engine: {} }, null, null, null, {})
+})
+
+describe('layers:getTree', () => {
+    test('headers become groups holding their children, nested in config order', () => {
+        load([
+            header('aq-uuid', 'Air Quality', [
+                header('aqs-uuid', 'AQS', [node('pm25-uuid', 'PM2.5'), node('o3-uuid', 'Ozone')]),
+                node('fc-uuid', 'Forecast'),
+            ]),
+            node('base-uuid', 'Basemap'),
+        ])
+        expect(providers['layers:getTree']()).toEqual([
+            {
+                kind: 'group',
+                id: 'aq-uuid',
+                title: 'Air Quality',
+                description: null,
+                expanded: false,
+                children: [
+                    {
+                        kind: 'group',
+                        id: 'aqs-uuid',
+                        title: 'AQS',
+                        description: null,
+                        expanded: false,
+                        children: [
+                            { kind: 'layer', id: 'pm25-uuid' },
+                            { kind: 'layer', id: 'o3-uuid' },
+                        ],
+                    },
+                    { kind: 'layer', id: 'fc-uuid' },
+                ],
+            },
+            { kind: 'layer', id: 'base-uuid' },
+        ])
+    })
+
+    test('a header with no sublayers is an empty group', () => {
+        load([header('empty-uuid', 'Empty')])
+        expect(providers['layers:getTree']()).toEqual([
+            {
+                kind: 'group',
+                id: 'empty-uuid',
+                title: 'Empty',
+                description: null,
+                expanded: false,
+                children: [],
+            },
+        ])
+    })
+
+    test("a header's description comes with its group, and a blank one reads as none", () => {
+        load([
+            node('a-uuid', 'A', { type: 'header', sublayers: [], description: 'All **AQ** layers' }),
+            node('b-uuid', 'B', { type: 'header', sublayers: [], description: '   ' }),
+        ])
+        const [a, b] = providers['layers:getTree']()
+        expect(a.description).toBe('All **AQ** layers')
+        expect(b.description).toBeNull()
+    })
+
+    test("a header's expanded setting comes with its group; anything but true reads as false", () => {
+        load([
+            node('a-uuid', 'A', { type: 'header', sublayers: [], expanded: true }),
+            node('b-uuid', 'B', { type: 'header', sublayers: [], expanded: 'true' }),
+            node('c-uuid', 'C', { type: 'header', sublayers: [] }),
+        ])
+        expect(providers['layers:getTree']().map((g) => g.expanded)).toEqual([true, false, false])
+    })
+
+    test('a header without a display name is titled by its id', () => {
+        load([{ name: 'h-uuid', type: 'header', sublayers: [] }])
+        expect(providers['layers:getTree']()[0].title).toBe('h-uuid')
+    })
+
+    test('nodes core does not know are left out', () => {
+        load([node('a-uuid', 'A')])
+        L_.configData.layers.push(node('ghost-uuid', 'Ghost'))
+        expect(providers['layers:getTree']()).toEqual([{ kind: 'layer', id: 'a-uuid' }])
+    })
+
+    test('children nested under a plain layer are listed beside it', () => {
+        load([node('a-uuid', 'A', { sublayers: [node('b-uuid', 'B')] })])
+        expect(providers['layers:getTree']()).toEqual([
+            { kind: 'layer', id: 'a-uuid' },
+            { kind: 'layer', id: 'b-uuid' },
+        ])
+    })
+
+    test('no config answers an empty tree', () => {
+        L_.configData = null
+        expect(providers['layers:getTree']()).toEqual([])
+    })
+
+    test('the answer is a fresh copy', () => {
+        load([header('h-uuid', 'H', [node('a-uuid', 'A')])])
+        const tree = providers['layers:getTree']()
+        tree[0].children.length = 0
+        expect(providers['layers:getTree']()[0].children).toHaveLength(1)
+    })
+})

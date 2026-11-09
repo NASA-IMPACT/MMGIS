@@ -206,6 +206,25 @@ export const mmgisGetLayerOrder = (): Promise<string[] | null> => {
     return mmgisRequestIfProvided<string[]>('layers:getOrder')
 }
 
+/** One node of the configured layer grouping; ids are layer UUIDs. */
+export type LayerTreeNode =
+    | {
+          kind: 'group'
+          id: string
+          title: string
+          /** The header's configured description; null when it has none. */
+          description: string | null
+          /** Whether the header is configured to start open. */
+          expanded: boolean
+          children: LayerTreeNode[]
+      }
+    | { kind: 'layer'; id: string }
+
+/** The configured grouping, in config order. Null from a core that has none. */
+export const mmgisGetLayerTree = (): Promise<LayerTreeNode[] | null> => {
+    return mmgisRequestIfProvided<LayerTreeNode[]>('layers:getTree')
+}
+
 /** Replaces the draw order. Must hold the same layers as
  *  mmgisGetLayerOrder, in any order; core refuses anything else with false.
  *  Core broadcasts 'layers:orderChanged' once applied. */

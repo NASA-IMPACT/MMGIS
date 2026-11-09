@@ -731,6 +731,11 @@ const L_ = {
                 window.mmgisAPI.provide('layers:getOrder', () => [
                     ...L_._layersOrdered,
                 ]),
+                // The configured grouping: headers as groups with their
+                // children, in config order, keyed by UUID.
+                window.mmgisAPI.provide('layers:getTree', () =>
+                    L_.getLayerTree()
+                ),
                 window.mmgisAPI.provide('layers:setOrder', (payload) => {
                     const order = payload?.order
                     if (!Array.isArray(order)) return false
@@ -4190,6 +4195,42 @@ const L_ = {
                 delete L_.layers.coverageHidden[layerUUID]
             }
         }
+    },
+    /**
+     * The config's layer hierarchy as plain nodes: a header becomes
+     * `{ kind: 'group', id, title, children }`, any other layer
+     * `{ kind: 'layer', id }`. Reads the parsed config, whose nodes carry
+     * UUIDs as `name`; nodes core does not know are left out.
+     * @returns {Array<object>}
+     */
+    getLayerTree: function () {
+        const walk = (nodes) => {
+            const out = []
+            for (const node of Array.isArray(nodes) ? nodes : []) {
+                if (node == null || L_.layers.data[node.name] == null) continue
+                if (node.type === 'header') {
+                    out.push({
+                        kind: 'group',
+                        id: node.name,
+                        title: node.display_name || node.name,
+                        description:
+                            typeof node.description === 'string' &&
+                            node.description.trim()
+                                ? node.description
+                                : null,
+                        expanded: node.expanded === true,
+                        children: walk(node.sublayers),
+                    })
+                } else {
+                    out.push({ kind: 'layer', id: node.name })
+                    // Only headers group; anything nested under a plain
+                    // layer is listed beside it.
+                    out.push(...walk(node.sublayers))
+                }
+            }
+            return out
+        }
+        return walk(L_.configData?.layers)
     },
     expandLayersToArray: function (layer) {
         // Recursively going through the removed layer to get all of its sub layers
