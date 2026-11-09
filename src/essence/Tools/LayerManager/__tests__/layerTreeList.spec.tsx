@@ -1,4 +1,5 @@
 import React from 'react'
+import { act } from 'react'
 import { describe, test, expect, afterEach, vi } from 'vitest'
 import { LayerManagerPanel } from '../lib/geo/LayerManagerPanel/LayerManagerPanel'
 import { buildLayerList } from '../lib/utils/layerTree'
@@ -190,6 +191,7 @@ describe('LayerTreeList group controls', () => {
         states: Parameters<typeof buildLayerList>[2],
         handlers: {
             onGroupVisibilityChange?: (id: string, visible: boolean) => void
+            onGroupOpacityChange?: (id: string, opacity: number) => void
         },
     ) => {
         mounted = await mount(
@@ -206,6 +208,11 @@ describe('LayerTreeList group controls', () => {
         root.querySelector<HTMLInputElement>(
             `[data-group-id="${groupId}"] > .blocks-layer-tree__group-header input[type="checkbox"]`,
         )!
+
+    const opacityButton = (root: Element, groupId: string) =>
+        root.querySelector<HTMLButtonElement>(
+            `[data-group-id="${groupId}"] > .blocks-layer-tree__group-header [title="Adjust group opacity"]`,
+        )
 
     test('the switch reads on while any layer in the group is on, and reports flips', async () => {
         const onGroupVisibilityChange = vi.fn()
@@ -260,5 +267,52 @@ describe('LayerTreeList group controls', () => {
     test('no handlers, no group controls', async () => {
         const root = await renderWith({ visible: { pm: true } }, {})
         expect(groupCheckbox(root, 'aq')).toBeNull()
+        expect(opacityButton(root, 'aq')).toBeNull()
+    })
+
+    const openOpacity = async (root: Element, groupId: string) => {
+        await click(opacityButton(root, groupId)!)
+        return document.body.querySelector<HTMLInputElement>(
+            '.blocks-layer-legend__opacity-popover input[type="range"]',
+        )!
+    }
+
+    const setSlider = (slider: HTMLInputElement, value: string) =>
+        act(async () => {
+            const setter = Object.getOwnPropertyDescriptor(
+                HTMLInputElement.prototype,
+                'value',
+            )!.set!
+            setter.call(slider, value)
+            slider.dispatchEvent(new Event('input', { bubbles: true }))
+        })
+
+    test('the opacity slider shows the shared opacity and sets the whole group', async () => {
+        const onGroupOpacityChange = vi.fn()
+        const root = await renderWith(
+            { opacities: { pm: 0.4, o3: 0.4, fc: 0.4 } },
+            { onGroupOpacityChange },
+        )
+        const slider = await openOpacity(root, 'aq')
+        expect(slider.value).toBe('0.4')
+        expect(slider.getAttribute('aria-valuetext')).toBe('40%')
+
+        await setSlider(slider, '0.7')
+        expect(onGroupOpacityChange).toHaveBeenCalledWith('aq', 0.7)
+        expect(slider.getAttribute('aria-valuetext')).toBe('70%')
+    })
+
+    test('differing opacities read as Mixed until set', async () => {
+        const root = await renderWith(
+            { opacities: { pm: 0.4, o3: 1, fc: 0.4 } },
+            { onGroupOpacityChange: () => {} },
+        )
+        const slider = await openOpacity(root, 'aq')
+        expect(slider.getAttribute('aria-valuetext')).toBe('Mixed')
+        expect(slider.value).toBe('1')
+        expect(
+            document.body.querySelector('.blocks-layer-legend__opacity-popover .blocks-layer-legend__opacity-value')
+                ?.textContent,
+        ).toBe('Mixed')
     })
 })

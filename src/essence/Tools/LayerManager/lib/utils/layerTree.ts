@@ -14,22 +14,28 @@ type Ranked = { node: LayerListNode; rank: number }
 const byRank = (a: { rank: number }, b: { rank: number }) => a.rank - b.rank
 
 /**
- * Every layer's visibility by id, including layers the list does not show.
- * A group's state is read over all of its layers.
+ * Every layer's visibility and opacity by id, including layers the list does
+ * not show. A group's state is read over all of its layers.
  */
 export type LayerStates = {
     visible?: Record<string, boolean> | null
+    opacities?: Record<string, number> | null
 }
 
 const leafIds = (nodes: LayerStructureNode[]): string[] =>
     nodes.flatMap((n) => (n.kind === 'group' ? leafIds(n.children) : [n.id]))
 
-/** On while any of the layers is on, and partly on while only some are. */
+/**
+ * On while any of the layers is on, and partly on while only some are; the
+ * opacity they share, or null.
+ */
 const groupState = (ids: string[], states: LayerStates) => {
+    const opacities = ids.map((id) => states.opacities?.[id] ?? 1)
     const onCount = ids.filter((id) => states.visible?.[id] === true).length
     return {
         visible: onCount > 0,
         partial: onCount > 0 && onCount < ids.length,
+        opacity: opacities.every((o) => o === opacities[0]) ? (opacities[0] ?? null) : null,
     }
 }
 
@@ -38,7 +44,7 @@ const groupState = (ids: string[], states: LayerStates) => {
  * order; each level is sorted by its top-most row, so the list always reads
  * as the map draws. A group with nothing left to show is dropped, and a row
  * outside the structure sits at the top level. With `states`, each group
- * carries its on/off state.
+ * carries its on/off state and shared opacity.
  */
 export const buildLayerList = (
     rows: Layer[],

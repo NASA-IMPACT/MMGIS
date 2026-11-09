@@ -64,6 +64,8 @@ export type LayerGroup = {
   visible?: boolean
   /** True while some, but not all, of its layers are on. */
   partial?: boolean
+  /** The opacity its layers share; null when they differ. */
+  opacity?: number | null
 }
 
 /** One row of a grouped list: a layer, or a group holding more rows. */

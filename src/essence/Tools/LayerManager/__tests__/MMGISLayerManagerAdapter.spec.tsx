@@ -462,6 +462,7 @@ describe('MMGISLayerManagerAdapter groups', () => {
             const api = (window as any).mmgisAPI
             api.emit('layer:visibilityChange', { layerName: SPARSE, visible: false })
             api.emit('layer:visibilityChange', { layerName: CONTINUOUS, visible: false })
+            api.emit('layer:opacityChange', { layerName: SPARSE, opacity: 0.5 })
         })
         await settle()
         expect(configReads - before).toBe(perRefresh)

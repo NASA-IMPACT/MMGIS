@@ -746,6 +746,10 @@ const L_ = {
                 window.mmgisAPI.provide('layers:toggleGroup', (groupId) =>
                     L_.toggleGroup(groupId)
                 ),
+                // Sets one opacity on every layer in a group.
+                window.mmgisAPI.provide('layers:setGroupOpacity', (payload) =>
+                    L_.setGroupOpacity(payload?.groupId, payload?.opacity)
+                ),
                 window.mmgisAPI.provide('layers:setOrder', (payload) => {
                     const order = payload?.order
                     if (!Array.isArray(order)) return false
@@ -4301,6 +4305,23 @@ const L_ = {
             if (L_.layers.on[id] === true) changed.push(id)
         }
         return { visible: changed.length > 0, changed }
+    },
+    /**
+     * Sets one opacity on every layer in a group.
+     * @param {string} groupId - Group (header) UUID or display name.
+     * @param {number} opacity - In [0, 1].
+     * @returns {string[] | null} The layers set; null for an unknown group or
+     *   an opacity outside [0, 1].
+     */
+    setGroupOpacity: function (groupId, opacity) {
+        if (!Number.isFinite(opacity) || opacity < 0 || opacity > 1) return null
+        const ids = L_.getGroupLayerIds(groupId)
+        if (ids == null) return null
+        ids.forEach((id) => {
+            L_.layers.opacity[id] = opacity
+            L_.setLayerOpacity(id, opacity)
+        })
+        return ids
     },
     expandLayersToArray: function (layer) {
         // Recursively going through the removed layer to get all of its sub layers

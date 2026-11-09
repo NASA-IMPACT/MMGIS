@@ -19,6 +19,7 @@ import {
     dropLayer,
     moveNode,
     toggleGroupVisibility,
+    setGroupOpacity,
     getFilteredOutLayers,
     hideFilteredOutLayers,
     selectRun,
@@ -86,17 +87,20 @@ const hasGroups = (tree: LayerTreeNode[] | null): tree is LayerTreeNode[] =>
 type Grouping = { tree: LayerTreeNode[]; states: LayerStates }
 
 /**
- * The grouping core reports with every layer's visibility, which a group's
- * switch reads across all of its layers. Null when there is no grouping to
- * show: an empty tree, a core too old to answer, or a failed read all leave
- * the list flat.
+ * The grouping core reports with every layer's visibility and opacity, which
+ * a group's controls read across all of its layers. Null when there is no
+ * grouping to show: an empty tree, a core too old to answer, or a failed read
+ * all leave the list flat.
  */
 const readGrouping = async (): Promise<Grouping | null> => {
     try {
         const tree = await mmgisGetLayerTree()
         if (!hasGroups(tree)) return null
-        const visible = await mmgisRequest<Record<string, boolean>>('layers:getVisible')
-        return { tree, states: { visible } }
+        const [visible, opacities] = await Promise.all([
+            mmgisRequest<Record<string, boolean>>('layers:getVisible'),
+            mmgisRequest<Record<string, number>>('layers:getAllOpacities'),
+        ])
+        return { tree, states: { visible, opacities } }
     } catch (err) {
         console.warn('LayerManager: layer groups unavailable', err)
         return null
@@ -248,7 +252,7 @@ export function MMGISLayerManagerAdapter() {
 
     useMMGISEvent('layer:visibilityChange', refreshOnce)
     useMMGISEvent('layer:refreshStatusChange', refresh)
-    useMMGISEvent('layer:opacityChange', refresh)
+    useMMGISEvent('layer:opacityChange', refreshOnce)
     useMMGISEvent('layer:listedChange', refresh)
     useMMGISEvent('layers:configChanged', refresh)
     useMMGISEvent('layer:runChange', refresh)
@@ -300,6 +304,7 @@ export function MMGISLayerManagerAdapter() {
             nodes={nodes}
             onMove={onMove}
             onGroupVisibilityChange={(id) => { report('toggleGroupVisibility', toggleGroupVisibility(id)) }}
+            onGroupOpacityChange={(id, op) => { report('setGroupOpacity', setGroupOpacity(id, op)) }}
             loading={loading}
             renderDescription={renderDescription}
             onVisibilityChange={(id) => { report('toggleVisibility', toggleVisibility(id)) }}
