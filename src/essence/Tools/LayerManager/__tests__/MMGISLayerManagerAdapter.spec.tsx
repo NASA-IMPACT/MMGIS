@@ -26,6 +26,7 @@ let mounted: Mounted | null
 let sparseTitle: string
 let setRunAnswer: unknown
 let runsFailure: Error | null
+let tree: unknown
 
 beforeEach(() => {
     outOfRange = {}
@@ -40,6 +41,7 @@ beforeEach(() => {
     runRequests = []
     setRunAnswer = true
     runsFailure = null
+    tree = null
     configReads = 0
     listeners = new Map()
     gate = null
@@ -72,6 +74,7 @@ beforeEach(() => {
         },
         'layers:getAllOpacities': () => ({}),
         'layers:getListed': () => listed,
+        'layers:getTree': () => tree,
         'layers:getDataCoverage': () =>
             Object.fromEntries(
                 Object.entries(outOfRange).map(([id, flag]) => [
@@ -377,5 +380,58 @@ describe('MMGISLayerManagerAdapter refresh sequencing', () => {
         releaseFirst()
         await settle()
         expect(titlesIn()).toEqual(['Second', 'Continuous'])
+    })
+})
+
+const groupTitles = () =>
+    Array.from(
+        mounted!.container.querySelectorAll('.blocks-layer-tree__group-title'),
+    ).map((el) => el.textContent)
+
+describe('MMGISLayerManagerAdapter groups', () => {
+    const grouped = () => [
+        {
+            kind: 'group',
+            id: 'aq-uuid',
+            title: 'Air Quality',
+            expanded: true,
+            children: [{ kind: 'layer', id: SPARSE }],
+        },
+        { kind: 'layer', id: CONTINUOUS },
+    ]
+
+    test('lists layers under the groups core reports', async () => {
+        tree = grouped()
+        await mountAdapter()
+        expect(groupTitles()).toEqual(['Air Quality'])
+        const group = mounted!.container.querySelector('[data-group-id="aq-uuid"]')!
+        expect(
+            Array.from(group.querySelectorAll('[data-legend-id]')).map((el) =>
+                el.getAttribute('data-legend-id'),
+            ),
+        ).toEqual([SPARSE])
+        expect(titlesIn()).toEqual(['Sparse', 'Continuous'])
+    })
+
+    test('hides a group once a filter leaves it nothing to show', async () => {
+        tree = grouped()
+        await mountAdapter()
+        expect(groupTitles()).toEqual(['Air Quality'])
+
+        listed = { [SPARSE]: false }
+        await emit('layer:listedChange')
+        await settle()
+        expect(groupTitles()).toEqual([])
+        expect(titlesIn()).toEqual(['Continuous'])
+    })
+
+    test('a tree with no groups leaves the list flat', async () => {
+        tree = [
+            { kind: 'layer', id: SPARSE },
+            { kind: 'layer', id: CONTINUOUS },
+        ]
+        await mountAdapter()
+        expect(mounted!.container.querySelector('.blocks-layer-tree__group')).toBeNull()
+        expect(titlesIn()).toEqual(['Sparse', 'Continuous'])
     })
 })

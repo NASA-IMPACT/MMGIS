@@ -1,13 +1,20 @@
 import React from 'react'
-import type { Layer } from '../../types'
+import type { Layer, LayerListNode } from '../../types'
 import {
     LayerLegendList,
     type LayerLegendListProps,
 } from '../LayerLegendList/LayerLegendList'
 import type { RenderDescription } from '../LayerLegend/LayerLegend'
+import { LayerTreeList, type LayerTreeListProps } from '../LayerTreeList/LayerTreeList'
 
 export type LayerManagerPanelProps = {
     layers: Layer[]
+    /**
+     * The rows arranged under their groups. When given, the list draws these
+     * instead of `layers` and reorders through `onMove`.
+     */
+    nodes?: LayerListNode[]
+    onMove?: LayerTreeListProps['onMove']
     loading?: boolean
     emptyMessage?: string
     renderDescription?: RenderDescription
@@ -34,6 +41,8 @@ export type LayerManagerPanelProps = {
 
 export function LayerManagerPanel({
     layers,
+    nodes,
+    onMove,
     loading = false,
     emptyMessage = 'No visible layers. Turn on layers in the Layers tool to manage them here.',
     renderDescription,
@@ -91,6 +100,22 @@ export function LayerManagerPanel({
                     <div className="blocks-layer-manager__loading">
                         <div className="mmgisLoading" />
                     </div>
+                ) : nodes ? (
+                    <LayerTreeList
+                        nodes={nodes}
+                        emptyMessage={emptyMessage}
+                        renderDescription={renderDescription}
+                        onVisibilityChange={onVisibilityChange}
+                        onOpacityChange={onOpacityChange}
+                        onColormapChange={onColormapChange}
+                        onRescaleChange={onRescaleChange}
+                        onZoomToLayer={onZoomToLayer}
+                        canZoomToLayer={canZoomToLayer}
+                        selectedTime={selectedTime}
+                        onCompareLayer={onCompareLayer}
+                        onMove={onMove}
+                        onRunChange={onRunChange}
+                    />
                 ) : (
                     <LayerLegendList
                         layers={layers}

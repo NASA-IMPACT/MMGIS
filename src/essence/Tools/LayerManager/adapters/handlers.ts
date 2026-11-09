@@ -10,12 +10,14 @@ import {
     mmgisGetVisibleLayers,
     mmgisGetListedLayers,
     mmgisGetLayerConfigs,
+    mmgisGetLayerTree,
 } from '../../_shared/adapters/mmgisAPI'
 import {
     ZOOM_TO_LAYER_PADDING,
     ZOOM_TO_LAYER_POINT_MAX_ZOOM,
 } from '../lib/utils/constants'
 import { placeInOrder } from '../lib/utils/layerOrder'
+import { placeInTree, type Placement } from '../lib/utils/layerTree'
 import { filteredOutLayers } from '../lib/utils/filteredOut'
 
 type Refresh = () => Promise<void> | void
@@ -140,6 +142,21 @@ export const dropLayer = (
     refresh?: Refresh,
 ): Promise<void> =>
     writeOrder(layerId, (order) => placeInOrder(order, shownIds, layerId, toIndex), refresh)
+
+/**
+ * Moves a layer or group just before or after `overId`, its sibling in the
+ * grouped list. The grouping is read from core at the moment of the move, so
+ * the order written is placed against core's current picture.
+ */
+export const moveNode = async (
+    id: string,
+    overId: string,
+    placement: Placement,
+    refresh?: Refresh,
+): Promise<void> => {
+    const tree = await mmgisGetLayerTree()
+    await writeOrder(id, (order) => placeInTree(order, tree, id, overId, placement), refresh)
+}
 
 /**
  * Hands a layer to the Comparison plugin as the first of the two sides it

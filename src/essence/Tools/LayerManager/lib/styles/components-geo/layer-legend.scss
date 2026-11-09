@@ -108,7 +108,6 @@ $legend-hover-surface: var(--theme-color-base-lightest, #f1f3f6);
         bottom: 0;
         display: flex;
         align-items: center;
-        gap: calc(var(--theme-spacing-05, 0.25rem) * 0.5);
         background: $legend-hover-surface;
 
         /* Controls surface only on card hover. Fading opacity rather than
@@ -137,6 +136,13 @@ $legend-hover-surface: var(--theme-color-base-lightest, #f1f3f6);
 
     /* An open popover lives in a portal, so focus leaving the row would
        otherwise fade out the very button that opened it. */
+    /* Buttons in a row of controls: narrow enough that their icons read as
+       one cluster, wide enough to stay a 24px target. */
+    &__actions &__action-btn {
+        width: 24px;
+        padding: 6px 4px;
+    }
+
     &:hover &__actions,
     &:focus-within &__actions,
     &--menu-open &__actions {

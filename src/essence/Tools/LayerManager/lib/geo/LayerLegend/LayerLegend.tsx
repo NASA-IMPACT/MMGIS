@@ -28,12 +28,12 @@ export type RenderDescription = (
     className?: string,
 ) => ReactNode
 
-const renderAsPlainText: RenderDescription = (source, className) => (
+export const renderAsPlainText: RenderDescription = (source, className) => (
     <div className={className}>{source}</div>
 )
 
 /** A description of only whitespace counts as absent. */
-const hasText = (value: string | null | undefined): boolean =>
+export const hasText = (value: string | null | undefined): boolean =>
     Boolean(value?.trim())
 
 export type LayerLegendProps = {

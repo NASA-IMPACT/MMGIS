@@ -11,6 +11,7 @@ import {
     compareLayer,
     showAddLayer,
     dropLayer,
+    moveNode,
 } from '../adapters/handlers.ts'
 import {
     ZOOM_TO_LAYER_PADDING,
@@ -438,5 +439,47 @@ test.describe('selectRun', () => {
         const { emitCalls } = setupMock({ 'layers:setRun': false })
         expect(await selectRun('fc', 'nope')).toBe(false)
         expect(emitCalls).toEqual([])
+    })
+})
+
+// moveNode reads the grouping and the order from core, places the item with
+// the pure helper covered in tests/unit/layerTree.spec.js, and hands the
+// whole order back.
+test.describe('moveNode', () => {
+    const TREE = [
+        { kind: 'group', id: 'g', title: 'G', children: [{ kind: 'layer', id: 'a' }, { kind: 'layer', id: 'b' }] },
+        { kind: 'layer', id: 'c' },
+    ]
+    const withState = (order, accepted = true) => {
+        const writes = []
+        const { emitCalls } = setupMock({
+            'layers:getTree': TREE,
+            'layers:getOrder': order,
+            'layers:setOrder': (params) => {
+                writes.push(params.order)
+                return accepted
+            },
+        })
+        return { writes, emitCalls }
+    }
+
+    test('moves a group as one block and emits nothing', async () => {
+        const { writes, emitCalls } = withState(['a', 'b', 'c'])
+        await moveNode('c', 'g', 'before')
+        expect(writes).toEqual([['c', 'a', 'b']])
+        expect(emitCalls).toEqual([])
+    })
+
+    test('writes nothing for a move out of the group', async () => {
+        const { writes } = withState(['a', 'b', 'c'])
+        await moveNode('a', 'c', 'after')
+        expect(writes).toEqual([])
+    })
+
+    test('re-reads when core refuses the order', async () => {
+        withState(['a', 'b', 'c'], false)
+        const refresh = vi.fn()
+        await moveNode('b', 'a', 'before', refresh)
+        expect(refresh).toHaveBeenCalledTimes(1)
     })
 })
