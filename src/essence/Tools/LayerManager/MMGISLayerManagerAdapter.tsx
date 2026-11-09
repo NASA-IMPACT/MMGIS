@@ -2,7 +2,7 @@ import React from 'react'
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { LayerManagerPanel } from './lib'
 import type { Layer, LayerListNode } from './lib/types'
-import { buildLayerList, type Placement } from './lib/utils/layerTree'
+import { buildLayerList, type LayerStates, type Placement } from './lib/utils/layerTree'
 import { useMMGISEvent } from '../_shared/adapters/useMMGISEvent'
 import { useMMGISToolVars } from '../_shared/adapters/useMMGISToolVars'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
@@ -18,6 +18,7 @@ import {
     showAddLayer,
     dropLayer,
     moveNode,
+    toggleGroupVisibility,
     getFilteredOutLayers,
     hideFilteredOutLayers,
     selectRun,
@@ -25,6 +26,7 @@ import {
 import {
     mmgisGetLayerBounds,
     mmgisGetTimeCurrent,
+    mmgisRequest,
     mmgisRequestIfProvided,
     mmgisOnDataCoverageChanged,
     mmgisGetLayerTree,
@@ -81,14 +83,20 @@ const withOutOfRange = (rows: Layer[], flags: Map<string, boolean>): Layer[] => 
 const hasGroups = (tree: LayerTreeNode[] | null): tree is LayerTreeNode[] =>
     tree?.some((node) => node.kind === 'group') === true
 
+type Grouping = { tree: LayerTreeNode[]; states: LayerStates }
+
 /**
- * The grouping core reports, or null when there is none to show: an empty
- * tree, a core too old to answer, or a failed read all leave the list flat.
+ * The grouping core reports with every layer's visibility, which a group's
+ * switch reads across all of its layers. Null when there is no grouping to
+ * show: an empty tree, a core too old to answer, or a failed read all leave
+ * the list flat.
  */
-const readTree = async (): Promise<LayerTreeNode[] | null> => {
+const readGrouping = async (): Promise<Grouping | null> => {
     try {
         const tree = await mmgisGetLayerTree()
-        return hasGroups(tree) ? tree : null
+        if (!hasGroups(tree)) return null
+        const visible = await mmgisRequest<Record<string, boolean>>('layers:getVisible')
+        return { tree, states: { visible } }
     } catch (err) {
         console.warn('LayerManager: layer groups unavailable', err)
         return null
@@ -97,7 +105,7 @@ const readTree = async (): Promise<LayerTreeNode[] | null> => {
 
 export function MMGISLayerManagerAdapter() {
     const [layers, setLayers] = useState<Layer[]>([])
-    const [tree, setTree] = useState<LayerTreeNode[] | null>(null)
+    const [grouping, setGrouping] = useState<Grouping | null>(null)
     const [filteredOut, setFilteredOut] = useState<string[]>([])
     const [loading, setLoading] = useState(true)
     const toolVars = useMMGISToolVars<ToolVars>('layermanager')
@@ -140,13 +148,13 @@ export function MMGISLayerManagerAdapter() {
         const announced = new Map<string, boolean>()
         inFlight.current.add(announced)
         try {
-            const [data, leftOut, , structure] = await Promise.all([
+            const [data, leftOut, , groups] = await Promise.all([
                 getVisibleLayersWithLegends({
                     showOnlyVisible: toolVars.showOnlyVisible === true,
                 }),
                 getFilteredOutLayers(),
                 readRuns(),
-                readTree(),
+                readGrouping(),
             ])
             // A newer refresh already landed while this one was reading —
             // its answer is stale, so drop it.
@@ -157,7 +165,7 @@ export function MMGISLayerManagerAdapter() {
                 withOutOfRange(withRuns(data, latestRuns.current), announced),
             )
             setFilteredOut(leftOut.map((layer) => layer.title))
-            setTree(structure)
+            setGrouping(groups)
         } catch (err) {
             console.error('LayerManager: refresh failed', err)
             if (seq === refreshSeq.current) {
@@ -226,7 +234,19 @@ export function MMGISLayerManagerAdapter() {
         return (await mmgisGetLayerBounds(layerId)) !== null
     }, [])
 
-    useMMGISEvent('layer:visibilityChange', refresh)
+    // A group action announces each of its layers in one go; those
+    // announcements share a single refresh.
+    const refreshQueued = useRef(false)
+    const refreshOnce = useCallback(() => {
+        if (refreshQueued.current) return
+        refreshQueued.current = true
+        queueMicrotask(() => {
+            refreshQueued.current = false
+            void refresh()
+        })
+    }, [refresh])
+
+    useMMGISEvent('layer:visibilityChange', refreshOnce)
     useMMGISEvent('layer:refreshStatusChange', refresh)
     useMMGISEvent('layer:opacityChange', refresh)
     useMMGISEvent('layer:listedChange', refresh)
@@ -245,8 +265,8 @@ export function MMGISLayerManagerAdapter() {
     )
 
     const nodes = useMemo<LayerListNode[] | undefined>(
-        () => (tree ? buildLayerList(layers, tree) : undefined),
-        [layers, tree],
+        () => (grouping ? buildLayerList(layers, grouping.tree, grouping.states) : undefined),
+        [layers, grouping],
     )
 
     const onMove = useCallback(
@@ -279,6 +299,7 @@ export function MMGISLayerManagerAdapter() {
             layers={layers}
             nodes={nodes}
             onMove={onMove}
+            onGroupVisibilityChange={(id) => { report('toggleGroupVisibility', toggleGroupVisibility(id)) }}
             loading={loading}
             renderDescription={renderDescription}
             onVisibilityChange={(id) => { report('toggleVisibility', toggleVisibility(id)) }}

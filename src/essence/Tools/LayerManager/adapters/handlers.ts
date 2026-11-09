@@ -11,6 +11,7 @@ import {
     mmgisGetListedLayers,
     mmgisGetLayerConfigs,
     mmgisGetLayerTree,
+    mmgisToggleLayerGroup,
 } from '../../_shared/adapters/mmgisAPI'
 import {
     ZOOM_TO_LAYER_PADDING,
@@ -71,6 +72,18 @@ export const setOpacity = async (layerId: string, opacity: number): Promise<void
     const success = await mmgisRequest<boolean>('layers:setOpacity', { layerUUID: layerId, opacity })
     if (success) {
         mmgisEmit('layer:opacityChange', { layerName: layerId, opacity })
+    }
+}
+
+/**
+ * Switches a whole group on or off. Each layer whose visibility changed is
+ * announced on its own, as a single layer's toggle is.
+ */
+export const toggleGroupVisibility = async (groupId: string): Promise<void> => {
+    const result = await mmgisToggleLayerGroup(groupId)
+    if (!result) return
+    for (const layerName of result.changed) {
+        mmgisEmit('layer:visibilityChange', { layerName, visible: result.visible })
     }
 }
 

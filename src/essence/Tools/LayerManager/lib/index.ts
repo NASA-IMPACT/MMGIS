@@ -30,6 +30,7 @@ export {
     placeInTree,
     resolveDrop,
     type Placement,
+    type LayerStates,
 } from './utils/layerTree'
 
 // Side-effect import of the component stylesheet.

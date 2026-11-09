@@ -225,6 +225,20 @@ export const mmgisGetLayerTree = (): Promise<LayerTreeNode[] | null> => {
     return mmgisRequestIfProvided<LayerTreeNode[]>('layers:getTree')
 }
 
+/** What switching a group did: its new state and the layers that changed. */
+export type GroupToggleResult = { visible: boolean; changed: string[] }
+
+/**
+ * Switches a whole group: off when any of its layers is on, remembering
+ * which; back on to those, or to all of them when none are remembered.
+ * Null for an unknown group or a core without groups.
+ */
+export const mmgisToggleLayerGroup = (
+    groupId: string,
+): Promise<GroupToggleResult | null> => {
+    return mmgisRequestIfProvided<GroupToggleResult>('layers:toggleGroup', groupId)
+}
+
 /** Replaces the draw order. Must hold the same layers as
  *  mmgisGetLayerOrder, in any order; core refuses anything else with false.
  *  Core broadcasts 'layers:orderChanged' once applied. */

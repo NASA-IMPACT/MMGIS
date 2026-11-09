@@ -12,6 +12,7 @@ import {
     showAddLayer,
     dropLayer,
     moveNode,
+    toggleGroupVisibility,
 } from '../adapters/handlers.ts'
 import {
     ZOOM_TO_LAYER_PADDING,
@@ -482,4 +483,30 @@ test.describe('moveNode', () => {
         await moveNode('b', 'a', 'before', refresh)
         expect(refresh).toHaveBeenCalledTimes(1)
     })
+})
+
+// Group actions go to core in one request; each layer that changed is then
+// announced on its own, as a single layer's change is.
+test.describe('group actions', () => {
+    test('toggleGroupVisibility announces each layer core switched', async () => {
+        const emitCalls = []
+        const { requests } = setupMock(
+            { 'layers:toggleGroup': { visible: false, changed: ['a', 'b'] } },
+            emitCalls,
+        )
+        await toggleGroupVisibility('g')
+        expect(requests).toEqual([{ name: 'layers:toggleGroup', params: 'g' }])
+        expect(emitCalls).toEqual([
+            { event: 'layer:visibilityChange', payload: { layerName: 'a', visible: false } },
+            { event: 'layer:visibilityChange', payload: { layerName: 'b', visible: false } },
+        ])
+    })
+
+    test('toggleGroupVisibility announces nothing when core does not know the group', async () => {
+        const emitCalls = []
+        setupMock({ 'layers:toggleGroup': () => null }, emitCalls)
+        await toggleGroupVisibility('ghost')
+        expect(emitCalls).toEqual([])
+    })
+
 })

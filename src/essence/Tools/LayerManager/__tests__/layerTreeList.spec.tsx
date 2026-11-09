@@ -1,5 +1,5 @@
 import React from 'react'
-import { describe, test, expect, afterEach } from 'vitest'
+import { describe, test, expect, afterEach, vi } from 'vitest'
 import { LayerManagerPanel } from '../lib/geo/LayerManagerPanel/LayerManagerPanel'
 import { buildLayerList } from '../lib/utils/layerTree'
 import type { Layer, LayerStructureNode } from '../lib/types'
@@ -180,5 +180,85 @@ describe('LayerTreeList', () => {
     test('nothing to show renders the empty message', async () => {
         mounted = await mount(<LayerManagerPanel layers={[]} nodes={[]} />)
         expect(mounted.container.querySelector('.blocks-layer-legend-list__empty')).not.toBeNull()
+    })
+})
+
+describe('LayerTreeList group controls', () => {
+    const rows = ['pm', 'o3', 'fc', 'base'].map(layer)
+
+    const renderWith = async (
+        states: Parameters<typeof buildLayerList>[2],
+        handlers: {
+            onGroupVisibilityChange?: (id: string, visible: boolean) => void
+        },
+    ) => {
+        mounted = await mount(
+            <LayerManagerPanel
+                layers={rows}
+                nodes={buildLayerList(rows, STRUCTURE, states)}
+                {...handlers}
+            />,
+        )
+        return mounted.container
+    }
+
+    const groupCheckbox = (root: Element, groupId: string) =>
+        root.querySelector<HTMLInputElement>(
+            `[data-group-id="${groupId}"] > .blocks-layer-tree__group-header input[type="checkbox"]`,
+        )!
+
+    test('the switch reads on while any layer in the group is on, and reports flips', async () => {
+        const onGroupVisibilityChange = vi.fn()
+        const root = await renderWith({ visible: { fc: true } }, { onGroupVisibilityChange })
+        expect(groupCheckbox(root, 'aq').checked).toBe(true)
+        expect(groupCheckbox(root, 'aqs').checked).toBe(false)
+
+        await click(groupCheckbox(root, 'aq'))
+        expect(onGroupVisibilityChange).toHaveBeenCalledWith('aq', false)
+        expect(groupCheckbox(root, 'aq').checked).toBe(false)
+    })
+
+    test('the switch follows the host once its layers change', async () => {
+        const root = await renderWith({ visible: {} }, { onGroupVisibilityChange: () => {} })
+        expect(groupCheckbox(root, 'aq').checked).toBe(false)
+        await mounted!.rerender(
+            <LayerManagerPanel
+                layers={rows}
+                nodes={buildLayerList(rows, STRUCTURE, { visible: { pm: true } })}
+                onGroupVisibilityChange={() => {}}
+            />,
+        )
+        expect(groupCheckbox(root, 'aq').checked).toBe(true)
+    })
+
+    test('the switch shows mixed while only some of the layers are on', async () => {
+        const root = await renderWith({ visible: { pm: true } }, { onGroupVisibilityChange: () => {} })
+        expect(groupCheckbox(root, 'aq').indeterminate).toBe(true)
+        expect(groupCheckbox(root, 'aqs').indeterminate).toBe(true)
+
+        await mounted!.rerender(
+            <LayerManagerPanel
+                layers={rows}
+                nodes={buildLayerList(rows, STRUCTURE, { visible: { pm: true, o3: true } })}
+                onGroupVisibilityChange={() => {}}
+            />,
+        )
+        expect(groupCheckbox(root, 'aqs').indeterminate).toBe(false)
+        expect(groupCheckbox(root, 'aqs').checked).toBe(true)
+        expect(groupCheckbox(root, 'aq').indeterminate).toBe(true)
+    })
+
+    test('flipping a mixed switch clears the dash at once and reports off', async () => {
+        const onGroupVisibilityChange = vi.fn()
+        const root = await renderWith({ visible: { pm: true } }, { onGroupVisibilityChange })
+        await click(groupCheckbox(root, 'aq'))
+        expect(onGroupVisibilityChange).toHaveBeenCalledWith('aq', false)
+        expect(groupCheckbox(root, 'aq').indeterminate).toBe(false)
+        expect(groupCheckbox(root, 'aq').checked).toBe(false)
+    })
+
+    test('no handlers, no group controls', async () => {
+        const root = await renderWith({ visible: { pm: true } }, {})
+        expect(groupCheckbox(root, 'aq')).toBeNull()
     })
 })

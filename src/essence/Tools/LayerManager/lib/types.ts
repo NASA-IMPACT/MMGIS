@@ -60,6 +60,10 @@ export type LayerGroup = {
   /** Starts open when true; otherwise starts collapsed. */
   expanded?: boolean
   children: LayerListNode[]
+  /** True while any layer in the group is on, shown in the list or not. */
+  visible?: boolean
+  /** True while some, but not all, of its layers are on. */
+  partial?: boolean
 }
 
 /** One row of a grouped list: a layer, or a group holding more rows. */

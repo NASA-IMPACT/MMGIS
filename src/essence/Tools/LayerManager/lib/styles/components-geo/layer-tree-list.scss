@@ -1,5 +1,23 @@
 /* Group rows of a grouped layer list. A group's header lines up with the
-   layer rows around it; its children sit under a rule that marks the depth. */
+   layer rows around it; its children sit under a rule that marks the depth.
+
+   Every row's leading controls fall in the same columns: the drag handle,
+   then the chevron (a blank of its width on a layer row), then the switch.
+   A level's children start one column in, so their handles sit under the
+   group's chevron.
+
+   The gaps are set by what shows rather than by the boxes. The handle's
+   dots leave about 8px clear inside the right of their box, and the switch
+   fills its own, so the handle sits flush against the chevron while the
+   switch keeps a gap: the space you see either side of the chevron then
+   comes out even. */
+$tree-column: 22px;
+$tree-handle-gap: 0px;
+$tree-column-gap: 8px;
+/* A layer row's indent for the content under its title, as the row sets it:
+   the switch (16px) and the title gap (12px). */
+$tree-row-content-indent: 28px;
+
 .blocks-layer-tree {
     /* Surfaced like a layer row while its header is pointed at or focused,
        or while one of its popovers is open, so the highlight covers
@@ -57,6 +75,41 @@
         }
     }
 
+    /* Both close the header's wider gap down to the column gaps above. */
+    .blocks-layer-legend__drag-handle {
+        margin-right: calc(#{$tree-handle-gap} - var(--theme-spacing-105, 0.75rem));
+    }
+
+    &__chevron + .blocks-layer-legend__checkbox-wrapper {
+        margin-left: calc(#{$tree-column-gap} - var(--theme-spacing-105, 0.75rem));
+    }
+
+    /* A layer row keeps the chevron's column blank, so its switch lines up
+       with a group's. */
+    .blocks-layer-legend__header > .blocks-layer-legend__checkbox-wrapper {
+        margin-left: $tree-column + $tree-column-gap;
+    }
+
+    /* The row's content under its title moves over by the same blank column. */
+    .blocks-layer-legend {
+        &__marks,
+        &__run,
+        &__unit-label,
+        &__content {
+            padding-left: $tree-row-content-indent + $tree-column + $tree-column-gap;
+        }
+    }
+
+    .blocks-layer-legend--draggable {
+        .blocks-layer-legend__marks,
+        .blocks-layer-legend__run,
+        .blocks-layer-legend__unit-label,
+        .blocks-layer-legend__content {
+            padding-left: $tree-row-content-indent + $tree-column + $tree-handle-gap +
+                $tree-column + $tree-column-gap;
+        }
+    }
+
     &__group-title {
         flex: 1;
         min-width: 0;
@@ -90,10 +143,10 @@
     }
 
     /* In a reorderable list, children's drag handles line up under the
-       group's chevron: the handle (22px) and its gap (8px), less the rule
-       here and the child's own border (1px each). */
+       group's chevron: the handle and its gap, less the rule here and the
+       child's own border (1px each). */
     &__group:has(> .blocks-layer-tree__group-header > .blocks-layer-legend__drag-handle)
         > &__children {
-        margin-left: calc(22px + 8px - 2px);
+        margin-left: $tree-column + $tree-handle-gap - 2px;
     }
 }
