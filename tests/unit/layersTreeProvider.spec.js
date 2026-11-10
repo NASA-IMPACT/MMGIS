@@ -7,9 +7,9 @@ const { default: L_ } = await import(
 )
 
 /**
- * `layers:getTree`: the configured grouping a layer list draws from. The
- * parsed config holds each node under its UUID as `name` and its configured
- * name as `display_name`; the tree is read from there.
+ * `layers:getTree`: the configured grouping a layer list draws from, as ids
+ * only. The parsed config holds each node under its UUID as `name`; the tree
+ * is read from there.
  */
 
 let providers
@@ -59,16 +59,10 @@ describe('layers:getTree', () => {
             {
                 kind: 'group',
                 id: 'aq-uuid',
-                title: 'Air Quality',
-                description: null,
-                expanded: false,
                 children: [
                     {
                         kind: 'group',
                         id: 'aqs-uuid',
-                        title: 'AQS',
-                        description: null,
-                        expanded: false,
                         children: [
                             { kind: 'layer', id: 'pm25-uuid' },
                             { kind: 'layer', id: 'o3-uuid' },
@@ -84,39 +78,8 @@ describe('layers:getTree', () => {
     test('a header with no sublayers is an empty group', () => {
         load([header('empty-uuid', 'Empty')])
         expect(providers['layers:getTree']()).toEqual([
-            {
-                kind: 'group',
-                id: 'empty-uuid',
-                title: 'Empty',
-                description: null,
-                expanded: false,
-                children: [],
-            },
+            { kind: 'group', id: 'empty-uuid', children: [] },
         ])
-    })
-
-    test("a header's description comes with its group, and a blank one reads as none", () => {
-        load([
-            node('a-uuid', 'A', { type: 'header', sublayers: [], description: 'All **AQ** layers' }),
-            node('b-uuid', 'B', { type: 'header', sublayers: [], description: '   ' }),
-        ])
-        const [a, b] = providers['layers:getTree']()
-        expect(a.description).toBe('All **AQ** layers')
-        expect(b.description).toBeNull()
-    })
-
-    test("a header's expanded setting comes with its group; anything but true reads as false", () => {
-        load([
-            node('a-uuid', 'A', { type: 'header', sublayers: [], expanded: true }),
-            node('b-uuid', 'B', { type: 'header', sublayers: [], expanded: 'true' }),
-            node('c-uuid', 'C', { type: 'header', sublayers: [] }),
-        ])
-        expect(providers['layers:getTree']().map((g) => g.expanded)).toEqual([true, false, false])
-    })
-
-    test('a header without a display name is titled by its id', () => {
-        load([{ name: 'h-uuid', type: 'header', sublayers: [] }])
-        expect(providers['layers:getTree']()[0].title).toBe('h-uuid')
     })
 
     test('nodes core does not know are left out', () => {

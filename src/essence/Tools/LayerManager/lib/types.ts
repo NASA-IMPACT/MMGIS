@@ -41,24 +41,21 @@ export type ForecastData = {
  * Order within a level carries no meaning here; the list orders by draw order.
  */
 export type LayerStructureNode =
-  | {
-      kind: 'group'
-      id: string
-      title: string
-      description?: string | null
-      expanded?: boolean
-      children: LayerStructureNode[]
-    }
+  | { kind: 'group'; id: string; children: LayerStructureNode[] }
   | { kind: 'layer'; id: string }
 
-/** A group as the list shows it: only the children left to show. */
-export type LayerGroup = {
-  id: string
+/** What a group's header shows, keyed by group id beside the structure. */
+export type GroupInfo = {
   title: string
   /** Shown from the group's info button; null or absent when it has none. */
   description?: string | null
   /** Starts open when true; otherwise starts collapsed. */
   expanded?: boolean
+}
+
+/** A group as the list shows it: only the children left to show. */
+export type LayerGroup = GroupInfo & {
+  id: string
   children: LayerListNode[]
 }
 

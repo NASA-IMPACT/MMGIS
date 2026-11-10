@@ -14,7 +14,7 @@ import {
 
 const row = (id) => ({ id, title: id.toUpperCase() })
 const layer = (id) => ({ kind: 'layer', id })
-const group = (id, children) => ({ kind: 'group', id, title: `G-${id}`, children })
+const group = (id, children) => ({ kind: 'group', id, children })
 
 /** A shown list as nested ids, for readable expectations. */
 const shape = (nodes) =>
@@ -27,6 +27,7 @@ const STRUCTURE = [
     group('aq', [group('aqs', [layer('pm'), layer('o3')]), layer('fc')]),
     layer('base'),
 ]
+const GROUPS = { aq: { title: 'Air Quality' }, aqs: { title: 'AQS' } }
 
 describe('buildLayerList', () => {
     test('rows sit under their groups, each level in draw order', () => {
@@ -73,9 +74,20 @@ describe('buildLayerList', () => {
         expect(shape(buildLayerList([row('a')], structure))).toEqual([{ g: ['a'] }])
     })
 
-    test('a group carries its title', () => {
-        const [node] = buildLayerList([row('pm')], STRUCTURE)
-        expect(node.group.title).toBe('G-aq')
+    test("a group carries its info: title, description, expanded", () => {
+        const groups = { aq: { title: 'Air Quality', description: 'All AQ', expanded: true } }
+        const [node] = buildLayerList([row('fc')], STRUCTURE, groups)
+        expect(node.group).toMatchObject({
+            id: 'aq',
+            title: 'Air Quality',
+            description: 'All AQ',
+            expanded: true,
+        })
+    })
+
+    test('a group without info is titled by its id', () => {
+        const [node] = buildLayerList([row('fc')], STRUCTURE)
+        expect(node.group.title).toBe('aq')
     })
 })
 
@@ -175,12 +187,12 @@ describe('resolveDrop', () => {
 })
 
 describe('treeAnnouncements', () => {
-    const nodes = buildLayerList(['pm', 'o3', 'fc', 'base'].map(row), STRUCTURE)
+    const nodes = buildLayerList(['pm', 'o3', 'fc', 'base'].map(row), STRUCTURE, GROUPS)
     const say = treeAnnouncements(nodes)
 
     test('names the position among siblings and the group', () => {
         expect(say.onDragStart({ active: { id: 'o3' } })).toBe(
-            'Picked up O3, position 2 of 2 in G-aqs.',
+            'Picked up O3, position 2 of 2 in AQS.',
         )
         expect(say.onDragOver({ active: { id: 'base' }, over: { id: 'aq' } })).toBe(
             'BASE is at position 1 of 2.',
@@ -189,7 +201,7 @@ describe('treeAnnouncements', () => {
 
     test('a drop on nothing says where the item stays', () => {
         expect(say.onDragEnd({ active: { id: 'pm' }, over: null })).toBe(
-            'Dropped PM back at position 1 of 2 in G-aqs.',
+            'Dropped PM back at position 1 of 2 in AQS.',
         )
     })
 })

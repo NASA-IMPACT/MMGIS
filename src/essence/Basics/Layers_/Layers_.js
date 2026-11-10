@@ -4197,39 +4197,25 @@ const L_ = {
         }
     },
     /**
-     * The config's layer hierarchy as plain nodes: a header becomes
-     * `{ kind: 'group', id, title, children }`, any other layer
-     * `{ kind: 'layer', id }`. Reads the parsed config, whose nodes carry
-     * UUIDs as `name`; nodes core does not know are left out.
+     * The config's layer hierarchy as ids only: a header becomes
+     * `{ kind: 'group', id, children }`, any other layer
+     * `{ kind: 'layer', id }`. Details for either come from the layer
+     * configs. Nodes core does not know are left out.
      * @returns {Array<object>}
      */
     getLayerTree: function () {
-        const walk = (nodes) => {
-            const out = []
-            for (const node of Array.isArray(nodes) ? nodes : []) {
-                if (node == null || L_.layers.data[node.name] == null) continue
+        const walk = (nodes) =>
+            (Array.isArray(nodes) ? nodes : []).flatMap((node) => {
+                if (node == null || L_.layers.data[node.name] == null)
+                    return []
                 if (node.type === 'header') {
-                    out.push({
-                        kind: 'group',
-                        id: node.name,
-                        title: node.display_name || node.name,
-                        description:
-                            typeof node.description === 'string' &&
-                            node.description.trim()
-                                ? node.description
-                                : null,
-                        expanded: node.expanded === true,
-                        children: walk(node.sublayers),
-                    })
-                } else {
-                    out.push({ kind: 'layer', id: node.name })
-                    // Only headers group; anything nested under a plain
-                    // layer is listed beside it.
-                    out.push(...walk(node.sublayers))
+                    const children = walk(node.sublayers)
+                    return [{ kind: 'group', id: node.name, children }]
                 }
-            }
-            return out
-        }
+                // Only headers group; anything nested under a plain layer
+                // is listed beside it.
+                return [{ kind: 'layer', id: node.name }, ...walk(node.sublayers)]
+            })
         return walk(L_.configData?.layers)
     },
     expandLayersToArray: function (layer) {

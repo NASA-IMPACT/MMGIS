@@ -1,4 +1,4 @@
-import type { Layer, LayerListNode, LayerStructureNode } from '../types'
+import type { GroupInfo, Layer, LayerListNode, LayerStructureNode } from '../types'
 
 /** Where a moved item lands relative to the one it was dropped on. */
 export type Placement = 'before' | 'after'
@@ -15,13 +15,14 @@ const byRank = (a: { rank: number }, b: { rank: number }) => a.rank - b.rank
 
 /**
  * The rows arranged under their groups. `rows` arrive top first in draw
- * order; each level is sorted by its top-most row, so the list always reads
- * as the map draws. A group with nothing left to show is dropped, and a row
- * outside the structure sits at the top level.
+ * order; each level is sorted by its top-most row. A group with nothing left
+ * to show is dropped, and a row outside the structure sits at the top level.
+ * A group missing from `groups` is titled by its id.
  */
 export const buildLayerList = (
     rows: Layer[],
     structure: LayerStructureNode[] | null | undefined,
+    groups: Record<string, GroupInfo> = {},
 ): LayerListNode[] => {
     const rank = new Map(rows.map((row, index) => [row.id, index]))
     const byId = new Map(rows.map((row) => [row.id, row]))
@@ -37,10 +38,9 @@ export const buildLayerList = (
                     node: {
                         kind: 'group',
                         group: {
+                            title: node.id,
+                            ...groups[node.id],
                             id: node.id,
-                            title: node.title,
-                            description: node.description ?? null,
-                            expanded: node.expanded === true,
                             children: children.map((c) => c.node),
                         },
                     },
