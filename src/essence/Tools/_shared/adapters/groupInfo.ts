@@ -1,5 +1,13 @@
-import type { LayerConfig } from '../../_shared/adapters/mmgisAPI'
-import type { GroupInfo } from '../lib/types'
+import type { LayerConfig } from './mmgisAPI'
+
+/** What a group's header shows. */
+export type GroupInfo = {
+    title: string
+    /** Null when the header has no description. */
+    description: string | null
+    /** Whether the group starts open. */
+    expanded: boolean
+}
 
 /**
  * What each group's header shows, read from the header layers' configs and

@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { getGroupInfo } from '../adapters/groupInfo'
+import { getGroupInfo } from '../groupInfo'
 
 /** A group's header details come from its header layer's config. */
 describe('getGroupInfo', () => {
