@@ -358,8 +358,8 @@ test.describe('handlers', () => {
     })
 })
 
-// dropLayer reads the order from core, places the layer with the pure helper
-// covered in tests/unit/layerManagerOrder.spec.js, and hands the whole list
+// dropLayer reads the order from core, places the layer with placeInTree
+// (covered in tests/unit/layerManagerOrder.spec.js), and hands the whole list
 // back. Core's broadcast is what re-sorts the list; nothing is emitted here.
 test.describe('dropLayer', () => {
     const withOrder = (order, accepted = true) => {
@@ -377,7 +377,7 @@ test.describe('dropLayer', () => {
     test('writes the placed order back and emits nothing', async () => {
         const { writes, emitCalls } = withOrder(['a', 'b', 'c'])
 
-        await dropLayer('c', 0, ['a', 'b', 'c'])
+        await dropLayer('c', 'a', 'before')
 
         expect(writes).toEqual([['c', 'a', 'b']])
         expect(emitCalls).toEqual([])
@@ -386,7 +386,7 @@ test.describe('dropLayer', () => {
     test('a drop onto its own slot writes nothing', async () => {
         const { requests } = setupMock({ 'layers:getOrder': ['a', 'b', 'c'] })
 
-        await dropLayer('b', 1, ['a', 'b', 'c'])
+        await dropLayer('b', 'a', 'after')
 
         expect(requests.map((r) => r.name)).toEqual(['layers:getOrder'])
     })
@@ -394,7 +394,7 @@ test.describe('dropLayer', () => {
     test('writes nothing against a core without an order', async () => {
         const { requests } = setupMock({})
 
-        await dropLayer('a', 1, ['a', 'b'])
+        await dropLayer('a', 'b', 'after')
 
         expect(requests.map((r) => r.name)).not.toContain('layers:setOrder')
     })
@@ -406,7 +406,7 @@ test.describe('dropLayer', () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
         const refresh = vi.fn()
 
-        await expect(dropLayer('b', 0, ['a', 'b'], refresh)).resolves.toBeUndefined()
+        await expect(dropLayer('b', 'a', 'before', refresh)).resolves.toBeUndefined()
 
         expect(warn).toHaveBeenCalledWith(expect.stringContaining('b'))
         expect(refresh).toHaveBeenCalledTimes(1)
@@ -416,8 +416,8 @@ test.describe('dropLayer', () => {
     test('drops a second drop that arrives before the first has been written', async () => {
         const { writes } = withOrder(['a', 'b', 'c'])
 
-        const first = dropLayer('c', 0, ['a', 'b', 'c'])
-        const second = dropLayer('c', 0, ['a', 'b', 'c'])
+        const first = dropLayer('c', 'a', 'before')
+        const second = dropLayer('c', 'a', 'before')
         await Promise.all([first, second])
 
         expect(writes).toEqual([['c', 'a', 'b']])

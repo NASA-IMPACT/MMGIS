@@ -85,9 +85,9 @@ describe('buildLayerList', () => {
         })
     })
 
-    test('a group without info is titled by its id', () => {
+    test('a group without info is titled by its id, with no description, collapsed', () => {
         const [node] = buildLayerList([row('fc')], STRUCTURE)
-        expect(node.group.title).toBe('aq')
+        expect(node.group).toMatchObject({ title: 'aq', description: null, expanded: false })
     })
 })
 
@@ -201,6 +201,19 @@ describe('treeAnnouncements', () => {
 
     test('a drop on nothing says where the item stays', () => {
         expect(say.onDragEnd({ active: { id: 'pm' }, over: null })).toBe(
+            'Dropped PM back at position 1 of 2 in AQS.',
+        )
+    })
+
+    // resolveDrop refuses these, so nothing would move.
+    test('over an item outside its own group, it says the item stays in its group', () => {
+        expect(say.onDragOver({ active: { id: 'pm' }, over: { id: 'fc' } })).toBe(
+            'PM can only move in AQS.',
+        )
+        expect(say.onDragOver({ active: { id: 'base' }, over: { id: 'pm' } })).toBe(
+            'BASE can only move outside any group.',
+        )
+        expect(say.onDragEnd({ active: { id: 'pm' }, over: { id: 'fc' } })).toBe(
             'Dropped PM back at position 1 of 2 in AQS.',
         )
     })

@@ -30,6 +30,14 @@ describe('getGroupInfo', () => {
         expect(getGroupInfo({ h: { type: 'header', description: '   ' } }).h.description).toBeNull()
     })
 
+    test('a description that is not text reads as none', () => {
+        const groups = getGroupInfo({
+            a: { type: 'header', description: 42 },
+            b: { type: 'header', description: {} },
+        })
+        expect([groups.a.description, groups.b.description]).toEqual([null, null])
+    })
+
     test('anything but true for expanded reads as false', () => {
         const groups = getGroupInfo({
             a: { type: 'header', expanded: 'true' },

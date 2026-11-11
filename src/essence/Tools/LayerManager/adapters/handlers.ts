@@ -15,7 +15,7 @@ import {
     ZOOM_TO_LAYER_PADDING,
     ZOOM_TO_LAYER_POINT_MAX_ZOOM,
 } from '../lib/utils/constants'
-import { placeInOrder } from '../lib/utils/layerOrder'
+import { placeInTree, type Placement } from '../lib/utils/layerTree'
 import { filteredOutLayers } from '../lib/utils/filteredOut'
 
 type Refresh = () => Promise<void> | void
@@ -132,14 +132,18 @@ const writeOrder = async (
     }
 }
 
-/** Drops a dragged layer at `toIndex` of the list the user dragged it through. */
+/**
+ * Drops a dragged layer just before or after `overId` in the flat list, so it
+ * lands right beside that row and layers the list does not show keep their
+ * place.
+ */
 export const dropLayer = (
     layerId: string,
-    toIndex: number,
-    shownIds: string[],
+    overId: string,
+    placement: Placement,
     refresh?: Refresh,
 ): Promise<void> =>
-    writeOrder(layerId, (order) => placeInOrder(order, shownIds, layerId, toIndex), refresh)
+    writeOrder(layerId, (order) => placeInTree(order, null, layerId, overId, placement), refresh)
 
 /**
  * Hands a layer to the Comparison plugin as the first of the two sides it

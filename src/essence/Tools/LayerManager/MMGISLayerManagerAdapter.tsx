@@ -2,6 +2,7 @@ import React from 'react'
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { LayerManagerPanel } from './lib'
 import type { Layer } from './lib/types'
+import type { Placement } from './lib/utils/layerTree'
 import { useMMGISEvent } from '../_shared/adapters/useMMGISEvent'
 import { useMMGISToolVars } from '../_shared/adapters/useMMGISToolVars'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
@@ -211,12 +212,11 @@ export function MMGISLayerManagerAdapter() {
     useMMGISEvent('layers:listChanged', refresh)
     useMMGISEvent('layers:orderChanged', refresh)
 
-    // A drop lands relative to this list, not to the full order.
     const onReorder = useCallback(
-        (id: string, toIndex: number) => {
-            report('dropLayer', dropLayer(id, toIndex, layers.map((l) => l.id), refresh))
+        (id: string, overId: string, placement: Placement) => {
+            report('dropLayer', dropLayer(id, overId, placement, refresh))
         },
-        [layers, refresh],
+        [refresh],
     )
 
     // 'layers:getAll' is registered by Layers_.fina() during mission load.

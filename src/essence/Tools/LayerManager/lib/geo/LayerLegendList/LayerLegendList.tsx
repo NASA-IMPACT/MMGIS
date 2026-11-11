@@ -16,8 +16,8 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { LayerLegend, type LayerLegendProps } from '../LayerLegend/LayerLegend'
-import { dropIndex, orderAnnouncements } from '../../utils/layerOrder'
-import type { Layer } from '../../types'
+import { resolveDrop, treeAnnouncements, type Placement } from '../../utils/layerTree'
+import type { Layer, LayerListNode } from '../../types'
 
 export type LayerLegendListProps = {
     layers: Layer[]
@@ -32,8 +32,11 @@ export type LayerLegendListProps = {
     selectedTime?: LayerLegendProps['selectedTime']
     onCompareLayer?: LayerLegendProps['onCompareLayer']
     onRunChange?: LayerLegendProps['onRunChange']
-    /** A layer was dropped at `toIndex` of this list. Rows drag only with it. */
-    onReorder?: (layerId: string, toIndex: number) => void
+    /**
+     * A layer was dropped just before or after `overId`, another row of this
+     * list. Rows drag only with it.
+     */
+    onReorder?: (layerId: string, overId: string, placement: Placement) => void
 }
 
 function SortableLegend(props: LayerLegendProps) {
@@ -83,7 +86,11 @@ export function LayerLegendList({
         useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
         useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
     )
-    const announcements = useMemo(() => orderAnnouncements(layers ?? []), [layers])
+    const nodes = useMemo<LayerListNode[]>(
+        () => (layers ?? []).map((layer) => ({ kind: 'layer', layer })),
+        [layers],
+    )
+    const announcements = useMemo(() => treeAnnouncements(nodes), [nodes])
 
     if (!layers || layers.length === 0) {
         return (
@@ -118,8 +125,9 @@ export function LayerLegendList({
     }
 
     const handleDragEnd = ({ active, over }: DragEndEvent) => {
-        const toIndex = dropIndex(layers.map((l) => l.id), active.id, over)
-        if (toIndex !== null) onReorder(String(active.id), toIndex)
+        const overId = over == null ? null : String(over.id)
+        const placement = resolveDrop(nodes, String(active.id), overId)
+        if (placement && overId) onReorder(String(active.id), overId, placement)
     }
 
     return (

@@ -12,7 +12,7 @@ export type GroupInfo = {
 /**
  * What each group's header shows, read from the header layers' configs and
  * keyed by UUID. A header without a display name is titled by its UUID, and
- * a blank description counts as none.
+ * a blank or non-text description counts as none.
  */
 export const getGroupInfo = (
     configs: Record<string, LayerConfig> | null | undefined,
@@ -22,7 +22,10 @@ export const getGroupInfo = (
         if (config.type !== 'header') continue
         groups[id] = {
             title: config.display_name || id,
-            description: config.description?.trim() ? config.description : null,
+            description:
+                typeof config.description === 'string' && config.description.trim()
+                    ? config.description
+                    : null,
             expanded: config.expanded === true,
         }
     }
