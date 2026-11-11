@@ -423,6 +423,15 @@ describe('MMGISLayerManagerAdapter groups', () => {
         expect(titlesIn()).toEqual(['Continuous'])
     })
 
+    test('a refresh reads the layer configs once', async () => {
+        tree = grouped()
+        await mountAdapter()
+        const before = configReads
+        await emit('layers:orderChanged')
+        await settle()
+        expect(configReads).toBe(before + 1)
+    })
+
     test('a tree with no groups leaves the list flat', async () => {
         tree = [
             { kind: 'layer', id: SPARSE },

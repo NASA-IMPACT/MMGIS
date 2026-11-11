@@ -11,6 +11,7 @@ import {
     mmgisGetListedLayers,
     mmgisGetLayerConfigs,
     mmgisGetLayerTree,
+    type LayerConfig,
 } from '../../_shared/adapters/mmgisAPI'
 import {
     ZOOM_TO_LAYER_PADDING,
@@ -40,11 +41,13 @@ export const toggleVisibility = async (layerId: string): Promise<void> => {
 
 export type FilteredOutLayer = { id: string; title: string }
 
-export const getFilteredOutLayers = async (): Promise<FilteredOutLayer[]> => {
+export const getFilteredOutLayers = async (
+    layerConfigs?: Record<string, LayerConfig> | null,
+): Promise<FilteredOutLayer[]> => {
     const [visible, listed, configs] = await Promise.all([
         mmgisGetVisibleLayers(),
         mmgisGetListedLayers(),
-        mmgisGetLayerConfigs(),
+        layerConfigs ?? mmgisGetLayerConfigs(),
     ])
     return filteredOutLayers(visible, listed).map((id) => ({
         id,

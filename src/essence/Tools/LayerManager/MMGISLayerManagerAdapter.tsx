@@ -30,6 +30,7 @@ import {
     mmgisGetLayerConfigs,
     type LayerDataCoverageChange,
     type LayerTreeNode,
+    type LayerConfig,
 } from '../_shared/adapters/mmgisAPI'
 import { getGroupInfo } from '../_shared/adapters/groupInfo'
 
@@ -89,12 +90,11 @@ type Grouping = { tree: LayerTreeNode[]; groups: Record<string, GroupInfo> }
  * header layer's config, or null when there is none to show: an empty tree,
  * a core too old to answer, or a failed read all leave the list flat.
  */
-const readGrouping = async (): Promise<Grouping | null> => {
+const readGrouping = async (
+    configs: Record<string, LayerConfig> | null,
+): Promise<Grouping | null> => {
     try {
-        const [tree, configs] = await Promise.all([
-            mmgisGetLayerTree(),
-            mmgisGetLayerConfigs(),
-        ])
+        const tree = await mmgisGetLayerTree()
         return hasGroups(tree) ? { tree, groups: getGroupInfo(configs) } : null
     } catch (err) {
         console.warn('LayerManager: layer groups unavailable', err)
@@ -147,13 +147,17 @@ export function MMGISLayerManagerAdapter() {
         const announced = new Map<string, boolean>()
         inFlight.current.add(announced)
         try {
+            // Read once and handed to every reader below: the rows, the
+            // filtered-out names and the group headers all come from it.
+            const configs = await mmgisGetLayerConfigs()
             const [data, leftOut, , structure] = await Promise.all([
                 getVisibleLayersWithLegends({
                     showOnlyVisible: toolVars.showOnlyVisible === true,
+                    layerConfigs: configs,
                 }),
-                getFilteredOutLayers(),
+                getFilteredOutLayers(configs),
                 readRuns(),
-                readGrouping(),
+                readGrouping(configs),
             ])
             // A newer refresh already landed while this one was reading —
             // its answer is stale, so drop it.

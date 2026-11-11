@@ -8,6 +8,7 @@ import {
     useSensors,
     type CollisionDetection,
     type DragEndEvent,
+    type KeyboardCoordinateGetter,
 } from '@dnd-kit/core'
 import {
     SortableContext,
@@ -241,17 +242,43 @@ function SortableLevel({ nodes, ...rest }: LevelProps) {
     )
 }
 
+type WithParent = { data: { current?: { parentId?: string | null } | null } }
+
+/** The group an item sits in; null at the top level. */
+const parentOf = (item: WithParent): string | null => item.data.current?.parentId ?? null
+
 /**
  * Collision only with the dragged item's siblings, so a layer never hovers
  * over another group's rows and a group never leaves its level.
  */
 const siblingsOnly: CollisionDetection = (args) => {
-    const parent = args.active.data.current?.parentId ?? null
+    const parent = parentOf(args.active)
     return closestCenter({
         ...args,
         droppableContainers: args.droppableContainers.filter(
-            (container) => (container.data.current?.parentId ?? null) === parent,
+            (container) => parentOf(container) === parent,
         ),
+    })
+}
+
+/**
+ * Arrow keys step the dragged item from sibling to sibling. The sortable
+ * stepper picks the next row among every row on screen, which would walk a
+ * layer through each row of a neighbouring group while its drop stays beside
+ * that group, and walk a group onto its own children.
+ */
+export const siblingKeyboardCoordinates: KeyboardCoordinateGetter = (event, args) => {
+    const { active, droppableContainers: all } = args.context
+    if (!active) return sortableKeyboardCoordinates(event, args)
+    const parent = parentOf(active)
+    // Same map type, so the stepper's lookups work on it unchanged.
+    const Containers = all.constructor as new (entries: Iterable<[unknown, unknown]>) => typeof all
+    const siblings = new Containers(
+        Array.from(all.entries()).filter(([, container]) => parentOf(container) === parent),
+    )
+    return sortableKeyboardCoordinates(event, {
+        ...args,
+        context: { ...args.context, droppableContainers: siblings },
     })
 }
 
@@ -263,7 +290,7 @@ export function LayerTreeList({
 }: LayerTreeListProps) {
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-        useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+        useSensor(KeyboardSensor, { coordinateGetter: siblingKeyboardCoordinates }),
     )
     const announcements = useMemo(() => treeAnnouncements(nodes ?? []), [nodes])
 
