@@ -137,17 +137,9 @@ const writeOrder = async (
 }
 
 /**
- * Drops a dragged layer or group just before or after `overId`, another row
- * of the list it was dragged through, so it lands right beside that row and
- * layers the list does not show keep their place.
- *
- * Core draws each layer group as one block, and would turn an order that
- * splits a group into a different move from the one made. So the grouping is
- * read from core at the moment of the drop. A layer dropped on a row inside
- * a group it does not belong to lands beside that group, a group moves as one
- * block, and anything dropped on a row outside its own group writes nothing.
- * A core without a grouping answers null, which leaves every row a sibling of
- * every other.
+ * Drops a dragged layer or group just before or after `overId`. The grouping
+ * is read from core at the drop, since core draws each group as one block
+ * and a move must not split one.
  */
 export const dropLayer = async (
     id: string,

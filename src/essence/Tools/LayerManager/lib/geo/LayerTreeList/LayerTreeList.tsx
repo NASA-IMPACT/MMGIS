@@ -4,6 +4,7 @@ import {
     KeyboardSensor,
     PointerSensor,
     closestCenter,
+    pointerWithin,
     useSensor,
     useSensors,
     type CollisionDetection,
@@ -25,7 +26,6 @@ import {
     type LayerLegendProps,
     type RenderDescription,
 } from '../LayerLegend/LayerLegend'
-import type { LayerLegendListProps } from '../LayerLegendList/LayerLegendList'
 import { FloatingPopover } from '../../FloatingPopover'
 import type { LayerGroup, LayerListNode } from '../../types'
 import {
@@ -37,8 +37,9 @@ import {
 
 type RowProps = Omit<LayerLegendProps, 'layer' | 'dragHandle'>
 
-export type LayerTreeListProps = Omit<LayerLegendListProps, 'layers' | 'onReorder'> & {
+export type LayerTreeListProps = RowProps & {
     nodes: LayerListNode[]
+    emptyMessage?: string
     /**
      * An item was dropped just before or after `overId`, its sibling. Items
      * drag only with it, and only among their siblings.
@@ -166,32 +167,11 @@ function GroupView({
 type LevelProps = {
     nodes: LayerListNode[]
     parentId: string | null
+    /** Rows carry drag handles only when moves are handled. */
+    draggable: boolean
     rowProps: RowProps
     collapsed: (group: LayerGroup) => boolean
     onToggleCollapsed: (groupId: string, collapsed: boolean) => void
-}
-
-/** One level of a list that cannot be reordered. */
-function PlainLevel({ nodes, ...rest }: LevelProps) {
-    return (
-        <>
-            {nodes.map((node) =>
-                node.kind === 'layer' ? (
-                    <LayerLegend key={node.layer.id} layer={node.layer} {...rest.rowProps} />
-                ) : (
-                    <GroupView
-                        key={node.group.id}
-                        group={node.group}
-                        collapsed={rest.collapsed(node.group)}
-                        onToggleCollapsed={rest.onToggleCollapsed}
-                        renderDescription={rest.rowProps.renderDescription}
-                    >
-                        <PlainLevel {...rest} nodes={node.group.children} parentId={node.group.id} />
-                    </GroupView>
-                ),
-            )}
-        </>
-    )
 }
 
 function SortableNode({ node, ...rest }: Omit<LevelProps, 'nodes'> & { node: LayerListNode }) {
@@ -204,10 +184,12 @@ function SortableNode({ node, ...rest }: Omit<LevelProps, 'nodes'> & { node: Lay
         transform,
         transition,
         isDragging,
-    } = useSortable({ id, data: { parentId: rest.parentId } })
+    } = useSortable({ id, data: { parentId: rest.parentId }, disabled: !rest.draggable })
     // Copied into a plain record: DraggableAttributes has no index signature,
     // and the row components stay free of the library's types.
-    const dragHandle = { ref: setActivatorNodeRef, attributes: { ...attributes }, listeners }
+    const dragHandle = rest.draggable
+        ? { ref: setActivatorNodeRef, attributes: { ...attributes }, listeners }
+        : undefined
     return (
         <div
             ref={setNodeRef}
@@ -231,7 +213,7 @@ function SortableNode({ node, ...rest }: Omit<LevelProps, 'nodes'> & { node: Lay
     )
 }
 
-/** One level of a reorderable list: its own sortable context of siblings. */
+/** One level of the list: its own sortable context of siblings. */
 function SortableLevel({ nodes, ...rest }: LevelProps) {
     return (
         <SortableContext items={nodes.map(nodeId)} strategy={verticalListSortingStrategy}>
@@ -245,20 +227,44 @@ function SortableLevel({ nodes, ...rest }: LevelProps) {
 type WithParent = { data: { current?: { parentId?: string | null } | null } }
 
 /** The group an item sits in; null at the top level. */
-const parentOf = (item: WithParent): string | null => item.data.current?.parentId ?? null
+const parentOf = (item: WithParent | null): string | null =>
+    item?.data.current?.parentId ?? null
 
 /**
- * Collision only with the dragged item's siblings, so a layer never hovers
- * over another group's rows and a group never leaves its level.
+ * The point that picks the drop target: the pointer, or for a keyboard drag
+ * the edge leading the move, which the arrow keys line up with the target's.
  */
-const siblingsOnly: CollisionDetection = (args) => {
+type CollisionArgs = Parameters<CollisionDetection>[0]
+
+const probePoint = (args: CollisionArgs): { x: number; y: number } | null => {
+    const { active, collisionRect, droppableRects, pointerCoordinates } = args
+    if (pointerCoordinates) return pointerCoordinates
+    const start = droppableRects.get(active.id)
+    if (!start || collisionRect.top === start.top) return null
+    const x = collisionRect.left + collisionRect.width / 2
+    return collisionRect.top < start.top
+        ? { x, y: collisionRect.top + 1 }
+        : { x, y: collisionRect.top + collisionRect.height - 1 }
+}
+
+/**
+ * The drop target among the dragged item's siblings only, so a layer never
+ * targets another group's rows and a group never leaves its level. The
+ * sibling under the probe point wins: a group's box spans all its rows, so
+ * nearest-centre would put the target in the middle of an open group rather
+ * than at its header. Nearest-centre decides when the point is over none.
+ */
+export const siblingsOnly: CollisionDetection = (args) => {
     const parent = parentOf(args.active)
-    return closestCenter({
+    const siblings = {
         ...args,
         droppableContainers: args.droppableContainers.filter(
             (container) => parentOf(container) === parent,
         ),
-    })
+    }
+    const point = probePoint(args)
+    const under = point ? pointerWithin({ ...siblings, pointerCoordinates: point }) : []
+    return under.length > 0 ? under : closestCenter(siblings)
 }
 
 /**
@@ -269,7 +275,6 @@ const siblingsOnly: CollisionDetection = (args) => {
  */
 export const siblingKeyboardCoordinates: KeyboardCoordinateGetter = (event, args) => {
     const { active, droppableContainers: all } = args.context
-    if (!active) return sortableKeyboardCoordinates(event, args)
     const parent = parentOf(active)
     // Same map type, so the stepper's lookups work on it unchanged.
     const Containers = all.constructor as new (entries: Iterable<[unknown, unknown]>) => typeof all
@@ -292,7 +297,7 @@ export function LayerTreeList({
         useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
         useSensor(KeyboardSensor, { coordinateGetter: siblingKeyboardCoordinates }),
     )
-    const announcements = useMemo(() => treeAnnouncements(nodes ?? []), [nodes])
+    const announcements = useMemo(() => treeAnnouncements(nodes), [nodes])
 
     // A group starts as its header is configured, collapsed unless marked
     // expanded. Once folded or unfolded by hand it stays that way across
@@ -306,20 +311,10 @@ export function LayerTreeList({
         [chosen],
     )
 
-    if (!nodes || nodes.length === 0) {
+    if (nodes.length === 0) {
         return (
             <div className="blocks-layer-legend-list">
                 <div className="blocks-layer-legend-list__empty">{emptyMessage}</div>
-            </div>
-        )
-    }
-
-    const level = { nodes, parentId: null, rowProps, collapsed, onToggleCollapsed }
-
-    if (!onMove) {
-        return (
-            <div className="blocks-layer-legend-list">
-                <PlainLevel {...level} />
             </div>
         )
     }
@@ -328,7 +323,7 @@ export function LayerTreeList({
         const activeId = String(active.id)
         const overId = over == null ? null : String(over.id)
         const placement = resolveDrop(nodes, activeId, overId)
-        if (placement && overId) onMove(activeId, overId, placement)
+        if (placement && overId) onMove?.(activeId, overId, placement)
     }
 
     return (
@@ -339,7 +334,14 @@ export function LayerTreeList({
                 accessibility={{ announcements }}
                 onDragEnd={handleDragEnd}
             >
-                <SortableLevel {...level} />
+                <SortableLevel
+                    nodes={nodes}
+                    parentId={null}
+                    draggable={onMove != null}
+                    rowProps={rowProps}
+                    collapsed={collapsed}
+                    onToggleCollapsed={onToggleCollapsed}
+                />
             </DndContext>
         </div>
     )

@@ -452,8 +452,8 @@ test.describe('dropLayer', () => {
         expect(refresh).not.toHaveBeenCalled()
     })
 
-    // In a flat list every row of a group is a layer, so a layer outside the
-    // group can only be dropped on one of them; it lands beside the group.
+    // A row inside a group the dragged layer does not belong to stands for
+    // that group; the layer lands beside it.
     test('a drop on a row of another group lands beside that group', async () => {
         const { writes } = withGroups(['g1', 'g2', 'x'])
 
@@ -540,8 +540,7 @@ test.describe('selectRun', () => {
     })
 })
 
-// Whole-group moves and drops on a group's header row, through the same
-// handler the flat list uses.
+// Whole-group moves and drops on a group's header row.
 test.describe('dropLayer with groups', () => {
     const TREE = [
         { kind: 'group', id: 'g', children: [{ kind: 'layer', id: 'a' }, { kind: 'layer', id: 'b' }] },

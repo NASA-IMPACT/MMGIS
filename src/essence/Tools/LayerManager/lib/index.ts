@@ -1,5 +1,4 @@
 export { LayerManagerPanel, type LayerManagerPanelProps } from './geo/LayerManagerPanel/LayerManagerPanel'
-export { LayerLegendList, type LayerLegendListProps } from './geo/LayerLegendList/LayerLegendList'
 export { LayerTreeList, type LayerTreeListProps } from './geo/LayerTreeList/LayerTreeList'
 export {
     LayerLegend,
@@ -21,16 +20,12 @@ export type {
     LegendType,
     CategoricalStop,
     CogData,
+    GroupInfo,
     LayerGroup,
     LayerListNode,
     LayerStructureNode,
 } from './types'
-export {
-    buildLayerList,
-    placeInTree,
-    resolveDrop,
-    type Placement,
-} from './utils/layerTree'
+export { buildLayerList } from './utils/layerTree'
 
 // Side-effect import of the component stylesheet.
 import './styles/index.scss'

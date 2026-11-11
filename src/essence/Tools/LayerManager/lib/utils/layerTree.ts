@@ -160,8 +160,8 @@ export const placeInTree = (
     }
     root.sort(byRank)
 
-    // `overId` may sit inside a sibling group, as any row does in a flat
-    // list; the move then lands beside that group.
+    // `overId` may sit inside a sibling group when the shown grouping is older
+    // than core's; the move then lands beside that group.
     const holds = (node: FullNode): boolean =>
         node.id === overId || (node.children ?? []).some(holds)
     const siblings = siblingsOf(root, activeId)

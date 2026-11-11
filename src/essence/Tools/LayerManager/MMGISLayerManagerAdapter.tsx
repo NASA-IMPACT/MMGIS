@@ -79,23 +79,18 @@ const withOutOfRange = (rows: Layer[], flags: Map<string, boolean>): Layer[] => 
     )
 }
 
-/** Whether the configured layers have any grouping to show. */
-const hasGroups = (tree: LayerTreeNode[] | null): tree is LayerTreeNode[] =>
-    tree?.some((node) => node.kind === 'group') === true
-
-type Grouping = { tree: LayerTreeNode[]; groups: Record<string, GroupInfo> }
+type Grouping = { tree: LayerTreeNode[] | null; groups: Record<string, GroupInfo> }
 
 /**
  * The grouping core reports, with each group's header details read from its
- * header layer's config, or null when there is none to show: an empty tree,
- * a core too old to answer, or a failed read all leave the list flat.
+ * header layer's config. A core too old to answer, or a failed read, leaves
+ * the list flat.
  */
 const readGrouping = async (
     configs: Record<string, LayerConfig> | null,
 ): Promise<Grouping | null> => {
     try {
-        const tree = await mmgisGetLayerTree()
-        return hasGroups(tree) ? { tree, groups: getGroupInfo(configs) } : null
+        return { tree: await mmgisGetLayerTree(), groups: getGroupInfo(configs) }
     } catch (err) {
         console.warn('LayerManager: layer groups unavailable', err)
         return null
@@ -247,18 +242,15 @@ export function MMGISLayerManagerAdapter() {
     useMMGISEvent('layers:listChanged', refresh)
     useMMGISEvent('layers:orderChanged', refresh)
 
-    const onReorder = useCallback(
+    const onMove = useCallback(
         (id: string, overId: string, placement: Placement) => {
             report('dropLayer', dropLayer(id, overId, placement, refresh))
         },
         [refresh],
     )
 
-    const nodes = useMemo<LayerListNode[] | undefined>(
-        () =>
-            grouping
-                ? buildLayerList(layers, grouping.tree, grouping.groups)
-                : undefined,
+    const nodes = useMemo<LayerListNode[]>(
+        () => buildLayerList(layers, grouping?.tree, grouping?.groups),
         [layers, grouping],
     )
 
@@ -284,7 +276,7 @@ export function MMGISLayerManagerAdapter() {
         <LayerManagerPanel
             layers={layers}
             nodes={nodes}
-            onMove={onReorder}
+            onMove={onMove}
             loading={loading}
             renderDescription={renderDescription}
             onVisibilityChange={(id) => { report('toggleVisibility', toggleVisibility(id)) }}
@@ -295,7 +287,6 @@ export function MMGISLayerManagerAdapter() {
             canZoomToLayer={canZoomToLayer}
             selectedTime={selectedTime}
             onCompareLayer={compareLayer}
-            onReorder={onReorder}
             onAddLayer={showAddLayer}
             onHideFilteredLayers={() => { report('hideFilteredOutLayers', hideFilteredOutLayers()) }}
             filteredOutLayers={filteredOut}
