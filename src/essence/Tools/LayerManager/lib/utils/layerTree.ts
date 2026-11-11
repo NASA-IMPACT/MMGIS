@@ -114,14 +114,16 @@ export const resolveDrop = (
 type FullNode = { id: string; rank: number; children?: FullNode[] }
 
 /**
- * The full draw order after moving `activeId` just before or after `overId`,
- * its sibling. Every layer counts here, including those filtered out of the
- * list: a group's hidden layers move with it, and a moved group lands as one
- * contiguous block. Without a structure, every layer is a sibling of every
+ * The full draw order after moving `activeId` just before or after `overId`:
+ * its sibling, or a layer inside a sibling group, in which case the move
+ * lands just before or after that group. Every layer counts here, including
+ * those filtered out of the list: a group's hidden layers move with it, and a
+ * moved group lands as one contiguous block. Without a structure, every layer is a sibling of every
  * other and the moved one lands right beside `overId`, so hidden layers
  * keep their place. With one, the result draws each group as one block,
  * which core's draw order already does unless a config reload has split a
- * group. Null when the two are not siblings or nothing changes.
+ * group. Null when `overId` is neither a sibling nor inside one, so nothing
+ * leaves its group, or when nothing changes.
  */
 export const placeInTree = (
     order: string[],
@@ -158,13 +160,18 @@ export const placeInTree = (
     }
     root.sort(byRank)
 
+    // `overId` may sit inside a sibling group, as any row does in a flat
+    // list; the move then lands beside that group.
+    const holds = (node: FullNode): boolean =>
+        node.id === overId || (node.children ?? []).some(holds)
     const siblings = siblingsOf(root, activeId)
-    if (!siblings || !siblings.some((n) => n.id === overId)) return null
+    if (!siblings) return null
     const [moved] = siblings.splice(
         siblings.findIndex((n) => n.id === activeId),
         1,
     )
-    const target = siblings.findIndex((n) => n.id === overId)
+    const target = siblings.findIndex(holds)
+    if (target === -1) return null
     siblings.splice(placement === 'before' ? target : target + 1, 0, moved)
 
     const next: string[] = []

@@ -186,6 +186,47 @@ describe('layers:setOrder with configured groups', () => {
         ])
     })
 
+    test('answers false when gathering a split group leaves the order as it stands', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+        // x between h and s splits g; gathered, g is back above x.
+        expect(
+            providers['layers:setOrder']({ order: ['h', 'x', 'p', 'q', 'y'] })
+        ).toBe(false)
+
+        expect(L_._layersOrdered).toEqual(['h', 'p', 'q', 'x', 'y'])
+        expect(engine.setLayerOrder).not.toHaveBeenCalled()
+        expect(emitted).toEqual([])
+        expect(warn).toHaveBeenCalledTimes(1)
+    })
+
+    test('accepts the grouped order it already has', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+        expect(
+            providers['layers:setOrder']({ order: ['h', 'p', 'q', 'x', 'y'] })
+        ).toBe(true)
+
+        expect(emitted).toEqual([])
+        expect(warn).not.toHaveBeenCalled()
+    })
+
+    // A config reload can leave a group split in the stack. Sending that
+    // order back gathers the group, which is a change.
+    test('gathers a group the current order splits when sent that order', () => {
+        vi.spyOn(console, 'warn').mockImplementation(() => {})
+        L_._layersOrdered = ['h', 'x', 'p', 'q', 'y']
+
+        expect(
+            providers['layers:setOrder']({ order: ['h', 'x', 'p', 'q', 'y'] })
+        ).toBe(true)
+
+        expect(L_._layersOrdered).toEqual(['h', 'p', 'q', 'x', 'y'])
+        expect(emitted).toEqual([
+            ['layers:orderChanged', { order: ['h', 'p', 'q', 'x', 'y'] }],
+        ])
+    })
+
     test('a layer moved to the top takes its groups to the top with it', () => {
         vi.spyOn(console, 'warn').mockImplementation(() => {})
 

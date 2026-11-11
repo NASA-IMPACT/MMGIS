@@ -3255,11 +3255,24 @@ const L_ = {
             return false
         }
 
+        const isCurrent = (order) =>
+            order.every((name, i) => name === L_._layersOrdered[i])
+
         const grouped = L_.groupLayerOrder(newLayersOrdered)
-        if (grouped.some((name, i) => name !== newLayersOrdered[i]))
+        if (grouped.some((name, i) => name !== newLayersOrdered[i])) {
+            // Gathering the split groups can undo the whole move. The caller
+            // asked for a change and got none, so it hears false and knows
+            // to re-read the order rather than wait for a broadcast.
+            if (!isCurrent(newLayersOrdered) && isCurrent(grouped)) {
+                console.warn(
+                    'reorderLayers: the order only split a layer group, so nothing moved.'
+                )
+                return false
+            }
             console.warn(
                 'reorderLayers: the order split a layer group, so each group was drawn as one block.'
             )
+        }
         L_.applyLayerOrder(grouped)
         return true
     },

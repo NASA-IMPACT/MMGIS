@@ -413,6 +413,105 @@ test.describe('dropLayer', () => {
         warn.mockRestore()
     })
 
+    // g{ g1, g2 } above x: core draws g as one block.
+    const GROUPED = [
+        {
+            kind: 'group',
+            id: 'g',
+            children: [
+                { kind: 'layer', id: 'g1' },
+                { kind: 'layer', id: 'g2' },
+            ],
+        },
+        { kind: 'layer', id: 'x' },
+    ]
+
+    const withGroups = (order, tree = GROUPED) => {
+        const writes = []
+        const { requests } = setupMock({
+            'layers:getOrder': order,
+            'layers:getTree': tree,
+            'layers:setOrder': (params) => {
+                writes.push(params.order)
+                return true
+            },
+        })
+        return { writes, requests }
+    }
+
+    // Sent as dropped, the order would split g and core would gather it back
+    // into a move nobody made.
+    test('a drop out of its group writes nothing', async () => {
+        const { writes, requests } = withGroups(['g1', 'g2', 'x'])
+        const refresh = vi.fn()
+
+        await dropLayer('g1', 'x', 'after', refresh)
+
+        expect(writes).toEqual([])
+        expect(requests.map((r) => r.name)).not.toContain('layers:setOrder')
+        expect(refresh).not.toHaveBeenCalled()
+    })
+
+    // In a flat list every row of a group is a layer, so a layer outside the
+    // group can only be dropped on one of them; it lands beside the group.
+    test('a drop on a row of another group lands beside that group', async () => {
+        const { writes } = withGroups(['g1', 'g2', 'x'])
+
+        await dropLayer('x', 'g2', 'before')
+
+        expect(writes).toEqual([['x', 'g1', 'g2']])
+    })
+
+    test('a layer outside any group moves between two groups and back to the top', async () => {
+        const tree = [
+            { kind: 'layer', id: 'egis' },
+            { kind: 'group', id: 'aqs', children: [{ kind: 'layer', id: 'pm' }, { kind: 'layer', id: 'o3' }] },
+            { kind: 'group', id: 'naqfc', children: [{ kind: 'layer', id: 'fc' }] },
+        ]
+        const down = withGroups(['egis', 'pm', 'o3', 'fc'], tree)
+        // Dragged down onto the last row of AQS.
+        await dropLayer('egis', 'o3', 'after')
+        expect(down.writes).toEqual([['pm', 'o3', 'egis', 'fc']])
+
+        const up = withGroups(['pm', 'o3', 'fc', 'egis'], tree)
+        // Dragged up onto the first row of NAQFC, then onto the top row.
+        await dropLayer('egis', 'fc', 'before')
+        await dropLayer('egis', 'pm', 'before')
+        expect(up.writes).toEqual([
+            ['pm', 'o3', 'egis', 'fc'],
+            ['egis', 'pm', 'o3', 'fc'],
+        ])
+    })
+
+    test('a drop beside a sibling in its group writes the placed order', async () => {
+        const { writes } = withGroups(['g1', 'g2', 'x'])
+
+        await dropLayer('g2', 'g1', 'before')
+
+        expect(writes).toEqual([['g2', 'g1', 'x']])
+    })
+
+    test('a drop between two layers outside any group writes the placed order', async () => {
+        const { writes } = withGroups(['x', 'g1', 'g2', 'y'], [
+            { kind: 'layer', id: 'x' },
+            GROUPED[0],
+            { kind: 'layer', id: 'y' },
+        ])
+
+        await dropLayer('y', 'x', 'before')
+
+        expect(writes).toEqual([['y', 'x', 'g1', 'g2']])
+    })
+
+    // A core that answers no grouping leaves every row a sibling.
+    test('with a null grouping, drops anywhere in the flat list', async () => {
+        const { writes } = withGroups(['g1', 'g2', 'x'], null)
+
+        await dropLayer('g1', 'x', 'after')
+
+        expect(writes).toEqual([['g2', 'x', 'g1']])
+    })
+
     test('drops a second drop that arrives before the first has been written', async () => {
         const { writes } = withOrder(['a', 'b', 'c'])
 

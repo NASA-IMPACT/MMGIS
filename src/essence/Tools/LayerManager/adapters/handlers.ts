@@ -10,6 +10,7 @@ import {
     mmgisGetVisibleLayers,
     mmgisGetListedLayers,
     mmgisGetLayerConfigs,
+    mmgisGetLayerTree,
 } from '../../_shared/adapters/mmgisAPI'
 import {
     ZOOM_TO_LAYER_PADDING,
@@ -136,14 +137,27 @@ const writeOrder = async (
  * Drops a dragged layer just before or after `overId` in the flat list, so it
  * lands right beside that row and layers the list does not show keep their
  * place.
+ *
+ * Core draws each layer group as one block, and would turn an order that
+ * splits a group into a different move from the one made. So the grouping is
+ * read from core at the moment of the drop. A layer dropped on a row inside
+ * a group it does not belong to lands beside that group, and a layer inside
+ * a group dropped on a row outside it writes nothing. A core without a
+ * grouping answers null, which leaves every row a sibling of every other.
  */
-export const dropLayer = (
+export const dropLayer = async (
     layerId: string,
     overId: string,
     placement: Placement,
     refresh?: Refresh,
-): Promise<void> =>
-    writeOrder(layerId, (order) => placeInTree(order, null, layerId, overId, placement), refresh)
+): Promise<void> => {
+    const tree = await mmgisGetLayerTree()
+    await writeOrder(
+        layerId,
+        (order) => placeInTree(order, tree, layerId, overId, placement),
+        refresh,
+    )
+}
 
 /**
  * Hands a layer to the Comparison plugin as the first of the two sides it

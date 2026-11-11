@@ -105,8 +105,14 @@ describe('placeInTree', () => {
         expect(placeInTree(ORDER, STRUCTURE, 'pm', 'base', 'after')).toBeNull()
     })
 
+    // Dropped on a layer inside a group, it lands beside the group, never in it.
     test('an ungrouped layer cannot join a group', () => {
-        expect(placeInTree(ORDER, STRUCTURE, 'base', 'fc', 'before')).toBeNull()
+        expect(placeInTree(ORDER, STRUCTURE, 'base', 'fc', 'before')).toEqual([
+            'base', 'pm', 'o3', 'fc',
+        ])
+        expect(placeInTree(ORDER, STRUCTURE, 'base', 'o3', 'before')).toEqual([
+            'base', 'pm', 'o3', 'fc',
+        ])
     })
 
     test('an ungrouped layer moves among the top-level items', () => {

@@ -223,7 +223,9 @@ export const mmgisGetLayerTree = (): Promise<LayerTreeNode[] | null> => {
  *  mmgisGetLayerOrder, in any order; core refuses anything else with false.
  *  Core keeps each layer group in one block, so an order that splits a group
  *  is applied with that group gathered where its top-most layer was asked to
- *  go. Core broadcasts 'layers:orderChanged' with the order applied. */
+ *  go. When gathering the groups leaves the order as it already stands, core
+ *  changes nothing and answers false. Core broadcasts 'layers:orderChanged'
+ *  with the order applied. */
 export const mmgisSetLayerOrder = (order: string[]): Promise<boolean | null> => {
     return mmgisRequestIfProvided<boolean>('layers:setOrder', { order })
 }
