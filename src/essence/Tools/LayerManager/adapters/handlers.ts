@@ -16,7 +16,6 @@ import {
     ZOOM_TO_LAYER_PADDING,
     ZOOM_TO_LAYER_POINT_MAX_ZOOM,
 } from '../lib/utils/constants'
-import { placeInOrder } from '../lib/utils/layerOrder'
 import { placeInTree, type Placement } from '../lib/utils/layerTree'
 import { filteredOutLayers } from '../lib/utils/filteredOut'
 
@@ -134,28 +133,31 @@ const writeOrder = async (
     }
 }
 
-/** Drops a dragged layer at `toIndex` of the list the user dragged it through. */
-export const dropLayer = (
-    layerId: string,
-    toIndex: number,
-    shownIds: string[],
-    refresh?: Refresh,
-): Promise<void> =>
-    writeOrder(layerId, (order) => placeInOrder(order, shownIds, layerId, toIndex), refresh)
-
 /**
- * Moves a layer or group just before or after `overId`, its sibling in the
- * grouped list. The grouping is read from core at the moment of the move, so
- * the order written is placed against core's current picture.
+ * Drops a dragged layer or group just before or after `overId`, another row
+ * of the list it was dragged through, so it lands right beside that row and
+ * layers the list does not show keep their place.
+ *
+ * Core draws each layer group as one block, and would turn an order that
+ * splits a group into a different move from the one made. So the grouping is
+ * read from core at the moment of the drop. A layer dropped on a row inside
+ * a group it does not belong to lands beside that group, a group moves as one
+ * block, and anything dropped on a row outside its own group writes nothing.
+ * A core without a grouping answers null, which leaves every row a sibling of
+ * every other.
  */
-export const moveNode = async (
+export const dropLayer = async (
     id: string,
     overId: string,
     placement: Placement,
     refresh?: Refresh,
 ): Promise<void> => {
     const tree = await mmgisGetLayerTree()
-    await writeOrder(id, (order) => placeInTree(order, tree, id, overId, placement), refresh)
+    await writeOrder(
+        id,
+        (order) => placeInTree(order, tree, id, overId, placement),
+        refresh,
+    )
 }
 
 /**

@@ -2,7 +2,7 @@ import React from 'react'
 import { describe, test, expect, afterEach } from 'vitest'
 import { LayerManagerPanel } from '../lib/geo/LayerManagerPanel/LayerManagerPanel'
 import { buildLayerList } from '../lib/utils/layerTree'
-import type { Layer, LayerStructureNode } from '../lib/types'
+import type { GroupInfo, Layer, LayerStructureNode } from '../lib/types'
 import { mount, click, type Mounted } from '../../_shared/__tests__/reactHarness'
 
 /**
@@ -21,19 +21,23 @@ const layer = (id: string): Layer => ({
     cog: null,
 })
 
+const GROUPS: Record<string, GroupInfo> = {
+    aq: {
+        title: 'Air Quality',
+        description: 'Surface monitors and the forecast.',
+        expanded: true,
+    },
+    aqs: { title: 'AQS', expanded: true },
+}
+
 const STRUCTURE: LayerStructureNode[] = [
     {
         kind: 'group',
         id: 'aq',
-        title: 'Air Quality',
-        description: 'Surface monitors and the forecast.',
-        expanded: true,
         children: [
             {
                 kind: 'group',
                 id: 'aqs',
-                title: 'AQS',
-                expanded: true,
                 children: [
                     { kind: 'layer', id: 'pm' },
                     { kind: 'layer', id: 'o3' },
@@ -57,7 +61,7 @@ const render = async (ids: string[], onMove?: () => void) => {
     mounted = await mount(
         <LayerManagerPanel
             layers={rows}
-            nodes={buildLayerList(rows, STRUCTURE)}
+            nodes={buildLayerList(rows, STRUCTURE, GROUPS)}
             onMove={onMove}
         />,
     )
@@ -107,7 +111,7 @@ describe('LayerTreeList', () => {
         await click(chevron(root, 'aqs'))
         const rows = ['pm', 'o3', 'fc', 'base'].map(layer)
         await mounted!.rerender(
-            <LayerManagerPanel layers={rows} nodes={buildLayerList(rows, STRUCTURE)} />,
+            <LayerManagerPanel layers={rows} nodes={buildLayerList(rows, STRUCTURE, GROUPS)} />,
         )
         expect(rowIds(root)).toEqual(['fc', 'base'])
     })
@@ -148,14 +152,12 @@ describe('LayerTreeList', () => {
 
     test('a group starts collapsed unless its header is configured expanded', async () => {
         const rows = ['pm', 'o3', 'fc', 'base'].map(layer)
-        const unset = (nodes: LayerStructureNode[]): LayerStructureNode[] =>
-            nodes.map((n) =>
-                n.kind === 'group'
-                    ? { ...n, expanded: n.id === 'aqs' ? true : undefined, children: unset(n.children) }
-                    : n,
-            )
+        const unset: Record<string, GroupInfo> = {
+            aq: { ...GROUPS.aq, expanded: undefined },
+            aqs: { ...GROUPS.aqs, expanded: true },
+        }
         mounted = await mount(
-            <LayerManagerPanel layers={rows} nodes={buildLayerList(rows, unset(STRUCTURE))} />,
+            <LayerManagerPanel layers={rows} nodes={buildLayerList(rows, STRUCTURE, unset)} />,
         )
         const root = mounted.container
         expect(chevron(root, 'aq').getAttribute('aria-expanded')).toBe('false')
@@ -169,11 +171,11 @@ describe('LayerTreeList', () => {
 
     test('a group opened by hand stays open when the rows refresh', async () => {
         const rows = ['pm', 'o3', 'fc', 'base'].map(layer)
-        const closed: LayerStructureNode[] = [{ ...STRUCTURE[0], expanded: false } as LayerStructureNode, STRUCTURE[1]]
-        mounted = await mount(<LayerManagerPanel layers={rows} nodes={buildLayerList(rows, closed)} />)
+        const closed = { ...GROUPS, aq: { ...GROUPS.aq, expanded: false } }
+        mounted = await mount(<LayerManagerPanel layers={rows} nodes={buildLayerList(rows, STRUCTURE, closed)} />)
         const root = mounted.container
         await click(chevron(root, 'aq'))
-        await mounted.rerender(<LayerManagerPanel layers={rows} nodes={buildLayerList(rows, closed)} />)
+        await mounted.rerender(<LayerManagerPanel layers={rows} nodes={buildLayerList(rows, STRUCTURE, closed)} />)
         expect(chevron(root, 'aq').getAttribute('aria-expanded')).toBe('true')
     })
 

@@ -35,6 +35,8 @@ export type LayerConfig = {
     description?: string
     /** The layer's kind: 'tile', 'vector', 'header', and so on. */
     type?: string
+    /** A header's group starts open when true. */
+    expanded?: boolean
     time?: {
         enabled?: boolean
         /**
@@ -206,18 +208,10 @@ export const mmgisGetLayerOrder = (): Promise<string[] | null> => {
     return mmgisRequestIfProvided<string[]>('layers:getOrder')
 }
 
-/** One node of the configured layer grouping; ids are layer UUIDs. */
+/** One node of the configured layer grouping; ids are layer UUIDs. A group
+ *  is a header layer, so its title and description are in its config. */
 export type LayerTreeNode =
-    | {
-          kind: 'group'
-          id: string
-          title: string
-          /** The header's configured description; null when it has none. */
-          description: string | null
-          /** Whether the header is configured to start open. */
-          expanded: boolean
-          children: LayerTreeNode[]
-      }
+    | { kind: 'group'; id: string; children: LayerTreeNode[] }
     | { kind: 'layer'; id: string }
 
 /** The configured grouping, in config order. Null from a core that has none. */
@@ -227,7 +221,11 @@ export const mmgisGetLayerTree = (): Promise<LayerTreeNode[] | null> => {
 
 /** Replaces the draw order. Must hold the same layers as
  *  mmgisGetLayerOrder, in any order; core refuses anything else with false.
- *  Core broadcasts 'layers:orderChanged' once applied. */
+ *  Core keeps each layer group in one block, so an order that splits a group
+ *  is applied with that group gathered where its top-most layer was asked to
+ *  go. When gathering the groups leaves the order as it already stands, core
+ *  changes nothing and answers false. Core broadcasts 'layers:orderChanged'
+ *  with the order applied. */
 export const mmgisSetLayerOrder = (order: string[]): Promise<boolean | null> => {
     return mmgisRequestIfProvided<boolean>('layers:setOrder', { order })
 }

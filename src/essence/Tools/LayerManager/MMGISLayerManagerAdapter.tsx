@@ -1,7 +1,7 @@
 import React from 'react'
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { LayerManagerPanel } from './lib'
-import type { Layer, LayerListNode } from './lib/types'
+import type { GroupInfo, Layer, LayerListNode } from './lib/types'
 import { buildLayerList, type Placement } from './lib/utils/layerTree'
 import { useMMGISEvent } from '../_shared/adapters/useMMGISEvent'
 import { useMMGISToolVars } from '../_shared/adapters/useMMGISToolVars'
@@ -17,7 +17,6 @@ import {
     compareLayer,
     showAddLayer,
     dropLayer,
-    moveNode,
     getFilteredOutLayers,
     hideFilteredOutLayers,
     selectRun,
@@ -28,9 +27,11 @@ import {
     mmgisRequestIfProvided,
     mmgisOnDataCoverageChanged,
     mmgisGetLayerTree,
+    mmgisGetLayerConfigs,
     type LayerDataCoverageChange,
     type LayerTreeNode,
 } from '../_shared/adapters/mmgisAPI'
+import { getGroupInfo } from '../_shared/adapters/groupInfo'
 
 type ToolVars = { showOnlyVisible?: boolean; width?: number }
 
@@ -81,14 +82,20 @@ const withOutOfRange = (rows: Layer[], flags: Map<string, boolean>): Layer[] => 
 const hasGroups = (tree: LayerTreeNode[] | null): tree is LayerTreeNode[] =>
     tree?.some((node) => node.kind === 'group') === true
 
+type Grouping = { tree: LayerTreeNode[]; groups: Record<string, GroupInfo> }
+
 /**
- * The grouping core reports, or null when there is none to show: an empty
- * tree, a core too old to answer, or a failed read all leave the list flat.
+ * The grouping core reports, with each group's header details read from its
+ * header layer's config, or null when there is none to show: an empty tree,
+ * a core too old to answer, or a failed read all leave the list flat.
  */
-const readTree = async (): Promise<LayerTreeNode[] | null> => {
+const readGrouping = async (): Promise<Grouping | null> => {
     try {
-        const tree = await mmgisGetLayerTree()
-        return hasGroups(tree) ? tree : null
+        const [tree, configs] = await Promise.all([
+            mmgisGetLayerTree(),
+            mmgisGetLayerConfigs(),
+        ])
+        return hasGroups(tree) ? { tree, groups: getGroupInfo(configs) } : null
     } catch (err) {
         console.warn('LayerManager: layer groups unavailable', err)
         return null
@@ -97,7 +104,7 @@ const readTree = async (): Promise<LayerTreeNode[] | null> => {
 
 export function MMGISLayerManagerAdapter() {
     const [layers, setLayers] = useState<Layer[]>([])
-    const [tree, setTree] = useState<LayerTreeNode[] | null>(null)
+    const [grouping, setGrouping] = useState<Grouping | null>(null)
     const [filteredOut, setFilteredOut] = useState<string[]>([])
     const [loading, setLoading] = useState(true)
     const toolVars = useMMGISToolVars<ToolVars>('layermanager')
@@ -146,7 +153,7 @@ export function MMGISLayerManagerAdapter() {
                 }),
                 getFilteredOutLayers(),
                 readRuns(),
-                readTree(),
+                readGrouping(),
             ])
             // A newer refresh already landed while this one was reading —
             // its answer is stale, so drop it.
@@ -157,7 +164,7 @@ export function MMGISLayerManagerAdapter() {
                 withOutOfRange(withRuns(data, latestRuns.current), announced),
             )
             setFilteredOut(leftOut.map((layer) => layer.title))
-            setTree(structure)
+            setGrouping(structure)
         } catch (err) {
             console.error('LayerManager: refresh failed', err)
             if (seq === refreshSeq.current) {
@@ -236,24 +243,19 @@ export function MMGISLayerManagerAdapter() {
     useMMGISEvent('layers:listChanged', refresh)
     useMMGISEvent('layers:orderChanged', refresh)
 
-    // A drop lands relative to this list, not to the full order.
     const onReorder = useCallback(
-        (id: string, toIndex: number) => {
-            report('dropLayer', dropLayer(id, toIndex, layers.map((l) => l.id), refresh))
+        (id: string, overId: string, placement: Placement) => {
+            report('dropLayer', dropLayer(id, overId, placement, refresh))
         },
-        [layers, refresh],
+        [refresh],
     )
 
     const nodes = useMemo<LayerListNode[] | undefined>(
-        () => (tree ? buildLayerList(layers, tree) : undefined),
-        [layers, tree],
-    )
-
-    const onMove = useCallback(
-        (id: string, overId: string, placement: Placement) => {
-            report('moveNode', moveNode(id, overId, placement, refresh))
-        },
-        [refresh],
+        () =>
+            grouping
+                ? buildLayerList(layers, grouping.tree, grouping.groups)
+                : undefined,
+        [layers, grouping],
     )
 
     // 'layers:getAll' is registered by Layers_.fina() during mission load.
@@ -278,7 +280,7 @@ export function MMGISLayerManagerAdapter() {
         <LayerManagerPanel
             layers={layers}
             nodes={nodes}
-            onMove={onMove}
+            onMove={onReorder}
             loading={loading}
             renderDescription={renderDescription}
             onVisibilityChange={(id) => { report('toggleVisibility', toggleVisibility(id)) }}
