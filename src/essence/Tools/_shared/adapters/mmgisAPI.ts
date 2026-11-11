@@ -221,7 +221,9 @@ export const mmgisGetLayerTree = (): Promise<LayerTreeNode[] | null> => {
 
 /** Replaces the draw order. Must hold the same layers as
  *  mmgisGetLayerOrder, in any order; core refuses anything else with false.
- *  Core broadcasts 'layers:orderChanged' once applied. */
+ *  Core keeps each layer group in one block, so an order that splits a group
+ *  is applied with that group gathered where its top-most layer was asked to
+ *  go. Core broadcasts 'layers:orderChanged' with the order applied. */
 export const mmgisSetLayerOrder = (order: string[]): Promise<boolean | null> => {
     return mmgisRequestIfProvided<boolean>('layers:setOrder', { order })
 }

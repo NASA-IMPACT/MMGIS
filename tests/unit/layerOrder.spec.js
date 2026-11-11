@@ -127,6 +127,85 @@ describe('layers:setOrder', () => {
     })
 })
 
+describe('layers:setOrder with configured groups', () => {
+    // g{ h, s{ p, q } }, x, y: a header nests layers and another header.
+    beforeEach(() => {
+        seed(['h', 'p', 'q', 'x', 'y'], [true, true, true, true, true])
+        L_.layers.data.g = { name: 'g', type: 'header' }
+        L_.layers.data.s = { name: 's', type: 'header' }
+        L_.configData = {
+            layers: [
+                {
+                    name: 'g',
+                    type: 'header',
+                    sublayers: [
+                        { name: 'h', type: 'vector' },
+                        {
+                            name: 's',
+                            type: 'header',
+                            sublayers: [
+                                { name: 'p', type: 'vector' },
+                                { name: 'q', type: 'vector' },
+                            ],
+                        },
+                    ],
+                },
+                { name: 'x', type: 'vector' },
+                { name: 'y', type: 'vector' },
+            ],
+        }
+    })
+
+    afterEach(() => {
+        delete L_.configData
+    })
+
+    test('applies an order that keeps every group together as asked', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+        expect(
+            providers['layers:setOrder']({ order: ['y', 'q', 'p', 'h', 'x'] })
+        ).toBe(true)
+
+        expect(L_._layersOrdered).toEqual(['y', 'q', 'p', 'h', 'x'])
+        expect(warn).not.toHaveBeenCalled()
+    })
+
+    test('draws a split group as one block where its top-most layer was asked to go', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+        // x on top, y inside g, and q split from p by y.
+        expect(
+            providers['layers:setOrder']({ order: ['x', 'h', 'p', 'y', 'q'] })
+        ).toBe(true)
+
+        expect(L_._layersOrdered).toEqual(['x', 'h', 'p', 'q', 'y'])
+        expect(warn).toHaveBeenCalledTimes(1)
+        expect(emitted).toEqual([
+            ['layers:orderChanged', { order: ['x', 'h', 'p', 'q', 'y'] }],
+        ])
+    })
+
+    test('a layer moved to the top takes its groups to the top with it', () => {
+        vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+        providers['layers:setOrder']({ order: ['q', 'h', 'p', 'x', 'y'] })
+
+        expect(L_._layersOrdered).toEqual(['q', 'p', 'h', 'x', 'y'])
+    })
+
+    test('keeps the place of a layer the grouping does not know', () => {
+        vi.spyOn(console, 'warn').mockImplementation(() => {})
+        seed(['h', 'p', 'q', 'x', 'y', 'n'], [true, true, true, true, true, true])
+        L_.layers.data.g = { name: 'g', type: 'header' }
+        L_.layers.data.s = { name: 's', type: 'header' }
+
+        providers['layers:setOrder']({ order: ['n', 'h', 'x', 'p', 'q', 'y'] })
+
+        expect(L_._layersOrdered).toEqual(['n', 'h', 'p', 'q', 'x', 'y'])
+    })
+})
+
 describe('removing a layer', () => {
     test('drops it from the order and the loaded flags, then announces both lists', async () => {
         L_.layers.on = {}

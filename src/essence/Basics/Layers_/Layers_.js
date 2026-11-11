@@ -3255,8 +3255,54 @@ const L_ = {
             return false
         }
 
-        L_.applyLayerOrder(newLayersOrdered)
+        const grouped = L_.groupLayerOrder(newLayersOrdered)
+        if (grouped.some((name, i) => name !== newLayersOrdered[i]))
+            console.warn(
+                'reorderLayers: the order split a layer group, so each group was drawn as one block.'
+            )
+        L_.applyLayerOrder(grouped)
         return true
+    },
+    /**
+     * `order` with each group's layers drawn as one block. A group sits where
+     * its top-most layer was asked to go, and every level keeps the requested
+     * order otherwise, so an order that splits no group comes back unchanged.
+     * Layers outside the grouping keep their requested place among the
+     * top-level entries.
+     * @param {string[]} order - layer UUIDs, top first
+     * @returns {string[]}
+     */
+    groupLayerOrder: function (order) {
+        const rank = new Map(order.map((name, i) => [name, i]))
+        const seen = new Set()
+        const byRank = (a, b) => a.rank - b.rank
+
+        const build = (nodes) =>
+            nodes
+                .flatMap((node) => {
+                    if (node.kind === 'group') {
+                        const children = build(node.children)
+                        return children.length
+                            ? [{ rank: children[0].rank, children }]
+                            : []
+                    }
+                    if (!rank.has(node.id) || seen.has(node.id)) return []
+                    seen.add(node.id)
+                    return [{ rank: rank.get(node.id), id: node.id }]
+                })
+                .sort(byRank)
+
+        const root = build(L_.getLayerTree())
+        order.forEach((name) => {
+            if (!seen.has(name)) root.push({ rank: rank.get(name), id: name })
+        })
+        root.sort(byRank)
+
+        const out = []
+        const flatten = (list) =>
+            list.forEach((n) => (n.children ? flatten(n.children) : out.push(n.id)))
+        flatten(root)
+        return out
     },
     // Trusts `order` to be a permutation of `_layersOrdered`.
     applyLayerOrder: function (order) {
