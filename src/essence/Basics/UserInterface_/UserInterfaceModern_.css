@@ -532,10 +532,18 @@ body.ui-is-dragging .ui-modern-grid .ui-panel {
     --ui-float-outer-gap: var(--theme-spacing-2, 1rem);
 }
 
-/* Invisible wrapper that holds all float zones */
+/* Invisible wrapper that holds all float zones. It sits
+   --ui-float-offset-{top,right,bottom,left} in from the map's edges
+   (panelSettings.floatingOffset), so every zone moves with it and the center
+   zones stay centered between the side offsets. Each side is capped at a
+   quarter of the map's size so large offsets on a small viewport still leave
+   the zones room. */
 .ui-float-regions {
     position: absolute;
-    inset: 0;
+    top: min(var(--ui-float-offset-top, 0px), 25%);
+    right: min(var(--ui-float-offset-right, 0px), 25%);
+    bottom: min(var(--ui-float-offset-bottom, 0px), 25%);
+    left: min(var(--ui-float-offset-left, 0px), 25%);
     pointer-events: none;
     z-index: 5;
 }
