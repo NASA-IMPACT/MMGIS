@@ -1,13 +1,14 @@
 import React from 'react'
-import type { Layer } from '../../types'
-import {
-    LayerLegendList,
-    type LayerLegendListProps,
-} from '../LayerLegendList/LayerLegendList'
+import type { Layer, LayerListNode } from '../../types'
 import type { RenderDescription } from '../LayerLegend/LayerLegend'
+import { LayerTreeList, type LayerTreeListProps } from '../LayerTreeList/LayerTreeList'
 
 export type LayerManagerPanelProps = {
     layers: Layer[]
+    /** The rows arranged under their groups; `layers` as a flat list when absent. */
+    nodes?: LayerListNode[]
+    /** No handler, no drag handles. */
+    onMove?: LayerTreeListProps['onMove']
     loading?: boolean
     emptyMessage?: string
     renderDescription?: RenderDescription
@@ -15,11 +16,10 @@ export type LayerManagerPanelProps = {
     onOpacityChange?: (layerId: string, opacity: number) => void
     onColormapChange?: (layerId: string, colormap: string) => void
     onRescaleChange?: (layerId: string, min: number, max: number) => void
-    onZoomToLayer?: LayerLegendListProps['onZoomToLayer']
-    canZoomToLayer?: LayerLegendListProps['canZoomToLayer']
-    selectedTime?: LayerLegendListProps['selectedTime']
-    onCompareLayer?: LayerLegendListProps['onCompareLayer']
-    onReorder?: LayerLegendListProps['onReorder']
+    onZoomToLayer?: LayerTreeListProps['onZoomToLayer']
+    canZoomToLayer?: LayerTreeListProps['canZoomToLayer']
+    selectedTime?: LayerTreeListProps['selectedTime']
+    onCompareLayer?: LayerTreeListProps['onCompareLayer']
     /** Opens the host's "add layer" surface. No handler, no button. */
     onAddLayer?: () => void
     /**
@@ -29,11 +29,13 @@ export type LayerManagerPanelProps = {
     onHideFilteredLayers?: () => void
     /** Titles of those layers. No handler or none to hide, no button. */
     filteredOutLayers?: string[]
-    onRunChange?: LayerLegendListProps['onRunChange']
+    onRunChange?: LayerTreeListProps['onRunChange']
 }
 
 export function LayerManagerPanel({
     layers,
+    nodes,
+    onMove,
     loading = false,
     emptyMessage = 'No visible layers. Turn on layers in the Layers tool to manage them here.',
     renderDescription,
@@ -45,7 +47,6 @@ export function LayerManagerPanel({
     canZoomToLayer,
     selectedTime,
     onCompareLayer,
-    onReorder,
     onAddLayer,
     onHideFilteredLayers,
     filteredOutLayers = [],
@@ -92,8 +93,8 @@ export function LayerManagerPanel({
                         <div className="mmgisLoading" />
                     </div>
                 ) : (
-                    <LayerLegendList
-                        layers={layers}
+                    <LayerTreeList
+                        nodes={nodes ?? layers.map((layer) => ({ kind: 'layer', layer }))}
                         emptyMessage={emptyMessage}
                         renderDescription={renderDescription}
                         onVisibilityChange={onVisibilityChange}
@@ -104,7 +105,7 @@ export function LayerManagerPanel({
                         canZoomToLayer={canZoomToLayer}
                         selectedTime={selectedTime}
                         onCompareLayer={onCompareLayer}
-                        onReorder={onReorder}
+                        onMove={onMove}
                         onRunChange={onRunChange}
                     />
                 )}

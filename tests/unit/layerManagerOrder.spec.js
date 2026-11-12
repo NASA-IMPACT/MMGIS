@@ -1,82 +1,78 @@
 import { describe, test, expect } from 'vitest'
 import {
-    placeInOrder,
-    dropIndex,
-    orderAnnouncements,
-} from '../../src/essence/Tools/LayerManager/lib/utils/layerOrder.ts'
+    placeInTree,
+    resolveDrop,
+    treeAnnouncements,
+} from '../../src/essence/Tools/LayerManager/lib/utils/layerTree.ts'
 
 /**
- * The LayerManager reads the draw order over the bus, shows its list top
- * first to match, and places a dragged layer relative to that list by
- * handing core a whole new order. The handler that does the reading and
- * writing is covered next to the other handlers in the plugin's own
- * __tests__.
+ * The Layer Manager's flat list: no grouping, so every row is a sibling of
+ * every other. It reads the draw order over the bus, shows its list top first
+ * to match, and places a dragged layer relative to that list by handing core
+ * a whole new order. The handler that does the reading and writing is covered
+ * next to the other handlers in the plugin's own __tests__.
  */
 
-const byId = (ids) => ids.map((id) => ({ id }))
+const nodesOf = (layers) => layers.map((layer) => ({ kind: 'layer', layer }))
 
-describe('placeInOrder', () => {
+describe('placeInTree without a structure', () => {
     // Full order a..e; the user sees only a, c, e (b and d are filtered out).
     const order = ['a', 'b', 'c', 'd', 'e']
-    const shown = ['a', 'c', 'e']
+    const place = (id, overId, placement, from = order) =>
+        placeInTree(from, null, id, overId, placement)
 
-    test('dragged up, it lands just above the shown layer now below it', () => {
-        expect(placeInOrder(order, shown, 'e', 1)).toEqual(['a', 'b', 'e', 'c', 'd'])
-        expect(placeInOrder(order, shown, 'e', 0)).toEqual(['e', 'a', 'b', 'c', 'd'])
+    test('dragged up, it lands just above the row dropped on', () => {
+        expect(place('e', 'c', 'before')).toEqual(['a', 'b', 'e', 'c', 'd'])
+        expect(place('e', 'a', 'before')).toEqual(['e', 'a', 'b', 'c', 'd'])
     })
 
-    test('dragged down, it lands just below the shown layer now above it', () => {
-        expect(placeInOrder(order, shown, 'a', 1)).toEqual(['b', 'c', 'a', 'd', 'e'])
+    test('dragged down, it lands just below the row dropped on', () => {
+        expect(place('a', 'c', 'after')).toEqual(['b', 'c', 'a', 'd', 'e'])
+        expect(place('a', 'e', 'after')).toEqual(['b', 'c', 'd', 'e', 'a'])
     })
 
-    test('an index past the end drops it last', () => {
-        expect(placeInOrder(order, shown, 'a', 99)).toEqual(['b', 'c', 'd', 'e', 'a'])
-    })
-
-    // A drop at the top lands just above the first row shown; hidden layers
-    // above it stay above.
-    test('a drop at the top of a partial list lands above its first row', () => {
-        expect(placeInOrder(order, ['c', 'e'], 'e', 0)).toEqual(['a', 'b', 'e', 'c', 'd'])
+    // Hidden layers above the first row shown stay above it.
+    test('a drop above the first row shown lands just above it', () => {
+        expect(place('e', 'c', 'before')).toEqual(['a', 'b', 'e', 'c', 'd'])
     })
 
     test.each([
-        ['dropped where it already is', 'c', 1],
-        ['a layer the list does not show', 'b', 0],
-        ['a layer the order does not hold', 'zz', 0],
-        ['the only shown layer', 'a', 0, ['a']],
-        // The row it was dropped against has left the order since the list
-        // was drawn. Without the guard it would land on top of the stack.
-        ['a neighbour the order no longer holds', 'b', 4, ['a', 'b', 'c', 'd', 'ghost'], ['a', 'b', 'c', 'd']],
-    ])('returns null for %s', (_label, id, toIndex, shownOverride, orderOverride) => {
-        expect(
-            placeInOrder(orderOverride ?? order, shownOverride ?? shown, id, toIndex),
-        ).toBeNull()
+        ['dropped where it already is', 'c', 'b', 'after'],
+        ['dropped on itself', 'c', 'c', 'before'],
+        ['a layer the order does not hold', 'zz', 'a', 'before'],
+        // The row it was dropped on has left the order since the list was
+        // drawn. Without the guard it would land on top of the stack.
+        ['a row the order no longer holds', 'b', 'ghost', 'after'],
+    ])('returns null for %s', (_label, id, overId, placement) => {
+        expect(place(id, overId, placement)).toBeNull()
     })
 })
 
-describe('dropIndex', () => {
-    const ids = ['a', 'b', 'c']
+describe('resolveDrop on a flat list', () => {
+    const nodes = nodesOf([{ id: 'a' }, { id: 'b' }, { id: 'c' }])
 
-    test('is the index of the row dropped on', () => {
-        expect(dropIndex(ids, 'a', { id: 'c' })).toBe(2)
+    test('dragged up lands before the row, dragged down after it', () => {
+        expect(resolveDrop(nodes, 'c', 'a')).toBe('before')
+        expect(resolveDrop(nodes, 'a', 'c')).toBe('after')
     })
 
     test.each([
         ['nothing under the drop', 'a', null],
-        ['the row dropped on itself', 'b', { id: 'b' }],
-        ['a row no longer listed', 'a', { id: 'gone' }],
+        ['the row dropped on itself', 'b', 'b'],
+        ['a row no longer listed', 'a', 'gone'],
     ])('is null for %s', (_label, active, over) => {
-        expect(dropIndex(ids, active, over)).toBeNull()
+        expect(resolveDrop(nodes, active, over)).toBeNull()
     })
 })
 
-describe('orderAnnouncements', () => {
-    const layers = [
-        { id: 'u1', title: 'Flood Extent' },
-        { id: 'u2', title: 'Rainfall' },
-        { id: 'u3', title: 'Roads' },
-    ]
-    const say = orderAnnouncements(layers)
+describe('treeAnnouncements on a flat list', () => {
+    const say = treeAnnouncements(
+        nodesOf([
+            { id: 'u1', title: 'Flood Extent' },
+            { id: 'u2', title: 'Rainfall' },
+            { id: 'u3', title: 'Roads' },
+        ]),
+    )
 
     test('names the layer and its position from the top, never its id', () => {
         const heard = [
@@ -101,4 +97,3 @@ describe('orderAnnouncements', () => {
         )
     })
 })
-

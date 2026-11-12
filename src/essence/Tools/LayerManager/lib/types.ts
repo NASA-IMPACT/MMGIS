@@ -36,6 +36,34 @@ export type ForecastData = {
   lead: number | null
 }
 
+/**
+ * The host's layer grouping: groups with their children, and layers by id.
+ * Order within a level carries no meaning here; the list orders by draw order.
+ */
+export type LayerStructureNode =
+  | { kind: 'group'; id: string; children: LayerStructureNode[] }
+  | { kind: 'layer'; id: string }
+
+/** What a group's header shows, keyed by group id beside the structure. */
+export type GroupInfo = {
+  title: string
+  /** Shown from the group's info button; null or absent when it has none. */
+  description?: string | null
+  /** Starts open when true; otherwise starts collapsed. */
+  expanded?: boolean
+}
+
+/** A group as the list shows it: only the children left to show. */
+export type LayerGroup = GroupInfo & {
+  id: string
+  children: LayerListNode[]
+}
+
+/** One row of a grouped list: a layer, or a group holding more rows. */
+export type LayerListNode =
+  | { kind: 'layer'; layer: Layer }
+  | { kind: 'group'; group: LayerGroup }
+
 export type Layer = {
   id: string
   title: string

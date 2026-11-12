@@ -1,0 +1,94 @@
+/* Group rows of a grouped layer list. A group's header lines up with the
+   layer rows around it; its children sit under a rule that marks the depth. */
+.blocks-layer-tree {
+    /* Surfaced like a layer row while its header is pointed at or focused,
+       or while one of its popovers is open, so the highlight covers
+       everything the header's controls act on. The border is always present
+       so revealing it shifts nothing. */
+    &__group {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        background: transparent;
+        border: 1px solid transparent;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+        &:has(> .blocks-layer-tree__group-header:hover),
+        &:has(> .blocks-layer-tree__group-header:focus-within),
+        &--open {
+            background: var(--theme-color-base-lightest, #f1f3f6);
+            border-color: var(--theme-color-base-lighter, #dfe1e2);
+        }
+    }
+
+    /* Same padding and gap as a layer row's header, so handles and titles
+       line up down the list whatever the row kind. */
+    &__group-header {
+        display: flex;
+        align-items: center;
+        gap: var(--theme-spacing-105, 0.75rem);
+        min-height: 22px;
+        padding: var(--theme-spacing-1, 1rem);
+        padding-bottom: var(--theme-spacing-05, 0.25rem);
+        font-family: var(--theme-font-body, 'Public Sans Web', sans-serif);
+    }
+
+    &__chevron {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        width: 22px;
+        height: 22px;
+        padding: 0;
+        border: none;
+        background: transparent;
+        color: var(--theme-color-base-dark, #565c65);
+        font-size: 18px;
+        cursor: pointer;
+
+        &:hover {
+            color: var(--theme-color-primary, #0e7482);
+        }
+
+        &:focus-visible {
+            outline: 2px solid var(--theme-color-primary, #0e7482);
+            outline-offset: 1px;
+        }
+    }
+
+    &__group-title {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        /* Set like a layer title. */
+        font-size: var(--theme-font-size-2xs, 0.88rem);
+        font-weight: calc(var(--theme-font-weight-normal, 400) + 100);
+        line-height: 1.6;
+        color: var(--theme-color-ink, #1c1d1f);
+    }
+
+    /* A group's controls: the layer rows' own buttons, so icons line up. */
+    &__actions {
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
+    }
+
+    &__children {
+        display: flex;
+        flex-direction: column;
+        margin-left: var(--theme-spacing-205, 1.25rem);
+        border-left: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    }
+
+    /* In a reorderable list, children's drag handles line up under the
+       group's chevron: the handle (22px) and its gap (8px), less the rule
+       here and the child's own border (1px each). */
+    &__group:has(> .blocks-layer-tree__group-header > .blocks-layer-legend__drag-handle)
+        > &__children {
+        margin-left: calc(22px + 8px - 2px);
+    }
+}
