@@ -14,7 +14,7 @@ import {
 
 const row = (id) => ({ id, title: id.toUpperCase() })
 const layer = (id) => ({ kind: 'layer', id })
-const group = (id, children) => ({ kind: 'group', id, title: `G-${id}`, children })
+const group = (id, children) => ({ kind: 'group', id, children })
 
 /** A shown list as nested ids, for readable expectations. */
 const shape = (nodes) =>
@@ -27,6 +27,7 @@ const STRUCTURE = [
     group('aq', [group('aqs', [layer('pm'), layer('o3')]), layer('fc')]),
     layer('base'),
 ]
+const GROUPS = { aq: { title: 'Air Quality' }, aqs: { title: 'AQS' } }
 
 describe('buildLayerList', () => {
     test('rows sit under their groups, each level in draw order', () => {
@@ -73,9 +74,20 @@ describe('buildLayerList', () => {
         expect(shape(buildLayerList([row('a')], structure))).toEqual([{ g: ['a'] }])
     })
 
-    test('a group carries its title', () => {
-        const [node] = buildLayerList([row('pm')], STRUCTURE)
-        expect(node.group.title).toBe('G-aq')
+    test("a group carries its info: title, description, expanded", () => {
+        const groups = { aq: { title: 'Air Quality', description: 'All AQ', expanded: true } }
+        const [node] = buildLayerList([row('fc')], STRUCTURE, groups)
+        expect(node.group).toMatchObject({
+            id: 'aq',
+            title: 'Air Quality',
+            description: 'All AQ',
+            expanded: true,
+        })
+    })
+
+    test('a group without info is titled by its id, with no description, collapsed', () => {
+        const [node] = buildLayerList([row('fc')], STRUCTURE)
+        expect(node.group).toMatchObject({ title: 'aq', description: null, expanded: false })
     })
 })
 
@@ -93,40 +105,40 @@ describe('buildLayerList group state', () => {
 
     test('a group is on while any of its layers is, nested ones included', () => {
         const state = groups(
-            buildLayerList(rows, STRUCTURE, { visible: { pm: true } }),
+            buildLayerList(rows, STRUCTURE, GROUPS, { visible: { pm: true } }),
         )
         expect(state.aq.visible).toBe(true)
         expect(state.aqs.visible).toBe(true)
         expect(
-            groups(buildLayerList(rows, STRUCTURE, { visible: { base: true } })).aq.visible,
+            groups(buildLayerList(rows, STRUCTURE, GROUPS, { visible: { base: true } })).aq.visible,
         ).toBe(false)
     })
 
     test('a group is partly on while some, but not all, of its layers are', () => {
-        const some = groups(buildLayerList(rows, STRUCTURE, { visible: { pm: true } }))
+        const some = groups(buildLayerList(rows, STRUCTURE, GROUPS, { visible: { pm: true } }))
         expect(some.aq.partial).toBe(true)
         expect(some.aqs.partial).toBe(true)
 
         const all = groups(
-            buildLayerList(rows, STRUCTURE, { visible: { pm: true, o3: true, fc: true } }),
+            buildLayerList(rows, STRUCTURE, GROUPS, { visible: { pm: true, o3: true, fc: true } }),
         )
         expect(all.aq.partial).toBe(false)
         expect(all.aqs.partial).toBe(false)
 
-        expect(groups(buildLayerList(rows, STRUCTURE, { visible: {} })).aq.partial).toBe(false)
+        expect(groups(buildLayerList(rows, STRUCTURE, GROUPS, { visible: {} })).aq.partial).toBe(false)
     })
 
     test('a layer the list does not show keeps its group partly on', () => {
         // o3 is filtered out of the rows and off; the group is not all on.
         const shown = ['pm', 'fc', 'base'].map(row)
-        const state = groups(buildLayerList(shown, STRUCTURE, { visible: { pm: true, fc: true } }))
+        const state = groups(buildLayerList(shown, STRUCTURE, GROUPS, { visible: { pm: true, fc: true } }))
         expect(state.aq.partial).toBe(true)
     })
 
     test('layers the list does not show still count', () => {
         // fc is filtered out of the rows but on.
         const shown = ['pm', 'base'].map(row)
-        const state = groups(buildLayerList(shown, STRUCTURE, { visible: { fc: true } }))
+        const state = groups(buildLayerList(shown, STRUCTURE, GROUPS, { visible: { fc: true } }))
         expect(state.aq.visible).toBe(true)
         expect(state.aqs.visible).toBe(false)
     })
@@ -153,8 +165,14 @@ describe('placeInTree', () => {
         expect(placeInTree(ORDER, STRUCTURE, 'pm', 'base', 'after')).toBeNull()
     })
 
+    // Dropped on a layer inside a group, it lands beside the group, never in it.
     test('an ungrouped layer cannot join a group', () => {
-        expect(placeInTree(ORDER, STRUCTURE, 'base', 'fc', 'before')).toBeNull()
+        expect(placeInTree(ORDER, STRUCTURE, 'base', 'fc', 'before')).toEqual([
+            'base', 'pm', 'o3', 'fc',
+        ])
+        expect(placeInTree(ORDER, STRUCTURE, 'base', 'o3', 'before')).toEqual([
+            'base', 'pm', 'o3', 'fc',
+        ])
     })
 
     test('an ungrouped layer moves among the top-level items', () => {
@@ -235,12 +253,12 @@ describe('resolveDrop', () => {
 })
 
 describe('treeAnnouncements', () => {
-    const nodes = buildLayerList(['pm', 'o3', 'fc', 'base'].map(row), STRUCTURE)
+    const nodes = buildLayerList(['pm', 'o3', 'fc', 'base'].map(row), STRUCTURE, GROUPS)
     const say = treeAnnouncements(nodes)
 
     test('names the position among siblings and the group', () => {
         expect(say.onDragStart({ active: { id: 'o3' } })).toBe(
-            'Picked up O3, position 2 of 2 in G-aqs.',
+            'Picked up O3, position 2 of 2 in AQS.',
         )
         expect(say.onDragOver({ active: { id: 'base' }, over: { id: 'aq' } })).toBe(
             'BASE is at position 1 of 2.',
@@ -249,7 +267,20 @@ describe('treeAnnouncements', () => {
 
     test('a drop on nothing says where the item stays', () => {
         expect(say.onDragEnd({ active: { id: 'pm' }, over: null })).toBe(
-            'Dropped PM back at position 1 of 2 in G-aqs.',
+            'Dropped PM back at position 1 of 2 in AQS.',
+        )
+    })
+
+    // resolveDrop refuses these, so nothing would move.
+    test('over an item outside its own group, it says the item stays in its group', () => {
+        expect(say.onDragOver({ active: { id: 'pm' }, over: { id: 'fc' } })).toBe(
+            'PM can only move in AQS.',
+        )
+        expect(say.onDragOver({ active: { id: 'base' }, over: { id: 'pm' } })).toBe(
+            'BASE can only move outside any group.',
+        )
+        expect(say.onDragEnd({ active: { id: 'pm' }, over: { id: 'fc' } })).toBe(
+            'Dropped PM back at position 1 of 2 in AQS.',
         )
     })
 })
