@@ -3,7 +3,7 @@ import { act } from 'react'
 import { describe, test, expect, afterEach, vi } from 'vitest'
 import { LayerManagerPanel } from '../lib/geo/LayerManagerPanel/LayerManagerPanel'
 import { buildLayerList } from '../lib/utils/layerTree'
-import type { Layer, LayerStructureNode } from '../lib/types'
+import type { GroupInfo, Layer, LayerStructureNode } from '../lib/types'
 import { mount, click, type Mounted } from '../../_shared/__tests__/reactHarness'
 
 /**
@@ -22,19 +22,23 @@ const layer = (id: string): Layer => ({
     cog: null,
 })
 
+const GROUPS: Record<string, GroupInfo> = {
+    aq: {
+        title: 'Air Quality',
+        description: 'Surface monitors and the forecast.',
+        expanded: true,
+    },
+    aqs: { title: 'AQS', expanded: true },
+}
+
 const STRUCTURE: LayerStructureNode[] = [
     {
         kind: 'group',
         id: 'aq',
-        title: 'Air Quality',
-        description: 'Surface monitors and the forecast.',
-        expanded: true,
         children: [
             {
                 kind: 'group',
                 id: 'aqs',
-                title: 'AQS',
-                expanded: true,
                 children: [
                     { kind: 'layer', id: 'pm' },
                     { kind: 'layer', id: 'o3' },
@@ -58,7 +62,7 @@ const render = async (ids: string[], onMove?: () => void) => {
     mounted = await mount(
         <LayerManagerPanel
             layers={rows}
-            nodes={buildLayerList(rows, STRUCTURE)}
+            nodes={buildLayerList(rows, STRUCTURE, GROUPS)}
             onMove={onMove}
         />,
     )
@@ -108,7 +112,7 @@ describe('LayerTreeList', () => {
         await click(chevron(root, 'aqs'))
         const rows = ['pm', 'o3', 'fc', 'base'].map(layer)
         await mounted!.rerender(
-            <LayerManagerPanel layers={rows} nodes={buildLayerList(rows, STRUCTURE)} />,
+            <LayerManagerPanel layers={rows} nodes={buildLayerList(rows, STRUCTURE, GROUPS)} />,
         )
         expect(rowIds(root)).toEqual(['fc', 'base'])
     })
@@ -116,6 +120,17 @@ describe('LayerTreeList', () => {
     test('a group with no rows to show is not rendered', async () => {
         const root = await render(['fc', 'base'])
         expect(groupTitles(root)).toEqual(['Air Quality'])
+    })
+
+    test("only a list holding a group takes the tree's column layout", async () => {
+        const grouped = await render(['pm', 'base'])
+        expect(grouped.querySelector('.blocks-layer-tree')).not.toBeNull()
+        await mounted!.unmount()
+        mounted = null
+
+        const flat = await render(['base'])
+        expect(flat.querySelector('.blocks-layer-legend-list')).not.toBeNull()
+        expect(flat.querySelector('.blocks-layer-tree')).toBeNull()
     })
 
     test('group headers carry a drag handle only when moves are handled', async () => {
@@ -149,14 +164,12 @@ describe('LayerTreeList', () => {
 
     test('a group starts collapsed unless its header is configured expanded', async () => {
         const rows = ['pm', 'o3', 'fc', 'base'].map(layer)
-        const unset = (nodes: LayerStructureNode[]): LayerStructureNode[] =>
-            nodes.map((n) =>
-                n.kind === 'group'
-                    ? { ...n, expanded: n.id === 'aqs' ? true : undefined, children: unset(n.children) }
-                    : n,
-            )
+        const unset: Record<string, GroupInfo> = {
+            aq: { ...GROUPS.aq, expanded: undefined },
+            aqs: { ...GROUPS.aqs, expanded: true },
+        }
         mounted = await mount(
-            <LayerManagerPanel layers={rows} nodes={buildLayerList(rows, unset(STRUCTURE))} />,
+            <LayerManagerPanel layers={rows} nodes={buildLayerList(rows, STRUCTURE, unset)} />,
         )
         const root = mounted.container
         expect(chevron(root, 'aq').getAttribute('aria-expanded')).toBe('false')
@@ -170,11 +183,11 @@ describe('LayerTreeList', () => {
 
     test('a group opened by hand stays open when the rows refresh', async () => {
         const rows = ['pm', 'o3', 'fc', 'base'].map(layer)
-        const closed: LayerStructureNode[] = [{ ...STRUCTURE[0], expanded: false } as LayerStructureNode, STRUCTURE[1]]
-        mounted = await mount(<LayerManagerPanel layers={rows} nodes={buildLayerList(rows, closed)} />)
+        const closed = { ...GROUPS, aq: { ...GROUPS.aq, expanded: false } }
+        mounted = await mount(<LayerManagerPanel layers={rows} nodes={buildLayerList(rows, STRUCTURE, closed)} />)
         const root = mounted.container
         await click(chevron(root, 'aq'))
-        await mounted.rerender(<LayerManagerPanel layers={rows} nodes={buildLayerList(rows, closed)} />)
+        await mounted.rerender(<LayerManagerPanel layers={rows} nodes={buildLayerList(rows, STRUCTURE, closed)} />)
         expect(chevron(root, 'aq').getAttribute('aria-expanded')).toBe('true')
     })
 
@@ -188,7 +201,7 @@ describe('LayerTreeList group controls', () => {
     const rows = ['pm', 'o3', 'fc', 'base'].map(layer)
 
     const renderWith = async (
-        states: Parameters<typeof buildLayerList>[2],
+        states: Parameters<typeof buildLayerList>[3],
         handlers: {
             onGroupVisibilityChange?: (id: string, visible: boolean) => void
             onGroupOpacityChange?: (id: string, opacity: number) => void
@@ -197,7 +210,7 @@ describe('LayerTreeList group controls', () => {
         mounted = await mount(
             <LayerManagerPanel
                 layers={rows}
-                nodes={buildLayerList(rows, STRUCTURE, states)}
+                nodes={buildLayerList(rows, STRUCTURE, GROUPS, states)}
                 {...handlers}
             />,
         )
@@ -231,7 +244,7 @@ describe('LayerTreeList group controls', () => {
         await mounted!.rerender(
             <LayerManagerPanel
                 layers={rows}
-                nodes={buildLayerList(rows, STRUCTURE, { visible: { pm: true } })}
+                nodes={buildLayerList(rows, STRUCTURE, GROUPS, { visible: { pm: true } })}
                 onGroupVisibilityChange={() => {}}
             />,
         )
@@ -246,7 +259,7 @@ describe('LayerTreeList group controls', () => {
         await mounted!.rerender(
             <LayerManagerPanel
                 layers={rows}
-                nodes={buildLayerList(rows, STRUCTURE, { visible: { pm: true, o3: true } })}
+                nodes={buildLayerList(rows, STRUCTURE, GROUPS, { visible: { pm: true, o3: true } })}
                 onGroupVisibilityChange={() => {}}
             />,
         )

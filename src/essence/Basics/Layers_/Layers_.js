@@ -3269,8 +3269,67 @@ const L_ = {
             return false
         }
 
-        L_.applyLayerOrder(newLayersOrdered)
+        const isCurrent = (order) =>
+            order.every((name, i) => name === L_._layersOrdered[i])
+
+        const grouped = L_.groupLayerOrder(newLayersOrdered)
+        if (grouped.some((name, i) => name !== newLayersOrdered[i])) {
+            // Gathering the split groups can undo the whole move. The caller
+            // asked for a change and got none, so it hears false and knows
+            // to re-read the order rather than wait for a broadcast.
+            if (!isCurrent(newLayersOrdered) && isCurrent(grouped)) {
+                console.warn(
+                    'reorderLayers: the order only split a layer group, so nothing moved.'
+                )
+                return false
+            }
+            console.warn(
+                'reorderLayers: the order split a layer group, so each group was drawn as one block.'
+            )
+        }
+        L_.applyLayerOrder(grouped)
         return true
+    },
+    /**
+     * `order` with each group's layers drawn as one block. A group sits where
+     * its top-most layer was asked to go, and every level keeps the requested
+     * order otherwise, so an order that splits no group comes back unchanged.
+     * Layers outside the grouping keep their requested place among the
+     * top-level entries.
+     * @param {string[]} order - layer UUIDs, top first
+     * @returns {string[]}
+     */
+    groupLayerOrder: function (order) {
+        const rank = new Map(order.map((name, i) => [name, i]))
+        const seen = new Set()
+        const byRank = (a, b) => a.rank - b.rank
+
+        const build = (nodes) =>
+            nodes
+                .flatMap((node) => {
+                    if (node.kind === 'group') {
+                        const children = build(node.children)
+                        return children.length
+                            ? [{ rank: children[0].rank, children }]
+                            : []
+                    }
+                    if (!rank.has(node.id) || seen.has(node.id)) return []
+                    seen.add(node.id)
+                    return [{ rank: rank.get(node.id), id: node.id }]
+                })
+                .sort(byRank)
+
+        const root = build(L_.getLayerTree())
+        order.forEach((name) => {
+            if (!seen.has(name)) root.push({ rank: rank.get(name), id: name })
+        })
+        root.sort(byRank)
+
+        const out = []
+        const flatten = (list) =>
+            list.forEach((n) => (n.children ? flatten(n.children) : out.push(n.id)))
+        flatten(root)
+        return out
     },
     // Trusts `order` to be a permutation of `_layersOrdered`.
     applyLayerOrder: function (order) {
@@ -4211,39 +4270,25 @@ const L_ = {
         }
     },
     /**
-     * The config's layer hierarchy as plain nodes: a header becomes
-     * `{ kind: 'group', id, title, children }`, any other layer
-     * `{ kind: 'layer', id }`. Reads the parsed config, whose nodes carry
-     * UUIDs as `name`; nodes core does not know are left out.
+     * The config's layer hierarchy as ids only: a header becomes
+     * `{ kind: 'group', id, children }`, any other layer
+     * `{ kind: 'layer', id }`. Details for either come from the layer
+     * configs. Nodes core does not know are left out.
      * @returns {Array<object>}
      */
     getLayerTree: function () {
-        const walk = (nodes) => {
-            const out = []
-            for (const node of Array.isArray(nodes) ? nodes : []) {
-                if (node == null || L_.layers.data[node.name] == null) continue
+        const walk = (nodes) =>
+            (Array.isArray(nodes) ? nodes : []).flatMap((node) => {
+                if (node == null || L_.layers.data[node.name] == null)
+                    return []
                 if (node.type === 'header') {
-                    out.push({
-                        kind: 'group',
-                        id: node.name,
-                        title: node.display_name || node.name,
-                        description:
-                            typeof node.description === 'string' &&
-                            node.description.trim()
-                                ? node.description
-                                : null,
-                        expanded: node.expanded === true,
-                        children: walk(node.sublayers),
-                    })
-                } else {
-                    out.push({ kind: 'layer', id: node.name })
-                    // Only headers group; anything nested under a plain
-                    // layer is listed beside it.
-                    out.push(...walk(node.sublayers))
+                    const children = walk(node.sublayers)
+                    return [{ kind: 'group', id: node.name, children }]
                 }
-            }
-            return out
-        }
+                // Only headers group; anything nested under a plain layer
+                // is listed beside it.
+                return [{ kind: 'layer', id: node.name }, ...walk(node.sublayers)]
+            })
         return walk(L_.configData?.layers)
     },
     /**

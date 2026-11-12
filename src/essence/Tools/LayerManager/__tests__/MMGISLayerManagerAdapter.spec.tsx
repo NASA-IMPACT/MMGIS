@@ -389,16 +389,14 @@ const groupTitles = () =>
     ).map((el) => el.textContent)
 
 describe('MMGISLayerManagerAdapter groups', () => {
-    const grouped = () => [
-        {
-            kind: 'group',
-            id: 'aq-uuid',
-            title: 'Air Quality',
-            expanded: true,
-            children: [{ kind: 'layer', id: SPARSE }],
-        },
-        { kind: 'layer', id: CONTINUOUS },
-    ]
+    // A group's title and starting state come from its header layer's config.
+    const grouped = () => {
+        configs['aq-uuid'] = { type: 'header', display_name: 'Air Quality', expanded: true }
+        return [
+            { kind: 'group', id: 'aq-uuid', children: [{ kind: 'layer', id: SPARSE }] },
+            { kind: 'layer', id: CONTINUOUS },
+        ]
+    }
 
     test('lists layers under the groups core reports', async () => {
         tree = grouped()
@@ -466,6 +464,15 @@ describe('MMGISLayerManagerAdapter groups', () => {
         })
         await settle()
         expect(configReads - before).toBe(perRefresh)
+    })
+
+    test('a refresh reads the layer configs once', async () => {
+        tree = grouped()
+        await mountAdapter()
+        const before = configReads
+        await emit('layers:orderChanged')
+        await settle()
+        expect(configReads).toBe(before + 1)
     })
 
     test('a tree with no groups leaves the list flat', async () => {

@@ -13,12 +13,12 @@ import {
     mmgisGetLayerTree,
     mmgisToggleLayerGroup,
     mmgisSetLayerGroupOpacity,
+    type LayerConfig,
 } from '../../_shared/adapters/mmgisAPI'
 import {
     ZOOM_TO_LAYER_PADDING,
     ZOOM_TO_LAYER_POINT_MAX_ZOOM,
 } from '../lib/utils/constants'
-import { placeInOrder } from '../lib/utils/layerOrder'
 import { placeInTree, type Placement } from '../lib/utils/layerTree'
 import { filteredOutLayers } from '../lib/utils/filteredOut'
 
@@ -43,11 +43,13 @@ export const toggleVisibility = async (layerId: string): Promise<void> => {
 
 export type FilteredOutLayer = { id: string; title: string }
 
-export const getFilteredOutLayers = async (): Promise<FilteredOutLayer[]> => {
+export const getFilteredOutLayers = async (
+    layerConfigs?: Record<string, LayerConfig> | null,
+): Promise<FilteredOutLayer[]> => {
     const [visible, listed, configs] = await Promise.all([
         mmgisGetVisibleLayers(),
         mmgisGetListedLayers(),
-        mmgisGetLayerConfigs(),
+        layerConfigs ?? mmgisGetLayerConfigs(),
     ])
     return filteredOutLayers(visible, listed).map((id) => ({
         id,
@@ -156,28 +158,23 @@ const writeOrder = async (
     }
 }
 
-/** Drops a dragged layer at `toIndex` of the list the user dragged it through. */
-export const dropLayer = (
-    layerId: string,
-    toIndex: number,
-    shownIds: string[],
-    refresh?: Refresh,
-): Promise<void> =>
-    writeOrder(layerId, (order) => placeInOrder(order, shownIds, layerId, toIndex), refresh)
-
 /**
- * Moves a layer or group just before or after `overId`, its sibling in the
- * grouped list. The grouping is read from core at the moment of the move, so
- * the order written is placed against core's current picture.
+ * Drops a dragged layer or group just before or after `overId`. The grouping
+ * is read from core at the drop, since core draws each group as one block
+ * and a move must not split one.
  */
-export const moveNode = async (
+export const dropLayer = async (
     id: string,
     overId: string,
     placement: Placement,
     refresh?: Refresh,
 ): Promise<void> => {
     const tree = await mmgisGetLayerTree()
-    await writeOrder(id, (order) => placeInTree(order, tree, id, overId, placement), refresh)
+    await writeOrder(
+        id,
+        (order) => placeInTree(order, tree, id, overId, placement),
+        refresh,
+    )
 }
 
 /**

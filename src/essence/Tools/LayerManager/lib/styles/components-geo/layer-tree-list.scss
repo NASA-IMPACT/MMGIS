@@ -123,16 +123,11 @@ $tree-row-content-indent: 28px;
         color: var(--theme-color-ink, #1c1d1f);
     }
 
-    /* A group's controls, spaced like a layer row's. */
+    /* A group's controls: the layer rows' own buttons, so icons line up. */
     &__actions {
         display: flex;
         align-items: center;
         flex-shrink: 0;
-
-        .blocks-layer-legend__action-btn {
-            width: 24px;
-            padding: 6px 4px;
-        }
     }
 
     &__children {
