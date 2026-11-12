@@ -1,4 +1,12 @@
-import React, { useCallback, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, {
+    useCallback,
+    useEffect,
+    useId,
+    useMemo,
+    useRef,
+    useState,
+    type ReactNode,
+} from 'react'
 import {
     DndContext,
     KeyboardSensor,
@@ -45,6 +53,11 @@ export type LayerTreeListProps = RowProps & {
      * drag only with it, and only among their siblings.
      */
     onMove?: (id: string, overId: string, placement: Placement) => void
+} & GroupHandlers
+
+type GroupHandlers = {
+    /** The group's on/off switch was flipped; no handler, no switch. */
+    onGroupVisibilityChange?: (groupId: string, visible: boolean) => void
 }
 
 type GroupProps = {
@@ -52,6 +65,7 @@ type GroupProps = {
     collapsed: boolean
     onToggleCollapsed: (groupId: string, collapsed: boolean) => void
     dragHandle?: DragHandleProps
+    handlers: GroupHandlers
     renderDescription?: RenderDescription
     children: ReactNode
 }
@@ -61,15 +75,35 @@ function GroupView({
     collapsed,
     onToggleCollapsed,
     dragHandle,
+    handlers: { onGroupVisibilityChange },
     renderDescription = renderAsPlainText,
     children,
 }: GroupProps) {
     const childrenId = useId()
     const infoPopoverId = useId()
     const infoBtnRef = useRef<HTMLButtonElement | null>(null)
+
+    // Follows the host, and shows a change at once until it answers.
+    const [isVisible, setIsVisible] = useState(group.visible === true)
+    useEffect(() => setIsVisible(group.visible === true), [group.visible])
+    // Mixed only while the host agrees the group is on, so a click shows its
+    // result at once rather than a stale dash.
+    const isPartial = isVisible && group.visible === true && group.partial === true
+    const checkboxRef = useRef<HTMLInputElement | null>(null)
+    // Mixed is a property with no attribute, so it is set on the element.
+    useEffect(() => {
+        if (checkboxRef.current) checkboxRef.current.indeterminate = isPartial
+    }, [isPartial])
+
     const [isInfoOpen, setIsInfoOpen] = useState(false)
     const closeInfo = useCallback(() => setIsInfoOpen(false), [])
     const hasDescription = hasText(group.description)
+
+    const handleVisibilityToggle = () => {
+        const next = !isVisible
+        setIsVisible(next)
+        onGroupVisibilityChange?.(group.id, next)
+    }
 
     return (
         <div
@@ -102,6 +136,25 @@ function GroupView({
                         aria-hidden="true"
                     />
                 </button>
+                {onGroupVisibilityChange && (
+                    <div className="blocks-layer-legend__checkbox-wrapper">
+                        <input
+                            ref={checkboxRef}
+                            type="checkbox"
+                            className="blocks-layer-legend__checkbox"
+                            checked={isVisible}
+                            onChange={handleVisibilityToggle}
+                            aria-label={`Show all layers in ${group.title}`}
+                            title={
+                                isPartial
+                                    ? `Some layers in ${group.title} are on. Turn them off`
+                                    : isVisible
+                                      ? `Turn off every layer in ${group.title}`
+                                      : `Turn ${group.title} back on`
+                            }
+                        />
+                    </div>
+                )}
                 <span className="blocks-layer-tree__group-title" title={group.title}>
                     {group.title}
                 </span>
@@ -170,6 +223,7 @@ type LevelProps = {
     /** Rows carry drag handles only when moves are handled. */
     draggable: boolean
     rowProps: RowProps
+    handlers: GroupHandlers
     collapsed: (group: LayerGroup) => boolean
     onToggleCollapsed: (groupId: string, collapsed: boolean) => void
 }
@@ -204,6 +258,7 @@ function SortableNode({ node, ...rest }: Omit<LevelProps, 'nodes'> & { node: Lay
                     collapsed={rest.collapsed(node.group)}
                     onToggleCollapsed={rest.onToggleCollapsed}
                     dragHandle={dragHandle}
+                    handlers={rest.handlers}
                     renderDescription={rest.rowProps.renderDescription}
                 >
                     <SortableLevel {...rest} nodes={node.group.children} parentId={node.group.id} />
@@ -291,6 +346,7 @@ export function LayerTreeList({
     nodes,
     emptyMessage = 'No layers with legends are currently visible.',
     onMove,
+    onGroupVisibilityChange,
     ...rowProps
 }: LayerTreeListProps) {
     const sensors = useSensors(
@@ -326,8 +382,12 @@ export function LayerTreeList({
         if (placement && overId) onMove?.(activeId, overId, placement)
     }
 
+    // Only a list holding a group lines its rows up in the tree's columns; a
+    // flat list keeps the plain row layout.
+    const grouped = nodes.some((node) => node.kind === 'group')
+
     return (
-        <div className="blocks-layer-legend-list">
+        <div className={`blocks-layer-legend-list ${grouped ? 'blocks-layer-tree' : ''}`}>
             <DndContext
                 sensors={sensors}
                 collisionDetection={siblingsOnly}
@@ -339,6 +399,7 @@ export function LayerTreeList({
                     parentId={null}
                     draggable={onMove != null}
                     rowProps={rowProps}
+                    handlers={{ onGroupVisibilityChange }}
                     collapsed={collapsed}
                     onToggleCollapsed={onToggleCollapsed}
                 />

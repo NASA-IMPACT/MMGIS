@@ -6,7 +6,7 @@ $legend-content-indent: 28px;
 
 /* Gap between the drag handle and the checkbox. Tighter than the header's own
    gap, since the two read as one cluster at the row's start. */
-$legend-handle-gap: 8px;
+$legend-handle-gap: 6px;
 
 /* The card's surface while its controls are showing. The action strip paints
    itself the same color to hide the title underneath it. */
@@ -75,6 +75,20 @@ $legend-hover-surface: var(--theme-color-base-lightest, #f1f3f6);
             background-repeat: no-repeat;
             background-position: center;
             background-size: 12px 12px;
+            border: 1px solid var(--theme-color-primary, #1c67e3);
+        }
+
+        /* Mixed: a group with only some of its layers on. A dash on the
+           checked fill, drawn rather than masked from an icon. */
+        &:indeterminate {
+            background: var(--theme-color-primary, #0e7482);
+            background-image: linear-gradient(
+                var(--theme-color-white, #ffffff),
+                var(--theme-color-white, #ffffff)
+            );
+            background-repeat: no-repeat;
+            background-position: center;
+            background-size: 8px 2px;
             border: 1px solid var(--theme-color-primary, #1c67e3);
         }
 

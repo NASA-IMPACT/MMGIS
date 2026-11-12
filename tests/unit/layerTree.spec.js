@@ -91,6 +91,66 @@ describe('buildLayerList', () => {
     })
 })
 
+describe('buildLayerList group state', () => {
+    const rows = ['pm', 'o3', 'fc', 'base'].map(row)
+    const groups = (nodes, out = {}) => {
+        nodes.forEach((n) => {
+            if (n.kind !== 'group') return
+            const { id, visible, partial } = n.group
+            out[id] = { visible, partial }
+            groups(n.group.children, out)
+        })
+        return out
+    }
+
+    test('a group is on while any of its layers is, nested ones included', () => {
+        const state = groups(
+            buildLayerList(rows, STRUCTURE, GROUPS, { visible: { pm: true } }),
+        )
+        expect(state.aq.visible).toBe(true)
+        expect(state.aqs.visible).toBe(true)
+        expect(
+            groups(buildLayerList(rows, STRUCTURE, GROUPS, { visible: { base: true } })).aq.visible,
+        ).toBe(false)
+    })
+
+    test('a group is partly on while some, but not all, of its layers are', () => {
+        const some = groups(buildLayerList(rows, STRUCTURE, GROUPS, { visible: { pm: true } }))
+        expect(some.aq.partial).toBe(true)
+        expect(some.aqs.partial).toBe(true)
+
+        const all = groups(
+            buildLayerList(rows, STRUCTURE, GROUPS, { visible: { pm: true, o3: true, fc: true } }),
+        )
+        expect(all.aq.partial).toBe(false)
+        expect(all.aqs.partial).toBe(false)
+
+        expect(groups(buildLayerList(rows, STRUCTURE, GROUPS, { visible: {} })).aq.partial).toBe(false)
+    })
+
+    test('a layer the list does not show keeps its group partly on', () => {
+        // o3 is filtered out of the rows and off; the group is not all on.
+        const shown = ['pm', 'fc', 'base'].map(row)
+        const state = groups(buildLayerList(shown, STRUCTURE, GROUPS, { visible: { pm: true, fc: true } }))
+        expect(state.aq.partial).toBe(true)
+    })
+
+    test('layers the list does not show still count', () => {
+        // fc is filtered out of the rows but on.
+        const shown = ['pm', 'base'].map(row)
+        const state = groups(buildLayerList(shown, STRUCTURE, GROUPS, { visible: { fc: true } }))
+        expect(state.aq.visible).toBe(true)
+        expect(state.aqs.visible).toBe(false)
+    })
+
+    test('without states a group carries no state', () => {
+        expect(groups(buildLayerList(rows, STRUCTURE)).aq).toEqual({
+            visible: undefined,
+            partial: undefined,
+        })
+    })
+})
+
 describe('placeInTree', () => {
     const ORDER = ['pm', 'o3', 'fc', 'base']
 

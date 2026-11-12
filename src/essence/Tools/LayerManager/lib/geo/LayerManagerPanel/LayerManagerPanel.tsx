@@ -9,6 +9,7 @@ export type LayerManagerPanelProps = {
     nodes?: LayerListNode[]
     /** No handler, no drag handles. */
     onMove?: LayerTreeListProps['onMove']
+    onGroupVisibilityChange?: LayerTreeListProps['onGroupVisibilityChange']
     loading?: boolean
     emptyMessage?: string
     renderDescription?: RenderDescription
@@ -36,6 +37,7 @@ export function LayerManagerPanel({
     layers,
     nodes,
     onMove,
+    onGroupVisibilityChange,
     loading = false,
     emptyMessage = 'No visible layers. Turn on layers in the Layers tool to manage them here.',
     renderDescription,
@@ -106,6 +108,7 @@ export function LayerManagerPanel({
                         selectedTime={selectedTime}
                         onCompareLayer={onCompareLayer}
                         onMove={onMove}
+                        onGroupVisibilityChange={onGroupVisibilityChange}
                         onRunChange={onRunChange}
                     />
                 )}

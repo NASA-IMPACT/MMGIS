@@ -14,16 +14,37 @@ type Ranked = { node: LayerListNode; rank: number }
 const byRank = (a: { rank: number }, b: { rank: number }) => a.rank - b.rank
 
 /**
+ * Every layer's visibility by id, including layers the list does not show.
+ * A group's state is read over all of its layers.
+ */
+export type LayerStates = {
+    visible?: Record<string, boolean> | null
+}
+
+const leafIds = (nodes: LayerStructureNode[]): string[] =>
+    nodes.flatMap((n) => (n.kind === 'group' ? leafIds(n.children) : [n.id]))
+
+/** On while any of the layers is on, and partly on while only some are. */
+const groupState = (ids: string[], states: LayerStates) => {
+    const onCount = ids.filter((id) => states.visible?.[id] === true).length
+    return {
+        visible: onCount > 0,
+        partial: onCount > 0 && onCount < ids.length,
+    }
+}
+
+/**
  * The rows arranged under their groups. `rows` arrive top first in draw
  * order; each level is sorted by its top-most row. A group with nothing left
  * to show is dropped, and a row outside the structure sits at the top level.
  * A group missing from `groups` is titled by its id, with no description,
- * and starts collapsed.
+ * and starts collapsed. With `states`, each group carries its on/off state.
  */
 export const buildLayerList = (
     rows: Layer[],
     structure: LayerStructureNode[] | null | undefined,
     groups: Record<string, GroupInfo> = {},
+    states?: LayerStates,
 ): LayerListNode[] => {
     const rank = new Map(rows.map((row, index) => [row.id, index]))
     const byId = new Map(rows.map((row) => [row.id, row]))
@@ -45,6 +66,7 @@ export const buildLayerList = (
                             ...groups[node.id],
                             id: node.id,
                             children: children.map((c) => c.node),
+                            ...(states ? groupState(leafIds(node.children), states) : {}),
                         },
                     },
                     rank: children[0].rank,
