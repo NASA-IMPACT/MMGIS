@@ -81,6 +81,8 @@ function stamped(type, timeStamp) {
 function setup() {
     const fakeContainer = { querySelector: () => null }
     const mockMap = makeMockLeafletMap()
+    // Leaflet's scale control, recorded as built and as added to a map.
+    const scaleControls = []
 
     global.document = {
         getElementById: (id) => (id === 'map' ? fakeContainer : null),
@@ -90,9 +92,28 @@ function setup() {
         map: () => mockMap,
         Proj: { CRS: function () { return { projString: '' } } },
         bounds: () => ({}),
+        control: {
+            scale: (options) => {
+                const control = {
+                    options,
+                    map: null,
+                    removed: false,
+                    addTo(map) {
+                        this.map = map
+                        return this
+                    },
+                    remove() {
+                        this.removed = true
+                        this.map = null
+                    },
+                }
+                scaleControls.push(control)
+                return control
+            },
+        },
     }
 
-    return { mockMap, fakeContainer }
+    return { mockMap, fakeContainer, scaleControls }
 }
 
 // ─── Lifecycle Tests ──────────────────────────────────────────────────────────
@@ -112,6 +133,58 @@ test.describe('LeafletAdapter - Lifecycle', () => {
         adapter.init({ containerId: 'map' })
 
         expect(adapter.getNativeMap()).toBe(mockMap)
+    })
+
+    // The same `basemap.controls.scaleBar` the deck.gl engine reads, answered
+    // with Leaflet's own control. Leaflet needs no basemap provider for it.
+    test.describe('scale bar', () => {
+        test('init() adds Leaflet\'s scale control, metric at the bottom-left by default', () => {
+            const { mockMap, scaleControls } = setup()
+            const adapter = new LeafletAdapter()
+            adapter.init({ containerId: 'map', basemap: { provider: 'none', controls: { scaleBar: { show: true } } } })
+
+            expect(scaleControls).toHaveLength(1)
+            expect(scaleControls[0].options).toEqual({
+                position: 'bottomleft',
+                maxWidth: 100,
+                metric: true,
+                imperial: false,
+            })
+            expect(scaleControls[0].map).toBe(mockMap)
+        })
+
+        test('units and corner come from the config, in Leaflet\'s spelling', () => {
+            const { scaleControls } = setup()
+            const adapter = new LeafletAdapter()
+            adapter.init({
+                containerId: 'map',
+                basemap: { provider: 'none', controls: { scaleBar: { show: true, units: 'imperial', position: 'top-right' } } },
+            })
+
+            expect(scaleControls[0].options).toMatchObject({ position: 'topright', metric: false, imperial: true })
+        })
+
+        test('no control without the show flag, or with it off', () => {
+            for (const basemap of [
+                undefined,
+                { provider: 'none' },
+                { provider: 'none', controls: { scaleBar: { units: 'imperial' } } },
+                { provider: 'none', controls: { scaleBar: { show: false } } },
+            ]) {
+                const { scaleControls } = setup()
+                const adapter = new LeafletAdapter()
+                adapter.init({ containerId: 'map', ...(basemap ? { basemap } : {}) })
+                expect(scaleControls).toHaveLength(0)
+            }
+        })
+
+        test('destroy() removes the control', () => {
+            const { scaleControls } = setup()
+            const adapter = new LeafletAdapter()
+            adapter.init({ containerId: 'map', basemap: { provider: 'none', controls: { scaleBar: { show: true } } } })
+            adapter.destroy()
+            expect(scaleControls[0].removed).toBe(true)
+        })
     })
 
     test('init() throws if container element is not found', () => {

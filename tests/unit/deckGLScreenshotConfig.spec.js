@@ -51,11 +51,17 @@ vi.mock('maplibre-gl', () => {
     // Overlay init reads the basemap's Popup class alongside its Map. These
     // tests never open one.
     class MockPopup {}
-    return {
+    // Overlay init also takes the library's control classes, for a basemap
+    // configured with a scale bar or compass. These tests configure neither.
+    class MockScaleControl {}
+    class MockNavigationControl {}
+    const exports = {
         Map: MockMap,
         Popup: MockPopup,
-        default: { Map: MockMap, Popup: MockPopup },
+        ScaleControl: MockScaleControl,
+        NavigationControl: MockNavigationControl,
     }
+    return { ...exports, default: exports }
 })
 
 // Imported after the mocks are declared (vi.mock is hoisted regardless).
