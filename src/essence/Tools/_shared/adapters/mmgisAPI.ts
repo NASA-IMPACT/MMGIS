@@ -233,6 +233,14 @@ export const mmgisToggleLayerGroup = (
     return mmgisRequestIfProvided<GroupToggleResult>('layers:toggleGroup', groupId)
 }
 
+/** Sets one opacity on every layer in a group; answers the layers set. */
+export const mmgisSetLayerGroupOpacity = (
+    groupId: string,
+    opacity: number,
+): Promise<string[] | null> => {
+    return mmgisRequestIfProvided<string[]>('layers:setGroupOpacity', { groupId, opacity })
+}
+
 /** Replaces the draw order. Must hold the same layers as
  *  mmgisGetLayerOrder, in any order; core refuses anything else with false.
  *  Core keeps each layer group in one block, so an order that splits a group

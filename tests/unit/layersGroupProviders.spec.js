@@ -7,9 +7,10 @@ const { default: L_ } = await import(
 )
 
 /**
- * `layers:toggleGroup`: switches a whole group over the configured grouping,
- * reaching every layer in the group, nested groups included. Switching a
- * layer itself is core's toggle, stubbed here to flip the flag it keeps.
+ * `layers:toggleGroup` and `layers:setGroupOpacity`: whole-group actions over
+ * the configured grouping. Both reach every layer in the group, nested
+ * groups included. Switching a layer itself is core's toggle, stubbed here
+ * to flip the flag it keeps.
  */
 
 let providers
@@ -52,11 +53,13 @@ beforeEach(() => {
     }
     L_.fina(null, { engine: {} }, null, null, null, {})
     L_.layers.groupRestore = {}
+    L_.layers.opacity = {}
     load()
     vi.restoreAllMocks()
     vi.spyOn(L_, 'toggleLayer').mockImplementation(async (layer) => {
         L_.layers.on[layer.name] = !L_.layers.on[layer.name]
     })
+    vi.spyOn(L_, 'setLayerOpacity').mockImplementation(() => {})
 })
 
 describe('layers:toggleGroup', () => {
@@ -122,5 +125,27 @@ describe('layers:toggleGroup', () => {
         expect(await providers['layers:toggleGroup']('ghost')).toBeNull()
         expect(await providers['layers:toggleGroup']('base')).toBeNull()
         expect(L_.toggleLayer).not.toHaveBeenCalled()
+    })
+})
+
+describe('layers:setGroupOpacity', () => {
+    test('sets the opacity on every layer in the group', () => {
+        const changed = providers['layers:setGroupOpacity']({ groupId: 'aq', opacity: 0.4 })
+        expect(changed).toEqual(['pm', 'o3', 'fc'])
+        expect(L_.layers.opacity).toEqual({ pm: 0.4, o3: 0.4, fc: 0.4 })
+        expect(L_.setLayerOpacity).toHaveBeenCalledTimes(3)
+        expect(L_.setLayerOpacity).toHaveBeenCalledWith('o3', 0.4)
+    })
+
+    test('an opacity outside 0 to 1, or not a number, answers null and sets nothing', () => {
+        for (const opacity of [-0.1, 1.1, NaN, '0.5', undefined]) {
+            expect(providers['layers:setGroupOpacity']({ groupId: 'aq', opacity })).toBeNull()
+        }
+        expect(L_.setLayerOpacity).not.toHaveBeenCalled()
+    })
+
+    test('an unknown group answers null', () => {
+        expect(providers['layers:setGroupOpacity']({ groupId: 'ghost', opacity: 0.5 })).toBeNull()
+        expect(providers['layers:setGroupOpacity'](undefined)).toBeNull()
     })
 })

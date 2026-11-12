@@ -12,6 +12,7 @@ import {
     mmgisGetLayerConfigs,
     mmgisGetLayerTree,
     mmgisToggleLayerGroup,
+    mmgisSetLayerGroupOpacity,
     type LayerConfig,
 } from '../../_shared/adapters/mmgisAPI'
 import {
@@ -86,6 +87,14 @@ export const toggleGroupVisibility = async (groupId: string): Promise<void> => {
     if (!result) return
     for (const layerName of result.changed) {
         mmgisEmit('layer:visibilityChange', { layerName, visible: result.visible })
+    }
+}
+
+/** Sets one opacity on every layer in a group, announcing each layer set. */
+export const setGroupOpacity = async (groupId: string, opacity: number): Promise<void> => {
+    const changed = await mmgisSetLayerGroupOpacity(groupId, opacity)
+    for (const layerName of changed ?? []) {
+        mmgisEmit('layer:opacityChange', { layerName, opacity })
     }
 }
 

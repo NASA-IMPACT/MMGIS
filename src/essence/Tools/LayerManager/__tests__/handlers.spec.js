@@ -12,6 +12,7 @@ import {
     showAddLayer,
     dropLayer,
     toggleGroupVisibility,
+    setGroupOpacity,
 } from '../adapters/handlers.ts'
 import {
     ZOOM_TO_LAYER_PADDING,
@@ -611,4 +612,23 @@ test.describe('group actions', () => {
         expect(emitCalls).toEqual([])
     })
 
+    test('setGroupOpacity announces each layer core set', async () => {
+        const emitCalls = []
+        const { requests } = setupMock({ 'layers:setGroupOpacity': ['a', 'b'] }, emitCalls)
+        await setGroupOpacity('g', 0.3)
+        expect(requests).toEqual([
+            { name: 'layers:setGroupOpacity', params: { groupId: 'g', opacity: 0.3 } },
+        ])
+        expect(emitCalls.map((c) => c.payload)).toEqual([
+            { layerName: 'a', opacity: 0.3 },
+            { layerName: 'b', opacity: 0.3 },
+        ])
+    })
+
+    test('setGroupOpacity announces nothing when core refuses', async () => {
+        const emitCalls = []
+        setupMock({ 'layers:setGroupOpacity': () => null }, emitCalls)
+        await setGroupOpacity('g', 2)
+        expect(emitCalls).toEqual([])
+    })
 })

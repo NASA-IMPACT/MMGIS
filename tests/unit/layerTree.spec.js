@@ -96,8 +96,8 @@ describe('buildLayerList group state', () => {
     const groups = (nodes, out = {}) => {
         nodes.forEach((n) => {
             if (n.kind !== 'group') return
-            const { id, visible, partial } = n.group
-            out[id] = { visible, partial }
+            const { id, visible, partial, opacity } = n.group
+            out[id] = { visible, partial, opacity }
             groups(n.group.children, out)
         })
         return out
@@ -105,7 +105,7 @@ describe('buildLayerList group state', () => {
 
     test('a group is on while any of its layers is, nested ones included', () => {
         const state = groups(
-            buildLayerList(rows, STRUCTURE, GROUPS, { visible: { pm: true } }),
+            buildLayerList(rows, STRUCTURE, GROUPS, { visible: { pm: true }, opacities: {} }),
         )
         expect(state.aq.visible).toBe(true)
         expect(state.aqs.visible).toBe(true)
@@ -143,10 +143,24 @@ describe('buildLayerList group state', () => {
         expect(state.aqs.visible).toBe(false)
     })
 
+    test('a shared opacity is carried; differing ones read as null', () => {
+        const uniform = { pm: 0.5, o3: 0.5, fc: 0.5 }
+        expect(groups(buildLayerList(rows, STRUCTURE, GROUPS, { opacities: uniform })).aq.opacity).toBe(0.5)
+        const mixed = { pm: 0.5, o3: 1, fc: 0.5 }
+        const state = groups(buildLayerList(rows, STRUCTURE, GROUPS, { opacities: mixed }))
+        expect(state.aq.opacity).toBeNull()
+        expect(state.aqs.opacity).toBeNull()
+    })
+
+    test('a layer with no opacity reported counts as fully opaque', () => {
+        expect(groups(buildLayerList(rows, STRUCTURE, GROUPS, { opacities: null })).aq.opacity).toBe(1)
+    })
+
     test('without states a group carries no state', () => {
         expect(groups(buildLayerList(rows, STRUCTURE)).aq).toEqual({
             visible: undefined,
             partial: undefined,
+            opacity: undefined,
         })
     })
 })
