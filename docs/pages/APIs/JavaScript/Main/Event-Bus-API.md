@@ -443,6 +443,7 @@ window.mmgisAPI.request('map:showPopup', {
 | `layers:getAll` | none | `string[]` | Get all layer names |
 | `layers:getVisible` | none | `object` | Get visibility state of all layers. |
 | `layers:getConfig` | `layerUUID` | `object \| null` | Get layer configuration. The answer is a copy: to change a layer, use `layers:updateConfig` |
+| `tool:getUrlState` | tool module name, e.g. `'ComparisonTool'` | `string \| null` | What the opening link said about that tool: the text its `getUrlString()` wrote into the link's `tools=` entry, or null when the link named none. Registered at mission load, with `tool:getVars` |
 | `layers:toggle` | `layerUUID` | `boolean \| null` | Toggle layer visibility |
 | `layers:getOrder` | none | `string[]` | Draw order as layer UUIDs, top first, headers excluded |
 | `layers:getTree` | none | `LayerTreeNode[]` | The configured grouping in config order: each header is `{ kind: 'group', id, children }` and each other layer `{ kind: 'layer', id }`, with ids as layer UUIDs. A header's title, description and `expanded` setting are in its config: see `layers:getConfig` |
