@@ -379,9 +379,6 @@ const L_ = {
         on: {}, // toggledArray
         opacity: {}, // opacityArray
         listed: {}, // uuid -> bool; false hides from layer lists (runtime-only; absent = listed)
-        // Group UUID -> the layer UUIDs that were on when the group was
-        // switched off, restored when it is switched back on. Session-only.
-        groupRestore: {},
         filters: {}, // layerFilters
         nameToUUID: {},
         refreshIntervals: {}, // In order to reloadLayer
@@ -479,7 +476,6 @@ const L_ = {
             toggled: {},
             opacity: {},
             filters: {},
-            groupRestore: {},
         }
         L_._layersOrdered = []
         L_._layersLoaded = []
@@ -740,9 +736,8 @@ const L_ = {
                 window.mmgisAPI.provide('layers:getTree', () =>
                     L_.getLayerTree()
                 ),
-                // Switches a whole group: off when any of its layers is on,
-                // remembering which; back on to exactly those, or to every
-                // layer when none is remembered.
+                // Switches a whole group: every layer off when any of them is
+                // on, otherwise every layer on.
                 window.mmgisAPI.provide('layers:toggleGroup', (groupId) =>
                     L_.toggleGroup(groupId)
                 ),
@@ -4315,9 +4310,8 @@ const L_ = {
         return ids
     },
     /**
-     * Switches a group off when any of its layers is on, remembering which
-     * were; otherwise switches back on the remembered layers, or all of them
-     * when none are remembered.
+     * Switches every layer in a group off when any of them is on, otherwise
+     * switches every layer on.
      * @param {string} groupId - Group (header) UUID or display name.
      * @returns {Promise<{ visible: boolean, changed: string[] } | null>}
      *   The group's new state and the layers whose visibility changed; null
@@ -4326,26 +4320,14 @@ const L_ = {
     toggleGroup: async function (groupId) {
         const ids = L_.getGroupLayerIds(groupId)
         if (ids == null) return null
-        const uuid = L_.asLayerUUID(groupId)
-        const on = ids.filter((id) => L_.layers.on[id] === true)
+        const turnOff = ids.some((id) => L_.layers.on[id] === true)
         const changed = []
-        if (on.length > 0) {
-            L_.layers.groupRestore[uuid] = on
-            for (const id of on) {
-                await L_.toggleLayer(L_.layers.data[id])
-                if (L_.layers.on[id] !== true) changed.push(id)
-            }
-            return { visible: false, changed }
-        }
-        const remembered = (L_.layers.groupRestore[uuid] || []).filter((id) =>
-            ids.includes(id)
-        )
-        delete L_.layers.groupRestore[uuid]
-        for (const id of remembered.length > 0 ? remembered : ids) {
+        for (const id of ids) {
+            if ((L_.layers.on[id] === true) !== turnOff) continue
             await L_.toggleLayer(L_.layers.data[id])
-            if (L_.layers.on[id] === true) changed.push(id)
+            if ((L_.layers.on[id] === true) !== turnOff) changed.push(id)
         }
-        return { visible: changed.length > 0, changed }
+        return { visible: turnOff ? false : changed.length > 0, changed }
     },
     expandLayersToArray: function (layer) {
         // Recursively going through the removed layer to get all of its sub layers

@@ -223,8 +223,8 @@ export const mmgisGetLayerTree = (): Promise<LayerTreeNode[] | null> => {
 export type GroupToggleResult = { visible: boolean; changed: string[] }
 
 /**
- * Switches a whole group: off when any of its layers is on, remembering
- * which; back on to those, or to all of them when none are remembered.
+ * Switches a whole group: every layer off when any of them is on,
+ * otherwise every layer on.
  * Null for an unknown group or a core without groups.
  */
 export const mmgisToggleLayerGroup = (
