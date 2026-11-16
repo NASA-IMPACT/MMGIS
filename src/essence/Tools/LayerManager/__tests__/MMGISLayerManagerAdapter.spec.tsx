@@ -27,6 +27,7 @@ let sparseTitle: string
 let setRunAnswer: unknown
 let runsFailure: Error | null
 let tree: unknown
+let groupToggle: unknown
 
 beforeEach(() => {
     outOfRange = {}
@@ -42,6 +43,7 @@ beforeEach(() => {
     setRunAnswer = true
     runsFailure = null
     tree = null
+    groupToggle = null
     configReads = 0
     listeners = new Map()
     gate = null
@@ -75,6 +77,7 @@ beforeEach(() => {
         'layers:getAllOpacities': () => ({}),
         'layers:getListed': () => listed,
         'layers:getTree': () => tree,
+        'layers:toggleGroup': () => groupToggle,
         'layers:getDataCoverage': () =>
             Object.fromEntries(
                 Object.entries(outOfRange).map(([id, flag]) => [
@@ -421,6 +424,66 @@ describe('MMGISLayerManagerAdapter groups', () => {
         await settle()
         expect(groupTitles()).toEqual([])
         expect(titlesIn()).toEqual(['Continuous'])
+    })
+
+    test('the group switch reads on while one of its layers is on, filtered out or not', async () => {
+        visible = { [SPARSE]: true, [CONTINUOUS]: false }
+        listed = { [SPARSE]: false }
+        // A filtered-out layer leaves its group nothing to show, so the
+        // group needs a second, shown layer to stay listed.
+        tree = [
+            {
+                kind: 'group',
+                id: 'aq-uuid',
+                title: 'Air Quality',
+                children: [
+                    { kind: 'layer', id: SPARSE },
+                    { kind: 'layer', id: CONTINUOUS },
+                ],
+            },
+        ]
+        await mountAdapter()
+        const box = mounted!.container.querySelector<HTMLInputElement>(
+            '[data-group-id="aq-uuid"] .blocks-layer-tree__group-header input[type="checkbox"]',
+        )!
+        expect(box.checked).toBe(true)
+    })
+
+    test('the group switch snaps back when core switches no layer', async () => {
+        visible = { [SPARSE]: false, [CONTINUOUS]: false }
+        tree = grouped()
+        groupToggle = { visible: false, changed: [] }
+        await mountAdapter()
+        const box = () =>
+            mounted!.container.querySelector<HTMLInputElement>(
+                '[data-group-id="aq-uuid"] .blocks-layer-tree__group-header input[type="checkbox"]',
+            )!
+        expect(box().checked).toBe(false)
+        await act(async () => {
+            box().click()
+        })
+        await settle()
+        expect(box().checked).toBe(false)
+    })
+
+    test('announcements from one group action share a single refresh', async () => {
+        tree = grouped()
+        await mountAdapter()
+        // What one refresh reads, measured rather than assumed.
+        let before = configReads
+        await emit('layers:listChanged')
+        await settle()
+        const perRefresh = configReads - before
+
+        before = configReads
+        await act(async () => {
+            const api = (window as any).mmgisAPI
+            api.emit('layer:visibilityChange', { layerName: SPARSE, visible: false })
+            api.emit('layer:visibilityChange', { layerName: CONTINUOUS, visible: false })
+            api.emit('layer:opacityChange', { layerName: SPARSE, opacity: 0.5 })
+        })
+        await settle()
+        expect(configReads - before).toBe(perRefresh)
     })
 
     test('a refresh reads the layer configs once', async () => {

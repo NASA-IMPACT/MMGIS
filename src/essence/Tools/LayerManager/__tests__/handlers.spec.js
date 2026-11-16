@@ -11,6 +11,8 @@ import {
     compareLayer,
     showAddLayer,
     dropLayer,
+    toggleGroupVisibility,
+    setGroupOpacity,
 } from '../adapters/handlers.ts'
 import {
     ZOOM_TO_LAYER_PADDING,
@@ -583,5 +585,74 @@ test.describe('dropLayer with groups', () => {
         const refresh = vi.fn()
         await dropLayer('b', 'a', 'before', refresh)
         expect(refresh).toHaveBeenCalledTimes(1)
+    })
+})
+
+// Group actions go to core in one request; each layer that changed is then
+// announced on its own, as a single layer's change is.
+test.describe('group actions', () => {
+    test('toggleGroupVisibility announces each layer core switched', async () => {
+        const emitCalls = []
+        const { requests } = setupMock(
+            { 'layers:toggleGroup': { visible: false, changed: ['a', 'b'] } },
+            emitCalls,
+        )
+        const refresh = vi.fn()
+        await toggleGroupVisibility('g', refresh)
+        expect(requests).toEqual([{ name: 'layers:toggleGroup', params: 'g' }])
+        expect(refresh).not.toHaveBeenCalled()
+        expect(emitCalls).toEqual([
+            { event: 'layer:visibilityChange', payload: { layerName: 'a', visible: false } },
+            { event: 'layer:visibilityChange', payload: { layerName: 'b', visible: false } },
+        ])
+    })
+
+    test('toggleGroupVisibility announces nothing when core does not know the group', async () => {
+        const emitCalls = []
+        setupMock({ 'layers:toggleGroup': () => null }, emitCalls)
+        const refresh = vi.fn()
+        await toggleGroupVisibility('ghost', refresh)
+        expect(emitCalls).toEqual([])
+        expect(refresh).toHaveBeenCalledTimes(1)
+    })
+
+    test('toggleGroupVisibility refreshes when core switched no layer', async () => {
+        const emitCalls = []
+        setupMock({ 'layers:toggleGroup': { visible: false, changed: [] } }, emitCalls)
+        const refresh = vi.fn()
+        await toggleGroupVisibility('g', refresh)
+        expect(emitCalls).toEqual([])
+        expect(refresh).toHaveBeenCalledTimes(1)
+    })
+
+    test('toggleGroupVisibility refreshes when the request fails', async () => {
+        setupMock({
+            'layers:toggleGroup': () => {
+                throw new Error('boom')
+            },
+        })
+        const refresh = vi.fn()
+        await expect(toggleGroupVisibility('g', refresh)).rejects.toThrow('boom')
+        expect(refresh).toHaveBeenCalledTimes(1)
+    })
+
+    test('setGroupOpacity announces each layer core set', async () => {
+        const emitCalls = []
+        const { requests } = setupMock({ 'layers:setGroupOpacity': ['a', 'b'] }, emitCalls)
+        await setGroupOpacity('g', 0.3)
+        expect(requests).toEqual([
+            { name: 'layers:setGroupOpacity', params: { groupId: 'g', opacity: 0.3 } },
+        ])
+        expect(emitCalls.map((c) => c.payload)).toEqual([
+            { layerName: 'a', opacity: 0.3 },
+            { layerName: 'b', opacity: 0.3 },
+        ])
+    })
+
+    test('setGroupOpacity announces nothing when core refuses', async () => {
+        const emitCalls = []
+        setupMock({ 'layers:setGroupOpacity': () => null }, emitCalls)
+        await setGroupOpacity('g', 2)
+        expect(emitCalls).toEqual([])
     })
 })

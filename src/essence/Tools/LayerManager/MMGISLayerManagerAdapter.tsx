@@ -2,7 +2,7 @@ import React from 'react'
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { LayerManagerPanel } from './lib'
 import type { GroupInfo, Layer, LayerListNode } from './lib/types'
-import { buildLayerList, type Placement } from './lib/utils/layerTree'
+import { buildLayerList, type LayerStates, type Placement } from './lib/utils/layerTree'
 import { useMMGISEvent } from '../_shared/adapters/useMMGISEvent'
 import { useMMGISToolVars } from '../_shared/adapters/useMMGISToolVars'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
@@ -17,6 +17,8 @@ import {
     compareLayer,
     showAddLayer,
     dropLayer,
+    toggleGroupVisibility,
+    setGroupOpacity,
     getFilteredOutLayers,
     hideFilteredOutLayers,
     selectRun,
@@ -24,6 +26,7 @@ import {
 import {
     mmgisGetLayerBounds,
     mmgisGetTimeCurrent,
+    mmgisRequest,
     mmgisRequestIfProvided,
     mmgisOnDataCoverageChanged,
     mmgisGetLayerTree,
@@ -79,18 +82,35 @@ const withOutOfRange = (rows: Layer[], flags: Map<string, boolean>): Layer[] => 
     )
 }
 
-type Grouping = { tree: LayerTreeNode[] | null; groups: Record<string, GroupInfo> }
+const hasGroups = (tree: LayerTreeNode[] | null): boolean =>
+    tree?.some((node) => node.kind === 'group') === true
+
+type Grouping = {
+    tree: LayerTreeNode[] | null
+    groups: Record<string, GroupInfo>
+    states?: LayerStates
+}
 
 /**
  * The grouping core reports, with each group's header details read from its
- * header layer's config. A core too old to answer, or a failed read, leaves
- * the list flat.
+ * header layer's config and, when there are groups, every layer's visibility
+ * and opacity, which a group's controls read across all of its layers. A core
+ * too old to answer, or a failed read, leaves the list flat.
  */
 const readGrouping = async (
     configs: Record<string, LayerConfig> | null,
 ): Promise<Grouping | null> => {
     try {
-        return { tree: await mmgisGetLayerTree(), groups: getGroupInfo(configs) }
+        const tree = await mmgisGetLayerTree()
+        let states: LayerStates | undefined
+        if (hasGroups(tree)) {
+            const [visible, opacities] = await Promise.all([
+                mmgisRequest<Record<string, boolean>>('layers:getVisible'),
+                mmgisRequest<Record<string, number>>('layers:getAllOpacities'),
+            ])
+            states = { visible, opacities }
+        }
+        return { tree, groups: getGroupInfo(configs), states }
     } catch (err) {
         console.warn('LayerManager: layer groups unavailable', err)
         return null
@@ -232,9 +252,21 @@ export function MMGISLayerManagerAdapter() {
         return (await mmgisGetLayerBounds(layerId)) !== null
     }, [])
 
-    useMMGISEvent('layer:visibilityChange', refresh)
+    // A group action announces each of its layers in one go; those
+    // announcements share a single refresh.
+    const refreshQueued = useRef(false)
+    const refreshOnce = useCallback(() => {
+        if (refreshQueued.current) return
+        refreshQueued.current = true
+        queueMicrotask(() => {
+            refreshQueued.current = false
+            void refresh()
+        })
+    }, [refresh])
+
+    useMMGISEvent('layer:visibilityChange', refreshOnce)
     useMMGISEvent('layer:refreshStatusChange', refresh)
-    useMMGISEvent('layer:opacityChange', refresh)
+    useMMGISEvent('layer:opacityChange', refreshOnce)
     useMMGISEvent('layer:listedChange', refresh)
     useMMGISEvent('layers:configChanged', refresh)
     useMMGISEvent('layer:runChange', refresh)
@@ -250,7 +282,7 @@ export function MMGISLayerManagerAdapter() {
     )
 
     const nodes = useMemo<LayerListNode[]>(
-        () => buildLayerList(layers, grouping?.tree, grouping?.groups),
+        () => buildLayerList(layers, grouping?.tree, grouping?.groups, grouping?.states),
         [layers, grouping],
     )
 
@@ -277,6 +309,8 @@ export function MMGISLayerManagerAdapter() {
             layers={layers}
             nodes={nodes}
             onMove={onMove}
+            onGroupVisibilityChange={(id) => { report('toggleGroupVisibility', toggleGroupVisibility(id, refresh)) }}
+            onGroupOpacityChange={(id, op) => { report('setGroupOpacity', setGroupOpacity(id, op)) }}
             loading={loading}
             renderDescription={renderDescription}
             onVisibilityChange={(id) => { report('toggleVisibility', toggleVisibility(id)) }}

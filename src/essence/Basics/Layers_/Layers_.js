@@ -736,6 +736,15 @@ const L_ = {
                 window.mmgisAPI.provide('layers:getTree', () =>
                     L_.getLayerTree()
                 ),
+                // Switches a whole group: every layer off when any of them is
+                // on, otherwise every layer on.
+                window.mmgisAPI.provide('layers:toggleGroup', (groupId) =>
+                    L_.toggleGroup(groupId)
+                ),
+                // Sets one opacity on every layer in a group.
+                window.mmgisAPI.provide('layers:setGroupOpacity', (payload) =>
+                    L_.setGroupOpacity(payload?.groupId, payload?.opacity)
+                ),
                 window.mmgisAPI.provide('layers:setOrder', (payload) => {
                     const order = payload?.order
                     if (!Array.isArray(order)) return false
@@ -4276,6 +4285,70 @@ const L_ = {
                 return [{ kind: 'layer', id: node.name }, ...walk(node.sublayers)]
             })
         return walk(L_.configData?.layers)
+    },
+    /**
+     * The UUIDs of every layer inside a group, nested groups included, or
+     * null when no group has that id.
+     * @param {string} groupId - Group (header) UUID or display name.
+     * @returns {string[] | null}
+     */
+    getGroupLayerIds: function (groupId) {
+        const uuid = L_.asLayerUUID(groupId)
+        const find = (nodes) => {
+            for (const node of nodes) {
+                if (node.kind !== 'group') continue
+                if (node.id === uuid) return node
+                const found = find(node.children)
+                if (found) return found
+            }
+            return null
+        }
+        const group = find(L_.getLayerTree())
+        if (!group) return null
+        const ids = []
+        const collect = (nodes) =>
+            nodes.forEach((n) =>
+                n.kind === 'group' ? collect(n.children) : ids.push(n.id)
+            )
+        collect(group.children)
+        return ids
+    },
+    /**
+     * Switches every layer in a group off when any of them is on, otherwise
+     * switches every layer on.
+     * @param {string} groupId - Group (header) UUID or display name.
+     * @returns {Promise<{ visible: boolean, changed: string[] } | null>}
+     *   The group's new state and the layers whose visibility changed; null
+     *   for an unknown group.
+     */
+    toggleGroup: async function (groupId) {
+        const ids = L_.getGroupLayerIds(groupId)
+        if (ids == null) return null
+        const turnOff = ids.some((id) => L_.layers.on[id] === true)
+        const changed = []
+        for (const id of ids) {
+            if ((L_.layers.on[id] === true) !== turnOff) continue
+            await L_.toggleLayer(L_.layers.data[id])
+            if ((L_.layers.on[id] === true) !== turnOff) changed.push(id)
+        }
+        return { visible: turnOff ? false : changed.length > 0, changed }
+    },
+    /**
+     * Sets one opacity on every layer in a group.
+     * @param {string} groupId - Group (header) UUID or display name.
+     * @param {number} opacity - In [0, 1].
+     * @returns {string[] | null} The layers set; null for an unknown group or
+     *   an opacity outside [0, 1].
+     */
+    setGroupOpacity: function (groupId, opacity) {
+        if (!Number.isFinite(opacity) || opacity < 0 || opacity > 1) return null
+        const ids = L_.getGroupLayerIds(groupId)
+        if (ids == null) return null
+        ids.forEach((id) => {
+            L_.layers.opacity[id] = opacity
+            L_.setLayerOpacity(id, opacity)
+        })
+        return ids
     },
     expandLayersToArray: function (layer) {
         // Recursively going through the removed layer to get all of its sub layers

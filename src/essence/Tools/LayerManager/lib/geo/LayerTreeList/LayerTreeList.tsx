@@ -1,4 +1,12 @@
-import React, { useCallback, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, {
+    useCallback,
+    useEffect,
+    useId,
+    useMemo,
+    useRef,
+    useState,
+    type ReactNode,
+} from 'react'
 import {
     DndContext,
     KeyboardSensor,
@@ -45,6 +53,13 @@ export type LayerTreeListProps = RowProps & {
      * drag only with it, and only among their siblings.
      */
     onMove?: (id: string, overId: string, placement: Placement) => void
+} & GroupHandlers
+
+type GroupHandlers = {
+    /** The group's on/off switch was flipped; no handler, no switch. */
+    onGroupVisibilityChange?: (groupId: string, visible: boolean) => void
+    /** The group's opacity was set; no handler, no opacity control. */
+    onGroupOpacityChange?: (groupId: string, opacity: number) => void
 }
 
 type GroupProps = {
@@ -52,6 +67,7 @@ type GroupProps = {
     collapsed: boolean
     onToggleCollapsed: (groupId: string, collapsed: boolean) => void
     dragHandle?: DragHandleProps
+    handlers: GroupHandlers
     renderDescription?: RenderDescription
     children: ReactNode
 }
@@ -61,19 +77,57 @@ function GroupView({
     collapsed,
     onToggleCollapsed,
     dragHandle,
+    handlers: { onGroupVisibilityChange, onGroupOpacityChange },
     renderDescription = renderAsPlainText,
     children,
 }: GroupProps) {
     const childrenId = useId()
+    const opacityPopoverId = useId()
+    const opacityHeadingId = useId()
+    const opacityBtnRef = useRef<HTMLButtonElement | null>(null)
     const infoPopoverId = useId()
     const infoBtnRef = useRef<HTMLButtonElement | null>(null)
+
+    // Shows a change at once until the host answers. Each answer arrives as a
+    // fresh group, so a switch the host left unchanged still snaps back.
+    const [isVisible, setIsVisible] = useState(group.visible === true)
+    useEffect(() => setIsVisible(group.visible === true), [group])
+    // Mixed only while the host agrees the group is on, so a click shows its
+    // result at once rather than a stale dash.
+    const isPartial = isVisible && group.visible === true && group.partial === true
+    const checkboxRef = useRef<HTMLInputElement | null>(null)
+    // Mixed is a property with no attribute, so it is set on the element.
+    useEffect(() => {
+        if (checkboxRef.current) checkboxRef.current.indeterminate = isPartial
+    }, [isPartial])
+    const [localOpacity, setLocalOpacity] = useState<number | null>(group.opacity ?? null)
+    useEffect(() => setLocalOpacity(group.opacity ?? null), [group.opacity])
+
+    const [isOpacityOpen, setIsOpacityOpen] = useState(false)
+    const closeOpacity = useCallback(() => setIsOpacityOpen(false), [])
     const [isInfoOpen, setIsInfoOpen] = useState(false)
     const closeInfo = useCallback(() => setIsInfoOpen(false), [])
     const hasDescription = hasText(group.description)
 
+    const handleVisibilityToggle = () => {
+        const next = !isVisible
+        setIsVisible(next)
+        onGroupVisibilityChange?.(group.id, next)
+    }
+
+    const handleOpacityChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const next = parseFloat(event.target.value)
+        setLocalOpacity(next)
+        onGroupOpacityChange?.(group.id, next)
+    }
+
+    // A group whose layers differ shows Mixed until it is set, and the
+    // slider starts from fully opaque.
+    const opacityLabel = localOpacity == null ? 'Mixed' : `${Math.round(localOpacity * 100)}%`
+
     return (
         <div
-            className={`blocks-layer-tree__group ${isInfoOpen ? 'blocks-layer-tree__group--open' : ''}`}
+            className={`blocks-layer-tree__group ${isInfoOpen || isOpacityOpen ? 'blocks-layer-tree__group--open' : ''}`}
             data-group-id={group.id}
         >
             <div className="blocks-layer-tree__group-header">
@@ -102,10 +156,43 @@ function GroupView({
                         aria-hidden="true"
                     />
                 </button>
+                {onGroupVisibilityChange && (
+                    <div className="blocks-layer-legend__checkbox-wrapper">
+                        <input
+                            ref={checkboxRef}
+                            type="checkbox"
+                            className="blocks-layer-legend__checkbox"
+                            checked={isVisible}
+                            onChange={handleVisibilityToggle}
+                            aria-label={`Show all layers in ${group.title}`}
+                            title={
+                                isPartial
+                                    ? `Some layers in ${group.title} are on. Turn them off`
+                                    : isVisible
+                                      ? `Turn off every layer in ${group.title}`
+                                      : `Turn ${group.title} back on`
+                            }
+                        />
+                    </div>
+                )}
                 <span className="blocks-layer-tree__group-title" title={group.title}>
                     {group.title}
                 </span>
                 <div className="blocks-layer-tree__actions">
+                    {onGroupOpacityChange && (
+                        <button
+                            ref={opacityBtnRef}
+                            type="button"
+                            className={`blocks-layer-legend__action-btn ${isOpacityOpen ? 'blocks-layer-legend__action-btn--active' : ''}`}
+                            onClick={() => setIsOpacityOpen((open) => !open)}
+                            aria-haspopup="dialog"
+                            aria-expanded={isOpacityOpen}
+                            aria-controls={isOpacityOpen ? opacityPopoverId : undefined}
+                            title={isOpacityOpen ? 'Hide group opacity' : 'Adjust group opacity'}
+                        >
+                            <span className="blocks-layer-legend__icon blocks-layer-legend__icon--opacity" />
+                        </button>
+                    )}
                     {/* Disabled through aria, as on a layer row, so its title
                         still says why it does nothing. */}
                     <button
@@ -135,6 +222,37 @@ function GroupView({
                     </button>
                 </div>
             </div>
+            {onGroupOpacityChange && (
+                <FloatingPopover
+                    id={opacityPopoverId}
+                    anchorRef={opacityBtnRef}
+                    isOpen={isOpacityOpen}
+                    onClose={closeOpacity}
+                    placement="bottom"
+                    offset={6}
+                    className="blocks-layer-legend__opacity-popover"
+                    label={`Opacity for every layer in ${group.title}`}
+                    autoFocus
+                >
+                    <div className="blocks-layer-legend__opacity-heading" id={opacityHeadingId}>
+                        Group opacity
+                    </div>
+                    <div className="blocks-layer-legend__opacity-row">
+                        <input
+                            type="range"
+                            className="blocks-layer-legend__opacity-slider"
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            value={localOpacity ?? 1}
+                            onChange={handleOpacityChange}
+                            aria-labelledby={opacityHeadingId}
+                            aria-valuetext={opacityLabel}
+                        />
+                        <span className="blocks-layer-legend__opacity-value">{opacityLabel}</span>
+                    </div>
+                </FloatingPopover>
+            )}
             {hasDescription && (
                 <FloatingPopover
                     id={infoPopoverId}
@@ -170,6 +288,7 @@ type LevelProps = {
     /** Rows carry drag handles only when moves are handled. */
     draggable: boolean
     rowProps: RowProps
+    handlers: GroupHandlers
     collapsed: (group: LayerGroup) => boolean
     onToggleCollapsed: (groupId: string, collapsed: boolean) => void
 }
@@ -204,6 +323,7 @@ function SortableNode({ node, ...rest }: Omit<LevelProps, 'nodes'> & { node: Lay
                     collapsed={rest.collapsed(node.group)}
                     onToggleCollapsed={rest.onToggleCollapsed}
                     dragHandle={dragHandle}
+                    handlers={rest.handlers}
                     renderDescription={rest.rowProps.renderDescription}
                 >
                     <SortableLevel {...rest} nodes={node.group.children} parentId={node.group.id} />
@@ -291,6 +411,8 @@ export function LayerTreeList({
     nodes,
     emptyMessage = 'No layers with legends are currently visible.',
     onMove,
+    onGroupVisibilityChange,
+    onGroupOpacityChange,
     ...rowProps
 }: LayerTreeListProps) {
     const sensors = useSensors(
@@ -326,8 +448,12 @@ export function LayerTreeList({
         if (placement && overId) onMove?.(activeId, overId, placement)
     }
 
+    // Only a list holding a group lines its rows up in the tree's columns; a
+    // flat list keeps the plain row layout.
+    const grouped = nodes.some((node) => node.kind === 'group')
+
     return (
-        <div className="blocks-layer-legend-list">
+        <div className={`blocks-layer-legend-list ${grouped ? 'blocks-layer-tree' : ''}`}>
             <DndContext
                 sensors={sensors}
                 collisionDetection={siblingsOnly}
@@ -339,6 +465,7 @@ export function LayerTreeList({
                     parentId={null}
                     draggable={onMove != null}
                     rowProps={rowProps}
+                    handlers={{ onGroupVisibilityChange, onGroupOpacityChange }}
                     collapsed={collapsed}
                     onToggleCollapsed={onToggleCollapsed}
                 />

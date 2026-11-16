@@ -57,6 +57,12 @@ export type GroupInfo = {
 export type LayerGroup = GroupInfo & {
   id: string
   children: LayerListNode[]
+  /** True while any layer in the group is on, shown in the list or not. */
+  visible?: boolean
+  /** True while some, but not all, of its layers are on. */
+  partial?: boolean
+  /** The opacity its layers share; null when they differ. */
+  opacity?: number | null
 }
 
 /** One row of a grouped list: a layer, or a group holding more rows. */

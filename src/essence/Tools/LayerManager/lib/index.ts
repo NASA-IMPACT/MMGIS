@@ -25,7 +25,7 @@ export type {
     LayerListNode,
     LayerStructureNode,
 } from './types'
-export { buildLayerList } from './utils/layerTree'
+export { buildLayerList, type LayerStates } from './utils/layerTree'
 
 // Side-effect import of the component stylesheet.
 import './styles/index.scss'

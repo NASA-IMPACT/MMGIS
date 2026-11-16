@@ -11,6 +11,8 @@ import {
     mmgisGetListedLayers,
     mmgisGetLayerConfigs,
     mmgisGetLayerTree,
+    mmgisToggleLayerGroup,
+    mmgisSetLayerGroupOpacity,
     type LayerConfig,
 } from '../../_shared/adapters/mmgisAPI'
 import {
@@ -73,6 +75,34 @@ export const setOpacity = async (layerId: string, opacity: number): Promise<void
     const success = await mmgisRequest<boolean>('layers:setOpacity', { layerUUID: layerId, opacity })
     if (success) {
         mmgisEmit('layer:opacityChange', { layerName: layerId, opacity })
+    }
+}
+
+/**
+ * Switches a whole group on or off. Each layer whose visibility changed is
+ * announced on its own, as a single layer's toggle is. When nothing changed,
+ * or the request failed, nothing is announced, so the list is refreshed
+ * directly and the switch shows the group's actual state.
+ */
+export const toggleGroupVisibility = async (groupId: string, refresh: Refresh): Promise<void> => {
+    let changed: string[] = []
+    try {
+        const result = await mmgisToggleLayerGroup(groupId)
+        if (!result) return
+        changed = result.changed
+        for (const layerName of changed) {
+            mmgisEmit('layer:visibilityChange', { layerName, visible: result.visible })
+        }
+    } finally {
+        if (changed.length === 0) await refresh()
+    }
+}
+
+/** Sets one opacity on every layer in a group, announcing each layer set. */
+export const setGroupOpacity = async (groupId: string, opacity: number): Promise<void> => {
+    const changed = await mmgisSetLayerGroupOpacity(groupId, opacity)
+    for (const layerName of changed ?? []) {
+        mmgisEmit('layer:opacityChange', { layerName, opacity })
     }
 }
 

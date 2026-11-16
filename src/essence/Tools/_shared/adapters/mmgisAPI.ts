@@ -219,6 +219,28 @@ export const mmgisGetLayerTree = (): Promise<LayerTreeNode[] | null> => {
     return mmgisRequestIfProvided<LayerTreeNode[]>('layers:getTree')
 }
 
+/** What switching a group did: its new state and the layers that changed. */
+export type GroupToggleResult = { visible: boolean; changed: string[] }
+
+/**
+ * Switches a whole group: every layer off when any of them is on,
+ * otherwise every layer on.
+ * Null for an unknown group or a core without groups.
+ */
+export const mmgisToggleLayerGroup = (
+    groupId: string,
+): Promise<GroupToggleResult | null> => {
+    return mmgisRequestIfProvided<GroupToggleResult>('layers:toggleGroup', groupId)
+}
+
+/** Sets one opacity on every layer in a group; answers the layers set. */
+export const mmgisSetLayerGroupOpacity = (
+    groupId: string,
+    opacity: number,
+): Promise<string[] | null> => {
+    return mmgisRequestIfProvided<string[]>('layers:setGroupOpacity', { groupId, opacity })
+}
+
 /** Replaces the draw order. Must hold the same layers as
  *  mmgisGetLayerOrder, in any order; core refuses anything else with false.
  *  Core keeps each layer group in one block, so an order that splits a group
