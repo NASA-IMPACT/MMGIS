@@ -52,7 +52,6 @@ beforeEach(() => {
         emit: () => {},
     }
     L_.fina(null, { engine: {} }, null, null, null, {})
-    L_.layers.groupRestore = {}
     L_.layers.opacity = {}
     load()
     vi.restoreAllMocks()
@@ -70,29 +69,18 @@ describe('layers:toggleGroup', () => {
         expect(onNow()).toEqual(['base'])
     })
 
-    test('switching back on restores exactly the layers that were on', async () => {
-        turnOn('pm', 'fc')
-        await providers['layers:toggleGroup']('aq')
-        const result = await providers['layers:toggleGroup']('aq')
-        expect(result).toEqual({ visible: true, changed: ['pm', 'fc'] })
-        expect(onNow()).toEqual(['pm', 'fc'])
-    })
-
-    test('with nothing remembered, switching on turns every layer on', async () => {
+    test('switching on turns every layer on', async () => {
         turnOn()
         const result = await providers['layers:toggleGroup']('aq')
         expect(result).toEqual({ visible: true, changed: ['pm', 'o3', 'fc'] })
     })
 
-    test('a layer turned on by itself after the group went off makes the next switch an off', async () => {
-        turnOn('pm')
+    test('switching off then on turns every layer on, not just those that were on', async () => {
+        turnOn('pm', 'fc')
         await providers['layers:toggleGroup']('aq')
-        L_.layers.on.o3 = true
         const result = await providers['layers:toggleGroup']('aq')
-        expect(result).toEqual({ visible: false, changed: ['o3'] })
-
-        await providers['layers:toggleGroup']('aq')
-        expect(onNow()).toEqual(['o3'])
+        expect(result).toEqual({ visible: true, changed: ['pm', 'o3', 'fc'] })
+        expect(onNow()).toEqual(['pm', 'o3', 'fc'])
     })
 
     test('a nested group switches only its own layers', async () => {

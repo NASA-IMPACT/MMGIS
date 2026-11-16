@@ -88,9 +88,10 @@ function GroupView({
     const infoPopoverId = useId()
     const infoBtnRef = useRef<HTMLButtonElement | null>(null)
 
-    // Both follow the host, and show a change at once until it answers.
+    // Shows a change at once until the host answers. Each answer arrives as a
+    // fresh group, so a switch the host left unchanged still snaps back.
     const [isVisible, setIsVisible] = useState(group.visible === true)
-    useEffect(() => setIsVisible(group.visible === true), [group.visible])
+    useEffect(() => setIsVisible(group.visible === true), [group])
     // Mixed only while the host agrees the group is on, so a click shows its
     // result at once rather than a stale dash.
     const isPartial = isVisible && group.visible === true && group.partial === true

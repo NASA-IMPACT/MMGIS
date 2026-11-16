@@ -309,7 +309,7 @@ export function MMGISLayerManagerAdapter() {
             layers={layers}
             nodes={nodes}
             onMove={onMove}
-            onGroupVisibilityChange={(id) => { report('toggleGroupVisibility', toggleGroupVisibility(id)) }}
+            onGroupVisibilityChange={(id) => { report('toggleGroupVisibility', toggleGroupVisibility(id, refresh)) }}
             onGroupOpacityChange={(id, op) => { report('setGroupOpacity', setGroupOpacity(id, op)) }}
             loading={loading}
             renderDescription={renderDescription}
