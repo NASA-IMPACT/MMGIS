@@ -37,6 +37,14 @@ import type {
     MapScreenshotResult 
 } from '../IMapEngine'
 import { MAP_ENGINE } from '../types/engine'
+import {
+    comparisonCropRects,
+    drawComparisonChrome,
+    readCaptions,
+    resolveChromeTheme,
+    type CaptureSide,
+    type CropRect,
+} from './comparisonCapture'
 import type { MapEngineType } from '../types/engine'
 import type { LatLng, LatLngLike, BoundsLike, PointLike } from '../types/geometry'
 import type {
@@ -782,6 +790,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * {@link addOverlay} are separate DOM nodes and are not included.
      */
     captureScreenshot(): Promise<MapScreenshotResult> {
+        if (this._comparisonEnabled) return this._captureComparison()
         return new Promise<MapScreenshotResult>((resolve, reject) => {
             try {
                 if (this._isOverlayMode && this._basemap) {
@@ -826,6 +835,119 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             } catch (err) {
                 reject(err as Error)
             }
+        })
+    }
+
+    /** The output canvas a comparison capture is composed on; a seam for tests. */
+    _createCaptureCanvas(): HTMLCanvasElement {
+        return document.createElement('canvas')
+    }
+
+    /**
+     * A comparison is several WebGL surfaces: the primary map, two follower
+     * canvases (swipe) or two panes (side-by-side), each its own context with
+     * no preserved buffer. Each is drawn into one output canvas inside its own
+     * render step, one after another, then the divider and captions the
+     * screen draws as DOM are painted on top.
+     */
+    private async _captureComparison(): Promise<MapScreenshotResult> {
+        const primary = this._primaryCanvas()
+        if (!primary) {
+            throw new Error('[DeckGLAdapter] captureScreenshot: no active map to capture')
+        }
+        const { width, height } = primary
+        const out = this._createCaptureCanvas()
+        out.width = width
+        out.height = height
+        const ctx = out.getContext('2d')
+        if (!ctx) throw new Error('[DeckGLAdapter] captureScreenshot: no 2D context to compose on')
+
+        const rects = comparisonCropRects(this._comparisonLayout, this._comparisonDividerPos, width)
+        for (const rect of rects) {
+            const surface = this._comparisonSurface(rect.side)
+            if (!surface) continue
+            await this._drawSurfaceInto(ctx, surface, rect, height)
+        }
+
+        const cssWidth = this._container.clientWidth
+        const dpr = cssWidth > 0 ? width / cssWidth : 1
+        drawComparisonChrome(ctx, {
+            width,
+            height,
+            dividerPos: this._comparisonDividerPos,
+            dpr,
+            captions: readCaptions(this._container, dpr),
+            theme: resolveChromeTheme(),
+        })
+        return canvasToPngScreenshot(out)
+    }
+
+    private _primaryCanvas(): HTMLCanvasElement | null {
+        if (this._isOverlayMode) return this._basemap?.getCanvas() ?? null
+        return this._deckCanvas(this._deck)
+    }
+
+    private _deckCanvas(deck: Deck | null): HTMLCanvasElement | null {
+        return (deck as unknown as { getCanvas?: () => HTMLCanvasElement } | null)?.getCanvas?.() ?? null
+    }
+
+    /** Which surface draws a side, in the current layout and mode. */
+    private _comparisonSurface(
+        side: CaptureSide,
+    ): { basemap: BasemapInstance } | { deck: Deck | null } | null {
+        if (this._comparisonLayout === 'sideBySide') {
+            const pane = this._sbsPanes?.[side === 'left' ? 0 : 1]
+            if (!pane) return null
+            return pane.map ? { basemap: pane.map } : { deck: pane.deck }
+        }
+        if (side === 'base') {
+            return this._isOverlayMode && this._basemap ? { basemap: this._basemap } : { deck: this._deck }
+        }
+        return { deck: side === 'left' ? this._comparisonLeftDeck : this._comparisonRightDeck }
+    }
+
+    /**
+     * Draws one strip of a surface into the output. A basemap is read inside
+     * its `render` event after a repaint, a deck right after a synchronous
+     * redraw: the only moments their buffers hold pixels.
+     */
+    private _drawSurfaceInto(
+        ctx: CanvasRenderingContext2D,
+        surface: { basemap: BasemapInstance } | { deck: Deck | null },
+        rect: CropRect,
+        height: number,
+    ): Promise<void> {
+        const draw = (canvas: HTMLCanvasElement) =>
+            ctx.drawImage(canvas, rect.sx, 0, rect.sw, canvas.height, rect.dx, 0, rect.sw, height)
+        if ('deck' in surface) {
+            const deck = surface.deck
+            if (!deck) return Promise.resolve()
+            deck.redraw('screenshot')
+            const canvas = this._deckCanvas(deck)
+            if (canvas) draw(canvas)
+            return Promise.resolve()
+        }
+        const { basemap } = surface
+        return new Promise<void>((resolve, reject) => {
+            const onRender = () => {
+                clearTimeout(timeout)
+                try {
+                    draw(basemap.getCanvas())
+                    resolve()
+                } catch (err) {
+                    reject(err as Error)
+                }
+            }
+            const timeout = setTimeout(() => {
+                basemap.off('render', onRender)
+                reject(
+                    new Error(
+                        '[DeckGLAdapter] captureScreenshot: timed out waiting for a comparison surface to render'
+                    )
+                )
+            }, SCREENSHOT_RENDER_TIMEOUT_MS)
+            basemap.once('render', onRender)
+            basemap.triggerRepaint()
         })
     }
 
