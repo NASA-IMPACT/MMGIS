@@ -1,6 +1,7 @@
 import $ from 'jquery'
 import PanelManager_ from '../PanelManager_/PanelManager_'
 import { mmgisAPI, mmgisAPI_ } from '../../mmgisAPI/mmgisAPI'
+import QueryURL from '../../Ancillary/QueryURL'
 import ToolControllerModern_ from '../ToolController_/ToolControllerModern_'
 import { getValidIconClass } from '../ToolController_/ToolMetadataUtils'
 import { createLogger } from '../Logger_/Logger_'
@@ -308,6 +309,7 @@ const UserInterfaceModern_ = {
         // bus providers can read live state without a direct import.
         mmgisAPI_._pluginController = ToolControllerModern_
         mmgisAPI_._panelManager = PanelManager_
+        QueryURL._pluginController = ToolControllerModern_
 
         if (!cleanupLayoutListener) {
             cleanupLayoutListener = mmgisAPI.on('panels:changed', this.syncDOMState.bind(this))
@@ -344,6 +346,7 @@ const UserInterfaceModern_ = {
         panels = []
         mmgisAPI_._pluginController = null
         mmgisAPI_._panelManager = null
+        QueryURL._pluginController = null
     },
 
     /**

@@ -437,6 +437,12 @@ export type TemporalExtent = {
     periodAnchor: string | null
 }
 
+/** What the opening link said about a tool, by module name; null when the
+ *  link named none, or before mission load registers the handler. */
+export const mmgisGetToolUrlState = (toolName: string): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('tool:getUrlState', toolName)
+}
+
 /**
  * Temporal extent for every layer, keyed by layer UUID, resolved by core at
  * the moment of asking. Null against a core without the handler.

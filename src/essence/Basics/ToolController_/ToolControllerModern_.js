@@ -520,6 +520,23 @@ const ToolControllerModern_ = {
     },
 
     /**
+     * Build the share link's `tools=` entry from the loaded tools
+     *
+     * @returns {string|false} `id$urlString,...` or false when no tool has one
+     */
+    getToolsUrl: function () {
+        const entries = []
+        for (const toolId of toolIdToTargetId.keys()) {
+            const tool = toolModules[toolId]
+            if (tool && typeof tool.getUrlString === 'function') {
+                const urlString = tool.getUrlString()
+                if (urlString.length > 0) entries.push(toolId + '$' + urlString)
+            }
+        }
+        return entries.length > 0 ? entries.join(',') : false
+    },
+
+    /**
      * Reload a tool in its container (destroy + load)
      *
      * @param {Object} toolMetadata - Tool metadata object

@@ -9,6 +9,9 @@ import TimeControl from '../Basics/TimeControl_/TimeControl'
 import TimeUI from '../Basics/TimeControl_/TimeUI'
 
 var QueryURL = {
+    // The modern layout's tool controller, handed over while that layout
+    // is on screen so the share link can ask it without a direct import.
+    _pluginController: null,
     checkIfMission: function () {
         return this.getSingleQueryVariable('mission')
     },
@@ -450,8 +453,13 @@ var QueryURL = {
             urlAppendage += '&viewerLoc=' + viewerLoc
 
         //tools
-        var urlTools = T_.getToolsUrl()
-        if (urlTools !== false) urlAppendage += '&tools=' + urlTools
+        var urlTools = [
+            T_.getToolsUrl(),
+            this._pluginController ? this._pluginController.getToolsUrl() : false,
+        ]
+            .filter((t) => t !== false)
+            .join(',')
+        if (urlTools.length > 0) urlAppendage += '&tools=' + urlTools
 
         //time
         if (L_.configData.time && L_.configData.time.enabled === true) {
