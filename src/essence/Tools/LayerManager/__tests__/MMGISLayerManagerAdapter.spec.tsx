@@ -27,6 +27,7 @@ let sparseTitle: string
 let setRunAnswer: unknown
 let runsFailure: Error | null
 let tree: unknown
+let groupToggle: unknown
 
 beforeEach(() => {
     outOfRange = {}
@@ -42,6 +43,7 @@ beforeEach(() => {
     setRunAnswer = true
     runsFailure = null
     tree = null
+    groupToggle = null
     configReads = 0
     listeners = new Map()
     gate = null
@@ -75,6 +77,7 @@ beforeEach(() => {
         'layers:getAllOpacities': () => ({}),
         'layers:getListed': () => listed,
         'layers:getTree': () => tree,
+        'layers:toggleGroup': () => groupToggle,
         'layers:getDataCoverage': () =>
             Object.fromEntries(
                 Object.entries(outOfRange).map(([id, flag]) => [
@@ -444,6 +447,23 @@ describe('MMGISLayerManagerAdapter groups', () => {
             '[data-group-id="aq-uuid"] .blocks-layer-tree__group-header input[type="checkbox"]',
         )!
         expect(box.checked).toBe(true)
+    })
+
+    test('the group switch snaps back when core switches no layer', async () => {
+        visible = { [SPARSE]: false, [CONTINUOUS]: false }
+        tree = grouped()
+        groupToggle = { visible: false, changed: [] }
+        await mountAdapter()
+        const box = () =>
+            mounted!.container.querySelector<HTMLInputElement>(
+                '[data-group-id="aq-uuid"] .blocks-layer-tree__group-header input[type="checkbox"]',
+            )!
+        expect(box().checked).toBe(false)
+        await act(async () => {
+            box().click()
+        })
+        await settle()
+        expect(box().checked).toBe(false)
     })
 
     test('announcements from one group action share a single refresh', async () => {

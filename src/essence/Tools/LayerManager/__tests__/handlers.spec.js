@@ -596,8 +596,10 @@ test.describe('group actions', () => {
             { 'layers:toggleGroup': { visible: false, changed: ['a', 'b'] } },
             emitCalls,
         )
-        await toggleGroupVisibility('g')
+        const refresh = vi.fn()
+        await toggleGroupVisibility('g', refresh)
         expect(requests).toEqual([{ name: 'layers:toggleGroup', params: 'g' }])
+        expect(refresh).not.toHaveBeenCalled()
         expect(emitCalls).toEqual([
             { event: 'layer:visibilityChange', payload: { layerName: 'a', visible: false } },
             { event: 'layer:visibilityChange', payload: { layerName: 'b', visible: false } },
@@ -607,8 +609,30 @@ test.describe('group actions', () => {
     test('toggleGroupVisibility announces nothing when core does not know the group', async () => {
         const emitCalls = []
         setupMock({ 'layers:toggleGroup': () => null }, emitCalls)
-        await toggleGroupVisibility('ghost')
+        const refresh = vi.fn()
+        await toggleGroupVisibility('ghost', refresh)
         expect(emitCalls).toEqual([])
+        expect(refresh).toHaveBeenCalledTimes(1)
+    })
+
+    test('toggleGroupVisibility refreshes when core switched no layer', async () => {
+        const emitCalls = []
+        setupMock({ 'layers:toggleGroup': { visible: false, changed: [] } }, emitCalls)
+        const refresh = vi.fn()
+        await toggleGroupVisibility('g', refresh)
+        expect(emitCalls).toEqual([])
+        expect(refresh).toHaveBeenCalledTimes(1)
+    })
+
+    test('toggleGroupVisibility refreshes when the request fails', async () => {
+        setupMock({
+            'layers:toggleGroup': () => {
+                throw new Error('boom')
+            },
+        })
+        const refresh = vi.fn()
+        await expect(toggleGroupVisibility('g', refresh)).rejects.toThrow('boom')
+        expect(refresh).toHaveBeenCalledTimes(1)
     })
 
 })

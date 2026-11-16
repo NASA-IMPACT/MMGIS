@@ -79,13 +79,21 @@ export const setOpacity = async (layerId: string, opacity: number): Promise<void
 
 /**
  * Switches a whole group on or off. Each layer whose visibility changed is
- * announced on its own, as a single layer's toggle is.
+ * announced on its own, as a single layer's toggle is. When nothing changed,
+ * or the request failed, nothing is announced, so the list is refreshed
+ * directly and the switch shows the group's actual state.
  */
-export const toggleGroupVisibility = async (groupId: string): Promise<void> => {
-    const result = await mmgisToggleLayerGroup(groupId)
-    if (!result) return
-    for (const layerName of result.changed) {
-        mmgisEmit('layer:visibilityChange', { layerName, visible: result.visible })
+export const toggleGroupVisibility = async (groupId: string, refresh: Refresh): Promise<void> => {
+    let changed: string[] = []
+    try {
+        const result = await mmgisToggleLayerGroup(groupId)
+        if (!result) return
+        changed = result.changed
+        for (const layerName of changed) {
+            mmgisEmit('layer:visibilityChange', { layerName, visible: result.visible })
+        }
+    } finally {
+        if (changed.length === 0) await refresh()
     }
 }
 

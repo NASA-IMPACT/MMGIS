@@ -303,7 +303,7 @@ export function MMGISLayerManagerAdapter() {
             layers={layers}
             nodes={nodes}
             onMove={onMove}
-            onGroupVisibilityChange={(id) => { report('toggleGroupVisibility', toggleGroupVisibility(id)) }}
+            onGroupVisibilityChange={(id) => { report('toggleGroupVisibility', toggleGroupVisibility(id, refresh)) }}
             loading={loading}
             renderDescription={renderDescription}
             onVisibilityChange={(id) => { report('toggleVisibility', toggleVisibility(id)) }}
