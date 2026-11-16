@@ -9,7 +9,9 @@ import {
     enableComparison,
     disableComparison,
     setComparisonLabels,
+    setComparisonDivider,
 } from './adapters/handlers'
+import type { ComparisonUrlState } from './adapters/urlState'
 
 /**
  * A request from whatever started the comparison for the panel to sit on one of
@@ -28,6 +30,10 @@ export type MMGISComparisonAdapterProps = {
     seedLayerId?: string | null
     /** Tab the entry point that started the comparison asked the panel to open on. */
     seedMode?: ComparisonModeRequest | null
+    /** The arrangement a share link carried, applied once on mount. */
+    seedUrlState?: ComparisonUrlState | null
+    /** The panel's current arrangement, for the next share link. */
+    onUrlStateChange?: (state: ComparisonUrlState | null) => void
     /** Called when the user ends the comparison / closes the panel. */
     onClose?: () => void
 }
@@ -66,25 +72,36 @@ const dateLabel = (date: Date) => moment.utc(date).format('MMM D, YYYY')
 export function MMGISComparisonAdapter({
     seedLayerId = null,
     seedMode = null,
+    seedUrlState = null,
+    onUrlStateChange,
     onClose,
 }: MMGISComparisonAdapterProps) {
     const { layers, read: layersRead } = useVisibleLayers()
     const time = useGlobalTime()
-    const [mode, setMode] = useState<ComparisonMode>('layers')
-    const [layout, setLayout] = useState<ComparisonLayout>('swipe')
-    const [leftLayerId, setLeftLayerId] = useState<string | null>(seedLayerId)
-    const [rightLayerId, setRightLayerId] = useState<string | null>(null)
-    const [compareDate, setCompareDate] = useState<Date | null>(null)
+    const [mode, setMode] = useState<ComparisonMode>(seedUrlState?.mode ?? 'layers')
+    const [layout, setLayout] = useState<ComparisonLayout>(seedUrlState?.layout ?? 'swipe')
+    const [leftLayerId, setLeftLayerId] = useState<string | null>(
+        seedUrlState?.leftLayerId ?? seedLayerId,
+    )
+    const [rightLayerId, setRightLayerId] = useState<string | null>(
+        seedUrlState?.rightLayerId ?? null,
+    )
+    const [compareDate, setCompareDate] = useState<Date | null>(
+        seedUrlState?.compareDate ? new Date(seedUrlState.compareDate) : null,
+    )
     // Whether the two choices draw on the opposite sides of the divider from
     // the ones the panel lists them beside. One flag for both modes, because
     // the panel offers one swap button; the choices themselves — the two
     // dropdowns, the two dates — stay where the user set them either way.
-    const [swapped, setSwapped] = useState(false)
+    const [swapped, setSwapped] = useState(seedUrlState?.swapped ?? false)
     const enabledRef = useRef(false)
     // Set once the user exits. The plugin loader tears this root down after
     // `onClose` returns rather than during it, so a layer event arriving in
     // that window would otherwise re-engage comparison on a closed panel.
     const closedRef = useRef(false)
+    // The divider a link asked for, applied once the first enable has settled:
+    // enabling puts it back in the middle.
+    const pendingDividerRef = useRef<number | null>(seedUrlState?.dividerPos ?? null)
 
     // Adopt a new seed layer if the panel is re-seeded from another kebab click.
     useEffect(() => {
@@ -116,9 +133,35 @@ export function MMGISComparisonAdapter({
     useEffect(() => {
         if (!layersRead) return
         const drawn = new Set(layerIds)
-        setLeftLayerId((id) => (id && !drawn.has(id) ? null : id))
-        setRightLayerId((id) => (id && !drawn.has(id) ? null : id))
+        const dropMissing = (id: string | null) => {
+            if (!id || drawn.has(id)) return id
+            // A link can name a layer the mission no longer draws.
+            console.warn(`[Comparison] layer "${id}" is not on this map; its side is left empty`)
+            return null
+        }
+        setLeftLayerId(dropMissing)
+        setRightLayerId(dropMissing)
     }, [layersRead, layerIds])
+
+    // The arrangement the share link should carry; null means no comparison.
+    useEffect(() => {
+        if (!onUrlStateChange) return
+        const ready =
+            mode === 'dates' ? compareDate != null : leftLayerId != null && rightLayerId != null
+        onUrlStateChange(
+            ready
+                ? {
+                      mode,
+                      layout,
+                      leftLayerId: mode === 'layers' ? leftLayerId : null,
+                      rightLayerId: mode === 'layers' ? rightLayerId : null,
+                      compareDate: mode === 'dates' && compareDate ? compareDate.toISOString() : null,
+                      swapped,
+                      dividerPos: 0.5,
+                  }
+                : null,
+        )
+    }, [onUrlStateChange, mode, layout, leftLayerId, rightLayerId, compareDate, swapped])
 
     /**
      * What the active mode asks the map for, or null when it is not ready to
@@ -203,13 +246,20 @@ export function MMGISComparisonAdapter({
             // the event bus and the deck adapter runs synchronously, so the
             // later of two rapid changes wins. Were any of them to become
             // genuinely asynchronous, that would have to be sequenced here.
-            void enableComparison({
+            enabledRef.current = true
+            enableComparison({
                 ...sides,
                 leftLabel: labelsRef.current.left,
                 rightLabel: labelsRef.current.right,
                 layout,
             })
-            enabledRef.current = true
+                .then(() => {
+                    const pos = pendingDividerRef.current
+                    if (pos == null || closedRef.current) return
+                    pendingDividerRef.current = null
+                    return setComparisonDivider(pos)
+                })
+                .catch((err) => console.warn('[Comparison] enable failed', err))
         } else if (enabledRef.current) {
             void disableComparison()
             enabledRef.current = false
