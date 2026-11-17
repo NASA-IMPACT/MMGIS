@@ -231,6 +231,14 @@ describe('resolveDataCoverage over an extent', () => {
         ])
     })
 
+    test("rounds a 'now/d' bound down to the start of the UTC day", () => {
+        vi.spyOn(Date, 'now').mockReturnValue(ms('2026-06-01T12:00:00Z'))
+
+        expect(extent('now/d', 'now').spans).toEqual([
+            { start: ms('2026-06-01T00:00:00Z'), end: ms('2026-06-01T12:00:00Z') },
+        ])
+    })
+
     test("leaves a 'now' bound with an unreadable offset open", () => {
         vi.spyOn(Date, 'now').mockReturnValue(ms('2026-06-01T12:00:00Z'))
 

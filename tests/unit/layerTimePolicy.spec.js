@@ -132,6 +132,7 @@ describe('layer time policy', () => {
         test('an unknown rounding unit resolves to null', () => {
             expect(resolveTimePolicy('now/q', { now: NOW })).toBeNull()
             expect(resolveTimePolicy('now/toString', { now: NOW })).toBeNull()
+            expect(resolveTimePolicy('now/D', { now: NOW })).toBeNull()
             expect(resolveTimePolicy('now/d - P1D', { now: NOW })).toBeNull()
         })
     })

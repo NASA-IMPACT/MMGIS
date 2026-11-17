@@ -69,11 +69,12 @@ const isNonEmptyString = (v: unknown): v is string =>
     typeof v === 'string' && v !== ''
 
 // The charset every string this module writes into a layer's time fields is
-// restricted to: digits, letters, `:`, `+`, `-`, `.` and whitespace. That
-// covers every form the existing readers parse — ISO datetimes and partial
-// dates, `now` policies and ISO durations — with no room for markup, since
-// these strings are later concatenated into HTML by the Layers tool.
-const SAFE_TIME_STRING_RE = /^[0-9A-Za-z:+\-.\s]+$/
+// restricted to: digits, letters, `:`, `+`, `-`, `.`, `/` and whitespace.
+// That covers every form the existing readers parse — ISO datetimes and
+// partial dates, `now` policies (including `now/d` rounding) and ISO
+// durations — with no room for markup, since these strings are later
+// concatenated into HTML by the Layers tool.
+const SAFE_TIME_STRING_RE = /^[0-9A-Za-z:+\-./\s]+$/
 
 const isSafeTimeString = (v: unknown): v is string =>
     isNonEmptyString(v) && SAFE_TIME_STRING_RE.test(v)
