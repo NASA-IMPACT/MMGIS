@@ -412,6 +412,8 @@ export const TimelineAdapter: React.FC = () => {
                 const layer: LayerConfig = configs[layerName]
 
                 if (!visibleLayers?.[layerName]) return
+                // A group header holds no data, so it has nothing to draw
+                if (layer.type === 'header') return
 
                 // Time-enabled layers stand out in the theme's secondary colour
                 const color = layer.time?.enabled

@@ -1356,3 +1356,81 @@ describe('TimelineAdapter config changes', () => {
         root = createRoot(document.createElement('div'))
     })
 })
+
+/**
+ * A group header holds no data, so it never gets a row, even when core
+ * reports it visible with the layers under it.
+ */
+describe('TimelineAdapter header layers', () => {
+    let container: HTMLElement
+    let root: Root
+    let originalResizeObserver: unknown
+
+    const render = async (
+        configs: Record<string, unknown>,
+        visible: Record<string, boolean>
+    ) => {
+        ;(window as unknown as { mmgisAPI: unknown }).mmgisAPI = {
+            request: async (name: string) => {
+                if (name === 'time:isEnabled') return true
+                if (name === 'time:getStart') return START
+                if (name === 'time:getEnd') return END
+                if (name === 'time:getCurrent') return CURRENT
+                if (name === 'tool:getVars') return {}
+                if (name === 'layers:getAllConfigs') return configs
+                if (name === 'layers:getVisible') return visible
+                return null
+            },
+            hasHandler: () => true,
+            on: () => () => {},
+            emit: () => {},
+        }
+        await act(async () => {
+            root.render(<TimelineAdapter />)
+        })
+        await act(async () => {})
+    }
+
+    const rowNames = () =>
+        [...container.querySelectorAll('.layer-name')].map(
+            (el) => el.textContent
+        )
+
+    beforeEach(() => {
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        delete (window as { mmgisAPI?: unknown }).mmgisAPI
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver
+    })
+
+    test('lists the layers in a group without a row for its header', async () => {
+        await render(
+            {
+                group: { type: 'header', display_name: 'Air Quality' },
+                ...LAYER_CONFIGS,
+            },
+            { group: true, sparse: true, basemap: true }
+        )
+        expect(rowNames()).toEqual(['Rover Images', 'Basemap'])
+    })
+
+    test('shows the empty state when only headers are visible', async () => {
+        await render(
+            { group: { type: 'header', display_name: 'Air Quality' } },
+            { group: true }
+        )
+        expect(rowNames()).toEqual([])
+        expect(container.textContent).toContain('No visible layers on the map')
+    })
+})
