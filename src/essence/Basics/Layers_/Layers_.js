@@ -606,7 +606,7 @@ const L_ = {
                 // When each layer has data, as ISO datetimes or null, and its
                 // parsed cadence (`interval`, or null). The config's
                 // dataStartTime/dataEndTime may be a policy ("now",
-                // "now - P1D"); this is where it is resolved, so a plugin
+                // "now - P1D", "now/d"); this is where it is resolved, so a plugin
                 // never sees the policy string. Same call shapes as above.
                 window.mmgisAPI.provide('layers:getTemporalExtent', (layerUUID) => {
                     if (layerUUID != null) {

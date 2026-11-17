@@ -116,8 +116,23 @@ describe('layer time policy', () => {
             )
         })
 
+        test('a time already on the unit boundary rounds to itself', () => {
+            const midnight = new Date('2026-08-25T00:00:00Z')
+            expect(resolveTimePolicy('now/d', { now: midnight })).toBe(
+                '2026-08-25T00:00:00Z',
+            )
+        })
+
+        test('rounding keeps years 0-99 as written', () => {
+            expect(resolveTimePolicy('now - P2000Y/y', { now: NOW })).toBe(
+                '0026-01-01T00:00:00Z',
+            )
+        })
+
         test('an unknown rounding unit resolves to null', () => {
             expect(resolveTimePolicy('now/q', { now: NOW })).toBeNull()
+            expect(resolveTimePolicy('now/toString', { now: NOW })).toBeNull()
+            expect(resolveTimePolicy('now/d - P1D', { now: NOW })).toBeNull()
         })
     })
 
@@ -519,6 +534,13 @@ describe('isPeriodicRequest', () => {
         expect(isPeriodicRequest({ enabled: true, interval: 'P1D' })).toBe(true)
         expect(isPeriodicRequest({ enabled: true, interval: 'P7D' })).toBe(false)
         expect(isPeriodicRequest({ enabled: true })).toBe(false)
+    })
+
+    test('a rounded now start anchors nothing, so periods follow the calendar', () => {
+        const daily = { enabled: true, interval: 'P1D', dataStartTime: 'now/d' }
+        const weekly = { enabled: true, interval: 'P7D', dataStartTime: 'now/d' }
+        expect(isPeriodicRequest(daily)).toBe(true)
+        expect(isPeriodicRequest(weekly)).toBe(false)
     })
 })
 
