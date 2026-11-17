@@ -6,10 +6,14 @@
  *   "now"            the current moment
  *   "now - P1D"      an ISO-8601 duration before now
  *   "now + P5D"      a duration after now (forecast windows)
+ *   "now/d"          the start of the current UTC day
+ *   "now - P1D/d"    the start of the previous UTC day
  *
  * "now" resolves to the raw current moment, never rounded — matching
  * veda-ui, which normalizes an ongoing (null-ended) STAC domain to the
- * current datetime as-is.
+ * current datetime as-is. A trailing "/y", "/M", "/d" or "/h" rounds down,
+ * after any offset, to the start of that UTC unit, as Elasticsearch and
+ * Grafana date math do.
  *
  * A periodic layer additionally declares `time.interval`, an ISO-8601
  * duration ("P7D"): data exists only at start-anchored steps, so the
@@ -30,7 +34,23 @@ import { toCanonicalLayerType } from '../MapEngines/types/engine'
 const DURATION_RE =
     /^P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/
 
-const POLICY_RE = /^now(?:\s*([+-])\s*(\S+))?$/
+// now [± duration] [/ unit] — Elasticsearch-style date math.
+const POLICY_RE = /^now(?:\s*([+-])\s*([^\s/]+))?(?:\s*\/\s*(\S+))?$/
+
+// Rounds `date` down to the start of a UTC year, month, day or hour, or
+// returns null for any other unit.
+function floorToUnit(date: Date, unit: string): Date | null {
+    const parts = [
+        date.getUTCFullYear(),
+        date.getUTCMonth(),
+        date.getUTCDate(),
+        date.getUTCHours(),
+    ]
+    const keep = { y: 1, M: 2, d: 3, h: 4 }[unit]
+    if (keep == null) return null
+    const [y, mo = 0, d = 1, h = 0] = parts.slice(0, keep)
+    return new Date(Date.UTC(y, mo, d, h))
+}
 
 export interface Duration {
     years: number
@@ -113,11 +133,16 @@ export function resolveTimePolicy(
     }
 
     let resolved = options.now != null ? new Date(options.now) : new Date()
-    const [, sign, offset] = policy
+    const [, sign, offset, unit] = policy
     if (offset != null) {
         const duration = parseISODuration(offset)
         if (duration == null) return null
         resolved = addDuration(resolved, duration, sign === '-' ? -1 : 1)
+    }
+    if (unit != null) {
+        const floored = floorToUnit(resolved, unit)
+        if (floored == null) return null
+        resolved = floored
     }
     return toIso(resolved)
 }

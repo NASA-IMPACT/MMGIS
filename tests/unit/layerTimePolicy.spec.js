@@ -91,6 +91,34 @@ describe('layer time policy', () => {
                 '2026-08-26T15:42:31Z',
             )
         })
+
+        test('"/unit" rounds down to the start of that UTC unit', () => {
+            expect(resolveTimePolicy('now/d', { now: NOW })).toBe(
+                '2026-08-25T00:00:00Z',
+            )
+            expect(resolveTimePolicy('now/h', { now: NOW })).toBe(
+                '2026-08-25T15:00:00Z',
+            )
+            expect(resolveTimePolicy('now/M', { now: NOW })).toBe(
+                '2026-08-01T00:00:00Z',
+            )
+            expect(resolveTimePolicy('now/y', { now: NOW })).toBe(
+                '2026-01-01T00:00:00Z',
+            )
+        })
+
+        test('rounding applies after the offset', () => {
+            expect(resolveTimePolicy('now - P1D/d', { now: NOW })).toBe(
+                '2026-08-24T00:00:00Z',
+            )
+            expect(resolveTimePolicy('now-P1D / d', { now: NOW })).toBe(
+                '2026-08-24T00:00:00Z',
+            )
+        })
+
+        test('an unknown rounding unit resolves to null', () => {
+            expect(resolveTimePolicy('now/q', { now: NOW })).toBeNull()
+        })
     })
 
     describe('resolveTemporalExtent', () => {
