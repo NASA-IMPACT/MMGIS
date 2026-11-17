@@ -478,14 +478,14 @@
             {
               "field": "time.dataStartTime",
               "name": "Data Start Time",
-              "description": "The earliest time this layer has data for. The layer is not requested while the timeline's current time is before it. Use an ISO 8601 datetime (e.g., 2020-01-01T00:00:00Z); a partial date starts at the beginning of what it names, so 2020-03 starts on 1 March. Or use now to follow the current date, optionally offset by an ISO 8601 duration (e.g., now - P1D). Leave empty to leave the start unconstrained. An unreadable value is ignored. When a Time Extent URL is set below and its path finds a value, that value is used instead and this one is the fallback.",
+              "description": "The earliest time this layer has data for. The layer is not requested while the timeline's current time is before it. Use an ISO 8601 datetime (e.g., 2020-01-01T00:00:00Z); a partial date starts at the beginning of what it names, so 2020-03 starts on 1 March. Or use now to follow the current date, optionally offset by an ISO 8601 duration (e.g., now - P1D) and rounded down to the start of a UTC year, month, day or hour with /y, /M, /d or /h, case-sensitive (e.g., now/d for the start of today). Leave empty to leave the start unconstrained. An unreadable value is ignored. When a Time Extent URL is set below and its path finds a value, that value is used instead and this one is the fallback.",
               "type": "text",
               "width": 4
             },
             {
               "field": "time.dataEndTime",
               "name": "Data End Time",
-              "description": "The latest time this layer has data for. The layer is not requested while the timeline's current time is after it. Use an ISO 8601 datetime (e.g., 2025-12-31T23:59:59Z); a partial date runs to the end of what it names, so 2020-03 runs to the end of March. Or use now for a collection that is still growing, so the layer stays current without edits, optionally offset by an ISO 8601 duration (e.g., now + P5D). Leave empty to leave the end unconstrained. An unreadable value is ignored. When a Time Extent URL is set below and its path finds a value, that value is used instead and this one is the fallback.",
+              "description": "The latest time this layer has data for. The layer is not requested while the timeline's current time is after it. Use an ISO 8601 datetime (e.g., 2025-12-31T23:59:59Z); a partial date runs to the end of what it names, so 2020-03 runs to the end of March. Or use now for a collection that is still growing, so the layer stays current without edits, optionally offset by an ISO 8601 duration (e.g., now + P5D) and rounded down to the start of a UTC year, month, day or hour with /y, /M, /d or /h, case-sensitive (e.g., now/d to end at the start of today; rounding is always down, even for an end time). Leave empty to leave the end unconstrained. An unreadable value is ignored. When a Time Extent URL is set below and its path finds a value, that value is used instead and this one is the fallback.",
               "type": "text",
               "width": 4
             },

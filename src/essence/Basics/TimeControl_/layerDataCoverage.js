@@ -15,15 +15,16 @@ import { readEntry, resolveListedEntries } from './listedDates'
  * Epoch milliseconds throughout. An open bound is -Infinity / Infinity.
  */
 
-// A `now` bound, bare or offset by a duration (`now - P1D`), names a moving
-// instant rather than a fixed one.
+// A `now` bound, bare, offset (`now - P1D`) or rounded (`now/d`), names a
+// moving instant rather than a fixed one.
 const isMovingBound = (raw) =>
     typeof raw === 'string' && raw.trim().startsWith('now')
 
 /**
  * One bound of an extent. Absent or unreadable is open. A `now` bound is
  * resolved by the core's time-policy reader, so it accepts the same
- * `now ± <ISO 8601 duration>` forms every other reader of these fields does.
+ * `now [± <ISO 8601 duration>] [/ y|M|d|h]` forms every other reader of
+ * these fields does.
  * An ISO 8601 bound covers its whole unit, so a start opens at the beginning
  * of what it names and an end closes at the close of it: an end of 2020-03
  * runs to the last instant of March. Anything else is read leniently as the

@@ -6,10 +6,14 @@
  *   "now"            the current moment
  *   "now - P1D"      an ISO-8601 duration before now
  *   "now + P5D"      a duration after now (forecast windows)
+ *   "now/d"          the start of the current UTC day
+ *   "now - P1D/d"    the start of the previous UTC day
  *
- * "now" resolves to the raw current moment, never rounded — matching
+ * Bare "now" resolves to the raw current moment, unrounded — matching
  * veda-ui, which normalizes an ongoing (null-ended) STAC domain to the
- * current datetime as-is.
+ * current datetime as-is. A trailing "/y", "/M", "/d" or "/h" rounds down,
+ * after any offset, to the start of that UTC unit, as Elasticsearch and
+ * Grafana date math do.
  *
  * A periodic layer additionally declares `time.interval`, an ISO-8601
  * duration ("P7D"): data exists only at start-anchored steps, so the
@@ -30,7 +34,16 @@ import { toCanonicalLayerType } from '../MapEngines/types/engine'
 const DURATION_RE =
     /^P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/
 
-const POLICY_RE = /^now(?:\s*([+-])\s*(\S+))?$/
+// now [± duration] [/ y|M|d|h]
+const POLICY_RE = /^now(?:\s*([+-])\s*([^\s/]+))?(?:\s*\/\s*(\S+))?$/
+
+// The letter after "/" and the UTC unit it rounds down to.
+const ROUND_TO_UNIT = new Map<string, 'year' | 'month' | 'day' | 'hour'>([
+    ['y', 'year'],
+    ['M', 'month'],
+    ['d', 'day'],
+    ['h', 'hour'],
+])
 
 export interface Duration {
     years: number
@@ -113,11 +126,16 @@ export function resolveTimePolicy(
     }
 
     let resolved = options.now != null ? new Date(options.now) : new Date()
-    const [, sign, offset] = policy
+    const [, sign, offset, roundTo] = policy
     if (offset != null) {
         const duration = parseISODuration(offset)
         if (duration == null) return null
         resolved = addDuration(resolved, duration, sign === '-' ? -1 : 1)
+    }
+    if (roundTo != null) {
+        const unit = ROUND_TO_UNIT.get(roundTo)
+        if (unit == null) return null
+        resolved = startOfUtcUnit(resolved, unit)
     }
     return toIso(resolved)
 }
@@ -246,11 +264,11 @@ function calendarUnitOf(
     return match ? match[1] : null
 }
 
-// The UTC calendar year/month/day/hour holding `at`, as [start, next start).
-function calendarPeriod(
+// `at` rounded down to the start of its UTC year, month, day or hour.
+function startOfUtcUnit(
     at: Date,
     unit: 'year' | 'month' | 'day' | 'hour'
-): [Date, Date] {
+): Date {
     const y = at.getUTCFullYear()
     const mo = unit === 'year' ? 0 : at.getUTCMonth()
     const day = unit === 'year' || unit === 'month' ? 1 : at.getUTCDate()
@@ -258,11 +276,20 @@ function calendarPeriod(
     const start = new Date(Date.UTC(y, mo, day, h))
     // Date.UTC treats years 0-99 as 1900-1999; setUTCFullYear does not.
     start.setUTCFullYear(y)
+    return start
+}
+
+// The UTC calendar year/month/day/hour holding `at`, as [start, next start).
+function calendarPeriod(
+    at: Date,
+    unit: 'year' | 'month' | 'day' | 'hour'
+): [Date, Date] {
+    const start = startOfUtcUnit(at, unit)
     const end = new Date(start)
-    if (unit === 'year') end.setUTCFullYear(y + 1)
-    else if (unit === 'month') end.setUTCMonth(mo + 1)
-    else if (unit === 'day') end.setUTCDate(day + 1)
-    else end.setUTCHours(h + 1)
+    if (unit === 'year') end.setUTCFullYear(start.getUTCFullYear() + 1)
+    else if (unit === 'month') end.setUTCMonth(start.getUTCMonth() + 1)
+    else if (unit === 'day') end.setUTCDate(start.getUTCDate() + 1)
+    else end.setUTCHours(start.getUTCHours() + 1)
     return [start, end]
 }
 
