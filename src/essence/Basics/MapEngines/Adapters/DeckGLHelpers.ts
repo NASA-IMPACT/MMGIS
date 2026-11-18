@@ -196,32 +196,68 @@ function getPropValue(object: unknown, path: string | undefined): unknown {
         )
 }
 
-/**
- * A colour a feature carries on itself, which outranks every colour the layer
- * would give it, as on the Leaflet engine: `properties.style.<field>`, the
- * form drawn and annotated features store their style in, then the
- * feature-level `style.fill` or `style.stroke`.
- * @param object - GeoJSON feature or plain data record.
- * @param field - `fillColor` for the fill, `color` for the stroke.
- * @returns Undefined when the feature carries no such colour.
- */
-function featureOwnColor(
-    object: unknown,
-    field: 'fillColor' | 'color'
-): string | undefined {
-    const carried = featureProperties(object)?.style as
-        | Record<string, unknown>
-        | undefined
-    const ownStyle = (object as { style?: Record<string, unknown> } | null)
-        ?.style
-    const value =
-        (carried != null && typeof carried === 'object'
-            ? carried[field]
-            : undefined) ??
-        (ownStyle != null && typeof ownStyle === 'object'
-            ? ownStyle[field === 'fillColor' ? 'fill' : 'stroke']
-            : undefined)
+/** A colour field's value, when it holds one. */
+function colorString(value: unknown): string | undefined {
     return typeof value === 'string' && value !== '' ? value : undefined
+}
+
+/**
+ * Which feature-carried style a stroke or fill accessor reads, and where.
+ * `carried` is the `properties.style` field drawn and annotated features keep
+ * their style in; `featureLevel` is the feature's own `style` key.
+ */
+const OWN_COLOR_FIELDS = {
+    fillColor: { carried: 'fillColor', featureLevel: 'fill' },
+    color: { carried: 'color', featureLevel: 'stroke' },
+} as const
+
+/**
+ * One feature's stroke or fill colour, in the order the Leaflet vector path
+ * resolves it:
+ *
+ * 1. A feature whose properties carry a `style` object is styled from that
+ *    style over the layer's configured one: its own colour, else the fixed
+ *    colour. Nothing value-driven or `*Prop` applies to it.
+ * 2. Otherwise, when value styling places the feature, a feature-level
+ *    `style.fill`/`style.stroke` beats it.
+ * 3. Otherwise a configured `*Prop` decides, and a feature-level colour does
+ *    not get a say.
+ * 4. Otherwise the feature-level colour, else the fixed colour.
+ *
+ * Feature-carried colours are read only where Leaflet reads them, on vector
+ * layers: the Leaflet vector tile path never does.
+ *
+ * @returns Undefined for the layer's fixed colour.
+ */
+function resolveFeatureColor(
+    feature: Record<string, unknown>,
+    field: 'fillColor' | 'color',
+    readsFeatureStyle: boolean,
+    valueColor: () => string | undefined,
+    propName: string | undefined
+): string | undefined {
+    const fields = OWN_COLOR_FIELDS[field]
+    if (readsFeatureStyle) {
+        const carried = featureProperties(feature)?.style
+        if (carried != null && typeof carried === 'object')
+            return colorString(
+                (carried as Record<string, unknown>)[fields.carried]
+            )
+    }
+    const ownStyle = readsFeatureStyle
+        ? (feature as { style?: unknown }).style
+        : undefined
+    const featureLevel =
+        ownStyle != null && typeof ownStyle === 'object'
+            ? colorString(
+                  (ownStyle as Record<string, unknown>)[fields.featureLevel]
+              )
+            : undefined
+
+    const valueVal = valueColor()
+    if (valueVal !== undefined) return featureLevel ?? valueVal
+    if (propName) return getPropValue(feature, propName) as string | undefined
+    return featureLevel
 }
 
 /** The part of a fetch Response that {@link isImageTileResponse} reads. */
@@ -384,7 +420,8 @@ function parseWmsUrl(url: string): {
 function resolveStyleAccessors(
     style: Record<string, unknown>,
     legendData?: unknown,
-    legendConfigured?: boolean
+    legendConfigured?: boolean,
+    readsFeatureStyle = false
 ) {
     const colorBy = compileColorBy(style.colorBy)
     const legend = compileLegendStyle(legendData)
@@ -427,25 +464,24 @@ function resolveStyleAccessors(
     const getFillColor =
         fillColorProp || fillOpacityProp || valueStyled
             ? (feature: Record<string, unknown>) => {
-                  // A colour the feature carries outranks value styling, which
-                  // outranks the *Prop and flat colours. A feature value
-                  // styling does not cover — no such property, or a
-                  // non-numeric value — resolves to undefined here and drops
-                  // through, so it keeps the layer's fixed colour rather than
-                  // drawing black.
-                  const legendVal =
-                      featureOwnColor(feature, 'fillColor') ??
-                      (valueStyled ? valueColors(feature)?.fillColor : undefined)
-                  const hexVal = fillColorProp
-                      ? (getPropValue(feature, fillColorProp) as string | undefined)
-                      : undefined
+                  // A feature value styling does not cover — no such
+                  // property, or a non-numeric value — resolves to undefined
+                  // and drops through, so it keeps the layer's fixed colour
+                  // rather than drawing black.
+                  const colorVal = resolveFeatureColor(
+                      feature,
+                      'fillColor',
+                      readsFeatureStyle,
+                      () => (valueStyled ? valueColors(feature)?.fillColor : undefined),
+                      fillColorProp
+                  )
                   const alphaVal = fillOpacityProp
                       ? getPropValue(feature, fillOpacityProp)
                       : undefined
-                  if (legendVal === undefined && hexVal === undefined && alphaVal === undefined)
+                  if (colorVal === undefined && alphaVal === undefined)
                       return staticFillColor
                   return hexToRgba(
-                      legendVal ?? hexVal ?? (style.fillColor as string | undefined),
+                      colorVal ?? (style.fillColor as string | undefined),
                       alphaVal !== undefined
                           ? Number(alphaVal)
                           : style.fillOpacity !== undefined
@@ -456,22 +492,29 @@ function resolveStyleAccessors(
               }
             : staticFillColor
 
+    // On a layer that reads feature-carried colours, a value-styled layer
+    // resolves its stroke per feature even when value styling leaves the
+    // stroke alone, so a feature's own stroke colour still shows.
     const getLineColor =
-        colorProp || opacityProp || valueStyledStroke
+        colorProp ||
+        opacityProp ||
+        valueStyledStroke ||
+        (readsFeatureStyle && valueStyled)
             ? (feature: Record<string, unknown>) => {
-                  const legendVal =
-                      featureOwnColor(feature, 'color') ??
-                      (valueStyledStroke ? valueColors(feature)?.color : undefined)
-                  const hexVal = colorProp
-                      ? (getPropValue(feature, colorProp) as string | undefined)
-                      : undefined
+                  const colorVal = resolveFeatureColor(
+                      feature,
+                      'color',
+                      readsFeatureStyle,
+                      () => (valueStyledStroke ? valueColors(feature)?.color : undefined),
+                      colorProp
+                  )
                   const alphaVal = opacityProp
                       ? getPropValue(feature, opacityProp)
                       : undefined
-                  if (legendVal === undefined && hexVal === undefined && alphaVal === undefined)
+                  if (colorVal === undefined && alphaVal === undefined)
                       return staticLineColor
                   return hexToRgba(
-                      legendVal ?? hexVal ?? (style.color as string | undefined),
+                      colorVal ?? (style.color as string | undefined),
                       alphaVal !== undefined
                           ? Number(alphaVal)
                           : style.opacity !== undefined
@@ -616,7 +659,9 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 getLineWidth,
                 getPointRadius,
                 colorFingerprint,
-            } = resolveStyleAccessors(style, o.legend)
+                // Colours a feature carries are read on vector layers only,
+                // as the Leaflet engine reads them.
+            } = resolveStyleAccessors(style, o.legend, undefined, true)
 
             const markerIcon = o.variables?.markerIcon
             const iconUrl = markerIcon?.iconUrl

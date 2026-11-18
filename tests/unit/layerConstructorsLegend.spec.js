@@ -280,6 +280,61 @@ describe('constructVectorLayer colorBy styling', () => {
         expect(again.color).toBe('#00ff00')
     })
 
+    // The deck.gl vector accessors read a feature's own colours in the order
+    // this path does. Each case is styled on a freshly built layer, because a
+    // feature carrying its own style is merged over whatever the layer's style
+    // object holds at the time.
+    test.each([
+        ['band only', { frp: 20 }, undefined, {}],
+        ['no band, no own colour', {}, undefined, {}],
+        [
+            'properties.style colours',
+            { frp: 20, style: { fillColor: '#ffff00', color: '#ff00ff' } },
+            undefined,
+            {},
+        ],
+        ['properties.style without colours', { frp: 20, style: { weight: 3 } }, undefined, {}],
+        ['feature-level colours', { frp: 20 }, { fill: '#ffff00', stroke: '#ff00ff' }, {}],
+        ['feature-level colours alone', {}, { fill: '#ffff00', stroke: '#ff00ff' }, {}],
+        [
+            'feature-level colours against *Prop',
+            { c: '#ff0000' },
+            { fill: '#ffff00', stroke: '#ff00ff' },
+            { fillColorProp: 'c', colorProp: 'c' },
+        ],
+        [
+            'band against *Prop and feature-level colours',
+            { frp: 20, c: '#ff0000' },
+            { fill: '#ffff00', stroke: '#ff00ff' },
+            { fillColorProp: 'c', colorProp: 'c' },
+        ],
+    ])('colours a feature with %s the same as deck.gl', async (_label, properties, featureStyle, extra) => {
+        const { buildDeckLayer, hexToRgba } = await import(
+            '../../src/essence/Basics/MapEngines/Adapters/DeckGLHelpers.ts'
+        )
+        const style = {
+            ...fixed,
+            opacity: 1,
+            fillOpacity: 1,
+            colorBy: colorBy({ applyToStroke: true }),
+            ...extra,
+        }
+        const feature = featureStyle ? { style: featureStyle } : {}
+        const leaflet = styleOf(build(style, null), properties, feature)
+        const deck = buildDeckLayer('parity-own', {
+            type: 'vector',
+            geojson: { type: 'FeatureCollection', features: [] },
+            style,
+        })
+        const deckFeature = { properties, ...feature }
+        expect(deck.props.getFillColor(deckFeature)).toEqual(
+            hexToRgba(leaflet.fillColor, 1)
+        )
+        expect(deck.props.getLineColor(deckFeature)).toEqual(
+            hexToRgba(leaflet.color, 1)
+        )
+    })
+
     test('ignores a colorBy mode this build does not implement', () => {
         const options = build({
             ...fixed,

@@ -798,10 +798,20 @@ test.describe('DeckGLHelpers', () => {
                 'leaves the %s stroke on its fixed colour by default',
                 (type) => {
                     const layer = rangedLayer(`ranges-stroke-off-${type}`, type)
-                    // A constant: nothing reads a property for the stroke.
-                    expect(layer.props.getLineColor).toEqual([0, 255, 0, 255])
+                    const getLineColor = layer.props.getLineColor
+                    const colour = Array.isArray(getLineColor)
+                        ? getLineColor
+                        : getLineColor({ properties: { frp: 20 } })
+                    expect(colour).toEqual([0, 255, 0, 255])
                 }
             )
+
+            test('keeps the vector tile stroke a constant without applyToStroke', () => {
+                // Nothing reads a property for it: vector tile layers read no
+                // feature-carried stroke colour.
+                const layer = rangedLayer('ranges-stroke-const', 'vectortile')
+                expect(layer.props.getLineColor).toEqual([0, 255, 0, 255])
+            })
 
             test.each([['vectortile'], ['vector']])(
                 'colours the %s stroke too when applyToStroke is set',
@@ -844,40 +854,92 @@ test.describe('DeckGLHelpers', () => {
                 }
             )
 
-            test.each([['vectortile'], ['vector']])(
-                'lets a colour the %s feature carries outrank colorBy',
-                (type) => {
-                    const layer = rangedLayer(`ranges-own-${type}`, type, {
+            // The order the Leaflet vector path resolves a feature's colours
+            // in; layerConstructorsLegend.spec.js checks the two engines agree.
+            test.describe('colours a vector feature carries', () => {
+                const vector = (id, style = {}) =>
+                    rangedLayer(id, 'vector', {
                         colorBy: ranges({ applyToStroke: true }),
+                        ...style,
                     })
-                    const carried = {
+
+                test('a properties.style colour outranks colorBy', () => {
+                    const layer = vector('own-carried')
+                    const feature = {
                         properties: {
                             frp: 20,
                             style: { fillColor: '#ffff00', color: '#ff00ff' },
                         },
                     }
-                    expect(layer.props.getFillColor(carried)).toEqual([255, 255, 0, 255])
-                    expect(layer.props.getLineColor(carried)).toEqual([255, 0, 255, 255])
-                    const featureLevel = {
+                    expect(layer.props.getFillColor(feature)).toEqual([255, 255, 0, 255])
+                    expect(layer.props.getLineColor(feature)).toEqual([255, 0, 255, 255])
+                })
+
+                test('a properties.style without colours keeps the fixed colour', () => {
+                    // Leaflet styles such a feature from its own style over the
+                    // layer's, with no value styling.
+                    const layer = vector('own-carried-blank')
+                    expect(
+                        layer.props.getFillColor({ properties: { frp: 20, style: { weight: 3 } } })
+                    ).toEqual([0, 255, 0, 255])
+                })
+
+                test('a feature-level colour outranks colorBy', () => {
+                    const layer = vector('own-level')
+                    const feature = {
                         properties: { frp: 20 },
                         style: { fill: '#ffff00', stroke: '#ff00ff' },
                     }
-                    expect(layer.props.getFillColor(featureLevel)).toEqual([255, 255, 0, 255])
-                    expect(layer.props.getLineColor(featureLevel)).toEqual([255, 0, 255, 255])
-                    // A carried style without colours leaves colorBy in charge.
-                    expect(
-                        layer.props.getFillColor({ properties: { frp: 20, style: { weight: 3 } } })
-                    ).toEqual([0, 0, 255, 255])
-                }
-            )
+                    expect(layer.props.getFillColor(feature)).toEqual([255, 255, 0, 255])
+                    expect(layer.props.getLineColor(feature)).toEqual([255, 0, 255, 255])
+                })
 
-            test('lets a colour the feature carries outrank legend rows', () => {
-                const layer = rampedLayer('legend-own', 'vector')
-                expect(
-                    layer.props.getFillColor({
-                        properties: { co2: 400, style: { fillColor: '#ff0000' } },
+                test('a feature-level colour does not outrank a *Prop colour', () => {
+                    const layer = vector('own-level-prop', { fillColorProp: 'c' })
+                    // Unplaced by the bands, so the *Prop colour decides.
+                    expect(
+                        layer.props.getFillColor({
+                            properties: { c: '#ff0000' },
+                            style: { fill: '#ffff00' },
+                        })
+                    ).toEqual([255, 0, 0, 255])
+                    // With no *Prop value either, the fixed colour stands.
+                    expect(
+                        layer.props.getFillColor({
+                            properties: {},
+                            style: { fill: '#ffff00' },
+                        })
+                    ).toEqual([0, 255, 0, 255])
+                })
+
+                test('a feature-level colour shows when nothing else applies', () => {
+                    const layer = vector('own-level-only')
+                    expect(
+                        layer.props.getFillColor({ properties: {}, style: { fill: '#ffff00' } })
+                    ).toEqual([255, 255, 0, 255])
+                })
+
+                test('a properties.style colour outranks legend rows', () => {
+                    const layer = rampedLayer('legend-own', 'vector')
+                    expect(
+                        layer.props.getFillColor({
+                            properties: { co2: 400, style: { fillColor: '#ff0000' } },
+                        })
+                    ).toEqual([255, 0, 0, 255])
+                })
+
+                test('vector tile layers read no colour a feature carries', () => {
+                    // Nor does the Leaflet vector tile path.
+                    const layer = rangedLayer('own-vectortile', 'vectortile', {
+                        colorBy: ranges({ applyToStroke: true }),
                     })
-                ).toEqual([255, 0, 0, 255])
+                    const feature = {
+                        properties: { frp: 20, style: { fillColor: '#ffff00' } },
+                        style: { stroke: '#ff00ff' },
+                    }
+                    expect(layer.props.getFillColor(feature)).toEqual([0, 0, 255, 255])
+                    expect(layer.props.getLineColor(feature)).toEqual([0, 0, 255, 255])
+                })
             })
 
             test('keeps the layer fill opacity', () => {
