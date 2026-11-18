@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import {
     colormapSourcesFor,
     colormapTableNow,
+    findColormapRamp,
     isColormapReversible,
     listColormaps,
     peekColormapTable,
@@ -238,12 +239,76 @@ describe('colormapTableNow', () => {
     })
 })
 
+describe('colormapTableNow: one upgrade per caller', () => {
+    // A layer rebuilt several times while its service table loads is told
+    // once that it arrived, not once per rebuild.
+    test('asking again while the lookup is in flight adds no second upgrade', async () => {
+        stubService(EIC())
+        const onUpgrade = vi.fn()
+
+        colormapTableNow({ name: 'naqfc_pm25' }, ctx, onUpgrade, 'layer-a')
+        colormapTableNow({ name: 'naqfc_pm25' }, ctx, onUpgrade, 'layer-a')
+        colormapTableNow({ name: 'NAQFC_PM25' }, ctx, onUpgrade, 'layer-a')
+        // Another caller waiting on the same ramp is told too.
+        const other = vi.fn()
+        colormapTableNow({ name: 'naqfc_pm25' }, ctx, other, 'layer-b')
+
+        await resolveColormapTable({ name: 'naqfc_pm25' }, ctx)
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(onUpgrade).toHaveBeenCalledTimes(1)
+        expect(other).toHaveBeenCalledTimes(1)
+    })
+
+    test('a key waits again once its lookup has landed', async () => {
+        unreachable()
+        const onUpgrade = vi.fn()
+        colormapTableNow({ name: 'missing' }, ctx, onUpgrade, 'layer-a')
+        await resolveColormapTable({ name: 'missing' }, ctx)
+        await new Promise((resolve) => setTimeout(resolve, 0))
+
+        // The failure is remembered for a while; once it expires a new ask
+        // starts a new lookup and may be told again.
+        clearColormapCache()
+        stubService(EIC())
+        colormapTableNow({ name: 'missing' }, ctx, onUpgrade, 'layer-a')
+        expect(peekColormapTable({ name: 'missing' }, ctx).settled).toBe(false)
+    })
+})
+
+describe('findColormapRamp', () => {
+    const ramps = [
+        { name: 'viridis', reversible: true },
+        { name: 'foo_r', reversible: false },
+    ]
+
+    test('matches the exact name first, then the forward name of a `_r`', () => {
+        expect(findColormapRamp(ramps, 'FOO_R')).toBe(ramps[1])
+        expect(findColormapRamp(ramps, 'viridis_r')).toBe(ramps[0])
+        expect(findColormapRamp(ramps, 'Viridis')).toBe(ramps[0])
+        expect(findColormapRamp(ramps, 'foo')).toBeNull()
+        expect(findColormapRamp(ramps, '')).toBeNull()
+    })
+})
+
 describe('listColormaps', () => {
     test("lists the service's ramps when it can answer", async () => {
         stubService(EIC())
         const { sourceId, ramps } = await listColormaps(null, ctx)
         expect(sourceId).toBe(`service:${BASE}`)
         expect(ramps.map((r) => r.name)).toContain('naqfc_pm25')
+    })
+
+    // The list and each ramp are separate requests; one failing does not
+    // take the other with it.
+    test('a list that fails still leaves the service painting its ramps', async () => {
+        const responses = EIC()
+        delete responses['']
+        stubService(responses)
+
+        expect((await listColormaps(null, ctx)).sourceId).toBe('bundle')
+        expect((await resolveColormapTable({ name: 'naqfc_pm25' }, ctx)).sourceId).toBe(
+            `service:${BASE}`
+        )
     })
 
     test('an unreachable service never empties the list', async () => {

@@ -208,23 +208,50 @@ export const peekColormapTable = (
 }
 
 /**
+ * Upgrades waiting on a lookup, by the caller's `upgradeKey` plus what is
+ * being looked up, so a caller asking again before the answer lands is told
+ * once rather than once per ask.
+ */
+const upgradesInFlight = new Set<string>()
+
+/**
  * The table to paint with right now, for a renderer that cannot wait. When a
  * source that is still loading may change the answer, the lookup is started
  * and `onUpgrade` is called with the final table once it differs from the one
  * returned, so the caller can repaint. The first paint never waits on a
  * service.
+ *
+ * With an `upgradeKey` (a layer's id, say), asking again while the same
+ * lookup is still in flight for that key adds no second `onUpgrade`: the
+ * first one stands for all of them.
  */
 export const colormapTableNow = (
     request: ColormapRequest,
     ctx: ColormapContext = {},
-    onUpgrade?: (resolved: ResolvedColormap) => void
+    onUpgrade?: (resolved: ResolvedColormap) => void,
+    upgradeKey?: string
 ): ResolvedColormap => {
     const { resolved, settled } = peekColormapTable(request, ctx)
-    if (!settled) {
-        void resolveColormapTable(request, ctx).then((final) => {
-            if (final.key !== resolved.key) onUpgrade?.(final)
-        })
+    if (settled) return resolved
+    const { name, reversed } = readRequest(request)
+    const waiting =
+        upgradeKey == null
+            ? null
+            : [
+                  upgradeKey,
+                  colormapSourcesFor(request.source, ctx)
+                      .map((source) => source.id)
+                      .join(','),
+                  `${name}${reversed ? '_r' : ''}`,
+              ].join('|')
+    if (waiting != null) {
+        if (upgradesInFlight.has(waiting)) return resolved
+        upgradesInFlight.add(waiting)
     }
+    void resolveColormapTable(request, ctx).then((final) => {
+        if (waiting != null) upgradesInFlight.delete(waiting)
+        if (final.key !== resolved.key) onUpgrade?.(final)
+    })
     return resolved
 }
 
@@ -261,10 +288,25 @@ export const findColormapRamp = (
     ramps: ColormapRamp[],
     name: string | null | undefined
 ): ColormapRamp | null => {
-    const wanted = getBaseColormapName(name).toLowerCase()
-    if (!wanted) return null
-    return ramps.find((ramp) => ramp.name.toLowerCase() === wanted) ?? null
+    const exact = (name || '').trim().toLowerCase()
+    if (!exact) return null
+    // A listed `_r` name is a ramp in its own right only when its forward
+    // form is not listed (see rampsFromNames), so an exact match comes first
+    // and the forward name of a reversed ramp second.
+    const byName = (wanted: string): ColormapRamp | null =>
+        ramps.find((ramp) => ramp.name.toLowerCase() === wanted) ?? null
+    return byName(exact) ?? byName(getBaseColormapName(exact).toLowerCase())
 }
+
+/**
+ * Whether `ramp`, found for `name` by findColormapRamp, is the ramp named
+ * exactly, `_r` and all, rather than the forward ramp `name` reverses.
+ */
+export const isExactColormapRamp = (
+    ramp: ColormapRamp | null,
+    name: string | null | undefined
+): boolean =>
+    ramp != null && ramp.name.toLowerCase() === (name || '').trim().toLowerCase()
 
 /**
  * Whether a layer's ramp may be offered reversed: only when its source
