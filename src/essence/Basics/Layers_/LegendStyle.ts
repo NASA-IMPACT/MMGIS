@@ -193,7 +193,7 @@ export function normaliseColor(color: string | undefined): string | undefined {
  *
  * @returns Null when the string is not a colour, so callers can fall back.
  */
-function colorToRgb(color: string): Rgb | null {
+export function colorToRgb(color: string): Rgb | null {
     if (!color || typeof color !== 'string') return null
 
     const parsed = parseColor(color)

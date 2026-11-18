@@ -103,6 +103,47 @@ describe('compileColorBy', () => {
         ])
     })
 
+    test('drops a band whose colour is not a colour', () => {
+        const compiled = compileColorBy(
+            frp({
+                ranges: [
+                    { min: 0, color: '#ff0000' },
+                    { min: 10, color: '#ff00zz' },
+                    { min: 20, color: 'notacolour' },
+                    { min: 30, color: '' },
+                ],
+            })
+        )
+        expect(compiled.bands.map((band) => band.min)).toEqual([0])
+        // The dropped bands' values fall in the band below them instead.
+        expect(resolveColorBy(compiled, { frp: 25 })).toEqual({
+            fillColor: '#ff0000',
+        })
+    })
+
+    test('drops a band with a blank lower bound rather than opening it below', () => {
+        const compiled = compileColorBy(
+            frp({
+                ranges: [
+                    { min: 0, color: '#ff0000' },
+                    { min: '', color: '#00ff00' },
+                    { min: '   ', color: '#0000ff' },
+                ],
+            })
+        )
+        expect(compiled.bands).toEqual([
+            { min: 0, color: '#ff0000', label: '≥ 0' },
+        ])
+        expect(resolveColorBy(compiled, { frp: -1 })).toBe(null)
+    })
+
+    test('labels a lone open band rather than leaving it blank', () => {
+        const compiled = compileColorBy(
+            frp({ ranges: [{ min: null, color: '#000' }] })
+        )
+        expect(compiled.bands[0].label).toBe('All values')
+    })
+
     test('keeps the later band when two share a lower bound', () => {
         // One band per lower bound, so the legend lists exactly the colours
         // the map can draw.

@@ -33,6 +33,7 @@
  */
 
 import {
+    colorToRgb,
     normaliseColor,
     resolveLegendStyle,
     type CompiledLegendStyle,
@@ -56,7 +57,10 @@ export function isValueStyledLayerType(type: unknown): boolean {
     )
 }
 
-/** One band as authored. `min` null (or absent) opens the band below. */
+/**
+ * One band as authored. `min` null (or absent) opens the band below; a band
+ * whose `min` is not a number, or whose colour is not one, is dropped.
+ */
 export interface ColorByRangeConfig {
     min?: number | string | null
     color?: string
@@ -178,13 +182,14 @@ function colorForValue(
 }
 
 /**
- * A band's lower bound as authored, read as a number. Null, absent or blank
- * opens the band below; anything else that is not a number makes the band
- * unusable.
+ * A band's lower bound as authored, read as a number. Only null or absent
+ * opens the band below. Anything else that is not a number makes the band
+ * unusable — a blank string included, which would otherwise read as open
+ * below and silently take the first band's place.
  */
 function readLowerBound(min: unknown): number | null | undefined {
-    if (min == null || (typeof min === 'string' && min.trim() === ''))
-        return null
+    if (min == null) return null
+    if (typeof min === 'string' && min.trim() === '') return undefined
     if (typeof min !== 'number' && typeof min !== 'string') return undefined
     const num = Number(min)
     return Number.isNaN(num) ? undefined : num
@@ -204,11 +209,14 @@ function compileRanges(
         []
     for (const range of config.ranges) {
         if (range == null || typeof range !== 'object') continue
+        // A colour no renderer can read is dropped here, once, so the band
+        // is missing alike from both engines and from the legend rather than
+        // drawing each renderer's own fallback.
         const color =
             typeof range.color === 'string'
                 ? normaliseColor(range.color)
                 : undefined
-        if (!color) continue
+        if (!color || colorToRgb(color) == null) continue
         const min = readLowerBound(range.min)
         if (min === undefined) continue
         usable.push({
@@ -248,7 +256,7 @@ function compileRanges(
 
 /** A label read off a band's bounds, for a band authored without one. */
 function defaultRangeLabel(min: number | null, next: number | null): string {
-    if (min == null) return next == null ? '' : `< ${next}`
+    if (min == null) return next == null ? 'All values' : `< ${next}`
     return next == null ? `≥ ${min}` : `${min} – ${next}`
 }
 
