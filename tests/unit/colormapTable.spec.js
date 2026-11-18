@@ -217,13 +217,21 @@ describe('encode / decode', () => {
 describe('sampleColormapTable', () => {
     const table = colormapResponseToTable('ramp', opaqueRamp())
 
-    test('looks up the nearest index without blending neighbours', () => {
+    test('truncates to an index, as the tiling service does, without blending', () => {
         expect(sampleColormapTable(table, 0)).toEqual([0, 255, 7, 255])
         expect(sampleColormapTable(table, 1)).toEqual([255, 0, 7, 255])
         expect(sampleColormapTable(table, 100 / 255)).toEqual([100, 155, 7, 255])
-        // Between indices 100 and 101: nearest wins, no average.
+        // Anywhere between indices 100 and 101 reads index 100, no average.
         expect(sampleColormapTable(table, 100.4 / 255)[0]).toBe(100)
-        expect(sampleColormapTable(table, 100.6 / 255)[0]).toBe(101)
+        expect(sampleColormapTable(table, 100.99 / 255)[0]).toBe(100)
+        // Only the very top of the range reaches the last colour.
+        expect(sampleColormapTable(table, 254.99 / 255)[0]).toBe(254)
+    })
+
+    test('reads index i at exactly i / 255 for every index', () => {
+        for (let i = 0; i < COLORMAP_SIZE; i++) {
+            expect(sampleColormapTable(table, i / 255)[0]).toBe(i)
+        }
     })
 
     test('clamps out-of-range positions to the ends', () => {
@@ -232,7 +240,7 @@ describe('sampleColormapTable', () => {
         expect(sampleColormapTable(table, NaN)[0]).toBe(0)
     })
 
-    test('a reversed table sampled at x is the forward one sampled at 1 - x', () => {
+    test('a reversed table sampled at i / 255 is the forward one at (255 - i) / 255', () => {
         const reversed = reverseColormapTable(table)
         for (let i = 0; i < COLORMAP_SIZE; i++) {
             expect(sampleColormapTable(reversed, i / 255)).toEqual(

@@ -150,17 +150,19 @@ export const decodeColormapTable = (
 
 /**
  * The colour a ramp assigns to `x`, a position from 0 (low end) to 1 (high
- * end), as `[r, g, b, a]`. Looks up the nearest of the 256 colours rather
- * than blending neighbours, which is what the tiling service does when it
- * paints the same ramp. Out-of-range and non-finite positions clamp to the
- * nearest end.
+ * end), as `[r, g, b, a]`. Picks one of the 256 colours rather than blending
+ * neighbours, the way the tiling service paints a ramp: it rescales a value
+ * to 0-255 as a float, converts that to an 8-bit integer by truncating, and
+ * reads that index off the table. So index i covers [i/255, (i+1)/255), and
+ * only x = 1 reaches index 255. Out-of-range and non-finite positions clamp
+ * to the nearest end.
  */
 export const sampleColormapTable = (
     table: ColormapTable,
     x: number
 ): [number, number, number, number] => {
     const position = Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : 0
-    const offset = Math.round(position * (COLORMAP_SIZE - 1)) * 4
+    const offset = Math.floor(position * (COLORMAP_SIZE - 1)) * 4
     return [
         table[offset],
         table[offset + 1],

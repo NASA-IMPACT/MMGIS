@@ -65,8 +65,9 @@ describe('standard colormaps', () => {
         expect(sampleStandardColormap(0, 'viridis')).toEqual([68, 1, 84])
         expect(sampleStandardColormap(1, 'viridis')).toEqual([253, 231, 36])
         expect(sampleStandardColormap(0, 'viridis', true)).toEqual([253, 231, 36])
+        // 0.5 rescales to 127.5, which truncates to index 127.
         expect(sampleStandardColormap(0.5, 'Viridis')).toEqual(
-            colourAt(getStandardColormapTable('viridis'), 128).slice(0, 3)
+            colourAt(getStandardColormapTable('viridis'), 127).slice(0, 3)
         )
     })
 
