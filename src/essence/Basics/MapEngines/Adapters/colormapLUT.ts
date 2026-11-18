@@ -1,32 +1,15 @@
-// Generates colormap lookup tables that match TiTiler's colormap_name output,
-// reusing MMGIS's existing js-colormaps evaluator so the client-side render
-// and the TiTiler render agree (including matplotlib `_r` reversed variants).
-import { evaluate_cmap, data as colormapData } from '../../../../external/js-colormaps/js-colormaps.js'
-import {
-    findColormapKey,
-    isReversedColormap,
-} from '../../Colormaps/colormapNaming'
-
-const FALLBACK = 'viridis'
-
-export function normalizeColormapName(name: string): { name: string; reverse: boolean } {
-    const raw = (name || '').trim()
-    const match = findColormapKey(raw, Object.keys(colormapData))
-    return {
-        name: match || FALLBACK,
-        reverse: match ? isReversedColormap(raw) : false,
-    }
-}
+// The 256-colour lookup table the GPU raster renderer paints a colormap with.
+//
+// The renderer rescales each pixel to 0-255 and reads that index off the
+// table, as the tiling service does with the same ramp, so a client-side
+// layer and a service-rendered one look alike. Tables come from the bundled
+// standard ramps in the shared 256-colour RGBA format; `_r` names paint the
+// forward ramp mirrored. A name the bundle does not hold paints as the
+// fallback ramp.
+import { getStandardColormapTableOrFallback } from '../../Colormaps/standardColormaps'
 
 export function buildColormapLUT(colormapName: string): Uint8ClampedArray {
-    const { name, reverse } = normalizeColormapName(colormapName)
-    const lut = new Uint8ClampedArray(256 * 4)
-    for (let i = 0; i < 256; i++) {
-        const [r, g, b] = evaluate_cmap(i / 255, name, reverse)
-        lut[i * 4] = r
-        lut[i * 4 + 1] = g
-        lut[i * 4 + 2] = b
-        lut[i * 4 + 3] = 255
-    }
-    return lut
+    // A copy: the bundled table is shared, and the caller hands this one to
+    // the GPU.
+    return getStandardColormapTableOrFallback((colormapName || '').trim()).slice()
 }

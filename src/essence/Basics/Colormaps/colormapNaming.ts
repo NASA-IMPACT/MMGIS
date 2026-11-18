@@ -19,8 +19,8 @@ export const getBaseColormapName = (name: string | null | undefined): string => 
 /**
  * Case-insensitively matches a colormap name (optionally `_r`-suffixed)
  * against a set of canonical keys, returning the key in its original casing.
- * The bundled js-colormaps evaluator keys its ramps by their published casing
- * (e.g. `RdBu`), so a lowercased comparison is needed either way.
+ * Configurations spell ramps either way (`RdBu`, `rdbu`), so the comparison
+ * ignores case.
  */
 export const findColormapKey = (
     name: string | null | undefined,
