@@ -16,7 +16,7 @@ import {
     decodeColormapTable,
     encodeColormapTable,
 } from '../../src/essence/Basics/Colormaps/colormapTable.ts'
-import { parseColormapList } from '../../src/essence/Tools/LayerManager/lib/utils/colormaps.ts'
+import { parseColormapList } from '../../src/essence/Basics/Colormaps/colormapList.ts'
 
 /**
  * Per-channel difference (0-255) a bundled ramp may have from the service's
