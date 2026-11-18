@@ -164,9 +164,9 @@ const colormapCapabilitiesFor = (uuid) => {
  * read, then the layer is redrawn — by recompiling its tile URL, or by
  * rebuilding a client-side COG layer, whichever paints it.
  *
- * Resolves to whether the redraw succeeded. The setting is written either
- * way, so a layer the engine could not redraw now takes it when it is next
- * drawn.
+ * Resolves to true once the setting is written. A layer the engine cannot
+ * redraw now (one switched off, say) takes the setting when it is next drawn,
+ * so a failed redraw is reported in the console rather than as a refusal.
  */
 async function applyRasterColormap(uuid, layerObj, next) {
     const updates = rasterColormapFields(next)
@@ -180,7 +180,11 @@ async function applyRasterColormap(uuid, layerObj, next) {
         layerName: uuid,
         colormap: readLayerColormap(layerObj),
     })
-    return redrawn === true
+    if (redrawn !== true)
+        console.warn(
+            `layers:setColormap saved "${uuid}"'s colormap; it applies when the layer is next drawn`
+        )
+    return true
 }
 
 registerColormapApplier('raster', applyRasterColormap)

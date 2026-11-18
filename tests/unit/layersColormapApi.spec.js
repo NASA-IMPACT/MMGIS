@@ -403,14 +403,17 @@ describe('layers:setColormap', () => {
         expect(L_.layers.data[TILE].currentCogColormap).toBe('set1')
     })
 
-    // The setting is written either way; false says the layer was not
-    // redrawn with it.
-    test('answers false when the layer could not be redrawn', async () => {
+    // A layer that cannot be redrawn now (one switched off) keeps the setting
+    // for its next draw, so the change still counts as applied.
+    test('answers true and keeps the setting when the layer could not be redrawn', async () => {
         withLayers([tileLayer()])
         refreshLayer.mockReturnValue(false)
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
         expect(await providers['layers:setColormap']({ layerUUID: TILE, name: 'magma' })).toBe(
-            false
+            true
         )
+        expect(warn).toHaveBeenCalled()
+        warn.mockRestore()
         expect(L_.layers.data[TILE].currentCogColormap).toBe('magma')
     })
 
