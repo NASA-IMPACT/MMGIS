@@ -7,7 +7,8 @@ import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import { parseExtendedGeoJSON, getCoordProperties } from './ExtendedGeoJSON'
-import { compileLegendStyle, resolveLegendStyle } from './LegendStyle'
+import { compileLegendStyle } from './LegendStyle'
+import { compileColorBy, resolveFeatureColors } from './ColorBy'
 
 import { centroid } from '@turf/turf'
 
@@ -84,6 +85,10 @@ export const constructVectorLayer = (
         return memoisedCompiledLegend
     }
 
+    // Part of the layer's own configuration, so unlike the legend it is
+    // settled before the layer is built and compiles once.
+    const compiledColorBy = compileColorBy(layerObj.style.colorBy)
+
     let leafletLayerObject = {
         style: function (feature, preferredStyle) {
             if (preferredStyle) {
@@ -110,13 +115,15 @@ export const constructVectorLayer = (
                         : rad
             }
 
-            // Legend-driven styling wins over the layer's configured style,
-            // but not over a style carried on the feature itself (handled by
-            // the branch below). Resolved into locals rather than written back
-            // onto `col`/`fiC`: those are closure variables shared by every
-            // feature, so assigning to them leaked one feature's legend colour
-            // into the next feature's fallback.
-            const legendStyle = resolveLegendStyle(
+            // Value-driven styling — the `colorBy` setting, else legend rows
+            // (see resolveFeatureColors) — wins over the layer's configured
+            // style, but not over a style carried on the feature itself
+            // (handled by the branch below). Resolved into locals rather than
+            // written back onto `col`/`fiC`: those are closure variables
+            // shared by every feature, so assigning to them leaked one
+            // feature's colour into the next feature's fallback.
+            const legendStyle = resolveFeatureColors(
+                compiledColorBy,
                 compiledLegend(),
                 feature.properties
             )

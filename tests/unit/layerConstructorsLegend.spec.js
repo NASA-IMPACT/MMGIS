@@ -171,3 +171,110 @@ describe('constructVectorLayer legend styling', () => {
         expect(styleOf(options, { co2: 400 }).fillColor).toBe('#0000ff')
     })
 })
+
+/**
+ * `style.colorBy` (see ColorBy) rides the same per-feature resolution, ahead
+ * of legend rows: a style carried on the feature beats it, and it beats legend
+ * rows and the configured `*Prop` and flat fields.
+ */
+describe('constructVectorLayer colorBy styling', () => {
+    beforeEach(() => {
+        installLeafletStub()
+    })
+
+    const FRP_RANGES = [
+        { min: 0, color: '#FEF0D9', label: '<10 MW' },
+        { min: 10, color: '#FDCC8A', label: '10-49 MW' },
+        { min: 50, color: '#FC8D59', label: '50-149 MW' },
+        { min: 150, color: '#E34A33', label: '150-349 MW' },
+        { min: 350, color: '#B30000', label: '≥350 MW' },
+    ]
+    const colorBy = (extra = {}) => ({
+        mode: 'ranges',
+        property: 'frp',
+        ranges: FRP_RANGES,
+        ...extra,
+    })
+    const fixed = { color: '#00ff00', fillColor: '#00ff00' }
+
+    test('colours the fill by band and leaves the stroke fixed', () => {
+        const options = build({ ...fixed, colorBy: colorBy() }, null)
+        const style = styleOf(options, { frp: 10 })
+        expect(style.fillColor).toBe('#FDCC8A')
+        expect(style.color).toBe('#00ff00')
+    })
+
+    test('colours the stroke too when applyToStroke is set', () => {
+        const options = build(
+            { ...fixed, colorBy: colorBy({ applyToStroke: true }) },
+            null
+        )
+        const style = styleOf(options, { frp: 400 })
+        expect(style.fillColor).toBe('#B30000')
+        expect(style.color).toBe('#B30000')
+    })
+
+    test('keeps the fixed colours for a value no band holds', () => {
+        const options = build({ ...fixed, colorBy: colorBy() }, null)
+        for (const properties of [{}, { frp: 'n/a' }, { frp: null }, { frp: -5 }]) {
+            const style = styleOf(options, properties)
+            expect(style.fillColor).toBe('#00ff00')
+            expect(style.color).toBe('#00ff00')
+        }
+    })
+
+    test('beats legend rows and fillColorProp', () => {
+        const options = build({
+            ...fixed,
+            fillColorProp: 'fillProp',
+            colorBy: colorBy({ property: 'co2' }),
+        })
+        const style = styleOf(options, { co2: 400, fillProp: '#ff0000' })
+        expect(style.fillColor).toBe('#B30000')
+        // Legend rows are not consulted for the stroke either.
+        expect(style.color).toBe('#00ff00')
+    })
+
+    test('a style carried on the feature beats colorBy', () => {
+        const options = build({ ...fixed, colorBy: colorBy() }, null)
+        expect(
+            styleOf(options, { frp: 400, style: { fillColor: '#ff00ff' } })
+                .fillColor
+        ).toBe('#ff00ff')
+        expect(
+            styleOf(options, { frp: 400 }, { style: { fill: '#ff00ff' } })
+                .fillColor
+        ).toBe('#ff00ff')
+    })
+
+    test('ignores a colorBy mode this build does not implement', () => {
+        const options = build({
+            ...fixed,
+            colorBy: colorBy({ mode: 'categories', property: 'co2' }),
+        })
+        // Legend rows style the layer exactly as with no colorBy at all.
+        expect(styleOf(options, { co2: 400 }).fillColor).toBe('#000000')
+    })
+
+    test.each([0, 5, 9.999, 10, 49, 50, 149.99, 150, 349, 350, 5000])(
+        'colours frp=%s the same as the deck.gl engine',
+        async (value) => {
+            const { buildDeckLayer, hexToRgba } = await import(
+                '../../src/essence/Basics/MapEngines/Adapters/DeckGLHelpers.ts'
+            )
+            const style = { ...fixed, fillOpacity: 1, colorBy: colorBy() }
+            const leaflet = styleOf(build(style, null), { frp: value })
+            for (const type of ['vector', 'vectortile']) {
+                const deck = buildDeckLayer(`parity-${type}`, {
+                    type,
+                    url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                    geojson: { type: 'FeatureCollection', features: [] },
+                    style,
+                })
+                expect(
+                    deck.props.getFillColor({ properties: { frp: value } })
+                ).toEqual(hexToRgba(leaflet.fillColor, 1))
+            }
+        }
+    )
+})
