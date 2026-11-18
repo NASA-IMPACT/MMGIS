@@ -54,8 +54,26 @@ describe('buildDeckCOGLayer', () => {
         })
         // renderTile carries the trigger; getTileData deliberately does not, so
         // cached tiles survive a colormap change.
-        expect(layer.props.updateTriggers.renderTile).toEqual(['plasma', 0, 10])
+        expect(layer.props.updateTriggers.renderTile).toEqual(['plasma', 'bundle|plasma', 0, 10])
         expect(layer.props.updateTriggers.getTileData).toBeUndefined()
+    })
+
+    // The domain side resolves the table through the layer's colormap
+    // sources; its key is what tells deck.gl the table changed, including
+    // when a service's table replaces the one painted while it loaded.
+    test('paints a supplied table, re-rendering when its key changes', () => {
+        const table = new Uint8ClampedArray(256 * 4).fill(7)
+        const layer = buildDeckCOGLayer('l5', {
+            rawCogUrl: 'https://example.com/a.tif',
+            layerObj: { cogColormap: 'naqfc_pm25', cogMin: 0, cogMax: 1 },
+            colormap: { key: 'service:x|naqfc_pm25', table },
+        })
+        expect(layer.props.updateTriggers.renderTile).toEqual([
+            'naqfc_pm25',
+            'service:x|naqfc_pm25',
+            0,
+            1,
+        ])
     })
 
     describe('renderTile', () => {

@@ -26,7 +26,10 @@ import {
     resolveDeckCOGFileUrl,
     syncTileFormatToConfig,
 } from '../Layers_/tileLayerSource'
-import { makeDeckCOGRefresher } from '../Layers_/deckCOGRefresher'
+import {
+    deckColormapFor,
+    makeDeckCOGRefresher,
+} from '../Layers_/deckCOGRefresher'
 import { handOffLayerToEngine } from '../Layers_/engineLayerHandoff'
 import { vectorTileHighlightOptions } from '../Layers_/deckVectorTileHighlight'
 import { Kinds } from '../../../pre/tools'
@@ -1649,6 +1652,7 @@ async function makeTileLayer(layerObj, mapContext = null) {
             ctx.layerRegistry.layer[layerObj.name] = buildDeckCOGLayer(layerObj.name, {
                 rawCogUrl: resolveDeckCOGFileUrl(layerObj, tileSource),
                 layerObj,
+                colormap: deckColormapFor(layerObj.name, layerObj),
                 // ?? not ||: an opacity of 0 is a real value, not "default to 1"
                 opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
             })

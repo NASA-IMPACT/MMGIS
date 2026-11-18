@@ -302,35 +302,36 @@ const FilterBlack = {
 // ---------------------------------------------------------------------------
 
 /**
- * Colormap LUT textures, cached per device and colormap name.
+ * Colormap LUT textures, cached per device and table key.
  *
- * Deliberately outside the layer: a texture is a function of (device,
- * colormap name) and nothing else, so caching it here lets layers stay plain
- * `COGLayer` instances instead of a subclass that owns GPU state. Deck.gl
- * layers are also replaced on every prop change, which would otherwise mean
- * rebuilding an identical texture on each rebuild.
+ * Deliberately outside the layer: a texture is a function of (device, table)
+ * and nothing else, so caching it here lets layers stay plain `COGLayer`
+ * instances instead of a subclass that owns GPU state. Deck.gl layers are
+ * also replaced on every prop change, which would otherwise mean rebuilding
+ * an identical texture on each rebuild.
  *
- * Never evicted: a LUT is 256×1 RGBA (1 KB) and the palette set is finite
- * (~107 colormaps → ~110 KB worst case). The WeakMap keys on the device, so
- * a torn-down map drops its whole cache and the textures die with the device.
+ * Never evicted: a LUT is 256×1 RGBA (1 KB) and the set of ramps a session
+ * paints is small (the ~107 bundled ramps plus whatever a service adds). The
+ * WeakMap keys on the device, so a torn-down map drops its whole cache and the
+ * textures die with the device.
  */
 const colormapTextures = new WeakMap<Device, Map<string, Texture>>()
 
-function getColormapTexture(device: Device, colormapName: string): Texture {
-    let byName = colormapTextures.get(device)
-    if (!byName) {
-        byName = new Map<string, Texture>()
-        colormapTextures.set(device, byName)
+function getColormapTexture(device: Device, colormap: DeckCOGColormap): Texture {
+    let byKey = colormapTextures.get(device)
+    if (!byKey) {
+        byKey = new Map<string, Texture>()
+        colormapTextures.set(device, byKey)
     }
-    // buildColormapLUT normalizes the name (case, `_r` reversal), so the raw
-    // configured string is a sound cache key.
-    let texture = byName.get(colormapName)
+    let texture = byKey.get(colormap.key)
     if (!texture) {
+        // A copy: the table may be shared with other consumers, and the GPU
+        // upload takes ownership of what it is handed.
         texture = createColormapTexture(
             device,
-            lutToImageData(buildColormapLUT(colormapName))
+            lutToImageData(colormap.table.slice())
         )
-        byName.set(colormapName, texture)
+        byKey.set(colormap.key, texture)
     }
     return texture
 }
@@ -356,7 +357,7 @@ function getColormapTexture(device: Device, colormapName: string): Texture {
  * closure is replaced (see `updateTriggers.renderTile`), never the tile data.
  */
 function makeRenderTile(opts: {
-    colormapName: string
+    colormap: DeckCOGColormap
     rescaleMin: number
     rescaleMax: number
 }): (data: TileData) => RenderTileResult | null {
@@ -386,7 +387,7 @@ function makeRenderTile(opts: {
                 rescaleMax: opts.rescaleMax,
                 colormapTexture: getColormapTexture(
                     data.texture.device,
-                    opts.colormapName
+                    opts.colormap
                 ),
                 nodata: data.noDataValue ?? null,
             }
@@ -409,6 +410,18 @@ export type DeckCOGOptions = {
     rawCogUrl: string
     layerObj: Record<string, any>
     opacity?: number
+    /**
+     * The table to paint with, resolved by the caller through the layer's
+     * colormap sources (which this adapter cannot reach). Without one, the
+     * bundled ramp the config names is painted.
+     */
+    colormap?: DeckCOGColormap
+}
+
+/** A colormap table and the key that identifies it (see colormapResolver). */
+export type DeckCOGColormap = {
+    key: string
+    table: Uint8ClampedArray
 }
 
 /**
@@ -424,6 +437,10 @@ export function deckCOGProps(
 ): COGLayerProps<TileData> {
     const l = options.layerObj
     const colormapName = (l.currentCogColormap ?? l.cogColormap ?? 'viridis') as string
+    const colormap: DeckCOGColormap = options.colormap ?? {
+        key: `bundle|${colormapName.trim().toLowerCase()}`,
+        table: buildColormapLUT(colormapName),
+    }
     const rescaleMin = Number(l.currentCogMin ?? l.cogMin ?? 0)
     const rescaleMax = Number(l.currentCogMax ?? l.cogMax ?? 1)
     const nodata = l.cogNoData != null ? Number(l.cogNoData) : null
@@ -447,12 +464,14 @@ export function deckCOGProps(
             image: GeoTIFF | Overview,
             opts: GetTileDataOptions
         ) => cogGetTileData(image, { ...opts, noDataOverride: nodata }),
-        renderTile: makeRenderTile({ colormapName, rescaleMin, rescaleMax }),
+        renderTile: makeRenderTile({ colormap, rescaleMin, rescaleMax }),
         updateTriggers: {
             // Re-runs renderTile for already-loaded tiles (no refetch) when the
-            // colormap or rescale range changes. Nodata needs no trigger: it
+            // colormap or rescale range changes — including when a service's
+            // table arrives to replace the one painted while it loaded, which
+            // changes the key but not the name. Nodata needs no trigger: it
             // comes from the file's GDAL_NODATA tag, fixed for a given URL.
-            renderTile: [colormapName, rescaleMin, rescaleMax],
+            renderTile: [colormapName, colormap.key, rescaleMin, rescaleMax],
         },
     }
 }

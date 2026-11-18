@@ -108,28 +108,36 @@ const readRamp = (
     reversed: isReversedColormap(configured) !== (reversed === true),
 })
 
+/**
+ * A raster's colormap setting read from its `cog*` fields, whether or not it
+ * is COG-transformed: a client-side COG layer paints through these fields
+ * even when its `COG:` source alone marks it as one.
+ */
+export function readRasterColormap(layerObj: LooseConfig): LayerColormap {
+    const l = layerObj || {}
+    const mode = toMode(l.cogColormapMode)
+    const ramp = readRamp(
+        toText(l.currentCogColormap) ??
+            toText(l.cogColormap) ??
+            DEFAULT_RASTER_COLORMAP,
+        false
+    )
+    return {
+        ...ramp,
+        reversed: mode === 'categorical' ? false : ramp.reversed,
+        min: toNumber(l.currentCogMin ?? l.cogMin),
+        max: toNumber(l.currentCogMax ?? l.cogMax),
+        mode,
+        unit: toText(l.cogUnits),
+        source: toText(l.cogColormapSource),
+    }
+}
+
 /** A layer's colormap setting as it stands right now, or null if it has none. */
 export function readLayerColormap(layerObj: LooseConfig): LayerColormap | null {
     switch (colormapKindOf(layerObj)) {
-        case 'raster': {
-            const l = layerObj as Record<string, any>
-            const mode = toMode(l.cogColormapMode)
-            const ramp = readRamp(
-                toText(l.currentCogColormap) ??
-                    toText(l.cogColormap) ??
-                    DEFAULT_RASTER_COLORMAP,
-                false
-            )
-            return {
-                ...ramp,
-                reversed: mode === 'categorical' ? false : ramp.reversed,
-                min: toNumber(l.currentCogMin ?? l.cogMin),
-                max: toNumber(l.currentCogMax ?? l.cogMax),
-                mode,
-                unit: toText(l.cogUnits),
-                source: toText(l.cogColormapSource),
-            }
-        }
+        case 'raster':
+            return readRasterColormap(layerObj)
         case 'vector': {
             const c = vectorColorBy(layerObj) as Record<string, any>
             const mode = toMode(c.colormapMode)
