@@ -23,9 +23,10 @@ import * as tokml from '@maphubs/tokml'
 import shpwrite from '@mapbox/shp-write'
 
 import {
-    evaluate_cmap,
-    data as colormapData,
-} from '../../../external/js-colormaps/js-colormaps.js'
+    findStandardColormap,
+    getStandardColormapCss,
+    sampleStandardColormap,
+} from '../../Basics/Colormaps/standardColormaps'
 
 import './LayersTool.css'
 
@@ -441,8 +442,11 @@ var LayersTool = {
                     label = ''
                 }
 
-                const hex = evaluate_cmap(scaledPixelValue, colormap, reverse)
-                const rgb = hex.join(',')
+                const rgb = sampleStandardColormap(
+                    scaledPixelValue,
+                    colormap,
+                    reverse
+                ).join(',')
                 color = `rgb(${rgb})`
             }
 
@@ -481,20 +485,15 @@ var LayersTool = {
             colormap = layerColormap || VELOCITY_DEFAULT_COLOR_RAMP
         }
 
-        // js-colormaps data object only contains the non reversed color so we need to track if the color is reversed
+        // The bundled ramps hold forward ramps only, so track whether a `_r`
+        // name asks for the reversed one
         let reverse = false
         if (colormap.toLowerCase().endsWith('_r')) {
             colormap = colormap.substring(0, colormap.length - 2)
             reverse = true
         }
 
-        let index = Object.keys(colormapData).findIndex((v) => {
-            return v.toLowerCase() === colormap.toLowerCase()
-        })
-
-        if (index > -1) {
-            colormap = Object.keys(colormapData)[index]
-        }
+        colormap = findStandardColormap(colormap) || colormap
         return { reverse, colormap }
     },
     traverseHeaderLayersExpandedState: function (node, parent, depth) {
@@ -744,20 +743,12 @@ function interfaceWithMMGIS(fromInit) {
             }
 
             function additionalSettingsJSColormapHelper(colormap, reverse) {
-                let additionalSettings = colormapData[colormap].colors.map(
-                    (hex) => {
-                        let rgb = hex
-                            .map((v) => {
-                                return Math.floor(v * 255)
-                            })
-                            .join(',')
-                        return `<div style="background: rgb(${rgb}); width: 20px; height: 100%; margin: 0px; flex-grow: 1;"></div>`
-                    }
+                let additionalSettings = (
+                    getStandardColormapCss(colormap, reverse === true) || []
+                ).map(
+                    (color) =>
+                        `<div style="background: ${color}; width: 20px; height: 100%; margin: 0px; flex-grow: 1;"></div>`
                 )
-
-                if (reverse === true) {
-                    additionalSettings.reverse()
-                }
 
                 additionalSettings = [
                     '<div id="titlerCogColormapCSS">',
@@ -3141,7 +3132,7 @@ function interfaceWithMMGIS(fromInit) {
                 }
             }
 
-            return evaluate_cmap(
+            return sampleStandardColormap(
                 scaledPixelValue,
                 colormap || IMAGE_DEFAULT_COLOR_RAMP,
                 reverse

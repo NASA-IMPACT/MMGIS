@@ -55,7 +55,7 @@ import CodeMirror from "@uiw/react-codemirror";
 import { json } from "@codemirror/lang-json";
 import { Button } from "@mui/material";
 
-import { data as colormapData } from "../external/js-colormaps.js";
+import { STANDARD_COLORMAPS } from "../external/standardColormaps.js";
 
 import { calls } from "./calls";
 import { parseTileMatrixSetCRS } from "./crsUtils";
@@ -278,44 +278,39 @@ const ColormapHelper = ({ colormapName }) => {
   let colormap_html = null;
   let colormap = colormapName;
 
-  // js-colormaps data object only contains the non reversed color so we need to track if the color is reversed
+  // The bundled ramps hold forward ramps only, so track whether a `_r` name
+  // asks for the reversed one
   let reverse = false;
-
-  // TiTiler colormap variables are all lower case so we need to format them correctly for js-colormaps
   if (colormap.toLowerCase().endsWith("_r")) {
     colormap = colormap.substring(0, colormap.length - 2);
     reverse = true;
   }
 
-  let index = Object.keys(colormapData).findIndex((v) => {
-    return v.toLowerCase() === colormap.toLowerCase();
-  });
-
-  if (index > -1) {
-    colormap = Object.keys(colormapData)[index];
-  } else {
+  const rampKey = colormap.toLowerCase();
+  const rampHex = Object.prototype.hasOwnProperty.call(STANDARD_COLORMAPS, rampKey)
+    ? STANDARD_COLORMAPS[rampKey]
+    : null;
+  if (rampHex == null && colormap !== "DEFAULT") {
     console.warn(`The colormap '${colormap}' does not exist`);
   }
 
-  if (colormap in colormapData) {
-    colormap_html = colormapData[colormap].colors.map((hex) => {
+  if (rampHex != null) {
+    // Each ramp is 256 colours as `rrggbbaa` hex. Runs of one colour show as
+    // a single swatch, so a stepped ramp shows each of its steps once.
+    const colors = rampHex
+      .match(/.{8}/g)
+      .filter((color, i, all) => i === 0 || color !== all[i - 1]);
+    if (reverse === true) {
+      colors.reverse();
+    }
+    colormap_html = colors.map((color) => {
       return (
         <div
           className={c.colorDropdownArrayHex}
-          style={{
-            background: `rgb(${hex
-              .map((v) => {
-                return Math.floor(v * 255);
-              })
-              .join(",")})`,
-          }}
+          style={{ background: `#${color}` }}
         ></div>
       );
     });
-
-    if (reverse === true) {
-      colormap_html.reverse();
-    }
   } else if (colormap === "DEFAULT") {
     // Default color for velocity layer
     const defaultColors = [

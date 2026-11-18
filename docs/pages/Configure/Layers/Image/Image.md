@@ -58,7 +58,7 @@ Units string by which to suffix values. For instance if the units are meters, us
 #### Colormap 
 
 _type:_ string _optional_  
-Select using the drop down of available colors, which uses the intersection of colormaps from TiTiler  and js-colormaps.
+Select using the drop down of available colors, which uses the intersection of colormaps from TiTiler and the standard colormaps bundled with MMGIS.
 
 #### Initial Visibility
 

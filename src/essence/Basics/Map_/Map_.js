@@ -36,9 +36,10 @@ import TimeControl from '../TimeControl_/TimeControl'
 
 import gjv from 'geojson-validation'
 import {
-    evaluate_cmap,
-    data as colormapData,
-} from '../../../external/js-colormaps/js-colormaps.js'
+    findStandardColormap,
+    getStandardColormapCss,
+    sampleStandardColormap,
+} from '../Colormaps/standardColormaps'
 
 import {
     mapEngineRegistry,
@@ -1510,31 +1511,11 @@ async function makeVelocityLayer(
                         } else if (colorConfig === 'DEFAULT') {
                             colorScale = defaultColors
                         } else {
-                            // Assume we have a colormap name and look up the values
-                            let reverse = false
-                            if (colorConfig.endsWith('_r')) {
-                                reverse = true
-                                colorConfig = colorConfig.slice(0, -2)
-                            }
-                            colorScale = []
-                            let colors = colormapData[colorConfig]?.colors
-                            if (colors != null) {
-                                colors
-                                    .map((color) => {
-                                        const r = Math.round(color[0] * 255)
-                                        const g = Math.round(color[1] * 255)
-                                        const b = Math.round(color[2] * 255)
-                                        return `rgb(${r}, ${g}, ${b})`
-                                    })
-                                    .forEach((colorString) =>
-                                        colorScale.push(colorString)
-                                    )
-                                if (reverse) {
-                                    colorScale = colorScale.reverse()
-                                }
-                            } else {
-                                colorScale = defaultColors
-                            }
+                            // Assume we have a colormap name and look up the
+                            // values; a `_r` name gives the reversed ramp
+                            colorScale =
+                                getStandardColormapCss(colorConfig) ||
+                                defaultColors
                         }
                     }
                     let velocityLayer = L.velocityLayer({
@@ -2310,21 +2291,15 @@ function makeImageLayer(layerObj, mapContext = null) {
                     'cogColormap' in layerObj
                 ) {
                     colormap = layerObj.cogColormap
-                    // TiTiler colormap variables are all lower case so we need to format them correctly for js-colormaps
+                    // The bundled ramps hold forward ramps only, so track
+                    // whether a `_r` name asks for the reversed one
                     if (colormap.toLowerCase().endsWith('_r')) {
                         colormap = colormap.substring(0, colormap.length - 2)
                         reverse = true
                     }
 
-                    let index = Object.keys(colormapData).findIndex((v) => {
-                        return v.toLowerCase() === colormap.toLowerCase()
-                    })
-
-                    if (index > -1) {
-                        colormap = Object.keys(colormapData)[index]
-                    } else {
-                        colormap = 'binary' // Give it the default value
-                    }
+                    // Give it the default value when the ramp is not bundled
+                    colormap = findStandardColormap(colormap) || 'binary'
                 } else {
                     colormap = 'binary' // Give it the default value
                 }
@@ -2358,7 +2333,7 @@ function makeImageLayer(layerObj, mapContext = null) {
                         }
                     }
 
-                    return evaluate_cmap(
+                    return sampleStandardColormap(
                         scaledPixelValue,
                         colormap || IMAGE_DEFAULT_COLOR_RAMP,
                         reverse

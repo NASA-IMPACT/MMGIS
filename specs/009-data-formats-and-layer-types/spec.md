@@ -642,7 +642,7 @@ Display single-band GeoTIFF or Cloud Optimized GeoTIFF (COG) raster images with 
 **Colormap Selection**:
 - **`colormap`** (string): Colormap name from intersection of:
   - **TiTiler colormaps**: `viridis`, `plasma`, `inferno`, `magma`, `cividis`, `turbo`, etc.
-  - **js-colormaps**: Additional scientific colormaps
+  - **Bundled standard colormaps**: the matplotlib/cmocean ramps, generated from a TiTiler service by `scripts/colormaps.mjs`
 - **See**: TiTiler documentation for full list
 
 **Fill Behavior**:
