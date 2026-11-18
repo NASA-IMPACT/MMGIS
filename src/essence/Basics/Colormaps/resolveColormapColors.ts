@@ -11,7 +11,6 @@
 // Never throws. A caller gets colors or null, never an error to handle.
 
 import { fetchColormapColors } from './titilerColormaps'
-import { isReversedColormap } from './colormapNaming'
 import {
     FALLBACK_COLORMAP,
     getStandardColormapCss,
@@ -30,8 +29,8 @@ export const resolveColormapColors = async (
 
     let fetched: string[] | null = null
     try {
-        // Passed as written: fetchColormapColors is where a ramp name is
-        // normalised, because it is what builds the URL from it.
+        // Passed as written, `_r` included: the service's reversed ramp is
+        // its own table, not the forward one mirrored.
         fetched = await fetchColormapColors(name, titilerUrl)
     } catch (err) {
         // fetchColormapColors swallows its own failures; this guards the
@@ -39,7 +38,7 @@ export const resolveColormapColors = async (
         console.warn('resolveColormapColors: colormap lookup failed', err)
         fetched = null
     }
-    if (fetched) return isReversedColormap(name) ? [...fetched].reverse() : fetched
+    if (fetched) return fetched
 
     return getStandardColormapCss(FALLBACK_COLORMAP)
 }
