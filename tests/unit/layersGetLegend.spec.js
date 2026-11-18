@@ -459,7 +459,7 @@ describe('layers:getLegend for a colorBy layer', () => {
         })
     })
 
-    test.each([['vectortile'], ['MVTLayer'], ['GeoJsonLayer']])(
+    test.each([['vectortile'], ['MVTLayer'], ['GeoJsonLayer'], ['query']])(
         'draws the bands for a %s layer',
         async (type) => {
             withLayers({

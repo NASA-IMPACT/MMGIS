@@ -15,10 +15,11 @@
 // declared entries are all scale-shaped is describing a ramp, whether or not
 // its labels read as numbers, so the live colormap draws it.
 //
-// A vector or vector tile layer coloured by a `style.colorBy` setting is
-// described by that setting alone; no other layer type reads one. It is what decides each feature's colour, and its legend rows
-// play no part in the colouring (see resolveFeatureColors), so drawing them
-// would legend colours the map does not use.
+// A vector, vector tile or query layer coloured by a `style.colorBy` setting
+// is described by that setting alone; no other layer type reads one. It is
+// what decides each feature's colour, and its legend rows play no part in the
+// colouring (see resolveFeatureColors), so drawing them would legend colours
+// the map does not use.
 
 import { hasCogColormap } from '../tileUrlUtils'
 import { resolveColormapColors } from '../../Colormaps/resolveColormapColors'

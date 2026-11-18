@@ -43,11 +43,13 @@ import { toCanonicalLayerType } from '../MapEngines/types/engine'
 
 /**
  * Canonical layer types whose features are styled by value: from legend rows
- * flagged `styleMatching` and from `colorBy`. Others carry a legend purely for
- * display. Membership is tested through toCanonicalLayerType, which folds each
- * deck.gl class name onto its MMGIS type.
+ * flagged `styleMatching` and from `colorBy`. A `query` layer counts because
+ * it is drawn through the same vector construction once its data loads.
+ * Others carry a legend purely for display. Membership is tested through
+ * toCanonicalLayerType, which folds each deck.gl class name onto its MMGIS
+ * type.
  */
-const VALUE_STYLED_TYPES = new Set(['vector', 'vectortile'])
+const VALUE_STYLED_TYPES = new Set(['vector', 'vectortile', 'query'])
 
 /** Whether a layer of this type colours its features by value. */
 export function isValueStyledLayerType(type: unknown): boolean {

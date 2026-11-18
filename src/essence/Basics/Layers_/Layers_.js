@@ -21,7 +21,11 @@ import {
     takesPeriodWindow,
 } from '../TimeControl_/layerTimePolicy'
 import { fetchLayerExtentSource } from '../TimeControl_/layerExtentSource'
-import { isRasterTileLayerType, MAP_ENGINE } from '../MapEngines/types/engine'
+import {
+    isRasterTileLayerType,
+    MAP_ENGINE,
+    toCanonicalLayerType,
+} from '../MapEngines/types/engine'
 import {
     getActiveTileLevel,
     getTileLevelUrl,
@@ -968,7 +972,13 @@ const L_ = {
 
         const layerObj = L_.layers.data[name]
         if (layerObj == null) return
-        if (!isValueStyledLayerType(layerObj.type)) return
+        // A query layer is styled by value on Leaflet but has no deck.gl
+        // builder, so under this engine there is never one built to rebuild.
+        if (
+            !isValueStyledLayerType(layerObj.type) ||
+            toCanonicalLayerType(layerObj.type) === 'query'
+        )
+            return
 
         // A plain display legend compiles to nothing, and most legends are
         // exactly that. Rebuilding every layer that has one would be a lot of
