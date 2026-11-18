@@ -2,7 +2,7 @@ import {
     mmgisRequest,
     mmgisEmit,
     mmgisShowPlugin,
-    mmgisGetLayerCogCapabilities,
+    mmgisSetLayerColormap,
     mmgisGetLayerBounds,
     mmgisFitBounds,
     mmgisGetLayerOrder,
@@ -23,16 +23,6 @@ import { placeInTree, type Placement } from '../lib/utils/layerTree'
 import { filteredOutLayers } from '../lib/utils/filteredOut'
 
 type Refresh = () => Promise<void> | void
-
-/**
- * Whether core accepts a colormap or rescale change for this layer, by its
- * config shape and tile source. The same verdict makes the controls editable
- * in the legend, so a write is only sent for a layer core can recompile.
- */
-const canChangeColormap = async (layerId: string): Promise<boolean> => {
-    const capabilities = await mmgisGetLayerCogCapabilities(layerId)
-    return capabilities?.canChangeColormap === true
-}
 
 export const toggleVisibility = async (layerId: string): Promise<void> => {
     const newVisibility = await mmgisRequest<boolean>('layers:toggle', layerId)
@@ -208,26 +198,25 @@ export const showAddLayer = (): void => {
         .catch((err) => console.warn('LayerManager: showAddLayer failed', err))
 }
 
+/**
+ * Changes a layer's ramp through core. The ramp name carries its direction
+ * (`viridis_r`); core decides whether the layer can take it and how to
+ * redraw it, and nothing is announced unless it did.
+ */
 export const setColormap = async (layerId: string, colormap: string, refresh: Refresh): Promise<void> => {
-    if (!(await canChangeColormap(layerId))) return
-    await mmgisRequest('layers:updateConfig', { layerUUID: layerId, updates: { currentCogColormap: colormap } })
-    // applyCogFieldsToUrl prefers `currentCogColormap` over the mission-configured
-    // `cogColormap`, so the override key has to match the config write above.
-    await mmgisRequest('layers:refresh', { layerUUID: layerId, options: { currentCogColormap: colormap } })
+    if ((await mmgisSetLayerColormap(layerId, { name: colormap })) !== true) return
     mmgisEmit('layer:cogColormapChange', { layerName: layerId, colormap })
     await refresh()
 }
 
+/** Changes a layer's range through core, as setColormap changes its ramp. */
 export const setRescale = async (
     layerId: string,
     min: number,
     max: number,
     refresh: Refresh,
 ): Promise<void> => {
-    if (!(await canChangeColormap(layerId))) return
-    await mmgisRequest('layers:updateConfig', { layerUUID: layerId, updates: { currentCogMin: min, currentCogMax: max } })
-    await mmgisRequest('layers:refresh', { layerUUID: layerId, options: { currentCogMin: min, currentCogMax: max } })
+    if ((await mmgisSetLayerColormap(layerId, { min, max })) !== true) return
     mmgisEmit('layer:cogRescaleChange', { layerName: layerId, min, max })
     await refresh()
 }
-

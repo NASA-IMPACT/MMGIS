@@ -1,4 +1,8 @@
 import type { LayerLegend } from '../../../Basics/Layers_/legend/types'
+import type {
+    ColormapCapabilities,
+    ColormapChange,
+} from '../../../Basics/Layers_/layerColormapApi'
 
 type EventCleanup = () => void
 
@@ -255,8 +259,9 @@ export const mmgisSetLayerOrder = (order: string[]): Promise<boolean | null> => 
 /**
  * What a layer's COG colormap supports: `hasColormap` for whether there is a
  * ramp to draw a legend from, `canChangeColormap` for whether that ramp can be
- * changed (via `layers:updateConfig` + `layers:refresh`). An `image` layer
- * has the first without the second.
+ * changed (via `layers:setColormap`). An `image` layer has the first without
+ * the second. Rasters only; see mmgisGetColormapCapabilities for every kind
+ * of colormap layer.
  */
 export type CogCapabilities = {
     hasColormap: boolean
@@ -293,6 +298,73 @@ export const mmgisGetLayerCogCapabilities = (
         'layers:getCogCapabilities',
         layerUUID,
     )
+}
+
+/**
+ * What a layer's colormap supports and how it can be changed, as core answers
+ * `layers:getColormapCapabilities`, and a change to send to
+ * `layers:setColormap`. Re-exported from core so the wire contract is written
+ * once.
+ */
+export type { ColormapCapabilities, ColormapChange }
+
+/**
+ * Colormap capabilities for every layer, keyed by layer UUID: whether it has
+ * a colormap, whether it can be changed, its setting, the ramps it can use
+ * and which reverse. Null against a core without the handler.
+ */
+export const mmgisGetColormapCapabilities = (): Promise<Record<
+    string,
+    ColormapCapabilities
+> | null> => {
+    return mmgisRequestIfProvided<Record<string, ColormapCapabilities>>(
+        'layers:getColormapCapabilities',
+    )
+}
+
+/**
+ * Colormap capabilities for one layer, by UUID or display name. Null when the
+ * layer is unknown, or against a core without the handler.
+ */
+export const mmgisGetLayerColormapCapabilities = (
+    layerUUID: string,
+): Promise<ColormapCapabilities | null> => {
+    return mmgisRequestIfProvided<ColormapCapabilities>(
+        'layers:getColormapCapabilities',
+        layerUUID,
+    )
+}
+
+/**
+ * One ramp's 256 CSS colours exactly as the layer would paint it, for a
+ * picker swatch that must match the map. Null for a layer with no colormap,
+ * or against a core without the handler.
+ */
+export const mmgisGetLayerColormapColors = (
+    layerUUID: string,
+    name: string,
+    reversed = false,
+): Promise<string[] | null> => {
+    return mmgisRequestIfProvided<string[]>('layers:getColormapColors', {
+        layerUUID,
+        name,
+        reversed,
+    })
+}
+
+/**
+ * Changes a layer's ramp, direction and/or range; fields left out keep their
+ * value. Core applies it however the layer paints. True when it was applied;
+ * false when core refused it, and null against a core without the handler.
+ */
+export const mmgisSetLayerColormap = (
+    layerUUID: string,
+    change: ColormapChange,
+): Promise<boolean | null> => {
+    return mmgisRequestIfProvided<boolean>('layers:setColormap', {
+        layerUUID,
+        ...change,
+    })
 }
 
 /**
