@@ -101,6 +101,28 @@ export const colorByVectorTileStyles = (vtLayer, colorByConfig) => {
 }
 
 /**
+ * The stroke and fill colours each layer was configured with, keyed by the
+ * layer's config object.
+ *
+ * constructVectorLayer's style callback writes every feature's resolved
+ * colours back onto `layerObj.style`, and a feature carrying its own style
+ * replaces `layerObj.style` with one that includes that feature's colours. A
+ * rebuild reading its fallback colours from `layerObj.style` would then give a
+ * feature that nothing else colours the last-styled feature's colour instead
+ * of the configured one. The colours are therefore read once, the first time a
+ * layer is constructed, before any feature has been styled.
+ */
+const configuredColors = new WeakMap()
+const configuredColorsOf = (layerObj) => {
+    if (!configuredColors.has(layerObj))
+        configuredColors.set(layerObj, {
+            color: layerObj.style.color,
+            fillColor: layerObj.style.fillColor,
+        })
+    return configuredColors.get(layerObj)
+}
+
+/**
  * Takes regular geojson and makes it fancy with annotations and arrows when applicable
  * @return leaflet geojson
  */
@@ -110,7 +132,7 @@ export const constructVectorLayer = (
     onEachFeatureDefault,
     Map_
 ) => {
-    let col = layerObj.style.color
+    let col = configuredColorsOf(layerObj).color
     if (layerObj.style.colorProp != null && layerObj.style.colorProp !== '')
         col = `prop:${layerObj.style.colorProp}`
 
@@ -122,7 +144,7 @@ export const constructVectorLayer = (
     if (layerObj.style.weightProp != null && layerObj.style.weightProp !== '')
         wei = `prop:${layerObj.style.weightProp}`
 
-    let fiC = layerObj.style.fillColor
+    let fiC = configuredColorsOf(layerObj).fillColor
     if (
         layerObj.style.fillColorProp != null &&
         layerObj.style.fillColorProp !== ''

@@ -247,6 +247,39 @@ describe('constructVectorLayer colorBy styling', () => {
         ).toBe('#ff00ff')
     })
 
+    test('keeps the configured colours as the fallback across rebuilds', () => {
+        // The style callback writes each feature's colours onto the layer's
+        // own style object, and a refresh constructs the layer again from it.
+        const layerObj = {
+            name: 'co2',
+            type: 'vector',
+            style: { className: '', ...fixed, colorBy: colorBy() },
+        }
+        L_.layers.data = { co2: { name: 'co2' } }
+        const construct = () => {
+            capturedOptions = null
+            constructVectorLayer(
+                { type: 'FeatureCollection', features: [] },
+                layerObj,
+                () => {},
+                { map: {} }
+            )
+            return capturedOptions
+        }
+
+        expect(styleOf(construct(), { frp: 400 }).fillColor).toBe('#B30000')
+        const rebuilt = construct()
+        const missing = styleOf(rebuilt, {})
+        expect(missing.fillColor).toBe('#00ff00')
+        expect(missing.color).toBe('#00ff00')
+
+        // Nor does a feature carrying its own style leak into the next build.
+        styleOf(rebuilt, { style: { fillColor: '#ff00ff', color: '#ff00ff' } })
+        const again = styleOf(construct(), {})
+        expect(again.fillColor).toBe('#00ff00')
+        expect(again.color).toBe('#00ff00')
+    })
+
     test('ignores a colorBy mode this build does not implement', () => {
         const options = build({
             ...fixed,
