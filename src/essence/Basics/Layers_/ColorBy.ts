@@ -38,6 +38,23 @@ import {
     type CompiledLegendStyle,
     type LegendStyleResult,
 } from './LegendStyle'
+import { toCanonicalLayerType } from '../MapEngines/types/engine'
+
+/**
+ * Canonical layer types whose features are styled by value: from legend rows
+ * flagged `styleMatching` and from `colorBy`. Others carry a legend purely for
+ * display. Membership is tested through toCanonicalLayerType, which folds each
+ * deck.gl class name onto its MMGIS type.
+ */
+const VALUE_STYLED_TYPES = new Set(['vector', 'vectortile'])
+
+/** Whether a layer of this type colours its features by value. */
+export function isValueStyledLayerType(type: unknown): boolean {
+    return (
+        typeof type === 'string' &&
+        VALUE_STYLED_TYPES.has(toCanonicalLayerType(type))
+    )
+}
 
 /** One band as authored. `min` null (or absent) opens the band below. */
 export interface ColorByRangeConfig {

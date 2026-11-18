@@ -1,6 +1,7 @@
 // Holds all layer data
 import { isStaticBuild } from '../../../pre/capabilities'
 import { compileLegendStyle } from './LegendStyle'
+import { isValueStyledLayerType } from './ColorBy'
 import F_ from '../Formulae_/Formulae_'
 import Description from '../../Ancillary/Description'
 import Search from '../../Ancillary/Search'
@@ -20,11 +21,7 @@ import {
     takesPeriodWindow,
 } from '../TimeControl_/layerTimePolicy'
 import { fetchLayerExtentSource } from '../TimeControl_/layerExtentSource'
-import {
-    isRasterTileLayerType,
-    MAP_ENGINE,
-    toCanonicalLayerType,
-} from '../MapEngines/types/engine'
+import { isRasterTileLayerType, MAP_ENGINE } from '../MapEngines/types/engine'
 import {
     getActiveTileLevel,
     getTileLevelUrl,
@@ -79,14 +76,6 @@ const runsFor = (uuid) => {
         lead: leadAt(runs, time.end),
     }
 }
-
-/**
- * Canonical layer types whose deck.gl builders read the legend as a style
- * specification. Others carry a legend purely for display. Membership is
- * tested through toCanonicalLayerType, which folds each deck.gl class name
- * onto its MMGIS type.
- */
-const LEGEND_STYLED = new Set(['vector', 'vectortile'])
 
 /**
  * What a layer's COG colormap supports: whether it has one to draw a legend
@@ -979,7 +968,7 @@ const L_ = {
 
         const layerObj = L_.layers.data[name]
         if (layerObj == null) return
-        if (!LEGEND_STYLED.has(toCanonicalLayerType(layerObj.type))) return
+        if (!isValueStyledLayerType(layerObj.type)) return
 
         // A plain display legend compiles to nothing, and most legends are
         // exactly that. Rebuilding every layer that has one would be a lot of
