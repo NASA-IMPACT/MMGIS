@@ -9,6 +9,7 @@ import LayerGeologic from './LayerGeologic/LayerGeologic'
 import { parseExtendedGeoJSON, getCoordProperties } from './ExtendedGeoJSON'
 import { compileLegendStyle } from './LegendStyle'
 import { compileColorBy, resolveColorBy, resolveFeatureColors } from './ColorBy'
+import { unpackFeatureProperties } from './packedProperties'
 
 import { centroid } from '@turf/turf'
 
@@ -68,7 +69,10 @@ export const colorByVectorTileStyles = (vtLayer, colorByConfig) => {
                     typeof style === 'function'
                         ? style(properties, ...rest)
                         : style
-                const colors = resolveColorBy(compiled, properties)
+                const colors = resolveColorBy(
+                    compiled,
+                    unpackFeatureProperties(properties)
+                )
                 if (colors == null) return base
                 return Array.isArray(base)
                     ? base.map((s) => overlay(s, colors))

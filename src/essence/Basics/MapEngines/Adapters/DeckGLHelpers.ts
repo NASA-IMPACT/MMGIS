@@ -24,6 +24,7 @@ import { color as parseColor } from 'd3'
 
 import { compileLegendStyle } from '../../Layers_/LegendStyle'
 import { compileColorBy, resolveFeatureColors } from '../../Layers_/ColorBy'
+import { unpackFeatureProperties } from '../../Layers_/packedProperties'
 import { FLAT_LAYER_PARAMETERS } from './flatLayerParameters'
 
 import type { LatLng, LatLngLike, BoundsLike, PointLike, PaddingLike } from '../types/geometry'
@@ -160,15 +161,17 @@ export function pickInfoToResult(info: PickingInfo): FeaturePickResult {
 
 /**
  * The bag a feature's property names are looked up against: a GeoJSON
- * feature's `.properties`, or a plain data record read directly.
+ * feature's `.properties`, or a plain data record read directly. Properties a
+ * geodataset vector tile packs into one JSON string are unpacked, as the
+ * Leaflet engine unpacks them, so both engines read the same values.
  * @param object - GeoJSON feature or plain data record.
  * @returns Null when there is nothing to read properties from.
  */
 function featureProperties(object: unknown): Record<string, unknown> | null {
     if (object == null || typeof object !== 'object') return null
-    return (
+    return unpackFeatureProperties(
         (object as { properties?: Record<string, unknown> }).properties ??
-        (object as Record<string, unknown>)
+            (object as Record<string, unknown>)
     )
 }
 

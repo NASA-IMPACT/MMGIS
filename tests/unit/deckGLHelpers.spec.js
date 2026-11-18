@@ -828,6 +828,22 @@ test.describe('DeckGLHelpers', () => {
                 ).toEqual([255, 255, 0, 255])
             })
 
+            test.each([['vectortile'], ['vector']])(
+                'reads %s properties a geodataset tile packs into one string',
+                (type) => {
+                    const layer = rangedLayer(`ranges-packed-${type}`, type, {
+                        colorBy: ranges({ applyToStroke: true }),
+                        weightProp: 'w',
+                    })
+                    const feature = {
+                        properties: { id: 1, properties: '{"frp":20,"w":4}' },
+                    }
+                    expect(layer.props.getFillColor(feature)).toEqual([0, 0, 255, 255])
+                    expect(layer.props.getLineColor(feature)).toEqual([0, 0, 255, 255])
+                    expect(layer.props.getLineWidth(feature)).toBe(4)
+                }
+            )
+
             test('keeps the layer fill opacity', () => {
                 const layer = rangedLayer('ranges-opacity', 'vector', { fillOpacity: 0.5 })
                 expect(layer.props.getFillColor({ properties: { frp: 20 } })[3]).toBe(128)

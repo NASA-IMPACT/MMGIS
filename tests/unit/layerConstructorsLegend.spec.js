@@ -318,6 +318,13 @@ describe('colorByVectorTileStyles', () => {
         })
     })
 
+    test('reads properties a geodataset tile packs into one string', () => {
+        const styles = colorByVectorTileStyles({ fires: base }, colorBy())
+        expect(
+            styles.fires({ id: 1, properties: '{"frp":12}' }, 4).fillColor
+        ).toBe('#0000ff')
+    })
+
     test('keeps the configured style for a value no band holds', () => {
         const styles = colorByVectorTileStyles({ fires: base }, colorBy())
         expect(styles.fires({}, 4)).toEqual(base)
