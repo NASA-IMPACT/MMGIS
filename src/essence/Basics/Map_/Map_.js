@@ -36,6 +36,7 @@ import TimeControl from '../TimeControl_/TimeControl'
 
 import gjv from 'geojson-validation'
 import {
+    FALLBACK_COLORMAP,
     findStandardColormap,
     getStandardColormapCss,
     sampleStandardColormap,
@@ -2298,8 +2299,10 @@ function makeImageLayer(layerObj, mapContext = null) {
                         reverse = true
                     }
 
-                    // Give it the default value when the ramp is not bundled
-                    colormap = findStandardColormap(colormap) || 'binary'
+                    // A ramp that is not bundled paints as the shared
+                    // fallback, as everywhere else a ramp is painted
+                    colormap =
+                        findStandardColormap(colormap) || FALLBACK_COLORMAP
                 } else {
                     colormap = 'binary' // Give it the default value
                 }
