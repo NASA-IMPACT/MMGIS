@@ -25,6 +25,18 @@ const BUNDLE: Record<string, string> = STANDARD_COLORMAPS
 /** Every bundled ramp's name, forward only, as the tiling service spells it. */
 export const STANDARD_COLORMAP_NAMES: string[] = Object.keys(BUNDLE)
 
+/**
+ * Bundled ramps the tiling service publishes with no `_r` variant: rio-tiler's
+ * own ramps, as opposed to the matplotlib and cmocean ones. Reversing is
+ * offered only for a ramp whose reversed form is published, so these are
+ * listed as not reversible even though the bundle could mirror them.
+ */
+export const UNREVERSED_STANDARD_COLORMAPS: ReadonlySet<string> = new Set([
+    'cfastie',
+    'rplumbo',
+    'schwarzwald',
+])
+
 /** What a ramp that is not bundled paints as, wherever a ramp must be painted. */
 export const FALLBACK_COLORMAP = 'viridis'
 
