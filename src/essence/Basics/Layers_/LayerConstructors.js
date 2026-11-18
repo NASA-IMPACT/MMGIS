@@ -8,7 +8,7 @@ import L_ from '../Layers_/Layers_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import { parseExtendedGeoJSON, getCoordProperties } from './ExtendedGeoJSON'
 import { compileLegendStyle } from './LegendStyle'
-import { compileColorBy, resolveFeatureColors } from './ColorBy'
+import { compileColorBy, resolveColorBy, resolveFeatureColors } from './ColorBy'
 
 import { centroid } from '@turf/turf'
 
@@ -27,6 +27,62 @@ L.Tooltip.include({
         } else tooltipProto_setPosition.call(this, pos)
     },
 })
+
+/**
+ * The `vectorTileLayerStyles` a Leaflet.VectorGrid layer is built with, with a
+ * layer's `colorBy` setting (see ColorBy) applied over its configured styles.
+ *
+ * VectorGrid styles a feature from the entry named after the feature's
+ * source layer — a style object, an array of them, or a function of the
+ * feature's properties returning either — and from Leaflet's path defaults
+ * for a source layer with no entry. colorBy has to reach every feature, named
+ * source layer or not, so the result answers every key, each with a function
+ * that takes whatever style VectorGrid would have used and overrides its fill
+ * colour (and stroke colour, with `applyToStroke`) for a feature the setting
+ * places. A feature it does not place keeps that style untouched.
+ *
+ * @param {object|undefined} vtLayer - `style.vtLayer`, styles by source layer.
+ * @param {unknown} colorByConfig - `style.colorBy`.
+ * @returns {object} `vtLayer` itself (or `{}`) when the layer has no usable
+ *   colorBy setting.
+ */
+export const colorByVectorTileStyles = (vtLayer, colorByConfig) => {
+    const configured = vtLayer || {}
+    const compiled = compileColorBy(colorByConfig)
+    if (compiled == null) return configured
+
+    const overlay = (style, colors) =>
+        style != null && typeof style === 'object'
+            ? { ...style, ...colors }
+            : style
+
+    // One function per source layer, so VectorGrid's lookups after a
+    // highlight is cleared find the same style they started with.
+    const wrapped = new Map()
+    const styleFor = (sourceLayer) => {
+        if (!wrapped.has(sourceLayer)) {
+            const style =
+                configured[sourceLayer] || L.Path?.prototype?.options || {}
+            wrapped.set(sourceLayer, (properties, ...rest) => {
+                const base =
+                    typeof style === 'function'
+                        ? style(properties, ...rest)
+                        : style
+                const colors = resolveColorBy(compiled, properties)
+                if (colors == null) return base
+                return Array.isArray(base)
+                    ? base.map((s) => overlay(s, colors))
+                    : overlay(base, colors)
+            })
+        }
+        return wrapped.get(sourceLayer)
+    }
+
+    return new Proxy(configured, {
+        get: (target, key) =>
+            typeof key === 'string' ? styleFor(key) : target[key],
+    })
+}
 
 /**
  * Takes regular geojson and makes it fancy with annotations and arrows when applicable

@@ -24,7 +24,7 @@ const installLeafletStub = () => {
 const { default: L_ } = await import(
     '../../src/essence/Basics/Layers_/Layers_.js'
 )
-const { constructVectorLayer } = await import(
+const { constructVectorLayer, colorByVectorTileStyles } = await import(
     '../../src/essence/Basics/Layers_/LayerConstructors.js'
 )
 
@@ -277,4 +277,105 @@ describe('constructVectorLayer colorBy styling', () => {
             }
         }
     )
+})
+
+/**
+ * Leaflet.VectorGrid styles each feature from `vectorTileLayerStyles`, keyed
+ * by the tile's source-layer name, falling back to Leaflet's path defaults for
+ * a source layer the map names no style for.
+ */
+describe('colorByVectorTileStyles', () => {
+    beforeEach(() => {
+        window.L.Path = window.L.Path || {
+            prototype: { options: { stroke: true, color: '#3388ff', weight: 3 } },
+        }
+    })
+
+    const colorBy = (extra = {}) => ({
+        mode: 'ranges',
+        property: 'frp',
+        ranges: [
+            { min: 0, color: '#ff0000' },
+            { min: 10, color: '#0000ff' },
+        ],
+        ...extra,
+    })
+    const base = { fill: true, fillColor: '#00ff00', color: '#00ff00', weight: 2 }
+
+    test('hands the configured styles back untouched without colorBy', () => {
+        const vtLayer = { fires: base }
+        expect(colorByVectorTileStyles(vtLayer, undefined)).toBe(vtLayer)
+        expect(
+            colorByVectorTileStyles(vtLayer, colorBy({ mode: 'categories' }))
+        ).toBe(vtLayer)
+    })
+
+    test('colours the fill of a configured style object by band', () => {
+        const styles = colorByVectorTileStyles({ fires: base }, colorBy())
+        expect(styles.fires({ frp: 12 }, 4)).toEqual({
+            ...base,
+            fillColor: '#0000ff',
+        })
+    })
+
+    test('keeps the configured style for a value no band holds', () => {
+        const styles = colorByVectorTileStyles({ fires: base }, colorBy())
+        expect(styles.fires({}, 4)).toEqual(base)
+        expect(styles.fires({ frp: '12' }, 4)).toEqual(base)
+        expect(styles.fires({ frp: -1 }, 4)).toEqual(base)
+    })
+
+    test('colours the stroke too when applyToStroke is set', () => {
+        const styles = colorByVectorTileStyles(
+            { fires: base },
+            colorBy({ applyToStroke: true })
+        )
+        expect(styles.fires({ frp: 1 }, 4)).toMatchObject({
+            fillColor: '#ff0000',
+            color: '#ff0000',
+        })
+    })
+
+    test('wraps a style function and every style of a style array', () => {
+        const styles = colorByVectorTileStyles(
+            {
+                fn: (properties, zoom) => ({ ...base, weight: zoom }),
+                many: [base, { ...base, weight: 5 }],
+                hidden: [],
+            },
+            colorBy()
+        )
+        expect(styles.fn({ frp: 1 }, 7)).toEqual({
+            ...base,
+            weight: 7,
+            fillColor: '#ff0000',
+        })
+        expect(styles.many({ frp: 1 }, 7).map((s) => s.fillColor)).toEqual([
+            '#ff0000',
+            '#ff0000',
+        ])
+        // An empty array hides the feature, and stays hidden.
+        expect(styles.hidden({ frp: 1 }, 7)).toEqual([])
+    })
+
+    test('styles a source layer the configuration does not name', () => {
+        const styles = colorByVectorTileStyles({}, colorBy())
+        const style = styles.anything({ frp: 1 }, 4)
+        expect(style.fillColor).toBe('#ff0000')
+        // Leaflet's own path defaults stand in for the missing style.
+        expect(style.weight).toBe(window.L.Path.prototype.options.weight)
+    })
+
+    test('does not change the configured styles object', () => {
+        const vtLayer = { fires: base }
+        colorByVectorTileStyles(vtLayer, colorBy()).fires({ frp: 1 }, 4)
+        expect(vtLayer).toEqual({ fires: base })
+        expect(base.fillColor).toBe('#00ff00')
+    })
+
+    test('hands VectorGrid the same function for a source layer every time', () => {
+        // resetFeatureStyle looks the style up again after a highlight.
+        const styles = colorByVectorTileStyles({ fires: base }, colorBy())
+        expect(styles.fires).toBe(styles.fires)
+    })
 })

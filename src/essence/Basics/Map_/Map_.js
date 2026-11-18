@@ -7,6 +7,7 @@ import { captureVector } from '../Layers_/LayerCapturer'
 import {
     constructVectorLayer,
     constructSublayers,
+    colorByVectorTileStyles,
 } from '../Layers_/LayerConstructors'
 import Filtering from '../Layers_/Filtering/Filtering'
 import Viewer_ from '../Viewer_/Viewer_'
@@ -1989,7 +1990,12 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
     var vectorTileOptions = {
         layerName: layerObj.name,
         rendererFactory: L.svg.tile,
-        vectorTileLayerStyles: layerObj.style.vtLayer || {},
+        // colorBy colours features over the configured per-source-layer
+        // styles; with no colorBy these are the configured styles as is.
+        vectorTileLayerStyles: colorByVectorTileStyles(
+            layerObj.style.vtLayer,
+            layerObj.style.colorBy
+        ),
         interactive: true,
         minZoom: layerObj.minZoom,
         maxZoom: layerObj.maxZoom,
