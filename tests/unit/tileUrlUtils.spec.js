@@ -40,6 +40,24 @@ describe('tileUrlUtils', () => {
     })
 
     describe('applyCogFieldsToUrl', () => {
+        // A categorical ramp is never reversed, so the tile URL asks for the
+        // forward ramp the legend draws, however the config spells it.
+        test('asks for a categorical ramp forward, whatever its spelling', () => {
+            expect(
+                applyCogFieldsToUrl('https://t/{z}', {
+                    cogTransform: true,
+                    cogColormap: 'nlcd_r',
+                    cogColormapMode: 'categorical',
+                })
+            ).toBe('https://t/{z}?colormap_name=nlcd')
+            expect(
+                applyCogFieldsToUrl('https://t/{z}', {
+                    cogTransform: true,
+                    cogColormap: 'nlcd_r',
+                })
+            ).toBe('https://t/{z}?colormap_name=nlcd_r')
+        })
+
         test('returns url unchanged when no cog fields set', () => {
             const url = 'https://example.com/tiles/{z}/{x}/{y}'
             expect(applyCogFieldsToUrl(url, {})).toBe(url)
@@ -463,6 +481,7 @@ describe('tileUrlUtils', () => {
         test('carries nothing else from the layer config', () => {
             expect(Object.keys(opts).sort()).toEqual([
                 'cogColormap',
+                'cogColormapMode',
                 'cogExpression',
                 'cogMax',
                 'cogMin',

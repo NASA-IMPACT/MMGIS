@@ -6,6 +6,7 @@
  */
 
 import { utcFormat } from 'd3-time-format'
+import { getBaseColormapName } from '../Colormaps/colormapNaming'
 import {
     isRasterTileLayerType,
     toCanonicalLayerType,
@@ -165,6 +166,7 @@ export function buildTileUrlOptions(
         cogTransform: layerObj.cogTransform,
         cogColormap: layerObj.cogColormap,
         currentCogColormap: layerObj.currentCogColormap,
+        cogColormapMode: layerObj.cogColormapMode,
         cogExpression: layerObj.cogExpression,
         currentCogExpression: layerObj.currentCogExpression,
         cogMin: layerObj.cogMin,
@@ -215,9 +217,13 @@ export function applyCogFieldsToUrl(url: string, layerObj: Record<string, unknow
     }
 
     if (layerObj.cogTransform === true) {
-        const colormap = (layerObj.currentCogColormap ?? layerObj.cogColormap) as
+        let colormap = (layerObj.currentCogColormap ?? layerObj.cogColormap) as
             | string
             | undefined
+        // A categorical ramp is never reversed (see layerColormap), so a `_r`
+        // spelling paints the forward ramp here as it does in the legend.
+        if (colormap && layerObj.cogColormapMode === 'categorical')
+            colormap = getBaseColormapName(colormap)
         if (colormap && !params.has('colormap_name'))
             params.set('colormap_name', colormap)
 

@@ -129,6 +129,8 @@ export function readRasterColormap(layerObj: LooseConfig): LayerColormap {
         max: toNumber(l.currentCogMax ?? l.cogMax),
         mode,
         unit: toText(l.cogUnits),
+        // Governs the tables painted client-side (renderer, legend, swatch);
+        // a tile URL is always painted by the layer's own tiling service.
         source: toText(l.cogColormapSource),
     }
 }
@@ -167,12 +169,14 @@ export function readLayerColormap(layerObj: LooseConfig): LayerColormap | null {
  * is asked for it.
  */
 export function rasterColormapFields(
-    setting: Pick<LayerColormap, 'name' | 'reversed' | 'min' | 'max'>
+    setting: Pick<LayerColormap, 'name' | 'reversed' | 'min' | 'max'> &
+        Partial<Pick<LayerColormap, 'mode'>>
 ): Record<string, unknown> {
     const fields: Record<string, unknown> = {
-        currentCogColormap: setting.reversed
-            ? `${setting.name}_r`
-            : setting.name,
+        currentCogColormap:
+            setting.reversed && setting.mode !== 'categorical'
+                ? `${setting.name}_r`
+                : setting.name,
     }
     if (setting.min != null) fields.currentCogMin = setting.min
     if (setting.max != null) fields.currentCogMax = setting.max
