@@ -281,6 +281,17 @@ describe('layers:getColormapColors', () => {
         expect(await providers['layers:getColormapColors']({ layerUUID: DECK })).toHaveLength(256)
     })
 
+    test("no ramp named is the layer's own ramp, in its own direction", async () => {
+        withLayers([tileLayer({ cogColormap: 'magma_r' })])
+        expect(
+            await providers['layers:getColormapColors']({
+                layerUUID: TILE,
+                name: '',
+                reversed: false,
+            })
+        ).toEqual(getStandardColormapCss('magma', true))
+    })
+
     test('reverses as asked, and is null for a layer with no colormap', async () => {
         withLayers([tileLayer(), { name: PLAIN, type: 'tile' }])
         expect(
@@ -295,6 +306,114 @@ describe('layers:getColormapColors', () => {
 })
 
 describe('layers:setColormap', () => {
+    // A range change does not depend on the ramp list, so a layer whose ramp
+    // the fallback list does not hold can still be rescaled.
+    test('rescales a layer whose ramp its sources cannot list right now', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => {
+                throw new TypeError('Failed to fetch')
+            })
+        )
+        withLayers([deckLayer()], { service: SERVICE })
+
+        expect(
+            await providers['layers:setColormap']({ layerUUID: DECK, min: 1, max: 40 })
+        ).toBe(true)
+        expect(L_.layers.data[DECK]).toMatchObject({
+            currentCogColormap: 'naqfc_pm25',
+            currentCogMin: 1,
+            currentCogMax: 40,
+        })
+    })
+
+    test('refuses a range whose min is not below its max', async () => {
+        withLayers([tileLayer()])
+        // Merged with the current 0..80.
+        expect(await providers['layers:setColormap']({ layerUUID: TILE, min: 90 })).toBe(false)
+        expect(await providers['layers:setColormap']({ layerUUID: TILE, max: 0 })).toBe(false)
+        expect(
+            await providers['layers:setColormap']({ layerUUID: TILE, min: 5, max: 5 })
+        ).toBe(false)
+        expect(refreshLayer).not.toHaveBeenCalled()
+        expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('must be below'))
+
+        expect(
+            await providers['layers:setColormap']({ layerUUID: TILE, min: -1, max: 0 })
+        ).toBe(true)
+        expect(await providers['layers:setColormap']({ layerUUID: TILE, min: 0, max: 1 })).toBe(
+            true
+        )
+        expect(L_.layers.data[TILE]).toMatchObject({ currentCogMin: 0, currentCogMax: 1 })
+    })
+
+    test('a ramp name without `reversed` replaces a reversed ramp with a forward one', async () => {
+        withLayers([tileLayer({ cogColormap: 'viridis_r' })])
+        expect(await providers['layers:setColormap']({ layerUUID: TILE, name: 'magma' })).toBe(
+            true
+        )
+        expect(L_.layers.data[TILE].currentCogColormap).toBe('magma')
+    })
+
+    // A service may list `foo_r` with no `foo`: that is a ramp of its own,
+    // chosen forward and never reversible.
+    describe('a listed `_r` ramp with no forward form', () => {
+        const withStandalone = () => {
+            stubService({ '': { colorMaps: ['viridis', 'viridis_r', 'foo_r'] } })
+            withLayers([tileLayer({ titilerUrl: SERVICE })], { service: SERVICE })
+        }
+
+        test('is selected as itself, forward', async () => {
+            withStandalone()
+            expect(
+                await providers['layers:setColormap']({ layerUUID: TILE, name: 'foo_r' })
+            ).toBe(true)
+            expect(L_.layers.data[TILE].currentCogColormap).toBe('foo_r')
+
+            const caps = await providers['layers:getColormapCapabilities'](TILE)
+            expect(caps.colormap).toMatchObject({ name: 'foo_r', reversed: false })
+            expect(caps.reversible).toBe(false)
+        })
+
+        test('cannot be reversed', async () => {
+            withStandalone()
+            await providers['layers:setColormap']({ layerUUID: TILE, name: 'foo_r' })
+            expect(
+                await providers['layers:setColormap']({ layerUUID: TILE, reversed: true })
+            ).toBe(false)
+            expect(
+                await providers['layers:setColormap']({
+                    layerUUID: TILE,
+                    name: 'foo_r',
+                    reversed: true,
+                })
+            ).toBe(false)
+            expect(L_.layers.data[TILE].currentCogColormap).toBe('foo_r')
+        })
+    })
+
+    test('a categorical ramp is written forward, as the legend draws it', async () => {
+        withLayers([tileLayer({ cogColormap: 'tab10', cogColormapMode: 'categorical' })])
+        expect(
+            await providers['layers:setColormap']({ layerUUID: TILE, name: 'set1_r' })
+        ).toBe(false)
+        expect(await providers['layers:setColormap']({ layerUUID: TILE, name: 'set1' })).toBe(
+            true
+        )
+        expect(L_.layers.data[TILE].currentCogColormap).toBe('set1')
+    })
+
+    // The setting is written either way; false says the layer was not
+    // redrawn with it.
+    test('answers false when the layer could not be redrawn', async () => {
+        withLayers([tileLayer()])
+        refreshLayer.mockReturnValue(false)
+        expect(await providers['layers:setColormap']({ layerUUID: TILE, name: 'magma' })).toBe(
+            false
+        )
+        expect(L_.layers.data[TILE].currentCogColormap).toBe('magma')
+    })
+
     // The tile-URL path: the runtime overrides are written, and the layer is
     // redrawn with a tile URL recompiled from them — the same URL the
     // raster-specific path produced.
@@ -395,7 +514,9 @@ describe('layers:setColormap', () => {
         expect(refreshLayer).not.toHaveBeenCalled()
     })
 
-    test('drops a reversal carried over to a ramp that cannot reverse', async () => {
+    // A name given without `reversed` says the direction itself: forward
+    // unless it ends in `_r`.
+    test('a name without `_r` sets the ramp forward', async () => {
         stubService(EIC())
         withLayers([deckLayer({ cogColormap: 'viridis_r' })], { service: SERVICE })
 

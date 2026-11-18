@@ -8,19 +8,18 @@
 // A kind with no applier reports that it cannot change its colormap, and a
 // change asked of it is refused. The checks a change must pass — a ramp the
 // layer's sources list, reversing only where the source publishes the reversed
-// ramp — are made here, once, before any applier runs.
+// ramp, a range whose min is below its max — are made here, once, before any
+// applier runs.
 
 import {
     findColormapRamp,
+    isExactColormapRamp,
     listColormaps,
     resolveColormapColors,
     type ColormapContext,
     type ColormapRamp,
 } from '../Colormaps/colormapResolver'
-import {
-    getBaseColormapName,
-    isReversedColormap,
-} from '../Colormaps/colormapNaming'
+import { isReversedColormap } from '../Colormaps/colormapNaming'
 import {
     colormapKindOf,
     readLayerColormap,
@@ -49,9 +48,13 @@ export type ColormapCapabilities = {
     sourceId: string | null
 }
 
-/** A change to a layer's colormap. Fields left out keep their current value. */
+/**
+ * A change to a layer's colormap. `min` and `max` left out keep their value.
+ * The ramp's direction is changed by `reversed`, or by `name`: a `name` given
+ * without `reversed` sets the direction from its own spelling, reversed when
+ * it ends in `_r` and forward otherwise. With neither, the direction is kept.
+ */
 export type ColormapChange = {
-    /** The ramp. A `_r` suffix asks for it reversed, unless `reversed` says otherwise. */
     name?: string
     reversed?: boolean
     min?: number
@@ -121,6 +124,22 @@ const rampsFor = async (
     }
 }
 
+/**
+ * The listed ramp a setting paints, and the setting spelled the way that
+ * ramp is listed. A setting reading `foo_r` as `foo` reversed is the ramp
+ * `foo_r` itself, forward, when the source lists `foo_r` but not `foo`.
+ */
+const listedRamp = (
+    setting: LayerColormap,
+    ramps: ColormapRamp[]
+): { ramp: ColormapRamp | null; setting: LayerColormap } => {
+    const spelled = setting.reversed ? `${setting.name}_r` : setting.name
+    const ramp = findColormapRamp(ramps, spelled)
+    if (setting.reversed && isExactColormapRamp(ramp, spelled))
+        return { ramp, setting: { ...setting, name: ramp.name, reversed: false } }
+    return { ramp, setting }
+}
+
 /** What a layer's colormap supports right now. Never rejects. */
 export const colormapCapabilitiesOf = async (
     layerObj: LooseConfig | null | undefined,
@@ -131,11 +150,12 @@ export const colormapCapabilitiesOf = async (
     const setting = readLayerColormap(layerObj)
     if (!kind || !setting) return { ...NO_COLORMAP }
     const { sourceId, ramps } = await rampsFor(setting, ctx)
+    const listed = listedRamp(setting, ramps)
     return {
         hasColormap: true,
         canChangeColormap: canChange(kind, layerObj, canChangeHere),
-        colormap: setting,
-        reversible: findColormapRamp(ramps, setting.name)?.reversible === true,
+        colormap: listed.setting,
+        reversible: listed.ramp?.reversible === true,
         ramps,
         sourceId,
     }
@@ -153,10 +173,12 @@ export const colormapColorsFor = async (
 ): Promise<string[] | null> => {
     const setting = readLayerColormap(layerObj)
     if (!setting) return null
+    // No ramp named is the layer's own ramp, in its own direction.
+    const own = !ramp.name
     return resolveColormapColors(
         {
-            name: ramp.name || setting.name,
-            reversed: ramp.name == null ? setting.reversed : ramp.reversed === true,
+            name: own ? setting.name : ramp.name,
+            reversed: own ? setting.reversed : ramp.reversed === true,
             mode: setting.mode,
             source: setting.source,
         },
@@ -170,7 +192,10 @@ const isFiniteNumber = (value: unknown): value is number =>
 /**
  * The setting a change asks for, checked against the layer's sources, or
  * null when it cannot be applied: an unknown ramp, a reversal the source does
- * not publish, or a bound that is not a number.
+ * not publish, a bound that is not a number, or a range whose min is not
+ * below its max. A change to the range alone is not checked against the ramp
+ * list, so a layer whose ramp its sources cannot list right now can still be
+ * rescaled.
  */
 const nextSetting = async (
     current: LayerColormap,
@@ -183,31 +208,40 @@ const nextSetting = async (
     if (change.min != null && !isFiniteNumber(change.min)) return null
     if (change.max != null && !isFiniteNumber(change.max)) return null
 
-    const named = change.name != null
-    const askedReversed =
-        change.reversed ?? (named ? isReversedColormap(change.name) : undefined)
-    const name = named ? getBaseColormapName(change.name) : current.name
-
-    const { ramps } = await rampsFor(current, ctx)
-    const ramp = findColormapRamp(ramps, name)
-    if (!ramp) return null
-
-    let reversed = askedReversed ?? current.reversed
-    if (reversed && !ramp.reversible) {
-        // Asked for outright, a reversal the source does not publish is
-        // refused. Carried over from the previous ramp, it is dropped: the new
-        // ramp simply cannot be shown reversed.
-        if (askedReversed === true) return null
-        reversed = false
+    const min = change.min ?? current.min
+    const max = change.max ?? current.max
+    if (min != null && max != null && min >= max) {
+        console.warn(
+            `layers:setColormap: min (${min}) must be below max (${max}).`
+        )
+        return null
     }
 
-    return {
-        ...current,
-        name: ramp.name,
-        reversed,
-        min: change.min ?? current.min,
-        max: change.max ?? current.max,
+    let { name, reversed } = current
+    if (change.name != null || change.reversed != null) {
+        const { ramps } = await rampsFor(current, ctx)
+        let ramp: ColormapRamp | null
+        if (change.name != null) {
+            ramp = findColormapRamp(ramps, change.name)
+            // A listed `_r` ramp named exactly is that ramp, forward; any
+            // other `_r` name is the forward ramp reversed.
+            const spelledReversed =
+                !isExactColormapRamp(ramp, change.name) &&
+                isReversedColormap(change.name)
+            reversed = change.reversed ?? spelledReversed
+        } else {
+            const listed = listedRamp(current, ramps)
+            ramp = listed.ramp
+            reversed = change.reversed
+        }
+        if (!ramp) return null
+        // Reversing is offered only where the source publishes the reversed
+        // ramp, so asking for it anywhere else is refused.
+        if (reversed && !ramp.reversible) return null
+        name = ramp.name
     }
+
+    return { ...current, name, reversed, min, max }
 }
 
 /**

@@ -162,13 +162,16 @@ const colormapCapabilitiesFor = (uuid) => {
  * Puts a raster's colormap setting into effect: written to the runtime
  * `currentCog*` overrides that the tile URL and the client-side renderer both
  * read, then the layer is redrawn — by recompiling its tile URL, or by
- * rebuilding a client-side COG layer, whichever paints it. A layer that is
- * not drawn right now takes the setting when it next is.
+ * rebuilding a client-side COG layer, whichever paints it.
+ *
+ * Resolves to whether the redraw succeeded. The setting is written either
+ * way, so a layer the engine could not redraw now takes it when it is next
+ * drawn.
  */
 async function applyRasterColormap(uuid, layerObj, next) {
     const updates = rasterColormapFields(next)
     Object.assign(layerObj, updates)
-    await refreshTileLayer(uuid, updates)
+    const redrawn = await refreshTileLayer(uuid, updates)
     window.mmgisAPI?.emit('layers:configChanged', {
         layerName: uuid,
         keys: Object.keys(updates),
@@ -177,7 +180,7 @@ async function applyRasterColormap(uuid, layerObj, next) {
         layerName: uuid,
         colormap: readLayerColormap(layerObj),
     })
-    return true
+    return redrawn === true
 }
 
 registerColormapApplier('raster', applyRasterColormap)
