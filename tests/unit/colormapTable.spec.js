@@ -10,6 +10,7 @@ import {
     sampleColormapTable,
     colormapTableToCss,
     compareColormapTables,
+    describeServiceError,
 } from '../../src/essence/Basics/Colormaps/colormapTable.ts'
 
 // Responses captured from the live VEDA and EIC tiling services
@@ -158,6 +159,18 @@ describe('colormapResponseToTable', () => {
             expectRejected(named, /missing colour at index 17/)
         })
 
+        test('a service error body, reporting its detail', () => {
+            expectRejected(
+                { detail: 'Colormap not found' },
+                /the service answered with an error: Colormap not found$/
+            )
+            // TiTiler's answer for a name it does not serve (HTTP 422).
+            expectRejected(
+                fixture('veda', 'unknown-ramp-422'),
+                /the service answered with an error: Input should be 'accent', /
+            )
+        })
+
         test('a colour that is not 3 or 4 channels of 0-255 integers', () => {
             for (const bad of [
                 'red',
@@ -270,5 +283,25 @@ describe('compareColormapTables', () => {
         expect(compareColormapTables(a, a)).toEqual({ maxDifference: 0, colorsBeyondTolerance: 0 })
         expect(compareColormapTables(a, b, 1)).toEqual({ maxDifference: 5, colorsBeyondTolerance: 1 })
         expect(compareColormapTables(a, b, 0)).toEqual({ maxDifference: 5, colorsBeyondTolerance: 2 })
+    })
+})
+
+describe('describeServiceError', () => {
+    test('reads a string detail or a list of validation messages', () => {
+        expect(describeServiceError({ detail: 'Not found' })).toBe('Not found')
+        expect(describeServiceError({ detail: [{ msg: 'a' }, { msg: 'b' }] })).toBe('a; b')
+        expect(describeServiceError({ detail: { code: 7 } })).toBe('{"code":7}')
+    })
+
+    test('shortens a long detail', () => {
+        const message = describeServiceError(fixture('veda', 'unknown-ramp-422'))
+        expect(message.length).toBe(203)
+        expect(message.endsWith('...')).toBe(true)
+    })
+
+    test('is null for anything that is not an error body', () => {
+        expect(describeServiceError(null)).toBeNull()
+        expect(describeServiceError([])).toBeNull()
+        expect(describeServiceError(fixture('veda', 'tab10'))).toBeNull()
     })
 })

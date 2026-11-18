@@ -27,6 +27,38 @@ export class ColormapFormatError extends Error {
     }
 }
 
+const MAX_DETAIL_LENGTH = 200
+
+/**
+ * The message in a tiling service error body, `{"detail": ...}`, or null when
+ * `body` is not one. FastAPI services such as TiTiler answer with a string
+ * detail, or a list of validation errors each carrying a `msg`. Long messages
+ * (an unknown ramp's error lists every valid name) are shortened.
+ */
+export const describeServiceError = (body: unknown): string | null => {
+    if (body == null || typeof body !== 'object' || Array.isArray(body))
+        return null
+    const detail = (body as Record<string, unknown>).detail
+    if (detail == null) return null
+    let message: string
+    if (typeof detail === 'string') {
+        message = detail
+    } else if (Array.isArray(detail)) {
+        message = detail
+            .map((item) =>
+                item && typeof item === 'object' && 'msg' in item
+                    ? String((item as Record<string, unknown>).msg)
+                    : JSON.stringify(item)
+            )
+            .join('; ')
+    } else {
+        message = JSON.stringify(detail)
+    }
+    return message.length > MAX_DETAIL_LENGTH
+        ? `${message.slice(0, MAX_DETAIL_LENGTH)}...`
+        : message
+}
+
 const isChannel = (value: unknown): boolean =>
     typeof value === 'number' &&
     Number.isInteger(value) &&
@@ -37,7 +69,8 @@ const isChannel = (value: unknown): boolean =>
  * Reads a `/colorMaps/{name}` response — `{"0": [r, g, b, a], ..., "255":
  * [...]}` — into a table. Throws a ColormapFormatError naming the ramp when
  * the response is anything else, so a malformed ramp is reported rather than
- * painted wrong.
+ * painted wrong. A service error body (`{"detail": ...}`) is reported with
+ * its detail.
  *
  * Keys are numeric strings whose order in the object is not guaranteed to be
  * ramp order, so each colour is read by its index rather than by position.
@@ -57,6 +90,16 @@ export const colormapResponseToTable = (
             `expected an object of ${COLORMAP_SIZE} indexed colours, got ${
                 Array.isArray(response) ? 'an array' : String(response)
             }`
+        )
+    }
+    // A `detail` key alongside colour 0 is a malformed table, not an error.
+    const serviceError = Object.prototype.hasOwnProperty.call(response, '0')
+        ? null
+        : describeServiceError(response)
+    if (serviceError != null) {
+        throw new ColormapFormatError(
+            rampName,
+            `the service answered with an error: ${serviceError}`
         )
     }
     const entries = response as Record<string, unknown>

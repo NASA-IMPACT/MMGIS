@@ -27,7 +27,7 @@ const fakeService = (list, ramps) => async (url) => {
     else if (path.startsWith('/colorMaps/'))
         body = ramps[decodeURIComponent(path.slice('/colorMaps/'.length))]
     return body === undefined
-        ? { ok: false, status: 404, json: async () => ({}) }
+        ? { ok: false, status: 404, json: async () => ({ detail: 'Not Found' }) }
         : { ok: true, status: 200, json: async () => body }
 }
 
@@ -108,6 +108,13 @@ describe('buildBundle', () => {
         await expect(
             buildBundle(BASE, ['viridis', 'naqfc_pm25'], vedaService())
         ).rejects.toThrow(/Not listed .*naqfc_pm25/)
+    })
+
+    test('reports the service detail for a ramp it refuses', async () => {
+        const list = { colorMaps: ['viridis', 'gone'] }
+        await expect(
+            buildBundle(BASE, ['gone'], fakeService(list, vedaRamps))
+        ).rejects.toThrow(`GET ${BASE}/colorMaps/gone answered 404: Not Found`)
     })
 
     test('fails, naming the ramp, when a response does not convert', async () => {

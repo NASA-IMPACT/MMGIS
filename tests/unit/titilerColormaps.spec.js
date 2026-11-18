@@ -94,4 +94,21 @@ describe('fetchColormapColors', () => {
             'Colormap "custom_ramp": expected 256 colours, got 1'
         )
     })
+
+    // An error answer is reported with the service's own detail.
+    test('a lookup the service refuses is reported with its detail', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => ({
+                ok: false,
+                status: 404,
+                json: async () => ({ detail: 'Unknown colormap' }),
+            }))
+        )
+
+        expect(await fetchColormapColors('custom_ramp', BASE)).toBeNull()
+        const [, error] = console.warn.mock.calls[0]
+        expect(error.message).toBe('Failed to fetch colormap custom_ramp: 404 Unknown colormap')
+    })
 })
+

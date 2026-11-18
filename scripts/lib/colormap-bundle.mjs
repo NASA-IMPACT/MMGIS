@@ -14,6 +14,7 @@ import {
     colormapResponseToTable,
     compareColormapTables,
     decodeColormapTable,
+    describeServiceError,
     encodeColormapTable,
 } from '../../src/essence/Basics/Colormaps/colormapTable.ts'
 import { parseColormapList } from '../../src/essence/Basics/Colormaps/colormapList.ts'
@@ -40,7 +41,10 @@ export const normalizeServiceUrl = (url) => {
 const fetchJson = async (fetchImpl, url) => {
     const response = await fetchImpl(url)
     if (!response.ok) {
-        throw new Error(`GET ${url} answered ${response.status}`)
+        const detail = describeServiceError(await response.json().catch(() => null))
+        throw new Error(
+            `GET ${url} answered ${response.status}${detail ? `: ${detail}` : ''}`
+        )
     }
     return response.json()
 }

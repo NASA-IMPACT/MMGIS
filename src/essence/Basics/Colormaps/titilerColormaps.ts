@@ -12,6 +12,7 @@ import {
     ColormapTable,
     colormapResponseToTable,
     colormapTableToCss,
+    describeServiceError,
 } from './colormapTable'
 
 /** A ramp that resolved is kept for the session; one that did not is not. */
@@ -65,10 +66,16 @@ export const fetchColormapTable = (
                 `${baseUrl}/colorMaps/${encodeURIComponent(rampName)}`,
                 { signal: AbortSignal.timeout(COLORMAP_FETCH_TIMEOUT_MS) }
             )
-            if (!response.ok)
-                throw new Error(
-                    `Failed to fetch colormap ${rampName}: ${response.status}`
+            if (!response.ok) {
+                const detail = describeServiceError(
+                    await response.json().catch(() => null)
                 )
+                throw new Error(
+                    `Failed to fetch colormap ${rampName}: ${response.status}${
+                        detail ? ` ${detail}` : ''
+                    }`
+                )
+            }
             return colormapResponseToTable(rampName, await response.json())
         } catch (err) {
             console.warn('Failed to fetch colormap colors:', err)
