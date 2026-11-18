@@ -747,6 +747,142 @@ test.describe('DeckGLHelpers', () => {
             })
         })
 
+        // `style.colorBy` (see ColorBy) is resolved through the same accessors
+        // as legend rows, ahead of them, on both vector layer types.
+        test.describe('colorBy ranges', () => {
+            const ranges = (extra = {}) => ({
+                mode: 'ranges',
+                property: 'frp',
+                ranges: [
+                    { min: 0, color: '#ff0000', label: 'low' },
+                    { min: 10, color: '#0000ff', label: 'high' },
+                ],
+                ...extra,
+            })
+            const rangedLayer = (id, type, style = {}, extra = {}) =>
+                buildDeckLayer(id, {
+                    type,
+                    url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                    geojson: { type: 'FeatureCollection', features: [] },
+                    style: {
+                        fillColor: '#00ff00',
+                        fillOpacity: 1,
+                        color: '#00ff00',
+                        opacity: 1,
+                        colorBy: ranges(),
+                        ...style,
+                    },
+                    ...extra,
+                })
+
+            test.each([['vectortile'], ['vector']])(
+                'colours %s fills by band',
+                (type) => {
+                    const layer = rangedLayer(`ranges-fill-${type}`, type)
+                    expect(layer.props.getFillColor({ properties: { frp: 5 } })).toEqual([255, 0, 0, 255])
+                    expect(layer.props.getFillColor({ properties: { frp: 10 } })).toEqual([0, 0, 255, 255])
+                }
+            )
+
+            test.each([['vectortile'], ['vector']])(
+                'keeps the %s fixed fill for a value no band holds',
+                (type) => {
+                    const layer = rangedLayer(`ranges-miss-${type}`, type)
+                    expect(layer.props.getFillColor({ properties: {} })).toEqual([0, 255, 0, 255])
+                    expect(layer.props.getFillColor({ properties: { frp: 'n/a' } })).toEqual([0, 255, 0, 255])
+                    expect(layer.props.getFillColor({ properties: { frp: -1 } })).toEqual([0, 255, 0, 255])
+                }
+            )
+
+            test.each([['vectortile'], ['vector']])(
+                'leaves the %s stroke on its fixed colour by default',
+                (type) => {
+                    const layer = rangedLayer(`ranges-stroke-off-${type}`, type)
+                    // A constant: nothing reads a property for the stroke.
+                    expect(layer.props.getLineColor).toEqual([0, 255, 0, 255])
+                }
+            )
+
+            test.each([['vectortile'], ['vector']])(
+                'colours the %s stroke too when applyToStroke is set',
+                (type) => {
+                    const layer = rangedLayer(`ranges-stroke-on-${type}`, type, {
+                        colorBy: ranges({ applyToStroke: true }),
+                    })
+                    expect(layer.props.getLineColor({ properties: { frp: 20 } })).toEqual([0, 0, 255, 255])
+                    expect(layer.props.getLineColor({ properties: {} })).toEqual([0, 255, 0, 255])
+                }
+            )
+
+            test('outranks legend rows and the *Prop colours', () => {
+                const layer = rangedLayer('ranges-precedence', 'vectortile', {
+                    fillColorProp: 'c',
+                }, { legend: co2Ramp })
+                expect(
+                    layer.props.getFillColor({ properties: { frp: 20, co2: 400, c: '#ffff00' } })
+                ).toEqual([0, 0, 255, 255])
+                // A feature the bands leave alone does not take the legend
+                // rows' colour, but still reads its *Prop colour.
+                expect(
+                    layer.props.getFillColor({ properties: { co2: 400, c: '#ffff00' } })
+                ).toEqual([255, 255, 0, 255])
+            })
+
+            test('keeps the layer fill opacity', () => {
+                const layer = rangedLayer('ranges-opacity', 'vector', { fillOpacity: 0.5 })
+                expect(layer.props.getFillColor({ properties: { frp: 20 } })[3]).toBe(128)
+            })
+
+            test('decodes vector tiles as GeoJSON so a missing value stays missing', () => {
+                expect(rangedLayer('ranges-binary', 'vectortile').props.binary).toBe(false)
+            })
+
+            test('ignores a colorBy mode this build does not implement', () => {
+                const layer = rangedLayer('ranges-unknown-mode', 'vectortile', {
+                    colorBy: ranges({ mode: 'categories' }),
+                })
+                expect(layer.props.getFillColor).toEqual([0, 255, 0, 255])
+                expect(layer.props.binary).toBe(true)
+            })
+
+            test.each([['vectortile'], ['vector']])(
+                'changes the %s colour triggers when the bands change',
+                (type) => {
+                    const a = rangedLayer(`ranges-trigger-a-${type}`, type)
+                    const b = rangedLayer(`ranges-trigger-b-${type}`, type, {
+                        colorBy: ranges({
+                            ranges: [{ min: 0, color: '#ff0000' }, { min: 20, color: '#0000ff' }],
+                        }),
+                    })
+                    const none = rangedLayer(`ranges-trigger-none-${type}`, type, {
+                        colorBy: undefined,
+                    })
+                    expect(a.props.updateTriggers.getFillColor).not.toBe(b.props.updateTriggers.getFillColor)
+                    expect(a.props.updateTriggers.getLineColor).not.toBe(b.props.updateTriggers.getLineColor)
+                    expect(a.props.updateTriggers.getFillColor).not.toBe(none.props.updateTriggers.getFillColor)
+                }
+            )
+
+            test.each([['vectortile'], ['vector']])(
+                'keeps the %s colour triggers for unchanged bands',
+                (type) => {
+                    const a = rangedLayer(`ranges-same-a-${type}`, type)
+                    const b = rangedLayer(`ranges-same-b-${type}`, type, {
+                        colorBy: JSON.parse(JSON.stringify(ranges())),
+                    })
+                    expect(a.props.updateTriggers.getFillColor).toBe(b.props.updateTriggers.getFillColor)
+                }
+            )
+
+            test('keeps the vector layer triggers to the colour accessors', () => {
+                const layer = rangedLayer('ranges-trigger-keys', 'vector')
+                expect(Object.keys(layer.props.updateTriggers).sort()).toEqual([
+                    'getFillColor',
+                    'getLineColor',
+                ])
+            })
+        })
+
         test('keeps colour accessors static when the legend styles nothing', () => {
             const layer = buildDeckLayer('legend-none', {
                 type: 'vectortile',
