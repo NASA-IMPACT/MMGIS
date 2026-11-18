@@ -173,7 +173,7 @@ function interpolateMultipleColors(
  * @returns The author's own string when it is already CSS or is not a colour
  *   at all, so an unrecognised value reaches the renderer untouched.
  */
-function normaliseColor(color: string | undefined): string | undefined {
+export function normaliseColor(color: string | undefined): string | undefined {
     if (!color || typeof color !== 'string') return color
 
     // Legends are sometimes authored with a bare hex triplet, which no CSS
