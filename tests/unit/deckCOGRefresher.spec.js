@@ -214,6 +214,50 @@ describe('deckColormapFor', () => {
         )
     })
 
+    // Rebuilt several times while the service table loads, the layer is
+    // repainted once when it lands.
+    test('repaints once however often it is rebuilt while the table loads', async () => {
+        stubService({ naqfc_pm25: fixture('eic/naqfc_pm25.json') })
+        const layerObj = pm25()
+        L_.layers.data.pm25 = layerObj
+        L_.layers.opacity.pm25 = 1
+        const refresh = makeDeckCOGRefresher('pm25', layerObj)
+
+        let layer = makeDeckLayer('pm25')
+        for (let i = 0; i < 5; i++) layer = refresh(layer)
+
+        await resolveColormapTable({ name: 'naqfc_pm25' }, { serviceUrl: SERVICE })
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(engine.refreshLayer).toHaveBeenCalledTimes(1)
+    })
+
+    test('a table landing after the layer was removed repaints nothing', async () => {
+        stubService({ naqfc_pm25: fixture('eic/naqfc_pm25.json') })
+        const layerObj = pm25()
+        L_.layers.data.pm25 = layerObj
+        L_.layers.layer.pm25 = makeDeckLayer('pm25')
+        deckColormapFor('pm25', layerObj)
+        delete L_.layers.data.pm25
+        const stored = L_.layers.layer.pm25
+
+        await resolveColormapTable({ name: 'naqfc_pm25' }, { serviceUrl: SERVICE })
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(engine.refreshLayer).not.toHaveBeenCalled()
+        expect(L_.layers.layer.pm25).toBe(stored)
+    })
+
+    test('a table landing after the ramp changed repaints nothing', async () => {
+        stubService({ naqfc_pm25: fixture('eic/naqfc_pm25.json') })
+        const layerObj = pm25()
+        L_.layers.data.pm25 = layerObj
+        deckColormapFor('pm25', layerObj)
+        layerObj.currentCogColormap = 'magma'
+
+        await resolveColormapTable({ name: 'naqfc_pm25' }, { serviceUrl: SERVICE })
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(engine.refreshLayer).not.toHaveBeenCalled()
+    })
+
     test('with no service, paints from the bundle and asks nothing', () => {
         const fetch = stubService({})
         const layerObj = pm25({ cogColormap: 'magma', titilerUrl: undefined })

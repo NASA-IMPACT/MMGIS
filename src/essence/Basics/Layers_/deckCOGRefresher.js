@@ -5,6 +5,13 @@ import { readRasterColormap } from './layerColormap'
 import { colormapContextFor } from './layerTitilerUrl'
 import L_ from './Layers_'
 
+/** Whether two colormap requests ask for the same table. */
+const sameRamp = (a, b) =>
+    a.name.toLowerCase() === b.name.toLowerCase() &&
+    a.reversed === b.reversed &&
+    a.mode === b.mode &&
+    a.source === b.source
+
 /**
  * The colormap table a client-side COG layer paints with right now, from the
  * layer's colormap sources: the same table its legend and picker swatch show.
@@ -12,24 +19,35 @@ import L_ from './Layers_'
  * Never waits. A ramp only the layer's tiling service has, or the service's
  * own reversed table, is not known until the service answers; until then the
  * layer paints with the best table already known (the bundled ramp, or the
- * fallback), and repaints once the service's table arrives. A layer the
- * engine does not hold yet has its stored instance rebuilt instead, so it is
- * added with the right table.
+ * fallback), and repaints once the service's table arrives — once per layer
+ * and ramp, however often the layer is rebuilt meanwhile. A layer the engine
+ * does not hold yet has its stored instance rebuilt instead, so it is added
+ * with the right table. An answer that lands after the layer was removed, or
+ * after its ramp changed, repaints nothing.
+ *
+ * The repaint targets the main map (`L_.Map_.engine` and `L_.layers`), the
+ * only map a COG layer registers a refresher with (see Map_.makeTileLayer).
+ * A copy of the layer on another map keeps the table it was built with.
  *
  * @param {string} uuid - Layer UUID, also the engine-side layer id.
  * @param {object} layerObj - The layer's config.
  * @returns {{key: string, table: Uint8ClampedArray}}
  */
 export function deckColormapFor(uuid, layerObj) {
+    const request = readRasterColormap(layerObj)
     return colormapTableNow(
-        readRasterColormap(layerObj),
+        request,
         colormapContextFor(layerObj),
         () => {
+            const current = L_.layers.data[uuid]
+            if (current == null || !sameRamp(readRasterColormap(current), request))
+                return
             if (L_.Map_?.engine?.refreshLayer(uuid)) return
             const stored = L_.layers.layer[uuid]
             if (stored && typeof stored.clone === 'function')
-                L_.layers.layer[uuid] = makeDeckCOGRefresher(uuid, layerObj)(stored)
-        }
+                L_.layers.layer[uuid] = makeDeckCOGRefresher(uuid, current)(stored)
+        },
+        uuid
     )
 }
 
