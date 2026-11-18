@@ -287,7 +287,9 @@ describe('constructVectorLayer colorBy styling', () => {
 describe('colorByVectorTileStyles', () => {
     beforeEach(() => {
         window.L.Path = window.L.Path || {
-            prototype: { options: { stroke: true, color: '#3388ff', weight: 3 } },
+            prototype: {
+                options: { stroke: true, color: '#3388ff', weight: 3, fill: false },
+            },
         }
     })
 
@@ -369,8 +371,25 @@ describe('colorByVectorTileStyles', () => {
         const styles = colorByVectorTileStyles({}, colorBy())
         const style = styles.anything({ frp: 1 }, 4)
         expect(style.fillColor).toBe('#ff0000')
-        // Leaflet's own path defaults stand in for the missing style.
+        // Leaflet's own path defaults stand in for the missing style, with
+        // the fill they leave off turned on so the band colour shows.
         expect(style.weight).toBe(window.L.Path.prototype.options.weight)
+        expect(style.fill).toBe(true)
+        // A feature no band holds keeps the defaults, fill off included.
+        expect(styles.anything({}, 4).fill).toBe(false)
+    })
+
+    test('fills a placed feature unless its configured style turns fill off', () => {
+        const styles = colorByVectorTileStyles(
+            {
+                silent: { color: '#00ff00' },
+                outlined: { color: '#00ff00', fill: false },
+            },
+            colorBy()
+        )
+        expect(styles.silent({ frp: 1 }, 4).fill).toBe(true)
+        expect(styles.outlined({ frp: 1 }, 4).fill).toBe(false)
+        expect(styles.silent({}, 4).fill).toBe(undefined)
     })
 
     test('does not change the configured styles object', () => {

@@ -42,6 +42,13 @@ L.Tooltip.include({
  * colour (and stroke colour, with `applyToStroke`) for a feature the setting
  * places. A feature it does not place keeps that style untouched.
  *
+ * A placed feature is also filled, as the deck.gl engine fills it, unless its
+ * configured style turns the fill off. VectorGrid hands a style object to the
+ * feature as is, without Leaflet's defaults behind it, and those defaults
+ * leave `fill` off, so a band colour on a style that never mentions `fill` —
+ * or on a source layer with no style at all — would otherwise never show.
+ * Lines are unaffected: VectorGrid never fills them.
+ *
  * @param {object|undefined} vtLayer - `style.vtLayer`, styles by source layer.
  * @param {unknown} colorByConfig - `style.colorBy`.
  * @returns {object} `vtLayer` itself (or `{}`) when the layer has no usable
@@ -52,9 +59,13 @@ export const colorByVectorTileStyles = (vtLayer, colorByConfig) => {
     const compiled = compileColorBy(colorByConfig)
     if (compiled == null) return configured
 
-    const overlay = (style, colors) =>
+    const overlay = (style, colors, configuredStyle) =>
         style != null && typeof style === 'object'
-            ? { ...style, ...colors }
+            ? {
+                  ...style,
+                  ...colors,
+                  fill: !(configuredStyle && style.fill === false),
+              }
             : style
 
     // One function per source layer, so VectorGrid's lookups after a
@@ -62,6 +73,7 @@ export const colorByVectorTileStyles = (vtLayer, colorByConfig) => {
     const wrapped = new Map()
     const styleFor = (sourceLayer) => {
         if (!wrapped.has(sourceLayer)) {
+            const configuredStyle = Boolean(configured[sourceLayer])
             const style =
                 configured[sourceLayer] || L.Path?.prototype?.options || {}
             wrapped.set(sourceLayer, (properties, ...rest) => {
@@ -75,8 +87,8 @@ export const colorByVectorTileStyles = (vtLayer, colorByConfig) => {
                 )
                 if (colors == null) return base
                 return Array.isArray(base)
-                    ? base.map((s) => overlay(s, colors))
-                    : overlay(base, colors)
+                    ? base.map((s) => overlay(s, colors, configuredStyle))
+                    : overlay(base, colors, configuredStyle)
             })
         }
         return wrapped.get(sourceLayer)
