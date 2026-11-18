@@ -389,3 +389,115 @@ describe('layers:getLegend', () => {
         expect(all[VELOCITY].type).toBe('none')
     })
 })
+
+/**
+ * A vector layer coloured by `style.colorBy` (see ColorBy) is legended from
+ * that setting rather than from its legend rows, so the legend always lists
+ * exactly the colours the map can draw.
+ */
+describe('layers:getLegend for a colorBy layer', () => {
+    const FIRES = 'Fires_0123456789abcdef'
+
+    // The legend-row form the same five classes take without colorBy: each
+    // colour repeated just below the next class, the repeat hidden.
+    const legendRows = [
+        [0, '#FEF0D9'],
+        [9.999, '#FEF0D9', true],
+        [10, '#FDCC8A'],
+        [49.999, '#FDCC8A', true],
+        [50, '#FC8D59'],
+        [149.999, '#FC8D59', true],
+        [150, '#E34A33'],
+        [349.999, '#E34A33', true],
+        [350, '#B30000'],
+    ].map(([value, color, hidden]) => ({
+        styleMatching: true,
+        propertyName: 'frp',
+        propertyValue: String(value),
+        shape: 'continuous',
+        color,
+        value: String(value),
+        ...(hidden ? { hideFromLegend: true } : {}),
+    }))
+
+    const ranges = [
+        { min: 150, color: '#E34A33', label: '150-349 MW' },
+        { min: 0, color: '#FEF0D9', label: '<10 MW' },
+        { min: 10, color: '#FDCC8A', label: '10-49 MW' },
+        { min: 350, color: '#B30000', label: '≥350 MW' },
+        { min: 50, color: '#FC8D59', label: '50-149 MW' },
+    ]
+
+    const firesLayer = (colorBy, extra = {}) => ({
+        type: 'vector',
+        style: { fillColor: '#00ff00', colorBy },
+        _legend: legendRows,
+        ...extra,
+    })
+
+    test('draws one labelled swatch per band, in order, no hidden rows', async () => {
+        withLayers({
+            [FIRES]: firesLayer({ mode: 'ranges', property: 'frp', ranges }),
+        })
+
+        const legend = await providers['layers:getLegend'](FIRES)
+
+        expect(legend).toEqual({
+            type: 'categorical',
+            stops: null,
+            min: null,
+            max: null,
+            unit: null,
+            swatches: [
+                { color: '#FEF0D9', label: '<10 MW' },
+                { color: '#FDCC8A', label: '10-49 MW' },
+                { color: '#FC8D59', label: '50-149 MW' },
+                { color: '#E34A33', label: '150-349 MW' },
+                { color: '#B30000', label: '≥350 MW' },
+            ],
+            colormap: null,
+        })
+    })
+
+    test('labels an unlabelled band from its bounds', async () => {
+        withLayers({
+            [FIRES]: firesLayer({
+                mode: 'ranges',
+                property: 'frp',
+                ranges: [
+                    { min: null, color: '#000000' },
+                    { min: 10, color: '#ffffff' },
+                ],
+            }),
+        })
+
+        const legend = await providers['layers:getLegend'](FIRES)
+
+        expect(legend.swatches.map((swatch) => swatch.label)).toEqual([
+            '< 10',
+            '≥ 10',
+        ])
+    })
+
+    test('reads the legend rows for a mode this build does not implement', async () => {
+        withLayers({
+            [FIRES]: firesLayer({ mode: 'categories', property: 'frp' }),
+        })
+
+        const legend = await providers['layers:getLegend'](FIRES)
+
+        // Exactly what the rows alone give, as with no colorBy at all.
+        expect(legend.type).toBe('gradient')
+        expect(legend.min).toBe(0)
+        expect(legend.max).toBe(350)
+    })
+
+    test('reads the legend rows for a layer without colorBy', async () => {
+        withLayers({ [FIRES]: firesLayer(undefined) })
+
+        const legend = await providers['layers:getLegend'](FIRES)
+
+        expect(legend.type).toBe('gradient')
+        expect(legend.stops).toHaveLength(5)
+    })
+})

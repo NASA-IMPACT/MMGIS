@@ -14,9 +14,15 @@
 // no colormap can stand in for those, so its swatches survive. A raster whose
 // declared entries are all scale-shaped is describing a ramp, whether or not
 // its labels read as numbers, so the live colormap draws it.
+//
+// A vector layer coloured by a `style.colorBy` setting is described by that
+// setting alone. It is what decides each feature's colour, and its legend rows
+// play no part in the colouring (see resolveFeatureColors), so drawing them
+// would legend colours the map does not use.
 
 import { hasCogColormap } from '../tileUrlUtils'
 import { resolveColormapColors } from '../../Colormaps/resolveColormapColors'
+import { compileColorBy, type CompiledColorBy } from '../ColorBy'
 import { NO_LEGEND, type LayerLegend, type LegendSwatch } from './types'
 
 type LegendEntry = {
@@ -38,6 +44,7 @@ type LayerConfig = {
     cogMax?: number | string
     currentCogMax?: number | string
     cogUnits?: string | null
+    style?: { colorBy?: unknown; [key: string]: unknown } | null
     [key: string]: unknown
 }
 
@@ -160,6 +167,25 @@ const readEntries = (declared: unknown): LegendEntry[] =>
           )
         : []
 
+/** The legend a compiled `colorBy` setting draws as, one case per mode. */
+const readColorByLegend = (colorBy: CompiledColorBy): LayerLegend => {
+    switch (colorBy.mode) {
+        case 'ranges':
+            // One swatch per band, in band order. Every band is drawn: each
+            // is a colour the map can use, so none is hidden.
+            return {
+                ...NO_LEGEND,
+                type: 'categorical',
+                swatches: colorBy.bands.map(({ color, label }) => ({
+                    color,
+                    label,
+                })),
+            }
+        default:
+            return NO_LEGEND
+    }
+}
+
 /**
  * What the given layer's legend is, right now.
  *
@@ -172,6 +198,9 @@ export const buildLayerLegend = async (
     titilerUrl: string | null = null
 ): Promise<LayerLegend> => {
     if (layerConfig == null) return NO_LEGEND
+
+    const colorBy = compileColorBy(layerConfig.style?.colorBy)
+    if (colorBy) return readColorByLegend(colorBy)
 
     const entries = readEntries(layerConfig._legend)
     const declaredGradient = readGradient(entries)
