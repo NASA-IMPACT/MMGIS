@@ -186,7 +186,7 @@ export const decodeColormapTable = (
     }
     const table = new Uint8ClampedArray(COLORMAP_SIZE * 4)
     for (let i = 0; i < table.length; i++) {
-        table[i] = parseInt(hex.substr(i * 2, 2), 16)
+        table[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16)
     }
     return table
 }

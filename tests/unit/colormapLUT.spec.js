@@ -7,8 +7,8 @@ const legacy = JSON.parse(
     readFileSync('tests/unit/fixtures/colormaps/legacy-lut.json', 'utf8')
 )
 const legacyColour = (name, i) => {
-    const hex = legacy.ramps[name].substr(i * 6, 6)
-    return [0, 2, 4].map((o) => parseInt(hex.substr(o, 2), 16))
+    const hex = legacy.ramps[name].slice(i * 6, i * 6 + 6)
+    return [0, 2, 4].map((o) => parseInt(hex.slice(o, o + 2), 16))
 }
 const lutColour = (lut, i) => Array.from(lut.subarray(i * 4, i * 4 + 4))
 const channelDifference = (a, b) =>
