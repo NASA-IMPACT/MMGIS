@@ -325,11 +325,19 @@ async function refreshTileLayer(uuid, updateOptions) {
  * some layer types pass two show paths, and `reloadLayer` stamps
  * `time.current` so the second finds the layer current.
  *
+ * A layer this toggle just built already holds the current window, so it is
+ * only stamped.
+ *
  * @param {object} s - Layer config.
+ * @param {boolean} [justBuilt] - The toggle built the layer just now.
  */
-async function catchUpLayerTime(s) {
+async function catchUpLayerTime(s, justBuilt = false) {
     if (s.time?.enabled !== true) return
     if (s.time.current === L_.TimeControl_.currentTime) return
+    if (justBuilt) {
+        s.time.current = L_.TimeControl_.currentTime
+        return
+    }
 
     // evenIfOff: the layer is still recorded as off while the toggle runs.
     await L_.TimeControl_.reloadLayer(s, true)
@@ -1399,7 +1407,7 @@ const L_ = {
                             }
                             // Before showing, not after: a layer that is behind still
                             // holds the URL it was built with, placeholders and all.
-                            await catchUpLayerTime(s)
+                            await catchUpLayerTime(s, hadToMake)
                             L_.Map_.engine.setLayerVisibility(
                                 s.name,
                                 L_.assessLayerDataCoverage(s)
