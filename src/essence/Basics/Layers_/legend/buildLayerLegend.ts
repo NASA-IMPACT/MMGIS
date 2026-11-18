@@ -15,14 +15,18 @@
 // declared entries are all scale-shaped is describing a ramp, whether or not
 // its labels read as numbers, so the live colormap draws it.
 //
-// A vector layer coloured by a `style.colorBy` setting is described by that
-// setting alone. It is what decides each feature's colour, and its legend rows
+// A vector or vector tile layer coloured by a `style.colorBy` setting is
+// described by that setting alone; no other layer type reads one. It is what decides each feature's colour, and its legend rows
 // play no part in the colouring (see resolveFeatureColors), so drawing them
 // would legend colours the map does not use.
 
 import { hasCogColormap } from '../tileUrlUtils'
 import { resolveColormapColors } from '../../Colormaps/resolveColormapColors'
-import { compileColorBy, type CompiledColorBy } from '../ColorBy'
+import {
+    compileColorBy,
+    isValueStyledLayerType,
+    type CompiledColorBy,
+} from '../ColorBy'
 import { NO_LEGEND, type LayerLegend, type LegendSwatch } from './types'
 
 type LegendEntry = {
@@ -199,7 +203,9 @@ export const buildLayerLegend = async (
 ): Promise<LayerLegend> => {
     if (layerConfig == null) return NO_LEGEND
 
-    const colorBy = compileColorBy(layerConfig.style?.colorBy)
+    const colorBy = isValueStyledLayerType(layerConfig.type)
+        ? compileColorBy(layerConfig.style?.colorBy)
+        : null
     if (colorBy) return readColorByLegend(colorBy)
 
     const entries = readEntries(layerConfig._legend)

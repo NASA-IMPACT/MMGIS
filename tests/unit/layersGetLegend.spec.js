@@ -459,6 +459,37 @@ describe('layers:getLegend for a colorBy layer', () => {
         })
     })
 
+    test.each([['vectortile'], ['MVTLayer'], ['GeoJsonLayer']])(
+        'draws the bands for a %s layer',
+        async (type) => {
+            withLayers({
+                [FIRES]: firesLayer(
+                    { mode: 'ranges', property: 'frp', ranges },
+                    { type }
+                ),
+            })
+
+            const legend = await providers['layers:getLegend'](FIRES)
+
+            expect(legend.type).toBe('categorical')
+            expect(legend.swatches).toHaveLength(5)
+        }
+    )
+
+    test('ignores colorBy on a layer type that does not read it', async () => {
+        withLayers({
+            [FIRES]: firesLayer(
+                { mode: 'ranges', property: 'frp', ranges },
+                { type: 'velocity' }
+            ),
+        })
+
+        const legend = await providers['layers:getLegend'](FIRES)
+
+        // What the legend rows alone give.
+        expect(legend.type).toBe('gradient')
+    })
+
     test('labels an unlabelled band from its bounds', async () => {
         withLayers({
             [FIRES]: firesLayer({
