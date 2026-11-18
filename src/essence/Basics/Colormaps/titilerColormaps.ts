@@ -16,7 +16,6 @@ import { parseColormapList } from './colormapList'
 import {
     ColormapTable,
     colormapResponseToTable,
-    colormapTableToCss,
     describeServiceError,
 } from './colormapTable'
 
@@ -153,18 +152,6 @@ export const peekColormapTable = (
     const rampName = requestName(name)
     if (baseUrl == null || !rampName) return null
     return liveEntry<ColormapTable>(tableKey(baseUrl, rampName))?.settled
-}
-
-/**
- * One ramp's 256 colours as CSS colours, low end first, or null when it
- * cannot be loaded (see fetchColormapTable).
- */
-export const fetchColormapColors = async (
-    name: string,
-    titilerUrl?: string | null
-): Promise<string[] | null> => {
-    const table = await fetchColormapTable(name, titilerUrl)
-    return table ? colormapTableToCss(table) : null
 }
 
 /**

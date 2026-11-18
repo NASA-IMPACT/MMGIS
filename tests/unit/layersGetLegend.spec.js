@@ -10,7 +10,7 @@ const { default: L_ } = await import(
     '../../src/essence/Basics/Layers_/Layers_.js'
 )
 const { resolveColormapColors } = await import(
-    '../../src/essence/Basics/Colormaps/resolveColormapColors'
+    '../../src/essence/Basics/Colormaps/colormapResolver'
 )
 
 /**
@@ -193,7 +193,7 @@ describe('layers:getLegend', () => {
 
         expect(legend.type).toBe('gradient')
         expect(legend.swatches).toBeNull()
-        expect(legend.stops).toEqual(await resolveColormapColors('viridis', null))
+        expect(legend.stops).toEqual(await resolveColormapColors({ name: 'viridis' }))
         expect(legend.stops).not.toContain('#123456')
         expect(legend.min).toBe(3)
         expect(legend.max).toBe(7)
@@ -218,7 +218,7 @@ describe('layers:getLegend', () => {
 
         expect(legend.type).toBe('gradient')
         expect(legend.swatches).toBeNull()
-        expect(legend.stops).toEqual(await resolveColormapColors('plasma', null))
+        expect(legend.stops).toEqual(await resolveColormapColors({ name: 'plasma' }))
         expect(legend.min).toBeNull()
         expect(legend.max).toBeNull()
     })

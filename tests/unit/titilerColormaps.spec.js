@@ -1,12 +1,12 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import {
-    fetchColormapColors,
     fetchColormapList,
     fetchColormapTable,
     peekColormapTable,
     clearColormapCache,
 } from '../../src/essence/Basics/Colormaps/titilerColormaps'
+import { colormapTableToCss } from '../../src/essence/Basics/Colormaps/colormapTable'
 
 const BASE = 'https://titiler.test'
 
@@ -23,7 +23,7 @@ afterEach(() => {
     vi.unstubAllGlobals()
 })
 
-describe('fetchColormapColors', () => {
+describe('fetchColormapTable: failures', () => {
     // A service that accepts the connection and never answers would leave the
     // lookup pending forever, and every bulk legend request with it. The fetch
     // carries a deadline, so it rejects instead.
@@ -34,7 +34,7 @@ describe('fetchColormapColors', () => {
         vi.stubGlobal('fetch', fetch)
         const timeout = vi.spyOn(AbortSignal, 'timeout')
 
-        await fetchColormapColors('custom_ramp', BASE)
+        await fetchColormapTable('custom_ramp', BASE)
 
         expect(timeout).toHaveBeenCalledWith(5000)
         expect(fetch).toHaveBeenCalledWith(`${BASE}/colorMaps/custom_ramp`, {
@@ -51,8 +51,8 @@ describe('fetchColormapColors', () => {
         })
         vi.stubGlobal('fetch', fetch)
 
-        expect(await fetchColormapColors('custom_ramp', BASE)).toBeNull()
-        expect(await fetchColormapColors('custom_ramp', BASE)).toBeNull()
+        expect(await fetchColormapTable('custom_ramp', BASE)).toBeNull()
+        expect(await fetchColormapTable('custom_ramp', BASE)).toBeNull()
         expect(fetch).toHaveBeenCalledTimes(1)
     })
 
@@ -63,8 +63,8 @@ describe('fetchColormapColors', () => {
         })
         vi.stubGlobal('fetch', fetch)
 
-        expect(await fetchColormapColors('custom_ramp', BASE)).toBeNull()
-        expect(await fetchColormapColors('custom_ramp', BASE)).toBeNull()
+        expect(await fetchColormapTable('custom_ramp', BASE)).toBeNull()
+        expect(await fetchColormapTable('custom_ramp', BASE)).toBeNull()
         expect(fetch).toHaveBeenCalledTimes(1)
     })
 
@@ -77,7 +77,7 @@ describe('fetchColormapColors', () => {
 
         const table = await fetchColormapTable('epa-ghgi-ch4', BASE)
         expect(Array.from(table.subarray(0, 4))).toEqual(response['0'])
-        const colors = await fetchColormapColors('epa-ghgi-ch4', BASE)
+        const colors = colormapTableToCss(await fetchColormapTable('epa-ghgi-ch4', BASE))
         expect(colors).toHaveLength(256)
         expect(colors[0]).toBe('rgba(111, 76, 155, 0)')
     })
@@ -90,7 +90,7 @@ describe('fetchColormapColors', () => {
             vi.fn(async () => ({ ok: true, json: async () => ({ 0: [0, 0, 0, 255] }) }))
         )
 
-        expect(await fetchColormapColors('custom_ramp', BASE)).toBeNull()
+        expect(await fetchColormapTable('custom_ramp', BASE)).toBeNull()
         const [, error] = console.warn.mock.calls[0]
         expect(error.message).toBe(
             'Colormap "custom_ramp": expected 256 colours, got 1'
@@ -108,7 +108,7 @@ describe('fetchColormapColors', () => {
             }))
         )
 
-        expect(await fetchColormapColors('custom_ramp', BASE)).toBeNull()
+        expect(await fetchColormapTable('custom_ramp', BASE)).toBeNull()
         const [, error] = console.warn.mock.calls[0]
         expect(error.message).toBe('Failed to fetch colormap custom_ramp: 404 Unknown colormap')
     })

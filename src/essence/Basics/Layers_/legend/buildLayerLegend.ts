@@ -15,8 +15,17 @@
 // declared entries are all scale-shaped is describing a ramp, whether or not
 // its labels read as numbers, so the live colormap draws it.
 
-import { hasCogColormap } from '../tileUrlUtils'
-import { resolveColormapColors } from '../../Colormaps/resolveColormapColors'
+import {
+    DEFAULT_RASTER_COLORMAP,
+    colormapKindOf,
+    readLayerColormap,
+    type LayerColormap,
+} from '../layerColormap'
+import {
+    resolveColormapTable,
+    type ColormapContext,
+} from '../../Colormaps/colormapResolver'
+import { colormapTableToCss } from '../../Colormaps/colormapTable'
 import { NO_LEGEND, type LayerLegend, type LegendSwatch } from './types'
 
 type LegendEntry = {
@@ -44,16 +53,14 @@ type LayerConfig = {
 /** The shapes that make an entry part of a continuous scale rather than a swatch. */
 const SCALE_SHAPES = ['continuous', 'discreet']
 
-const DEFAULT_COLORMAP = 'viridis'
+/**
+ * The most category codes a categorical ramp's legend lists one by one. A
+ * wider range is drawn as the ramp itself: a few hundred swatches read as
+ * nothing.
+ */
+const MAX_CATEGORY_SWATCHES = 64
 
 const NUMERIC_PREFIX = /^[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/
-
-/** A bound as a number, or null for anything that does not read as one. */
-const toBound = (value: unknown): number | null => {
-    if (value == null || value === '') return null
-    const num = Number(value)
-    return Number.isFinite(num) ? num : null
-}
 
 type NumericValue = { number: number; unit: string }
 
@@ -161,35 +168,63 @@ const readEntries = (declared: unknown): LegendEntry[] =>
         : []
 
 /**
+ * The swatches of a categorical ramp: one per whole code from min to max, in
+ * the colour the ramp gives that code, leaving out codes the ramp paints
+ * fully transparent (unused codes in a category ramp). Null when the range is
+ * unset, outside the ramp's 0-255 codes, or too wide to list.
+ */
+const readCategorySwatches = (
+    table: Uint8ClampedArray,
+    setting: LayerColormap
+): LegendSwatch[] | null => {
+    if (setting.min == null || setting.max == null) return null
+    const first = Math.max(0, Math.ceil(Math.min(setting.min, setting.max)))
+    const last = Math.min(255, Math.floor(Math.max(setting.min, setting.max)))
+    if (last < first || last - first + 1 > MAX_CATEGORY_SWATCHES) return null
+    const css = colormapTableToCss(table)
+    const swatches: LegendSwatch[] = []
+    for (let code = first; code <= last; code++) {
+        if (table[code * 4 + 3] === 0) continue
+        swatches.push({ color: css[code], label: String(code) })
+    }
+    return swatches.length > 0 ? swatches : null
+}
+
+/**
  * What the given layer's legend is, right now.
  *
- * `titilerUrl` is where a colormap the bundled ramps do not hold is looked up;
- * null leaves such a ramp falling back rather than resolved. Resolving colors
- * is why this is async — see `layers:getLegend`, which awaits it.
+ * `ctx` is what the layer's colormap sources read — its tiling service — so
+ * the legend paints from the same source as the map beside it (see
+ * colormapResolver). Resolving colours is why this is async — see
+ * `layers:getLegend`, which awaits it.
  */
 export const buildLayerLegend = async (
     layerConfig: LayerConfig | null | undefined,
-    titilerUrl: string | null = null
+    ctx: ColormapContext = {}
 ): Promise<LayerLegend> => {
     if (layerConfig == null) return NO_LEGEND
 
     const entries = readEntries(layerConfig._legend)
     const declaredGradient = readGradient(entries)
 
-    if (hasCogColormap(layerConfig)) {
+    const setting =
+        colormapKindOf(layerConfig) === 'raster'
+            ? readLayerColormap(layerConfig)
+            : null
+    if (setting) {
         const colormap =
             layerConfig.currentCogColormap ||
             layerConfig.cogColormap ||
-            DEFAULT_COLORMAP
+            DEFAULT_RASTER_COLORMAP
         const bounds = {
-            min: toBound(layerConfig.currentCogMin ?? layerConfig.cogMin),
-            max: toBound(layerConfig.currentCogMax ?? layerConfig.cogMax),
+            min: setting.min,
+            max: setting.max,
             // `cogUnits` is where a raster names its unit, but plenty of
             // missions only ever wrote it into the legend text ('0 m'), and
             // dropping it there would leave the bar labelled with bare
             // numbers.
-            unit: layerConfig.cogUnits
-                ? { label: layerConfig.cogUnits }
+            unit: setting.unit
+                ? { label: setting.unit }
                 : declaredGradient?.unit ?? null,
         }
         // Classes the colormap cannot stand in for. The ramp and its bounds
@@ -198,18 +233,31 @@ export const buildLayerLegend = async (
         // their values are words ('Low'/'High') or the blank and 'NaN' labels
         // LayersTool derives before a rescale is set, so the live colormap
         // draws them.
-        const swatches = isScale(entries) ? null : readSwatches(entries)
-        if (swatches)
+        const declared = isScale(entries) ? null : readSwatches(entries)
+        if (declared)
             return {
                 type: 'categorical',
                 stops: null,
                 ...bounds,
-                swatches,
+                swatches: declared,
+                colormap,
+            }
+        const { table } = await resolveColormapTable(setting, ctx)
+        const categories =
+            setting.mode === 'categorical'
+                ? readCategorySwatches(table, setting)
+                : null
+        if (categories)
+            return {
+                type: 'categorical',
+                stops: null,
+                ...bounds,
+                swatches: categories,
                 colormap,
             }
         return {
             type: 'gradient',
-            stops: await resolveColormapColors(colormap, titilerUrl),
+            stops: colormapTableToCss(table),
             ...bounds,
             swatches: null,
             colormap,

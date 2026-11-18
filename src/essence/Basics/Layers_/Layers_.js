@@ -43,7 +43,7 @@ import {
     isSameCoverage,
 } from '../TimeControl_/layerDataCoverage'
 import { buildLayerLegend } from './legend/buildLayerLegend'
-import { titilerUrlFor } from './layerTitilerUrl'
+import { colormapContextFor, titilerUrlFor } from './layerTitilerUrl'
 import { NO_LEGEND } from './legend/types'
 import { detached } from '../../mmgisAPI/providers/_shared'
 import { bbox } from '@turf/turf'
@@ -141,7 +141,7 @@ async function legendFor(uuid) {
     const layerObj = L_.layers.data[uuid]
     if (layerObj == null) return null
     try {
-        return await buildLayerLegend(layerObj, titilerUrlFor(layerObj))
+        return await buildLayerLegend(layerObj, colormapContextFor(layerObj))
     } catch (err) {
         console.warn(`Layers_: could not build a legend for '${uuid}'`, err)
         return NO_LEGEND
