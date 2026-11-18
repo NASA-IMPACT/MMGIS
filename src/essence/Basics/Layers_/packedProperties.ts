@@ -17,9 +17,9 @@ const unpacked = new WeakMap<object, Record<string, unknown>>()
  * `properties`.
  *
  * The unpacked object replaces the packed one rather than being merged into
- * it, which is what the Leaflet vector tile path has always done. The result
- * is memoised on the packed object, because a renderer may ask for the same
- * feature's properties once per style accessor.
+ * it, so the attributes beside the packed string (such as `id`) are not read,
+ * on either engine. The result is memoised on the packed object, because a
+ * renderer may ask for the same feature's properties once per style accessor.
  *
  * @returns The input itself when there is nothing to unpack, including when
  *   the string is not a JSON object.
