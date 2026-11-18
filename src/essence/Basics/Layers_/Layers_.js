@@ -44,6 +44,13 @@ import {
 } from '../TimeControl_/layerDataCoverage'
 import { buildLayerLegend } from './legend/buildLayerLegend'
 import { colormapContextFor, titilerUrlFor } from './layerTitilerUrl'
+import { rasterColormapFields, readLayerColormap } from './layerColormap'
+import {
+    changeLayerColormap,
+    colormapCapabilitiesOf,
+    colormapColorsFor,
+    registerColormapApplier,
+} from './layerColormapApi'
 import { NO_LEGEND } from './legend/types'
 import { detached } from '../../mmgisAPI/providers/_shared'
 import { bbox } from '@turf/turf'
@@ -90,37 +97,90 @@ const runsFor = (uuid) => {
 const LEGEND_STYLED = new Set(['vector', 'vectortile'])
 
 /**
+ * Whether a raster's COG colormap can be changed where it is painted now.
+ *
+ * A deckRaster layer changes its colormap by rebuilding the layer rather than
+ * recompiling a tile URL, so it qualifies without a service-prefixed source —
+ * which is what supportsCogTransform requires. The same config can therefore
+ * answer differently on another engine.
+ *
+ * @param {object} layerObj - An entry of `L_.layers.data`.
+ * @returns {boolean}
+ */
+function rasterColormapChangeable(layerObj) {
+    // The source before URL resolution, matching resolveTileLayerSource's
+    // pick. Resolving in full would build TiTiler and STAC URLs this verdict
+    // never reads.
+    const sourceUrl =
+        getTileLevelUrl(getActiveTileLevel(layerObj || {})) || layerObj?.url
+    const deckRaster = shouldUseDeckRaster(
+        L_.Map_?.engine?.engineType,
+        cogSourceType(sourceUrl),
+        layerObj || {}
+    )
+    return supportsCogTransform(layerObj, sourceUrl) || deckRaster
+}
+
+/**
  * What a layer's COG colormap supports: whether it has one to draw a legend
  * ramp from, and whether that ramp can be changed at runtime.
  *
  * The two answers differ — an `image` layer colours its pixels from a COG
  * colormap but bakes it in at construction — so they are reported separately
- * rather than collapsed into one verdict.
+ * rather than collapsed into one verdict. `layers:getColormapCapabilities`
+ * answers the same for every kind of colormap layer, with the ramps on offer.
  *
  * @param {string} uuid - A key of `L_.layers.data`.
  * @returns {{hasColormap: boolean, canChangeColormap: boolean}}
  */
 function cogCapabilitiesFor(uuid) {
     const layerObj = L_.layers.data[uuid]
-    // The source before URL resolution, matching resolveTileLayerSource's
-    // pick. Resolving in full would build TiTiler and STAC URLs this verdict
-    // never reads.
-    const sourceUrl =
-        getTileLevelUrl(getActiveTileLevel(layerObj || {})) || layerObj?.url
-    // A deckRaster layer changes its colormap by rebuilding the layer rather
-    // than recompiling a tile URL, so it qualifies without a service-prefixed
-    // source — which is what supportsCogTransform requires.
-    const deckRaster = shouldUseDeckRaster(
-        L_.Map_?.engine?.engineType,
-        cogSourceType(sourceUrl),
-        layerObj || {}
-    )
     return {
         hasColormap: hasCogColormap(layerObj),
-        canChangeColormap:
-            supportsCogTransform(layerObj, sourceUrl) || deckRaster,
+        canChangeColormap: rasterColormapChangeable(layerObj),
     }
 }
+
+/**
+ * Whether a colormap layer of the given kind can change its colormap where it
+ * is painted now. Only rasters depend on the engine; any other kind can once
+ * an applier for it is registered (see layerColormapApi).
+ */
+const canChangeColormapHere = (kind, layerObj) =>
+    kind === 'raster' ? rasterColormapChangeable(layerObj) : true
+
+const colormapCapabilitiesFor = (uuid) => {
+    const layerObj = L_.layers.data[uuid]
+    return colormapCapabilitiesOf(
+        layerObj,
+        colormapContextFor(layerObj),
+        canChangeColormapHere
+    )
+}
+
+/**
+ * Puts a raster's colormap setting into effect: written to the runtime
+ * `currentCog*` overrides that the tile URL and the client-side renderer both
+ * read, then the layer is redrawn — by recompiling its tile URL, or by
+ * rebuilding a client-side COG layer, whichever paints it. A layer that is
+ * not drawn right now takes the setting when it next is.
+ */
+async function applyRasterColormap(uuid, layerObj, next) {
+    const updates = rasterColormapFields(next)
+    Object.assign(layerObj, updates)
+    await refreshTileLayer(uuid, updates)
+    window.mmgisAPI?.emit('layers:configChanged', {
+        layerName: uuid,
+        keys: Object.keys(updates),
+    })
+    window.mmgisAPI?.emit('layer:colormapChange', {
+        layerName: uuid,
+        colormap: readLayerColormap(layerObj),
+    })
+    return true
+}
+
+registerColormapApplier('raster', applyRasterColormap)
 
 /**
  * What a layer's legend is, resolved against the layer as it stands right now
@@ -568,6 +628,62 @@ const L_ = {
                         capabilities[uuid] = cogCapabilitiesFor(uuid)
                     })
                     return capabilities
+                }),
+                // What each layer's colormap supports: whether it has one,
+                // whether it can be changed where it is painted now, its
+                // setting, the ramps it can use and which reverse. Covers
+                // raster and vector colormap layers alike. Same call shapes
+                // as above.
+                window.mmgisAPI.provide(
+                    'layers:getColormapCapabilities',
+                    async (layerUUID) => {
+                        if (layerUUID != null) {
+                            const uuid = L_.asLayerUUID(layerUUID)
+                            return uuid == null
+                                ? null
+                                : colormapCapabilitiesFor(uuid)
+                        }
+                        const uuids = Object.keys(L_.layers.data)
+                        const resolved = await Promise.all(
+                            uuids.map(colormapCapabilitiesFor)
+                        )
+                        const capabilities = {}
+                        uuids.forEach((uuid, i) => {
+                            capabilities[uuid] = resolved[i]
+                        })
+                        return capabilities
+                    }
+                ),
+                // One ramp's colours as a layer would paint them, for a
+                // picker swatch: `{ layerUUID, name, reversed }`, the ramp
+                // defaulting to the layer's own. 256 CSS colours, low end
+                // first; null for a layer with no colormap.
+                window.mmgisAPI.provide('layers:getColormapColors', (payload) => {
+                    const uuid = L_.asLayerUUID(payload?.layerUUID)
+                    const layerObj = uuid == null ? null : L_.layers.data[uuid]
+                    if (layerObj == null) return null
+                    return colormapColorsFor(layerObj, colormapContextFor(layerObj), {
+                        name: payload.name,
+                        reversed: payload.reversed,
+                    })
+                }),
+                // Changes a layer's ramp, direction and/or range:
+                // `{ layerUUID, name, reversed, min, max }`, any of the last
+                // four left out to keep it. Core applies it however the layer
+                // paints. False when the layer cannot change its colormap or
+                // the change is not one its ramps allow.
+                window.mmgisAPI.provide('layers:setColormap', (payload) => {
+                    const uuid = L_.asLayerUUID(payload?.layerUUID)
+                    const layerObj = uuid == null ? null : L_.layers.data[uuid]
+                    if (layerObj == null) return false
+                    const { layerUUID, ...change } = payload
+                    return changeLayerColormap(
+                        uuid,
+                        layerObj,
+                        change,
+                        colormapContextFor(layerObj),
+                        canChangeColormapHere
+                    )
                 }),
                 // What each layer's legend is: a gradient's resolved colors
                 // and bounds, a categorical legend's swatches, or nothing to
