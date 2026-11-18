@@ -196,6 +196,34 @@ function getPropValue(object: unknown, path: string | undefined): unknown {
         )
 }
 
+/**
+ * A colour a feature carries on itself, which outranks every colour the layer
+ * would give it, as on the Leaflet engine: `properties.style.<field>`, the
+ * form drawn and annotated features store their style in, then the
+ * feature-level `style.fill` or `style.stroke`.
+ * @param object - GeoJSON feature or plain data record.
+ * @param field - `fillColor` for the fill, `color` for the stroke.
+ * @returns Undefined when the feature carries no such colour.
+ */
+function featureOwnColor(
+    object: unknown,
+    field: 'fillColor' | 'color'
+): string | undefined {
+    const carried = featureProperties(object)?.style as
+        | Record<string, unknown>
+        | undefined
+    const ownStyle = (object as { style?: Record<string, unknown> } | null)
+        ?.style
+    const value =
+        (carried != null && typeof carried === 'object'
+            ? carried[field]
+            : undefined) ??
+        (ownStyle != null && typeof ownStyle === 'object'
+            ? ownStyle[field === 'fillColor' ? 'fill' : 'stroke']
+            : undefined)
+    return typeof value === 'string' && value !== '' ? value : undefined
+}
+
 /** The part of a fetch Response that {@link isImageTileResponse} reads. */
 interface TileResponseLike {
     ok: boolean
@@ -399,14 +427,15 @@ function resolveStyleAccessors(
     const getFillColor =
         fillColorProp || fillOpacityProp || valueStyled
             ? (feature: Record<string, unknown>) => {
-                  // A feature value styling does not cover — no such
-                  // property, or a non-numeric value — resolves to undefined
-                  // here and drops through to the *Prop and flat colours
-                  // below, so it keeps the layer's fixed colour rather than
+                  // A colour the feature carries outranks value styling, which
+                  // outranks the *Prop and flat colours. A feature value
+                  // styling does not cover — no such property, or a
+                  // non-numeric value — resolves to undefined here and drops
+                  // through, so it keeps the layer's fixed colour rather than
                   // drawing black.
-                  const legendVal = valueStyled
-                      ? valueColors(feature)?.fillColor
-                      : undefined
+                  const legendVal =
+                      featureOwnColor(feature, 'fillColor') ??
+                      (valueStyled ? valueColors(feature)?.fillColor : undefined)
                   const hexVal = fillColorProp
                       ? (getPropValue(feature, fillColorProp) as string | undefined)
                       : undefined
@@ -430,9 +459,9 @@ function resolveStyleAccessors(
     const getLineColor =
         colorProp || opacityProp || valueStyledStroke
             ? (feature: Record<string, unknown>) => {
-                  const legendVal = valueStyledStroke
-                      ? valueColors(feature)?.color
-                      : undefined
+                  const legendVal =
+                      featureOwnColor(feature, 'color') ??
+                      (valueStyledStroke ? valueColors(feature)?.color : undefined)
                   const hexVal = colorProp
                       ? (getPropValue(feature, colorProp) as string | undefined)
                       : undefined

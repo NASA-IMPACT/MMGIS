@@ -844,6 +844,42 @@ test.describe('DeckGLHelpers', () => {
                 }
             )
 
+            test.each([['vectortile'], ['vector']])(
+                'lets a colour the %s feature carries outrank colorBy',
+                (type) => {
+                    const layer = rangedLayer(`ranges-own-${type}`, type, {
+                        colorBy: ranges({ applyToStroke: true }),
+                    })
+                    const carried = {
+                        properties: {
+                            frp: 20,
+                            style: { fillColor: '#ffff00', color: '#ff00ff' },
+                        },
+                    }
+                    expect(layer.props.getFillColor(carried)).toEqual([255, 255, 0, 255])
+                    expect(layer.props.getLineColor(carried)).toEqual([255, 0, 255, 255])
+                    const featureLevel = {
+                        properties: { frp: 20 },
+                        style: { fill: '#ffff00', stroke: '#ff00ff' },
+                    }
+                    expect(layer.props.getFillColor(featureLevel)).toEqual([255, 255, 0, 255])
+                    expect(layer.props.getLineColor(featureLevel)).toEqual([255, 0, 255, 255])
+                    // A carried style without colours leaves colorBy in charge.
+                    expect(
+                        layer.props.getFillColor({ properties: { frp: 20, style: { weight: 3 } } })
+                    ).toEqual([0, 0, 255, 255])
+                }
+            )
+
+            test('lets a colour the feature carries outrank legend rows', () => {
+                const layer = rampedLayer('legend-own', 'vector')
+                expect(
+                    layer.props.getFillColor({
+                        properties: { co2: 400, style: { fillColor: '#ff0000' } },
+                    })
+                ).toEqual([255, 0, 0, 255])
+            })
+
             test('keeps the layer fill opacity', () => {
                 const layer = rangedLayer('ranges-opacity', 'vector', { fillOpacity: 0.5 })
                 expect(layer.props.getFillColor({ properties: { frp: 20 } })[3]).toBe(128)
