@@ -1,9 +1,32 @@
-import $ from 'jquery'
 import { utcFormat } from 'd3-time-format'
 import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
 import calls from '../../../pre/calls'
 import TimeControl from '../TimeControl_/TimeControl'
+import { getPaging, fetchAllPages, fetchJson } from './vectorPaging'
+
+// Fetches the layer's source, reading every page when the layer sets
+// `variables.pagination`. `onData` runs on success; the returned promise
+// rejects with the HTTP status on failure.
+function vectorJSONGetter(layerObj, layerData) {
+    const paging = getPaging(layerData)
+    return (url, onData) => {
+        const request =
+            paging == null
+                ? fetchJson(url)
+                : fetchAllPages(url, paging).then(({ data, complete }) => {
+                      if (!complete)
+                          console.warn(
+                              `${layerObj.display_name}: stopped paging after ${data.features.length} features; more may exist. Raise Max Pages, or add {offset} to the URL.`
+                          )
+                      return data
+                  })
+        // Off the returned chain so an error while drawing is not reported as
+        // a failed fetch; its rejection is the caller's to handle.
+        request.then(onData, () => {})
+        return request
+    }
+}
 
 // This is so that an eariler and slower dynamic geodataset request
 // does not override an earlier shorter one
@@ -16,6 +39,7 @@ export const captureVector = (layerObj, options, cb, dynamicCb) => {
     options = options || {}
     let layerUrl = layerObj.url
     const layerData = L_.layers.data[layerObj.name]
+    const getJSON = vectorJSONGetter(layerObj, layerData)
 
     // If there is no url to a JSON file but the "controlled" option is checked in the layer config,
     // create the geoJSON layer with empty GeoJSON data
@@ -322,7 +346,7 @@ export const captureVector = (layerObj, options, cb, dynamicCb) => {
                         if (!F_.isUrlAbsolute(dynamicLayerUrl))
                             dynamicLayerUrl = L_.missionPath + dynamicLayerUrl
 
-                        $.getJSON(dynamicLayerUrl, function (data) {
+                        getJSON(dynamicLayerUrl, function (data) {
                             if (data.hasOwnProperty('Features')) {
                                 data.features = data.Features
                                 delete data.Features
@@ -381,15 +405,10 @@ export const captureVector = (layerObj, options, cb, dynamicCb) => {
                                         ]()
                                     })
                             }
-                        }).fail(function (jqXHR, textStatus, errorThrown) {
+                        }).catch(function (err) {
                             //Tell the console council about what happened
                             console.warn(
-                                'ERROR! ' +
-                                    textStatus +
-                                    ' in ' +
-                                    layerUrl +
-                                    ' /// ' +
-                                    errorThrown
+                                'ERROR! in ' + layerUrl + ' /// ' + err?.message
                             )
                         })
                     } else {
@@ -578,30 +597,23 @@ export const captureVector = (layerObj, options, cb, dynamicCb) => {
     }
 
     if (!done) {
-        $.getJSON(layerUrl, (data) => {
+        getJSON(layerUrl, (data) => {
             if (data.hasOwnProperty('Features')) {
                 data.features = data.Features
                 delete data.Features
             }
             L_.setLayerLoadStatus(layerObj.name, 'ok')
             cb(data)
-        }).fail((jqXHR, textStatus, errorThrown) => {
+        }).catch((err) => {
             //Tell the console council about what happened
-            console.warn(
-                'ERROR! ' +
-                    textStatus +
-                    ' in ' +
-                    layerUrl +
-                    ' /// ' +
-                    errorThrown
-            )
-            // status 0 = the browser blocked or lost the request (CORS,
+            console.warn('ERROR! in ' + layerUrl + ' /// ' + err?.message)
+            // No status: the browser blocked or lost the request (CORS,
             // network) and hides the reason from us.
             L_.setLayerLoadStatus(
                 layerObj.name,
                 'error',
-                jqXHR?.status
-                    ? `Fetch failed (HTTP ${jqXHR.status})`
+                err?.status
+                    ? `Fetch failed (HTTP ${err.status})`
                     : 'Fetch failed — likely CORS, a bad host, or a network error'
             )
             cb(null)
