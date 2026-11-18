@@ -16,3 +16,14 @@ export function titilerUrlFor(layerConfig) {
     if (ServiceUrls.hasExternalServiceUrl('titiler', layerConfig)) return url
     return window.mmgisglobal?.WITH_TITILER === 'true' ? url : null
 }
+
+/**
+ * What a layer's colormap sources may read about it (see colormapResolver):
+ * the tiling service its ramps come from by default.
+ *
+ * @param {object} layerConfig - An entry of `L_.layers.data`.
+ * @returns {{serviceUrl: string|null}}
+ */
+export function colormapContextFor(layerConfig) {
+    return { serviceUrl: layerConfig ? titilerUrlFor(layerConfig) : null }
+}
