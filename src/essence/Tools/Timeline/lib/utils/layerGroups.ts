@@ -32,8 +32,8 @@ export type TimelineRow =
            * order: its untimed layers' bars, then its time-enabled layers'
            * bars over them, so gray shows only where no time-enabled layer
            * has data. Each is present only when the group holds such a
-           * layer. Neither carries navigation, so the row has no stepping
-           * controls.
+           * layer. Neither carries navigation, so its bars draw no step
+           * divisions.
            */
           coverage: LayerTimeData[]
       }
