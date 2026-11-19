@@ -62,8 +62,9 @@ export async function fetchAllPages(
     const features = [...featuresOf(first)]
     let complete = features.length < pageSize
 
-    // Without {offset} every page would be the same request.
-    if (template.includes('{offset}')) {
+    // Without {offset} every page would be the same request; without {limit}
+    // the server picks its own page size and pages overlap.
+    if (template.includes('{offset}') && template.includes('{limit}')) {
         let page = 1
         let failed = false
         while (!complete && !failed && page < maxPages) {

@@ -17,7 +17,7 @@ function vectorJSONGetter(layerObj, layerData) {
                 : fetchAllPages(url, paging).then(({ data, complete }) => {
                       if (!complete)
                           console.warn(
-                              `${layerObj.display_name}: stopped paging after ${data.features.length} features; more may exist. Raise Max Pages, or add {offset} to the URL.`
+                              `${layerObj.display_name}: stopped paging after ${data.features.length} features; more may exist. Raise Max Pages, or add {offset} and {limit} to the URL.`
                           )
                       return data
                   })

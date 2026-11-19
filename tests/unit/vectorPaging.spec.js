@@ -164,6 +164,23 @@ describe('fetchAllPages', () => {
         expect(complete).toBe(false)
         expect(data.features).toHaveLength(2)
     })
+
+    it('fetches once when the URL has {offset} but no {limit}', async () => {
+        const fetchJson = vi.fn(async () => ({
+            features: [feature(1), feature(2), feature(3)],
+        }))
+        const { data, complete } = await fetchAllPages(
+            'https://example.com/query?resultOffset={offset}',
+            { pageSize: 2, maxPages: 5 },
+            fetchJson
+        )
+        expect(fetchJson).toHaveBeenCalledTimes(1)
+        expect(fetchJson.mock.calls[0][0]).toBe(
+            'https://example.com/query?resultOffset=0'
+        )
+        expect(complete).toBe(false)
+        expect(data.features).toHaveLength(3)
+    })
 })
 
 // The layer's load error reads `status` to tell an HTTP failure from a
