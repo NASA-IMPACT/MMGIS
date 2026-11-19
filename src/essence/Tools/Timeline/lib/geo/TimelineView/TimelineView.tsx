@@ -42,6 +42,11 @@ const MARKER_SIZE = 18
  */
 export const EDGE_MARGIN = MARKER_SIZE
 
+// Defaults for a view without fold state, held at module level so the row
+// list is not rebuilt on every render.
+const NO_FOLDS: ReadonlySet<string> = new Set()
+const ignoreToggle = () => {}
+
 export interface TimelineViewProps {
     startTime: Date
     endTime: Date
@@ -54,10 +59,13 @@ export interface TimelineViewProps {
      * layers are listed flat, in the order given.
      */
     groups?: LayerGroupNode[] | null
-    /** Ids of the groups folded away. */
-    collapsedGroups: ReadonlySet<string>
-    /** Folds a group away, or brings a folded one back. */
-    onToggleGroup: (id: string) => void
+    /** Ids of the groups folded away. None when absent. */
+    collapsedGroups?: ReadonlySet<string>
+    /**
+     * Folds a group away, or brings a folded one back. Absent, the group
+     * rows do nothing when pressed.
+     */
+    onToggleGroup?: (id: string) => void
     /** Committed time change — fires once the scrubber is released. */
     onCurrentTimeChange: (time: Date) => void
     /** Live time while the scrubber is being dragged, for display only. */
@@ -91,8 +99,8 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     timeMode,
     layers,
     groups,
-    collapsedGroups,
-    onToggleGroup,
+    collapsedGroups = NO_FOLDS,
+    onToggleGroup = ignoreToggle,
     onCurrentTimeChange,
     onCurrentTimePreview,
     onCurrentTimeStep,

@@ -95,8 +95,6 @@ describe('TimelineView layer navigation', () => {
         act(() => {
             root.render(
                 <TimelineView
-                    collapsedGroups={new Set()}
-                    onToggleGroup={() => {}}
                     startTime={START}
                     endTime={END}
                     currentTime={currentTime}
@@ -236,8 +234,6 @@ describe('TimelineView head room', () => {
         act(() => {
             root.render(
                 <TimelineView
-                    collapsedGroups={new Set()}
-                    onToggleGroup={() => {}}
                     startTime={START}
                     endTime={END}
                     currentTime={CURRENT}
@@ -341,8 +337,6 @@ describe('TimelineView visible window', () => {
         act(() => {
             root.render(
                 <TimelineView
-                    collapsedGroups={new Set()}
-                    onToggleGroup={() => {}}
                     startTime={bounds.start}
                     endTime={bounds.end}
                     currentTime={CURRENT}
@@ -659,8 +653,6 @@ describe('TimelineView margin past the global window', () => {
         act(() => {
             root.render(
                 <TimelineView
-                    collapsedGroups={new Set()}
-                    onToggleGroup={() => {}}
                     startTime={START}
                     endTime={END}
                     currentTime={currentTime}
@@ -889,15 +881,22 @@ describe('TimelineView layer groups', () => {
         }))
 
     /** Sidebar row i and chart row i: same pitch, and the chart row draws
-     *  the sidebar row's layer, or nothing for an open group. */
+     *  the sidebar row's layer or folded group, or nothing for an open
+     *  group. */
     const expectAligned = () => {
         const labels = sidebarLabels()
+        const items = Array.from(
+            container.querySelectorAll<HTMLElement>(
+                '.layer-group-item, .layer-item',
+            ),
+        )
         const rows = chartRows()
         expect(rows).toHaveLength(labels.length)
         const pitch = rows.length > 1 ? rows[1].y - rows[0].y : 0
         rows.forEach((row, index) => {
             expect(row.y).toBe(rows[0].y + index * pitch)
-            if (row.names.length) expect(row.names).toEqual([labels[index]])
+            const open = items[index].getAttribute('aria-expanded') === 'true'
+            expect(row.names).toEqual(open ? [] : [labels[index]])
         })
     }
 
