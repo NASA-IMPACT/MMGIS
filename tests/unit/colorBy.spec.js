@@ -1,10 +1,13 @@
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect, beforeAll } from 'vitest'
 import { color as parseColor } from 'd3'
 import {
     compileColorBy,
     resolveColorBy,
     resolveFeatureColors,
+    colorByColormapName,
+    loadColormapRamp,
 } from '../../src/essence/Basics/Layers_/ColorBy.ts'
+import { resolveColormapColors } from '../../src/essence/Basics/Colormaps/resolveColormapColors.ts'
 import { compileLegendStyle } from '../../src/essence/Basics/Layers_/LegendStyle.ts'
 
 /**
@@ -346,4 +349,103 @@ describe('HMS fire: ranges against the legend-row configuration', () => {
             expect(rgb(fromRanges.fillColor)).toEqual(rgb(fromRows.fillColor))
         }
     )
+})
+
+/**
+ * The `colormap` mode scales a numeric value linearly between `min` and `max`
+ * across a named ramp's 256 colours, clamping at both ends.
+ */
+describe('colorBy colormap', () => {
+    const colormap = (fields = {}) => ({
+        mode: 'colormap',
+        property: 'pm25',
+        colormap: 'viridis',
+        min: 0,
+        max: 255,
+        ...fields,
+    })
+    const fill = (compiled, value) =>
+        resolveColorBy(compiled, { pm25: value })?.fillColor ?? null
+
+    let viridis
+    beforeAll(async () => {
+        viridis = await resolveColormapColors('viridis', null)
+        await loadColormapRamp('viridis', null)
+        await loadColormapRamp('viridis_r', null)
+    })
+
+    test('maps a value to floor(t * 255) of the ramp', () => {
+        const compiled = compileColorBy(colormap({ min: 0, max: 10 }))
+        expect(fill(compiled, 0)).toBe(viridis[0])
+        expect(fill(compiled, 5)).toBe(viridis[127])
+        expect(fill(compiled, 10)).toBe(viridis[255])
+    })
+
+    test('clamps values outside min and max to the end colours', () => {
+        const compiled = compileColorBy(colormap({ min: 1, max: 18 }))
+        expect(fill(compiled, -40)).toBe(viridis[0])
+        expect(fill(compiled, 1e9)).toBe(viridis[255])
+        expect(fill(compiled, Infinity)).toBe(viridis[255])
+    })
+
+    test.each([
+        ['an _r name', { colormap: 'viridis_r' }],
+        ['reversed: true', { reversed: true }],
+        ['both together', { colormap: 'viridis_r', reversed: true }],
+    ])('%s reverses the ramp', (_, fields) => {
+        const compiled = compileColorBy(colormap(fields))
+        expect(compiled.colormap).toBe('viridis_r')
+        expect(fill(compiled, 0)).toBe(viridis[255])
+        expect(fill(compiled, 255)).toBe(viridis[0])
+    })
+
+    test.each([
+        ['missing', undefined],
+        ['null', null],
+        ['a numeric string', '7'],
+        ['NaN', NaN],
+    ])('places no feature whose value is %s', (_, value) => {
+        expect(fill(compileColorBy(colormap()), value)).toBeNull()
+    })
+
+    test('colours only the fill unless applyToStroke is set', () => {
+        expect(resolveColorBy(compileColorBy(colormap()), { pm25: 0 })).toEqual({
+            fillColor: viridis[0],
+        })
+        expect(
+            resolveColorBy(compileColorBy(colormap({ applyToStroke: true })), {
+                pm25: 0,
+            })
+        ).toEqual({ fillColor: viridis[0], color: viridis[0] })
+    })
+
+    test('places nothing until its ramp has been loaded', async () => {
+        const compiled = compileColorBy(colormap({ colormap: 'magma' }))
+        expect(compiled.colors).toBeNull()
+        expect(fill(compiled, 3)).toBeNull()
+
+        await loadColormapRamp('magma', null)
+        expect(fill(compileColorBy(colormap({ colormap: 'magma' })), 0)).toBe(
+            (await resolveColormapColors('magma', null))[0]
+        )
+    })
+
+    test.each([
+        ['no ramp', { colormap: '' }],
+        ['no min', { min: undefined }],
+        ['a blank max', { max: '' }],
+        ['max equal to min', { min: 5, max: 5 }],
+        ['max below min', { min: 5, max: 1 }],
+    ])('compiles to null with %s', (_, fields) => {
+        expect(compileColorBy(colormap(fields))).toBeNull()
+    })
+
+    test('names the ramp it paints with, for colormap settings only', () => {
+        expect(colorByColormapName(colormap({ colormap: 'Jet' }))).toBe('Jet')
+        expect(colorByColormapName(colormap({ reversed: true }))).toBe(
+            'viridis_r'
+        )
+        expect(colorByColormapName({ mode: 'ranges', colormap: 'jet' })).toBeNull()
+        expect(colorByColormapName(null)).toBeNull()
+    })
 })

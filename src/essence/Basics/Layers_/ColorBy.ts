@@ -20,6 +20,25 @@
  * the upper band. The last band is open above; the first is open below when
  * its `min` is null. Only the fill is coloured unless `applyToStroke` is true.
  *
+ * `colormap` scales a numeric value linearly across a named ramp, the same
+ * catalogue raster layers draw from:
+ *
+ *     "colorBy": {
+ *         "mode": "colormap",
+ *         "property": "sample_measurement",
+ *         "colormap": "jet",
+ *         "reversed": false,
+ *         "min": 1,
+ *         "max": 18,
+ *         "unit": "µg/m³"
+ *     }
+ *
+ * Values below `min` take the ramp's first colour and values above `max` its
+ * last. A `colormap` named with an `_r` suffix is reversed as well. The ramp's
+ * colours are resolved asynchronously (see {@link loadColormapRamp}); until
+ * they arrive the setting places no feature, so the layer paints its fixed
+ * colour and is restyled once they land.
+ *
  * Like legend-row styling (see LegendStyle) the work is split so a renderer
  * pays the parsing and sorting once per layer: `compileColorBy` digests the
  * configuration, and `resolveColorBy` runs per feature. A feature the mode
@@ -40,6 +59,11 @@ import {
     type LegendStyleResult,
 } from './LegendStyle'
 import { toCanonicalLayerType } from '../MapEngines/types/engine'
+import { resolveColormapColors } from '../Colormaps/resolveColormapColors'
+import {
+    getBaseColormapName,
+    isReversedColormap,
+} from '../Colormaps/colormapNaming'
 
 /**
  * Canonical layer types whose features are styled by value: from legend rows
@@ -75,6 +99,11 @@ export interface ColorByConfig {
     property?: string
     applyToStroke?: boolean
     ranges?: ColorByRangeConfig[]
+    colormap?: string
+    reversed?: boolean
+    min?: number | string
+    max?: number | string
+    unit?: string
 }
 
 /** A usable band, its colour normalised and its label settled. */
@@ -93,12 +122,25 @@ export interface CompiledRanges {
     bands: RangeBand[]
 }
 
+export interface CompiledColormap {
+    mode: 'colormap'
+    property: string
+    applyToStroke: boolean
+    /** The ramp's name, `_r`-suffixed when reversed. */
+    colormap: string
+    min: number
+    max: number
+    unit: string | null
+    /** The ramp's colours, or null while they are still being resolved. */
+    colors: string[] | null
+}
+
 /**
  * A digested `colorBy` setting, discriminated on `mode`. Each mode adds a
  * member here, a compiler to {@link COMPILERS}, a case to {@link colorForValue}
  * and a legend in buildLayerLegend.
  */
-export type CompiledColorBy = CompiledRanges
+export type CompiledColorBy = CompiledRanges | CompiledColormap
 
 type Compiler = (
     config: ColorByConfig,
@@ -108,6 +150,7 @@ type Compiler = (
 
 const COMPILERS: Record<string, Compiler> = {
     ranges: compileRanges,
+    colormap: compileColormap,
 }
 
 /**
@@ -178,6 +221,8 @@ function colorForValue(
     switch (compiled.mode) {
         case 'ranges':
             return rangeColor(compiled.bands, value)
+        case 'colormap':
+            return colormapColor(compiled, value)
         default:
             return null
     }
@@ -285,4 +330,89 @@ function rangeColor(bands: RangeBand[], value: unknown): string | null {
         }
     }
     return found === -1 ? null : bands[found].color
+}
+
+/**
+ * Resolved ramps, keyed by lowercased name with any `_r` suffix. Each is
+ * resolved once and shared by every layer naming it.
+ */
+const ramps = new Map<string, string[]>()
+const rampKey = (name: string): string => name.toLowerCase()
+
+/**
+ * The ramp a `colormap` setting paints with, `_r`-suffixed when either
+ * `reversed` is true or the configured name already carries the suffix.
+ *
+ * @returns Null for any other mode or a setting naming no ramp.
+ */
+export function colorByColormapName(config: unknown): string | null {
+    if (config == null || typeof config !== 'object') return null
+    const { mode, colormap, reversed } = config as ColorByConfig
+    if (mode !== 'colormap' || typeof colormap !== 'string') return null
+    const base = getBaseColormapName(colormap)
+    if (base === '') return null
+    return reversed === true || isReversedColormap(colormap)
+        ? `${base}_r`
+        : base
+}
+
+/**
+ * A ramp's colours, resolved through the colormap catalogue raster legends use
+ * (bundled ramps first, then the layer's TiTiler) and kept for every later
+ * compile. Never rejects.
+ */
+export async function loadColormapRamp(
+    name: string,
+    titilerUrl: string | null
+): Promise<string[] | null> {
+    const cached = ramps.get(rampKey(name))
+    if (cached) return cached
+    const colors = await resolveColormapColors(name, titilerUrl)
+    if (colors && colors.length > 0) ramps.set(rampKey(name), colors)
+    return colors
+}
+
+const toFinite = (value: unknown): number | null => {
+    if (value == null || value === '') return null
+    const num = Number(value)
+    return Number.isFinite(num) ? num : null
+}
+
+function compileColormap(
+    config: ColorByConfig,
+    property: string,
+    applyToStroke: boolean
+): CompiledColormap | null {
+    const colormap = colorByColormapName(config)
+    const min = toFinite(config.min)
+    const max = toFinite(config.max)
+    if (colormap == null || min == null || max == null || !(max > min))
+        return null
+    return {
+        mode: 'colormap',
+        property,
+        applyToStroke,
+        colormap,
+        min,
+        max,
+        unit:
+            typeof config.unit === 'string' && config.unit !== ''
+                ? config.unit
+                : null,
+        colors: ramps.get(rampKey(colormap)) ?? null,
+    }
+}
+
+/**
+ * The ramp colour at a value's position between `min` and `max`, clamped to
+ * the ends. Only a real number is placed, as with ranges.
+ */
+function colormapColor(
+    { colors, min, max }: CompiledColormap,
+    value: unknown
+): string | null {
+    if (!colors || typeof value !== 'number' || Number.isNaN(value))
+        return null
+    const t = Math.min(1, Math.max(0, (value - min) / (max - min)))
+    return colors[Math.floor(t * (colors.length - 1))]
 }
