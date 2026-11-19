@@ -50,10 +50,14 @@ export interface TimelineViewProps {
     layers: LayerTimeData[]
     /**
      * How the layers are grouped. Each group gets a row that folds its layers
-     * away; layers it does not mention are listed after it. Absent, the
-     * layers are listed flat.
+     * away; a layer it does not mention sits at the top level. Absent, the
+     * layers are listed flat, in the order given.
      */
     groups?: LayerGroupNode[] | null
+    /** Ids of the groups folded away. */
+    collapsedGroups: ReadonlySet<string>
+    /** Folds a group away, or brings a folded one back. */
+    onToggleGroup: (id: string) => void
     /** Committed time change — fires once the scrubber is released. */
     onCurrentTimeChange: (time: Date) => void
     /** Live time while the scrubber is being dragged, for display only. */
@@ -87,6 +91,8 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     timeMode,
     layers,
     groups,
+    collapsedGroups,
+    onToggleGroup,
     onCurrentTimeChange,
     onCurrentTimePreview,
     onCurrentTimeStep,
@@ -118,18 +124,6 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     // keep each name level with its row.
     const headGutter = markerSize
 
-    // Folded groups, by id. Held here rather than with the layers, which are
-    // rebuilt whenever the window or the visible set changes.
-    const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(
-        () => new Set()
-    )
-    const toggleGroup = useCallback((id: string) => {
-        setCollapsedGroups((prev) => {
-            const next = new Set(prev)
-            if (!next.delete(id)) next.add(id)
-            return next
-        })
-    }, [])
     const rows = useMemo(
         () => buildTimelineRows(groups, layers, collapsedGroups),
         [groups, layers, collapsedGroups]
@@ -561,7 +555,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                         depth={row.depth}
                                         collapsed={row.collapsed}
                                         height={layerBarHeight}
-                                        onToggle={toggleGroup}
+                                        onToggle={onToggleGroup}
                                     />
                                 ) : (
                                     <LayerSidebarItem

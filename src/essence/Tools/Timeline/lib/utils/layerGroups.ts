@@ -1,4 +1,4 @@
-import type { LayerTimeData, TimeRange } from '../types'
+import type { LayerTimeData } from '../types'
 
 /**
  * The configured layer grouping, as the timeline reads it: a group names
@@ -10,6 +10,8 @@ export type LayerGroupNode =
           kind: 'group'
           id: string
           displayName: string
+          /** The colour of the group's bars while it is folded. */
+          color: string
           children: LayerGroupNode[]
       }
     | { kind: 'layer'; id: string }
@@ -34,86 +36,76 @@ export type TimelineRow =
           summary: LayerTimeData
       }
 
-/**
- * Overlapping and touching ranges joined into one, in time order. Labels are
- * dropped: a joined span no longer stands for a single named period.
- */
-export function mergeRanges(ranges: TimeRange[]): TimeRange[] {
-    const sorted = [...ranges].sort(
-        (a, b) => a.start.getTime() - b.start.getTime()
-    )
-    const merged: TimeRange[] = []
-    for (const range of sorted) {
-        const last = merged[merged.length - 1]
-        if (last && range.start.getTime() <= last.end.getTime()) {
-            if (range.end.getTime() > last.end.getTime()) last.end = range.end
-        } else {
-            merged.push({ start: range.start, end: range.end })
-        }
-    }
-    return merged
-}
+type Built = { rows: TimelineRow[]; members: LayerTimeData[]; rank: number }
 
 /**
- * Flattens the grouping into rows. Only layers in `layers` are shown; a group
- * left with none of them is dropped. A collapsed group contributes its own row
- * and hides everything beneath it. Layers the grouping does not mention are
- * listed after it, ungrouped, so a missing or partial grouping hides nothing.
+ * Flattens the grouping into rows. `layers` arrive top first in draw order,
+ * and each level is sorted by its top-most layer, so a group sits where its
+ * first shown layer does — the order the layer list shows. Only layers in
+ * `layers` are shown, each once; a group left with none of them is dropped.
+ * A collapsed group contributes its own row and hides everything beneath it.
+ * A layer outside the grouping sits at the top level.
  */
 export function buildTimelineRows(
     tree: LayerGroupNode[] | null | undefined,
     layers: LayerTimeData[],
     collapsed: ReadonlySet<string>
 ): TimelineRow[] {
-    const byName = new Map(layers.map((layer) => [layer.name, layer]))
+    const rank = new Map(layers.map((layer, index) => [layer.name, index]))
     const placed = new Set<string>()
+    const byRank = (a: Built, b: Built) => a.rank - b.rank
+
+    const leaf = (layer: LayerTimeData, depth: number): Built => ({
+        rows: [{ kind: 'layer', layer, depth }],
+        members: [layer],
+        rank: rank.get(layer.name) as number,
+    })
 
     // Each node yields its rows and the layers under it, whether or not a
     // collapse hides them, for the group's combined coverage.
-    const walk = (
-        nodes: LayerGroupNode[],
-        depth: number
-    ): { rows: TimelineRow[]; members: LayerTimeData[] } => {
-        const rows: TimelineRow[] = []
-        const members: LayerTimeData[] = []
+    const build = (nodes: LayerGroupNode[], depth: number): Built[] => {
+        const out: Built[] = []
         for (const node of nodes) {
             if (node.kind === 'layer') {
-                const layer = byName.get(node.id)
-                if (!layer || placed.has(node.id)) continue
+                const index = rank.get(node.id)
+                if (index === undefined || placed.has(node.id)) continue
                 placed.add(node.id)
-                rows.push({ kind: 'layer', layer, depth })
-                members.push(layer)
+                out.push(leaf(layers[index], depth))
                 continue
             }
 
-            const inner = walk(node.children, depth + 1)
-            if (inner.members.length === 0) continue
+            const children = build(node.children, depth + 1)
+            if (children.length === 0) continue
+            const members = children.flatMap((child) => child.members)
             const isCollapsed = collapsed.has(node.id)
-            rows.push({
-                kind: 'group',
-                id: node.id,
-                displayName: node.displayName,
-                depth,
-                collapsed: isCollapsed,
-                summary: {
-                    name: node.id,
-                    displayName: node.displayName,
-                    color: inner.members[0].color,
-                    timeRanges: mergeRanges(
-                        inner.members.flatMap((layer) => layer.timeRanges)
-                    ),
-                    navigation: null,
-                },
+            out.push({
+                rows: [
+                    {
+                        kind: 'group',
+                        id: node.id,
+                        displayName: node.displayName,
+                        depth,
+                        collapsed: isCollapsed,
+                        summary: {
+                            name: node.id,
+                            displayName: node.displayName,
+                            color: node.color,
+                            timeRanges: members.flatMap((m) => m.timeRanges),
+                            navigation: null,
+                        },
+                    },
+                    ...(isCollapsed ? [] : children.flatMap((c) => c.rows)),
+                ],
+                members,
+                rank: children[0].rank,
             })
-            if (!isCollapsed) rows.push(...inner.rows)
-            members.push(...inner.members)
         }
-        return { rows, members }
+        return out.sort(byRank)
     }
 
-    const { rows } = walk(tree ?? [], 0)
+    const top = build(tree ?? [], 0)
     for (const layer of layers) {
-        if (!placed.has(layer.name)) rows.push({ kind: 'layer', layer, depth: 0 })
+        if (!placed.has(layer.name)) top.push(leaf(layer, 0))
     }
-    return rows
+    return top.sort(byRank).flatMap((built) => built.rows)
 }

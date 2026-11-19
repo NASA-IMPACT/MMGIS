@@ -1,7 +1,6 @@
 import { describe, test, expect } from 'vitest'
 import {
     buildTimelineRows,
-    mergeRanges,
     type LayerGroupNode,
     type TimelineRow,
 } from '../lib/utils/layerGroups'
@@ -22,7 +21,13 @@ const layer = (
 const group = (
     id: string,
     children: LayerGroupNode[]
-): LayerGroupNode => ({ kind: 'group', id, displayName: `Group ${id}`, children })
+): LayerGroupNode => ({
+    kind: 'group',
+    id,
+    displayName: `Group ${id}`,
+    color: `#group-${id}`,
+    children,
+})
 const leaf = (id: string): LayerGroupNode => ({ kind: 'layer', id })
 
 /** Rows as `name@depth`, groups marked with their collapse state. */
@@ -33,41 +38,31 @@ const outline = (rows: TimelineRow[]) =>
             : `[${row.id}${row.collapsed ? '+' : '-'}]@${row.depth}`
     )
 
-describe('mergeRanges', () => {
-    test('joins overlapping and touching ranges, in time order', () => {
-        const merged = mergeRanges([
-            { start: d('2020-03-01'), end: d('2020-04-01') },
-            { start: d('2020-01-01'), end: d('2020-02-01') },
-            { start: d('2020-02-01'), end: d('2020-02-15'), label: 'Feb' },
-            { start: d('2020-03-15'), end: d('2020-03-20') },
-        ])
-
-        expect(merged).toEqual([
-            { start: d('2020-01-01'), end: d('2020-02-15') },
-            { start: d('2020-03-01'), end: d('2020-04-01') },
-        ])
-    })
-
-    test('leaves the input ranges untouched', () => {
-        const first = { start: d('2020-01-01'), end: d('2020-02-01') }
-        mergeRanges([first, { start: d('2020-01-15'), end: d('2020-03-01') }])
-
-        expect(first.end).toEqual(d('2020-02-01'))
-    })
-})
-
 describe('buildTimelineRows', () => {
     const none = new Set<string>()
 
-    test('places layers under their group, in the grouping order', () => {
-        const tree = [leaf('a'), group('g', [leaf('c'), leaf('b')])]
+    test('places layers under their group', () => {
+        const tree = [leaf('a'), group('g', [leaf('b'), leaf('c')])]
         const rows = buildTimelineRows(
             tree,
-            [layer('b'), layer('a'), layer('c')],
+            [layer('a'), layer('b'), layer('c')],
             none
         )
 
-        expect(outline(rows)).toEqual(['a@0', '[g-]@0', 'c@1', 'b@1'])
+        expect(outline(rows)).toEqual(['a@0', '[g-]@0', 'b@1', 'c@1'])
+    })
+
+    test('lists each level in draw order, a group where its top-most layer is', () => {
+        // Draw order, top first: c, x, b. The group holds c, so it leads;
+        // inside it c comes before b, whatever order the config gives.
+        const tree = [leaf('x'), group('g', [leaf('b'), leaf('c')])]
+        const rows = buildTimelineRows(
+            tree,
+            [layer('c'), layer('x'), layer('b')],
+            none
+        )
+
+        expect(outline(rows)).toEqual(['[g-]@0', 'c@1', 'b@1', 'x@0'])
     })
 
     test('a collapsed group keeps its row and hides what it holds', () => {
@@ -81,7 +76,7 @@ describe('buildTimelineRows', () => {
         expect(outline(rows)).toEqual(['[g+]@0', 'c@0'])
     })
 
-    test("a collapsed group's row carries the combined coverage of its layers", () => {
+    test("a group's row carries every range of the layers beneath it, in its own colour", () => {
         const tree = [group('g', [leaf('a'), group('h', [leaf('b')])])]
         const rows = buildTimelineRows(
             tree,
@@ -99,9 +94,11 @@ describe('buildTimelineRows', () => {
         expect(row.kind).toBe('group')
         if (row.kind !== 'group') return
         expect(row.summary.timeRanges).toEqual([
-            { start: d('2020-01-01'), end: d('2020-03-01') },
+            { start: d('2020-01-01'), end: d('2020-02-01') },
+            { start: d('2020-01-15'), end: d('2020-03-01') },
             { start: d('2020-06-01'), end: d('2020-07-01') },
         ])
+        expect(row.summary.color).toBe('#group-g')
         expect(row.summary.navigation).toBeNull()
         expect(row.summary.displayName).toBe('Group g')
     })
@@ -130,14 +127,21 @@ describe('buildTimelineRows', () => {
         expect(outline(rows)).toEqual(['[g-]@0', 'a@1'])
     })
 
-    test('lists layers the grouping does not mention after it, ungrouped', () => {
+    test('places a layer the grouping names twice only once', () => {
+        const tree = [leaf('a'), group('g', [leaf('a'), leaf('b')])]
+        const rows = buildTimelineRows(tree, [layer('a'), layer('b')], none)
+
+        expect(outline(rows)).toEqual(['a@0', '[g-]@0', 'b@1'])
+    })
+
+    test('ranks a layer the grouping does not mention among the top level', () => {
         const rows = buildTimelineRows(
-            [group('g', [leaf('a')])],
-            [layer('z'), layer('a')],
+            [group('g', [leaf('a')]), leaf('b')],
+            [layer('a'), layer('z'), layer('b')],
             none
         )
 
-        expect(outline(rows)).toEqual(['[g-]@0', 'a@1', 'z@0'])
+        expect(outline(rows)).toEqual(['[g-]@0', 'a@1', 'z@0', 'b@0'])
     })
 
     test('without a grouping, lists the layers flat in their own order', () => {

@@ -95,6 +95,8 @@ describe('TimelineView layer navigation', () => {
         act(() => {
             root.render(
                 <TimelineView
+                    collapsedGroups={new Set()}
+                    onToggleGroup={() => {}}
                     startTime={START}
                     endTime={END}
                     currentTime={currentTime}
@@ -234,6 +236,8 @@ describe('TimelineView head room', () => {
         act(() => {
             root.render(
                 <TimelineView
+                    collapsedGroups={new Set()}
+                    onToggleGroup={() => {}}
                     startTime={START}
                     endTime={END}
                     currentTime={CURRENT}
@@ -337,6 +341,8 @@ describe('TimelineView visible window', () => {
         act(() => {
             root.render(
                 <TimelineView
+                    collapsedGroups={new Set()}
+                    onToggleGroup={() => {}}
                     startTime={bounds.start}
                     endTime={bounds.end}
                     currentTime={CURRENT}
@@ -653,6 +659,8 @@ describe('TimelineView margin past the global window', () => {
         act(() => {
             root.render(
                 <TimelineView
+                    collapsedGroups={new Set()}
+                    onToggleGroup={() => {}}
                     startTime={START}
                     endTime={END}
                     currentTime={currentTime}
@@ -783,12 +791,50 @@ describe('TimelineView layer groups', () => {
             kind: 'group',
             id: 'aqs',
             displayName: 'AQS',
+            color: '#c91b6e',
             children: [
                 { kind: 'layer', id: 'o3' },
-                { kind: 'layer', id: 'no2' },
+                {
+                    kind: 'group',
+                    id: 'nitrogen',
+                    displayName: 'Nitrogen',
+                    color: '#c91b6e',
+                    children: [{ kind: 'layer', id: 'no2' }],
+                },
             ],
         },
     ]
+
+    /** Holds the fold state as the adapter does. */
+    const Harness: React.FC<{ layers: LayerTimeData[] }> = ({ layers }) => {
+        const [collapsed, setCollapsed] = React.useState<ReadonlySet<string>>(
+            () => new Set(),
+        )
+        return (
+            <TimelineView
+                startTime={START}
+                endTime={END}
+                currentTime={CURRENT}
+                timeMode="DAY"
+                configuredGranularity="DAY"
+                layers={layers}
+                groups={groups}
+                collapsedGroups={collapsed}
+                onToggleGroup={(id) =>
+                    setCollapsed((prev) => {
+                        const next = new Set(prev)
+                        if (!next.delete(id)) next.add(id)
+                        return next
+                    })
+                }
+                view={{ start: START, end: END }}
+                onViewChange={() => {}}
+                onCurrentTimeChange={() => {}}
+                onLayerNavigate={() => {}}
+                onFitLayer={() => {}}
+            />
+        )
+    }
 
     beforeEach(() => {
         originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
@@ -809,22 +855,7 @@ describe('TimelineView layer groups', () => {
 
     const render = (layers: LayerTimeData[]) => {
         act(() => {
-            root.render(
-                <TimelineView
-                    startTime={START}
-                    endTime={END}
-                    currentTime={CURRENT}
-                    timeMode="DAY"
-                    configuredGranularity="DAY"
-                    layers={layers}
-                    groups={groups}
-                    view={{ start: START, end: END }}
-                    onViewChange={() => {}}
-                    onCurrentTimeChange={() => {}}
-                    onLayerNavigate={() => {}}
-                    onFitLayer={() => {}}
-                />,
-            )
+            root.render(<Harness layers={layers} />)
         })
     }
 
@@ -834,49 +865,83 @@ describe('TimelineView layer groups', () => {
                 '.layer-group-name, .layer-name',
             ),
         ).map((el) => el.textContent)
-    const header = () =>
-        container.querySelector<HTMLButtonElement>('.layer-group-item')!
-    const chartRows = () => container.querySelectorAll('.layer-row-bg')
-    const drawnBars = () =>
-        container.querySelectorAll('.layer-timelines rect:not(.layer-row-bg)')
-    const toggle = () =>
+    const header = (name: string) =>
+        Array.from(
+            container.querySelectorAll<HTMLButtonElement>('.layer-group-item'),
+        ).find((el) => el.textContent === name)!
+    const toggle = (name: string) =>
         act(() => {
-            header().dispatchEvent(new MouseEvent('click', { bubbles: true }))
+            header(name).dispatchEvent(new MouseEvent('click', { bubbles: true }))
         })
 
-    test('lists grouped layers under their group, expanded at first', () => {
-        render([layer('no2'), layer('o3'), layer('basemap')])
+    /**
+     * Each chart row's y and the names its bars are titled with, in row
+     * order. An open group's row draws nothing, so it has no names.
+     */
+    const chartRows = () =>
+        Array.from(
+            container.querySelectorAll<SVGGElement>('.layer-timelines > g'),
+        ).map((row) => ({
+            y: Number(row.querySelector('.layer-row-bg')!.getAttribute('y')),
+            names: Array.from(new Set(
+                Array.from(row.querySelectorAll('title')).map(
+                    (title) => title.textContent!.split('\n')[0],
+                ),
+            )),
+        }))
 
-        expect(sidebarLabels()).toEqual(['AQS', 'o3', 'no2', 'basemap'])
-        expect(header().getAttribute('aria-expanded')).toBe('true')
-        expect(chartRows()).toHaveLength(4)
+    /** Sidebar row i and chart row i: same pitch, and the chart row draws
+     *  the sidebar row's layer, or nothing for an open group. */
+    const expectAligned = () => {
+        const labels = sidebarLabels()
+        const rows = chartRows()
+        expect(rows).toHaveLength(labels.length)
+        const pitch = rows.length > 1 ? rows[1].y - rows[0].y : 0
+        rows.forEach((row, index) => {
+            expect(row.y).toBe(rows[0].y + index * pitch)
+            if (row.names.length) expect(row.names).toEqual([labels[index]])
+        })
+    }
+
+    test('lists grouped layers under their group, expanded at first', () => {
+        render([layer('o3'), layer('no2'), layer('basemap')])
+
+        expect(sidebarLabels()).toEqual([
+            'AQS', 'o3', 'Nitrogen', 'no2', 'basemap',
+        ])
+        expect(header('AQS').getAttribute('aria-expanded')).toBe('true')
+        expectAligned()
     })
 
-    test('folds a group to one row that draws its combined coverage', () => {
+    test('folds a group to one row that draws its layers\' coverage', () => {
         render([layer('o3'), layer('no2'), layer('basemap')])
-        const openBars = drawnBars().length
 
-        toggle()
+        toggle('AQS')
 
         expect(sidebarLabels()).toEqual(['AQS', 'basemap'])
-        expect(header().getAttribute('aria-expanded')).toBe('false')
-        expect(chartRows()).toHaveLength(2)
-        // Both layers cover the same span, so the folded row draws one bar
-        // where the open group drew one per layer.
-        expect(drawnBars().length).toBe(openBars - 1)
+        expect(header('AQS').getAttribute('aria-expanded')).toBe('false')
+        expect(chartRows()[0].names).toEqual(['AQS'])
+        expectAligned()
 
-        toggle()
+        toggle('AQS')
 
-        expect(sidebarLabels()).toEqual(['AQS', 'o3', 'no2', 'basemap'])
+        expect(sidebarLabels()).toEqual([
+            'AQS', 'o3', 'Nitrogen', 'no2', 'basemap',
+        ])
+        expectAligned()
     })
 
-    test('keeps a fold when the layers are rebuilt', () => {
-        render([layer('o3'), layer('no2')])
-        toggle()
+    test('keeps names level with their bars through nested folds', () => {
+        render([layer('o3'), layer('no2'), layer('basemap')])
 
-        render([layer('o3'), layer('no2')])
+        toggle('Nitrogen')
+        expect(sidebarLabels()).toEqual(['AQS', 'o3', 'Nitrogen', 'basemap'])
+        expectAligned()
 
-        expect(sidebarLabels()).toEqual(['AQS'])
+        toggle('AQS')
+        toggle('AQS')
+        expect(sidebarLabels()).toEqual(['AQS', 'o3', 'Nitrogen', 'basemap'])
+        expectAligned()
     })
 
     test('drops a group none of whose layers are shown', () => {

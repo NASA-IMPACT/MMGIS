@@ -16,7 +16,7 @@ export { TIME_MODE_ORDER } from './types'
 export type { TimeMode, TimeRange, LayerTimeData } from './types'
 export { drawnExtent, revealEnd, revealStart } from './utils/layerNavigation'
 export type { LayerNavigation } from './utils/layerNavigation'
-export { buildTimelineRows, mergeRanges } from './utils/layerGroups'
+export { buildTimelineRows } from './utils/layerGroups'
 export type { LayerGroupNode, TimelineRow } from './utils/layerGroups'
 
 // Zoom

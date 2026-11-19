@@ -13,8 +13,10 @@ import {
     type LayerConfig,
     mmgisGetTemporalExtents,
     mmgisGetLayerTree,
+    mmgisGetLayerOrder,
     type LayerTreeNode,
 } from '../_shared/adapters/mmgisAPI'
+import { sortByOrder } from '../_shared/legend/sortByOrder'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 import {
     TimelineView,
@@ -72,21 +74,35 @@ const sameInstant = (a: Date, b: Date): boolean => a.getTime() === b.getTime()
 const preserveIdentity = (prev: Date, next: Date): Date =>
     sameInstant(prev, next) ? prev : next
 
-/** Core's grouping, with each group titled from its header layer's config. */
+// Time-enabled layers stand out in the theme's secondary colour
+const TIMED_COLOR = 'var(--theme-color-secondary, #c91b6e)'
+const UNTIMED_COLOR = 'var(--theme-color-base, #71767a)'
+
+/**
+ * Core's grouping, with each group titled from its header layer's config and
+ * coloured as a time-enabled layer when any visible layer inside it is one.
+ */
 const nameGroups = (
     nodes: LayerTreeNode[],
-    configs: Record<string, LayerConfig>
-): LayerGroupNode[] =>
-    nodes.map((node) => {
+    configs: Record<string, LayerConfig>,
+    visible: Record<string, boolean> | null
+): LayerGroupNode[] => {
+    const holdsTimed = (node: LayerTreeNode): boolean =>
+        node.kind === 'group'
+            ? node.children.some(holdsTimed)
+            : !!visible?.[node.id] && !!configs[node.id]?.time?.enabled
+    return nodes.map((node) => {
         if (node.kind === 'layer') return node
         const config = configs[node.id]
         return {
             kind: 'group',
             id: node.id,
             displayName: config?.display_name || config?.name || node.id,
-            children: nameGroups(node.children, configs),
+            color: holdsTimed(node) ? TIMED_COLOR : UNTIMED_COLOR,
+            children: nameGroups(node.children, configs, visible),
         }
     })
+}
 
 export const TimelineAdapter: React.FC = () => {
     const [startTime, setStartTime] = useState<Date>(() => {
@@ -103,6 +119,18 @@ export const TimelineAdapter: React.FC = () => {
     const [timeMode, setTimeMode] = useState<TimeMode>('DAY')
     const [layers, setLayers] = useState<LayerTimeData[]>([])
     const [layerGroups, setLayerGroups] = useState<LayerGroupNode[] | null>(null)
+    // Folded groups, by id. Held here, where it outlives the chart: the chart
+    // is unmounted while no layer is visible.
+    const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(
+        () => new Set()
+    )
+    const toggleGroup = useCallback((id: string) => {
+        setCollapsedGroups((prev) => {
+            const next = new Set(prev)
+            if (!next.delete(id)) next.add(id)
+            return next
+        })
+    }, [])
     const [readiness, setReadiness] = useState<Readiness>('loading')
 
     const [isPlaying, setIsPlaying] = useState(false)
@@ -388,14 +416,17 @@ export const TimelineAdapter: React.FC = () => {
     }, [allowPlayback, isPlaying])
 
     // Rows are rebuilt on a visibility change and on a config change, since
-    // either can move a layer's band (a plugin may rewrite its data times).
+    // either can move a layer's band (a plugin may rewrite its data times),
+    // and on a reorder, which moves the rows themselves.
     useEffect(() => {
         const bump = () => setLayerVisibilityVersion((v) => v + 1)
         const offVisibility = mmgisOn('layer:visibilityChange', bump)
         const offConfig = mmgisOn('layers:configChanged', bump)
+        const offOrder = mmgisOn('layers:orderChanged', bump)
         return () => {
             offVisibility()
             offConfig()
+            offOrder()
         }
     }, [])
 
@@ -419,12 +450,14 @@ export const TimelineAdapter: React.FC = () => {
         let cancelled = false
 
         const fetchLayers = async () => {
-            const [configs, visibleLayers, extents, tree] = await Promise.all([
-                mmgisGetLayerConfigs(),
-                mmgisGetVisibleLayers(),
-                mmgisGetTemporalExtents(),
-                mmgisGetLayerTree(),
-            ])
+            const [configs, visibleLayers, extents, tree, order] =
+                await Promise.all([
+                    mmgisGetLayerConfigs(),
+                    mmgisGetVisibleLayers(),
+                    mmgisGetTemporalExtents(),
+                    mmgisGetLayerTree(),
+                    mmgisGetLayerOrder(),
+                ])
             if (cancelled || !configs) return
 
             const newLayers: LayerTimeData[] = []
@@ -436,10 +469,7 @@ export const TimelineAdapter: React.FC = () => {
                 // A group header holds no data, so it has nothing to draw
                 if (layer.type === 'header') return
 
-                // Time-enabled layers stand out in the theme's secondary colour
-                const color = layer.time?.enabled
-                    ? 'var(--theme-color-secondary, #c91b6e)'
-                    : 'var(--theme-color-base, #71767a)'
+                const color = layer.time?.enabled ? TIMED_COLOR : UNTIMED_COLOR
 
                 // Core resolves the authored data times (open-ended "now",
                 // duration offsets, cadence flooring); the resolvers below
@@ -473,8 +503,16 @@ export const TimelineAdapter: React.FC = () => {
                 })
             })
 
-            setLayers(newLayers)
-            setLayerGroups(tree ? nameGroups(tree, configs) : null)
+            // Top first in draw order, the order the rows are listed in
+            setLayers(
+                sortByOrder(
+                    newLayers.map((layer) => ({ id: layer.name, layer })),
+                    order
+                ).map((entry) => entry.layer)
+            )
+            setLayerGroups(
+                tree ? nameGroups(tree, configs, visibleLayers) : null
+            )
         }
 
         fetchLayers()
@@ -841,6 +879,8 @@ export const TimelineAdapter: React.FC = () => {
                         configuredGranularity={configuredGranularity}
                         layers={layers}
                         groups={layerGroups}
+                        collapsedGroups={collapsedGroups}
+                        onToggleGroup={toggleGroup}
                         view={zoom.view}
                         onViewChange={zoom.setView}
                         onCurrentTimeChange={handleCurrentTimeChange}
