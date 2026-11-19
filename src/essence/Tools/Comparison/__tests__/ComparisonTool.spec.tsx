@@ -1,5 +1,6 @@
 import React, { act } from 'react'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
+import { encodeComparisonUrlState } from '../adapters/urlState'
 
 /**
  * The tool wrapper is the plugin's front door. Both entry points into it — the
@@ -21,6 +22,8 @@ let requests: Request[]
 /** The wrapper's props from its last render of the panel adapter. */
 let adapterProps: any
 let ComparisonTool: any
+/** What the opening link said about this tool, as core would answer it. */
+let linkEntry: string | null = null
 
 const load = async () => {
     vi.resetModules()
@@ -31,6 +34,7 @@ const load = async () => {
     ;(window as unknown as { mmgisAPI: unknown }).mmgisAPI = {
         request: async (name: string, params?: unknown) => {
             requests.push({ name, params })
+            if (name === 'tool:getUrlState') return linkEntry
             return { ok: true, state: 'visible', changed: true }
         },
         hasHandler: () => true,
@@ -152,5 +156,61 @@ describe('ComparisonTool hand-offs', () => {
                 params: { pluginId: 'ComparisonTool', state: 'unloaded' },
             },
         ])
+    })
+})
+
+/**
+ * The opening link's entry is read once, when the tool handlers come up, and
+ * handed to the first panel. It does not survive a close: a panel re-mounted
+ * from "Compare layer" starts from that hand-off, not from the link.
+ */
+describe('ComparisonTool link reopen', () => {
+    let container: HTMLElement
+
+    const LINK = {
+        mode: 'layers' as const,
+        layout: 'sideBySide' as const,
+        leftLayerId: 'co2',
+        rightLayerId: 'roads',
+        compareDate: null,
+        swapped: true,
+        dividerPos: 0.3,
+    }
+
+    beforeEach(async () => {
+        container = document.createElement('div')
+        container.id = CONTAINER_ID
+        document.body.appendChild(container)
+        linkEntry = encodeComparisonUrlState(LINK)
+        await load()
+    })
+
+    afterEach(() => {
+        act(() => ComparisonTool.destroy())
+        container.remove()
+        linkEntry = null
+        delete (window as { mmgisAPI?: unknown }).mmgisAPI
+    })
+
+    test('asks core to show the panel and seeds it with the link', async () => {
+        await open()
+
+        expect(requested('plugins:show')).toHaveLength(1)
+        expect(adapterProps.seedUrlState).toEqual(LINK)
+        expect(adapterProps.seedMode?.mode).toBe('layers')
+    })
+
+    test('a panel re-mounted after close gets no link state', async () => {
+        await open()
+        await act(async () => {
+            adapterProps.onClose()
+        })
+        act(() => ComparisonTool.destroy())
+
+        fire('plugin:comparison:startWithLayer', { layerId: 'ch4' })
+        await open()
+
+        expect(adapterProps.seedUrlState).toBeNull()
+        expect(adapterProps.seedLayerId).toBe('ch4')
     })
 })

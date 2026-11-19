@@ -26,12 +26,11 @@ describe('comparison url state', () => {
         expect(decodeComparisonUrlState(encodeComparisonUrlState(dates))).toEqual(dates)
     })
 
-    // The link's tools entry is split on commas before a tool sees its part,
-    // and the fields are split on bars, so neither may appear inside a field.
-    test('the encoding holds no commas, and strips them from any field', () => {
+    // The fields are split on bars, so a bar may not appear inside one. The
+    // link encodes each tool's entry, so every other character is safe.
+    test('strips the bar from any field and keeps the rest', () => {
         const text = encodeComparisonUrlState({ ...layers, leftLayerId: 'a,b|c' })
-        expect(text).not.toMatch(/,/)
-        expect(decodeComparisonUrlState(text)?.leftLayerId).toBe('abc')
+        expect(decodeComparisonUrlState(text)?.leftLayerId).toBe('a,bc')
     })
 
     test('the divider is kept to two decimals inside 0..1', () => {

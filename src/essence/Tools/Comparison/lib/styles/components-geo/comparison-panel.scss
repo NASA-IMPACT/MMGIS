@@ -436,6 +436,10 @@
         color: var(--theme-color-base-dark, #565c65);
     }
 
+    &__hint--notice {
+        color: var(--theme-color-warning-darker, #936f38);
+    }
+
     // ── Action row ──────────────────────────────────────────────────────────
     &__actions {
         display: flex;

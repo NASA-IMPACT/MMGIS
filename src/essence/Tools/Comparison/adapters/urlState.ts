@@ -21,7 +21,7 @@ const MODES: ComparisonMode[] = ['layers', 'dates']
 const LAYOUTS: ComparisonLayout[] = ['swipe', 'sideBySide']
 const SEPARATOR = '|'
 
-const field = (value: string | null): string => (value ?? '').replace(/[|,]/g, '')
+const field = (value: string | null): string => (value ?? '').replace(/\|/g, '')
 
 export const encodeComparisonUrlState = (state: ComparisonUrlState): string =>
     [

@@ -102,6 +102,13 @@ export function MMGISComparisonAdapter({
     // The divider a link asked for, applied once the first enable has settled:
     // enabling puts it back in the middle.
     const pendingDividerRef = useRef<number | null>(seedUrlState?.dividerPos ?? null)
+    // Shown in the panel when the link named a layer this map no longer draws.
+    const [notice, setNotice] = useState<string | null>(null)
+    // The layers the link named, checked once the list has been read; a layer
+    // switched off later is the user's own doing and gets no notice.
+    const linkLayerIdsRef = useRef(
+        new Set([seedUrlState?.leftLayerId, seedUrlState?.rightLayerId].filter(Boolean)),
+    )
 
     // Adopt a new seed layer if the panel is re-seeded from another kebab click.
     useEffect(() => {
@@ -133,15 +140,28 @@ export function MMGISComparisonAdapter({
     useEffect(() => {
         if (!layersRead) return
         const drawn = new Set(layerIds)
-        const dropMissing = (id: string | null) => {
-            if (!id || drawn.has(id)) return id
-            // A link can name a layer the mission no longer draws.
+        const fromLink = linkLayerIdsRef.current
+        const dropMissing = (side: 'left' | 'right', id: string | null) => {
+            if (!id || drawn.has(id)) return
             console.warn(`[Comparison] layer "${id}" is not on this map; its side is left empty`)
-            return null
+            if (fromLink.has(id))
+                setNotice(`The link named a layer this map no longer has, so the ${side} side is empty.`)
+            ;(side === 'left' ? setLeftLayerId : setRightLayerId)(null)
         }
-        setLeftLayerId(dropMissing)
-        setRightLayerId(dropMissing)
-    }, [layersRead, layerIds])
+        dropMissing('left', leftLayerId)
+        dropMissing('right', rightLayerId)
+        fromLink.clear()
+    }, [layersRead, layerIds, leftLayerId, rightLayerId])
+
+    // Picking a layer for the empty side answers the notice.
+    const pickLeft = useCallback((id: string) => {
+        setNotice(null)
+        setLeftLayerId(id)
+    }, [])
+    const pickRight = useCallback((id: string) => {
+        setNotice(null)
+        setRightLayerId(id)
+    }, [])
 
     // The arrangement the share link should carry; null means no comparison.
     useEffect(() => {
@@ -194,7 +214,10 @@ export function MMGISComparisonAdapter({
                 rightDate: swapped ? null : pinned,
             }
         }
+        // Only layers the map draws: a link can name one it no longer has, and
+        // the side is emptied a render later.
         if (!leftLayerId || !rightLayerId) return null
+        if (!layerIds.includes(leftLayerId) || !layerIds.includes(rightLayerId)) return null
         return {
             leftLayers: [swapped ? rightLayerId : leftLayerId],
             rightLayers: [swapped ? leftLayerId : rightLayerId],
@@ -308,8 +331,9 @@ export function MMGISComparisonAdapter({
             layers={layers}
             leftLayerId={leftLayerId}
             rightLayerId={rightLayerId}
-            onLeftLayerChange={setLeftLayerId}
-            onRightLayerChange={setRightLayerId}
+            onLeftLayerChange={pickLeft}
+            onRightLayerChange={pickRight}
+            notice={notice}
             timeWindowStart={time.start}
             timeWindowEnd={time.end}
             primaryDate={time.current}
