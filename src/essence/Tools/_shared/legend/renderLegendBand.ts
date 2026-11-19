@@ -329,8 +329,12 @@ type Layout = {
 const dateLineHeight = (row: ExportLegendRow, scale: number): number =>
     row.dateLine ? (LINE_GAP + META_TEXT) * scale : 0
 
+// The side of a comparison a row belongs to, set above its title.
+const sideLineHeight = (row: ExportLegendRow, scale: number): number =>
+    row.side ? (META_TEXT + LINE_GAP) * scale : 0
+
 const rowHeadHeight = (row: ExportLegendRow, scale: number): number =>
-    ROW_TITLE_TEXT * scale + dateLineHeight(row, scale)
+    sideLineHeight(row, scale) + ROW_TITLE_TEXT * scale + dateLineHeight(row, scale)
 
 const wrapCategorical = (
     ctx: Ctx2D,
@@ -657,16 +661,22 @@ const drawCell = (
     theme: BandTheme,
 ) => {
     const { row } = cell
+    if (row.side) {
+        ctx.fillStyle = theme.muted
+        ctx.font = FONT(META_TEXT, scale, theme.weights.semibold, theme)
+        ctx.fillText(clipText(ctx, row.side, cell.width), x, y)
+    }
+    const titleY = y + sideLineHeight(row, scale)
     ctx.fillStyle = theme.ink
     ctx.font = FONT(ROW_TITLE_TEXT, scale, theme.weights.regular, theme)
-    ctx.fillText(clipText(ctx, row.title, cell.width), x, y)
+    ctx.fillText(clipText(ctx, row.title, cell.width), x, titleY)
     if (row.dateLine) {
         ctx.fillStyle = theme.muted
         ctx.font = FONT(META_TEXT, scale, theme.weights.regular, theme)
         ctx.fillText(
             clipText(ctx, row.dateLine, cell.width),
             x,
-            y + (ROW_TITLE_TEXT + LINE_GAP) * scale,
+            titleY + (ROW_TITLE_TEXT + LINE_GAP) * scale,
         )
     }
     if (row.kind === 'plain') return

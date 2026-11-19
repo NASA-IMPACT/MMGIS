@@ -437,6 +437,27 @@ export type TemporalExtent = {
     periodAnchor: string | null
 }
 
+/** One side of a comparison: what it draws, the date it is pinned to (null
+ *  means the global cursor), and its caption. */
+export type ComparisonSideState = {
+    layerIds: string[]
+    date: string | null
+    label: string
+}
+
+export type ComparisonState = {
+    enabled: boolean
+    layout: 'swipe' | 'sideBySide'
+    dividerPosition: number
+    left: ComparisonSideState
+    right: ComparisonSideState
+}
+
+/** The comparison as core holds it; null before core provides it. */
+export const mmgisGetComparisonState = (): Promise<ComparisonState | null> => {
+    return mmgisRequestIfProvided<ComparisonState>('map:comparison:getState')
+}
+
 /**
  * Temporal extent for every layer, keyed by layer UUID, resolved by core at
  * the moment of asking. Null against a core without the handler.
