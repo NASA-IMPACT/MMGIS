@@ -256,3 +256,39 @@ test.describe('QueryURL.getShareURL (issue #143)', () => {
         expect(url).not.toContain('?s=')
     })
 })
+
+// A modern tool's entry is percent-encoded before the query's own encodeURI
+// pass, and the reader decodes once per layer, so text with the characters
+// that join entries and end the query comes back whole. Classic entries are
+// written raw and read raw.
+test.describe('QueryURL.writeCoordinateURL tools round trip', () => {
+    let savedController
+    let savedFutures
+
+    beforeEach(() => {
+        savedController = QueryURL._pluginController
+        savedFutures = L_.FUTURES
+        L_.UserInterface_ = {}
+        T_.getToolsUrl = () => 'LayersTool$3-1-0.5'
+        QueryURL._pluginController = {
+            getToolsUrl: () => 'PunctuatedTool$' + encodeURIComponent('a,b&c#d$e|f'),
+        }
+    })
+
+    afterEach(() => {
+        QueryURL._pluginController = savedController
+        L_.FUTURES = savedFutures
+        window.history.replaceState({}, '', '/')
+    })
+
+    test('a modern entry with reserved characters reads back whole beside a classic one', () => {
+        window.history.replaceState({}, '', QueryURL.writeCoordinateURL())
+
+        const tools = QueryURL.getSingleQueryVariable('tools').split(',')
+        expect(tools).toHaveLength(2)
+        L_.FUTURES = { tools }
+
+        expect(L_.getToolUrlState('LayersTool')).toBe('3-1-0.5')
+        expect(L_.getToolUrlState('PunctuatedTool')).toBe('a,b&c#d$e|f')
+    })
+})

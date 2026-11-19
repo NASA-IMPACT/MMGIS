@@ -2889,14 +2889,22 @@ const L_ = {
     /**
      * The string a tool wrote into the opening link's `tools=` entry under
      * its module name (`ComparisonTool$...`), or null when the link named
-     * none. Entries are split on commas, so a tool's string holds none.
+     * none. The value is the same for the whole session: apply it once.
+     * Modern entries are percent-encoded on write and decoded here; classic
+     * entries are returned as written.
      */
     getToolUrlState: function (toolName) {
         const tools = L_.FUTURES?.tools
         if (typeof toolName !== 'string' || !Array.isArray(tools)) return null
         const prefix = `${toolName}$`
         const entry = tools.find((t) => typeof t === 'string' && t.startsWith(prefix))
-        return entry ? entry.slice(prefix.length) : null
+        if (!entry) return null
+        const text = entry.slice(prefix.length)
+        try {
+            return decodeURIComponent(text)
+        } catch (e) {
+            return text
+        }
     },
     getToolVars: function (toolName, withVarsFromLayers, showWarnings) {
         let vars = {}

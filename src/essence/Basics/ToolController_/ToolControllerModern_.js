@@ -528,10 +528,17 @@ const ToolControllerModern_ = {
         const entries = []
         for (const toolId of toolIdToTargetId.keys()) {
             const tool = toolModules[toolId]
-            if (tool && typeof tool.getUrlString === 'function') {
-                const urlString = tool.getUrlString()
-                if (urlString.length > 0) entries.push(toolId + '$' + urlString)
+            if (typeof tool?.getUrlString !== 'function') continue
+            let text
+            try {
+                text = tool.getUrlString()
+            } catch (err) {
+                logger.warn(`${toolId}.getUrlString threw; the link leaves it out`, err)
+                continue
             }
+            if (typeof text !== 'string' || text.length === 0) continue
+            // Reserved characters would split or end the query; the reader decodes.
+            entries.push(toolId + '$' + encodeURIComponent(text))
         }
         return entries.length > 0 ? entries.join(',') : false
     },
