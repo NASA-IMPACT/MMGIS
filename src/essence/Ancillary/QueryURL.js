@@ -7,15 +7,15 @@ import calls from '../../pre/calls'
 import { isStaticBuild } from '../../pre/capabilities'
 import TimeControl from '../Basics/TimeControl_/TimeControl'
 import TimeUI from '../Basics/TimeControl_/TimeUI'
+import UrlState from './UrlState'
 
 var QueryURL = {
-    // The modern layout's tool controller, handed over while that layout
-    // is on screen so the share link can ask it without a direct import.
-    _pluginController: null,
     checkIfMission: function () {
         return this.getSingleQueryVariable('mission')
     },
     queryURL: function () {
+        // Plugins read their slots over the bus once mission load registers it.
+        UrlState.readInitial(window.location.search)
         //Set the site and view if specified in the url
         var urlSite = this.getSingleQueryVariable('site')
         var urlMapLat = this.getSingleQueryVariable('mapLat')
@@ -453,13 +453,8 @@ var QueryURL = {
             urlAppendage += '&viewerLoc=' + viewerLoc
 
         //tools
-        var urlTools = [
-            T_.getToolsUrl(),
-            this._pluginController ? this._pluginController.getToolsUrl() : false,
-        ]
-            .filter((t) => t !== false)
-            .join(',')
-        if (urlTools.length > 0) urlAppendage += '&tools=' + urlTools
+        var urlTools = T_.getToolsUrl()
+        if (urlTools !== false) urlAppendage += '&tools=' + urlTools
 
         //time
         if (L_.configData.time && L_.configData.time.enabled === true) {
@@ -488,6 +483,9 @@ var QueryURL = {
         const activeBasemap = L_.Map_?.getActiveBasemap?.()
         if (activeBasemap?.name)
             url += '&basemap=' + encodeURIComponent(activeBasemap.name)
+
+        // Plugin slots, each encoded on its own for the same reason.
+        url += UrlState.toQuery()
 
         return window.location.href.split('?')[0] + url
     },

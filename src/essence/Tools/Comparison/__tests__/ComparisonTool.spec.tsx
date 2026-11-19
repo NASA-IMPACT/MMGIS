@@ -34,7 +34,7 @@ const load = async () => {
     ;(window as unknown as { mmgisAPI: unknown }).mmgisAPI = {
         request: async (name: string, params?: unknown) => {
             requests.push({ name, params })
-            if (name === 'tool:getUrlState') return linkEntry
+            if (name === 'url:takePluginState') return linkEntry
             return { ok: true, state: 'visible', changed: true }
         },
         hasHandler: () => true,
@@ -212,5 +212,63 @@ describe('ComparisonTool link reopen', () => {
 
         expect(adapterProps.seedUrlState).toBeNull()
         expect(adapterProps.seedLayerId).toBe('ch4')
+    })
+})
+
+/**
+ * The link learns the arrangement from the tool, never by asking it: every
+ * change is pushed as it happens, with the divider as last dragged, and a
+ * close pushes nothing so the next link carries no comparison.
+ */
+describe('ComparisonTool link push', () => {
+    let container: HTMLElement
+
+    const STATE = {
+        mode: 'layers' as const,
+        layout: 'swipe' as const,
+        leftLayerId: 'co2',
+        rightLayerId: 'roads',
+        compareDate: null,
+        swapped: false,
+        dividerPos: 0.5,
+    }
+
+    const pushed = () => requested('url:setPluginState').map((r) => (r.params as any).value)
+    const last = (values: unknown[]) => values[values.length - 1]
+
+    beforeEach(async () => {
+        container = document.createElement('div')
+        container.id = CONTAINER_ID
+        document.body.appendChild(container)
+        await load()
+    })
+
+    afterEach(() => {
+        act(() => ComparisonTool.destroy())
+        container.remove()
+        delete (window as { mmgisAPI?: unknown }).mmgisAPI
+    })
+
+    test('pushes the arrangement as it changes, with the divider as last dragged', async () => {
+        await open()
+        await act(async () => {
+            adapterProps.onUrlStateChange(STATE)
+        })
+        expect(last(pushed())).toBe(encodeComparisonUrlState(STATE))
+
+        fire('map:comparison:dividerMoved', { position: 0.3 })
+        expect(last(pushed())).toBe(encodeComparisonUrlState({ ...STATE, dividerPos: 0.3 }))
+        expect(requested('url:setPluginState').every((r) => (r.params as any).pluginId === 'ComparisonTool')).toBe(true)
+    })
+
+    test('closing clears the slot', async () => {
+        await open()
+        await act(async () => {
+            adapterProps.onUrlStateChange(STATE)
+        })
+        await act(async () => {
+            adapterProps.onClose()
+        })
+        expect(last(pushed())).toBeNull()
     })
 })

@@ -15,6 +15,7 @@ vi.mock('../../src/pre/capabilities', () => ({
 }))
 
 import QueryURL from '../../src/essence/Ancillary/QueryURL'
+import UrlState from '../../src/essence/Ancillary/UrlState'
 import L_ from '../../src/essence/Basics/Layers_/Layers_'
 import TimeControl from '../../src/essence/Basics/TimeControl_/TimeControl'
 import T_ from '../../src/essence/Basics/ToolController_/ToolController_'
@@ -257,38 +258,34 @@ test.describe('QueryURL.getShareURL (issue #143)', () => {
     })
 })
 
-// A modern tool's entry is percent-encoded before the query's own encodeURI
-// pass, and the reader decodes once per layer, so text with the characters
-// that join entries and end the query comes back whole. Classic entries are
-// written raw and read raw.
-test.describe('QueryURL.writeCoordinateURL tools round trip', () => {
-    let savedController
-    let savedFutures
-
+// A plugin's state rides in its own `p.<pluginId>` parameter, encoded on its
+// own after the query's encodeURI pass and read back by UrlState, so text
+// with the characters that join or end a query comes back whole. Classic
+// tools still write `tools=` as they always have.
+test.describe('QueryURL.writeCoordinateURL plugin slots round trip', () => {
     beforeEach(() => {
-        savedController = QueryURL._pluginController
-        savedFutures = L_.FUTURES
         L_.UserInterface_ = {}
         T_.getToolsUrl = () => 'LayersTool$3-1-0.5'
-        QueryURL._pluginController = {
-            getToolsUrl: () => 'PunctuatedTool$' + encodeURIComponent('a,b&c#d$e|f'),
-        }
+        UrlState._reset()
+        UrlState.set('ComparisonTool', 'a,b&c#d$e|f')
     })
 
     afterEach(() => {
-        QueryURL._pluginController = savedController
-        L_.FUTURES = savedFutures
+        UrlState._reset()
         window.history.replaceState({}, '', '/')
     })
 
-    test('a modern entry with reserved characters reads back whole beside a classic one', () => {
+    test('a plugin value with reserved characters reads back whole beside the classic entry', () => {
         window.history.replaceState({}, '', QueryURL.writeCoordinateURL())
 
-        const tools = QueryURL.getSingleQueryVariable('tools').split(',')
-        expect(tools).toHaveLength(2)
-        L_.FUTURES = { tools }
+        expect(QueryURL.getSingleQueryVariable('tools')).toBe('LayersTool$3-1-0.5')
+        UrlState.readInitial(window.location.search)
+        expect(UrlState.take('ComparisonTool')).toBe('a,b&c#d$e|f')
+    })
 
-        expect(L_.getToolUrlState('LayersTool')).toBe('3-1-0.5')
-        expect(L_.getToolUrlState('PunctuatedTool')).toBe('a,b&c#d$e|f')
+    test('writes no plugin parameter for a cleared slot', () => {
+        UrlState.set('ComparisonTool', null)
+
+        expect(QueryURL.writeCoordinateURL()).not.toContain('p.ComparisonTool')
     })
 })

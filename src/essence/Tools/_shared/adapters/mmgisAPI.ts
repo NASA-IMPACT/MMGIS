@@ -437,10 +437,16 @@ export type TemporalExtent = {
     periodAnchor: string | null
 }
 
-/** What the opening link said about a tool, by module name; null when the
- *  link named none, or before mission load registers the handler. */
-export const mmgisGetToolUrlState = (toolName: string): Promise<string | null> => {
-    return mmgisRequestIfProvided<string>('tool:getUrlState', toolName)
+/** What the opening link asked of this plugin, the first time it is asked;
+ *  null after that, when the link carried nothing, or before mission load
+ *  registers the handler. */
+export const mmgisTakeUrlState = (pluginId: string): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('url:takePluginState', pluginId)
+}
+
+/** What the next share link carries for this plugin; null clears it. */
+export const mmgisSetUrlState = (pluginId: string, value: string | null): Promise<boolean | null> => {
+    return mmgisRequestIfProvided<boolean>('url:setPluginState', { pluginId, value })
 }
 
 /**

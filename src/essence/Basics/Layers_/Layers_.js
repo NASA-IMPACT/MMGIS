@@ -47,6 +47,7 @@ import { NO_LEGEND } from './legend/types'
 import { detached } from '../../mmgisAPI/providers/_shared'
 import { bbox } from '@turf/turf'
 import $ from 'jquery'
+import UrlState from '../../Ancillary/UrlState'
 
 // Provider cleanup functions for re-initialization
 let _providerCleanups = []
@@ -790,10 +791,13 @@ const L_ = {
                     return detached(L_.layers.dataCoverage)
                 }),
                 window.mmgisAPI.provide('tool:getVars', (toolName) => L_.getToolVars(toolName)),
-                // What the opening link said about a tool, so a plugin can
-                // reopen the state it wrote through getUrlString.
-                window.mmgisAPI.provide('tool:getUrlState', (toolName) =>
-                    L_.getToolUrlState(toolName)
+                // A plugin's slot in the share link: what the opening link
+                // asked for, handed out once, and what the next link carries.
+                window.mmgisAPI.provide('url:takePluginState', (pluginId) =>
+                    UrlState.take(pluginId)
+                ),
+                window.mmgisAPI.provide('url:setPluginState', (payload) =>
+                    UrlState.set(payload?.pluginId, payload?.value)
                 ),
                 window.mmgisAPI.provide('app:isMobile', () => L_.UserInterface_?.isMobile === true),
                 window.mmgisAPI.provide('app:getMissionPath', () => L_.missionPath),
@@ -2885,26 +2889,6 @@ const L_ = {
                 return true
         }
         return false
-    },
-    /**
-     * The string a tool wrote into the opening link's `tools=` entry under
-     * its module name (`ComparisonTool$...`), or null when the link named
-     * none. The value is the same for the whole session: apply it once.
-     * Modern entries are percent-encoded on write and decoded here; classic
-     * entries are returned as written.
-     */
-    getToolUrlState: function (toolName) {
-        const tools = L_.FUTURES?.tools
-        if (typeof toolName !== 'string' || !Array.isArray(tools)) return null
-        const prefix = `${toolName}$`
-        const entry = tools.find((t) => typeof t === 'string' && t.startsWith(prefix))
-        if (!entry) return null
-        const text = entry.slice(prefix.length)
-        try {
-            return decodeURIComponent(text)
-        } catch (e) {
-            return text
-        }
     },
     getToolVars: function (toolName, withVarsFromLayers, showWarnings) {
         let vars = {}

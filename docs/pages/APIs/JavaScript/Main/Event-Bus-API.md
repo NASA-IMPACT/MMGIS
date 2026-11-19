@@ -211,6 +211,21 @@ console.log(data.result) // 42
 cleanup()
 ```
 
+### Scoped `urlState`
+
+The plugin's slot in the share link, with the plugin id filled in. `take()` answers what the opening link asked for, once; `peek()` reads it without using it up; `set(value)` is what the next link carries, and `set(null)` clears it. Same contract as `url:takePluginState` and `url:setPluginState`.
+
+```javascript
+const api = window.mmgisAPI.forPlugin('myPlugin')
+
+// On first mount: reopen what the link carried, if anything
+const saved = api.urlState.take()
+if (saved) applyState(JSON.parse(saved))
+
+// Whenever the state changes
+api.urlState.set(JSON.stringify(state))
+```
+
 ### Metadata Properties
 
 The scoped API also exposes metadata:
@@ -443,7 +458,6 @@ window.mmgisAPI.request('map:showPopup', {
 | `layers:getAll` | none | `string[]` | Get all layer names |
 | `layers:getVisible` | none | `object` | Get visibility state of all layers. |
 | `layers:getConfig` | `layerUUID` | `object \| null` | Get layer configuration. The answer is a copy: to change a layer, use `layers:updateConfig` |
-| `tool:getUrlState` | tool module name, e.g. `'ComparisonTool'` | `string \| null` | What the opening link said about that tool: the text its `getUrlString()` wrote into the link's `tools=` entry, or null when the link named none. The answer is the same for the whole session, so apply it once, on first mount. The text is decoded, so it may hold any characters. Registered at mission load, with `tool:getVars` |
 | `layers:toggle` | `layerUUID` | `boolean \| null` | Toggle layer visibility |
 | `layers:getOrder` | none | `string[]` | Draw order as layer UUIDs, top first, headers excluded |
 | `layers:getTree` | none | `LayerTreeNode[]` | The configured grouping in config order: each header is `{ kind: 'group', id, children }` and each other layer `{ kind: 'layer', id }`, with ids as layer UUIDs. A header's title, description and `expanded` setting are in its config: see `layers:getConfig` |
@@ -607,6 +621,8 @@ if (!result.ok) console.warn(`Refused: ${result.reason}`)
 | Provider | Params | Returns | Description |
 |----------|--------|---------|-------------|
 | `app:getMissionPath` | none | `string` | Get current mission path |
+| `url:takePluginState` | `pluginId` | `string \| null` | What the opening link asked of this plugin, as the value of its `p.<pluginId>` parameter (or of an older `tools=` entry under that name). Handed out once: a second call answers null, so a plugin applies it on first mount and nowhere else. Registered at mission load, with `tool:getVars` |
+| `url:setPluginState` | `{ pluginId, value }` | `boolean` | What the next share link carries for this plugin, as one string of the plugin's own; null clears it. Push it whenever the state changes: core never asks a plugin. Values over 1 KB encoded are dropped with a console warning |
 
 ```javascript
 const missionPath = await window.mmgisAPI.request('app:getMissionPath')

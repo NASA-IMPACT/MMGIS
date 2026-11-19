@@ -2,6 +2,7 @@ import L_ from '../Basics/Layers_/Layers_'
 import F_ from '../Basics/Formulae_/Formulae_'
 import ToolController_ from '../Basics/ToolController_/ToolController_'
 import QueryURL from '../Ancillary/QueryURL'
+import UrlState from '../Ancillary/UrlState'
 import TimeControl from '../Basics/TimeControl_/TimeControl'
 import Login from '../Ancillary/Login/Login'
 import LegendTool from '../Tools/Legend/LegendTool.js'
@@ -1049,6 +1050,12 @@ var mmgisAPI = {
             emit: (event, data) => mmgisAPI.emit(prefix + event, data),
             provide: (name, handler) => mmgisAPI.provide(prefix + name, handler),
             getVars: () => L_.getToolVars(pluginId) || {},
+            // This plugin's slot in the share link; see url:takePluginState.
+            urlState: {
+                take: () => UrlState.take(pluginId),
+                peek: () => UrlState.peek(pluginId),
+                set: (value) => UrlState.set(pluginId, value),
+            },
             pluginId,
             prefix,
         }

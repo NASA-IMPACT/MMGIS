@@ -33,7 +33,8 @@ import {
     mmgisOn,
     mmgisSetPluginState,
     mmgisShowPlugin,
-    mmgisGetToolUrlState,
+    mmgisSetUrlState,
+    mmgisTakeUrlState,
 } from '../_shared/adapters/mmgisAPI'
 import { whenMMGISHandlerReady } from '../_shared/adapters/whenMMGISHandlerReady'
 import {
@@ -59,7 +60,6 @@ let _subscribed = false
 let _seedUrlState: ComparisonUrlState | null = null
 let _urlState: ComparisonUrlState | null = null
 let _dividerPos = 0.5
-const TOOL_MODULE_NAME = 'ComparisonTool'
 
 function renderPanel(): void {
     if (!_root) return
@@ -74,8 +74,17 @@ function renderPanel(): void {
     )
 }
 
+/** Hands the link what it should carry: the arrangement plus the divider, or nothing. */
+function pushUrlState(): void {
+    const value = _urlState ? encodeComparisonUrlState({ ..._urlState, dividerPos: _dividerPos }) : null
+    mmgisSetUrlState(PLUGIN_ID, value).catch((err) =>
+        console.warn('[Comparison] the link could not take the state', err),
+    )
+}
+
 function handleUrlStateChange(state: ComparisonUrlState | null): void {
     _urlState = state
+    pushUrlState()
 }
 
 function handleClose(): void {
@@ -83,6 +92,7 @@ function handleClose(): void {
     _seedMode = null
     _seedUrlState = null
     _urlState = null
+    pushUrlState()
     // Fully unload (not just hide) so the next hand-off re-mounts a fresh panel
     // via startWithPanel's showPlugin request.
     mmgisSetPluginState(PLUGIN_ID, 'unloaded')
@@ -118,12 +128,15 @@ function _onStartWithDates(): void {
 
 function _onDividerMoved(payload?: unknown): void {
     const pos = (payload as { position?: unknown })?.position
-    if (typeof pos === 'number' && Number.isFinite(pos)) _dividerPos = pos
+    if (typeof pos === 'number' && Number.isFinite(pos)) {
+        _dividerPos = pos
+        if (_urlState) pushUrlState()
+    }
 }
 
 /** Reopen the comparison the opening link carried, if it carried one. */
 async function _reopenFromLink(): Promise<void> {
-    const state = decodeComparisonUrlState(await mmgisGetToolUrlState(TOOL_MODULE_NAME))
+    const state = decodeComparisonUrlState(await mmgisTakeUrlState(PLUGIN_ID))
     if (!state) return
     _seedUrlState = state
     _seedMode = { mode: state.mode }
@@ -139,8 +152,8 @@ function subscribeBus(): boolean {
     mmgisOn('plugin:comparison:startWithLayer', _onStartWithLayer)
     mmgisOn('plugin:comparison:startWithDates', _onStartWithDates)
     mmgisOn('map:comparison:dividerMoved', _onDividerMoved)
-    // The link is readable once mission load registers the tool handlers.
-    whenMMGISHandlerReady('tool:getUrlState', () => {
+    // The link is readable once mission load registers the handler.
+    whenMMGISHandlerReady('url:takePluginState', () => {
         _reopenFromLink().catch((err) => console.warn('[Comparison] reopening from the link failed', err))
     })
     _subscribed = true
@@ -191,13 +204,9 @@ const ComparisonTool = {
         }
         this.targetId = null
         this.made = false
-    },
-
-    // What the share link carries: the panel's arrangement plus the divider,
-    // or nothing while no comparison is set up.
-    getUrlString: function () {
-        if (!_urlState) return ''
-        return encodeComparisonUrlState({ ..._urlState, dividerPos: _dividerPos })
+        // A torn-down panel has no comparison for the link to carry.
+        _urlState = null
+        pushUrlState()
     },
 }
 
