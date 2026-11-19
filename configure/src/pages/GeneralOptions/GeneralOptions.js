@@ -18,6 +18,20 @@ import SettingsIcon from "@mui/icons-material/Settings";
 const config = {
   rows: [
     {
+      name: "Services",
+      subname: "Default service URLs",
+      components: [
+        {
+          field: "temp.generalOptions.services.titilerUrl",
+          name: "TiTiler URL",
+          description:
+            "The TiTiler every layer uses unless it sets its own 'titilerUrl' (e.g. https://example.com/api/raster). It serves raster tiles and the colormap ramps offered for raster and vector layers. Leave empty to use MMGIS's bundled /titiler proxy when it is enabled.",
+          type: "text",
+          width: 6,
+        },
+      ],
+    },
+    {
       name: "STAC/TiTiler",
       subname: "COG Mosaicking",
       components: [
