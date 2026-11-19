@@ -607,4 +607,20 @@ describe('a colorBy colormap layer', () => {
         expect(restyleLayer).toHaveBeenCalledWith(L_.layers.data[AQS])
         L_.Map_ = null
     })
+
+    test('a layer added later is repainted once, when its ramp loads', async () => {
+        withLayers({})
+        const restyleLayer = vi.fn(() => true)
+        L_.Map_ = { restyleLayer }
+        L_.layers.data[AQS] = aqsLayer({ colormap: 'inferno' })
+
+        L_.ensureColorByRamp(AQS)
+        await vi.waitFor(() => expect(restyleLayer).toHaveBeenCalledTimes(1))
+
+        // Built again with its ramp in hand, it needs no repaint.
+        L_.ensureColorByRamp(AQS)
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(restyleLayer).toHaveBeenCalledTimes(1)
+        L_.Map_ = null
+    })
 })

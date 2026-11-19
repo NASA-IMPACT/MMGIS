@@ -1049,6 +1049,8 @@ async function makeLayer(
         // and video finish on their own schedule and hand off themselves.
         handOffToEngine(layerObj, mapContext)
 
+        L_.ensureColorByRamp(layerName)
+
         // release hold on layer
         L_._layersBeingMade[layerName] = false
 

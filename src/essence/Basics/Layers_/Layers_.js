@@ -2,6 +2,7 @@
 import { isStaticBuild } from '../../../pre/capabilities'
 import { compileLegendStyle } from './LegendStyle'
 import {
+    compileColorBy,
     isValueStyledLayerType,
     colorByColormapName,
     loadColormapRamp,
@@ -553,13 +554,9 @@ const L_ = {
         this.Coordinates = coordinates
         this.TimeControl_ = timecontrol_
 
-        // Resolves each colormap ramp a vector layer is coloured by. A layer
-        // built before its ramp arrived painted its fixed colour and is
-        // repainted here; one built later compiles the cached ramp.
-        Object.keys(L_.layers.data).forEach((uuid) => {
-            if (colorByColormapLayer(L_.layers.data[uuid]))
-                restyleColorByLayer(uuid)
-        })
+        // Resolves the mission's colormap ramps ahead of their layers, so a
+        // layer built later compiles its ramp's colours straight away.
+        Object.keys(L_.layers.data).forEach((uuid) => L_.ensureColorByRamp(uuid))
 
         // Register layers providers for mmgisAPI Event Bus
         if (window.mmgisAPI) {
@@ -998,6 +995,20 @@ const L_ = {
             }
             return `${baseUrl}/collections/${collectionName}/preview?assets=asset${bandsParam}${resamplingParam}`
         }
+    },
+    /**
+     * Load the ramp of a layer coloured by a colormap `colorBy` setting, when
+     * it is not loaded yet, and repaint the layer once it is. A layer built
+     * before then paints its fixed colour. Called for every layer built, so a
+     * layer added while the dashboard runs gets its ramp too.
+     *
+     * @param {string} uuid - A key of `L_.layers.data`.
+     */
+    ensureColorByRamp: function (uuid) {
+        const layerObj = L_.layers.data[uuid]
+        if (!colorByColormapLayer(layerObj)) return
+        if (compileColorBy(layerObj.style.colorBy)?.colors) return
+        restyleColorByLayer(uuid)
     },
     /**
      * Rebuild a layer that was built before its legend arrived.
