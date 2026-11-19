@@ -532,3 +532,79 @@ describe('layers:getLegend for a colorBy layer', () => {
         expect(legend.stops).toHaveLength(5)
     })
 })
+
+/**
+ * A vector layer coloured by a colormap `colorBy` setting legends as the
+ * gradient bar raster ramps draw, offers the same ramp and bound controls,
+ * and is repainted rather than refetched when they change.
+ */
+describe('a colorBy colormap layer', () => {
+    const AQS = 'PM25_0123456789abcdef'
+    const aqsLayer = (colorBy = {}, extra = {}) => ({
+        type: 'vector',
+        style: {
+            fillColor: '#00ff00',
+            colorBy: {
+                mode: 'colormap',
+                property: 'sample_measurement',
+                colormap: 'jet',
+                min: 1,
+                max: 18,
+                unit: 'µg/m³',
+                ...colorBy,
+            },
+        },
+        ...extra,
+    })
+
+    test('legends as a gradient from min to max with its unit', async () => {
+        withLayers({ [AQS]: aqsLayer() })
+
+        expect(await providers['layers:getLegend'](AQS)).toEqual({
+            type: 'gradient',
+            stops: await resolveColormapColors('jet', null),
+            min: 1,
+            max: 18,
+            unit: { label: 'µg/m³' },
+            swatches: null,
+            colormap: 'jet',
+        })
+    })
+
+    test('legends a reversed ramp reversed, named with its _r suffix', async () => {
+        withLayers({ [AQS]: aqsLayer({ reversed: true, unit: undefined }) })
+
+        const legend = await providers['layers:getLegend'](AQS)
+
+        expect(legend.colormap).toBe('jet_r')
+        expect(legend.stops).toEqual(await resolveColormapColors('jet_r', null))
+        expect(legend.unit).toBeNull()
+    })
+
+    test('reports a changeable colormap', () => {
+        withLayers({
+            [AQS]: aqsLayer(),
+            plain: { type: 'vector', style: { fillColor: '#00ff00' } },
+        })
+
+        expect(providers['layers:getCogCapabilities'](AQS)).toEqual({
+            hasColormap: true,
+            canChangeColormap: true,
+        })
+        expect(
+            providers['layers:getCogCapabilities']('plain').hasColormap
+        ).toBe(false)
+    })
+
+    test('layers:refresh repaints it through Map_ without rebuilding', async () => {
+        withLayers({ [AQS]: aqsLayer() })
+        const restyleLayer = vi.fn(() => true)
+        L_.Map_ = { restyleLayer }
+
+        expect(
+            await providers['layers:refresh']({ layerUUID: AQS })
+        ).toBe(true)
+        expect(restyleLayer).toHaveBeenCalledWith(L_.layers.data[AQS])
+        L_.Map_ = null
+    })
+})

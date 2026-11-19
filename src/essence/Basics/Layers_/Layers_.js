@@ -1,7 +1,11 @@
 // Holds all layer data
 import { isStaticBuild } from '../../../pre/capabilities'
 import { compileLegendStyle } from './LegendStyle'
-import { isValueStyledLayerType } from './ColorBy'
+import {
+    isValueStyledLayerType,
+    colorByColormapName,
+    loadColormapRamp,
+} from './ColorBy'
 import F_ from '../Formulae_/Formulae_'
 import Description from '../../Ancillary/Description'
 import Search from '../../Ancillary/Search'
@@ -94,6 +98,10 @@ const runsFor = (uuid) => {
  */
 function cogCapabilitiesFor(uuid) {
     const layerObj = L_.layers.data[uuid]
+    // A vector layer coloured by a colormap is restyled on the client, so its
+    // ramp and bounds can always change.
+    if (colorByColormapLayer(layerObj))
+        return { hasColormap: true, canChangeColormap: true }
     // The source before URL resolution, matching resolveTileLayerSource's
     // pick. Resolving in full would build TiTiler and STAC URLs this verdict
     // never reads.
@@ -111,6 +119,37 @@ function cogCapabilitiesFor(uuid) {
         hasColormap: hasCogColormap(layerObj),
         canChangeColormap:
             supportsCogTransform(layerObj, sourceUrl) || deckRaster,
+    }
+}
+
+/**
+ * Whether a layer is coloured by a `colorBy` setting in `colormap` mode.
+ * @param {object|undefined} layerObj - An entry of `L_.layers.data`.
+ */
+const colorByColormapLayer = (layerObj) =>
+    isValueStyledLayerType(layerObj?.type) &&
+    colorByColormapName(layerObj.style?.colorBy) != null
+
+/**
+ * Repaint a layer coloured by a colormap `colorBy` setting from its current
+ * configuration, once its ramp's colours are at hand. Nothing is refetched.
+ * Never rejects.
+ *
+ * @param {string} uuid - A key of `L_.layers.data`.
+ * @returns {Promise<boolean>} Whether a built layer was repainted.
+ */
+async function restyleColorByLayer(uuid) {
+    const layerObj = L_.layers.data[uuid]
+    if (!colorByColormapLayer(layerObj)) return false
+    await loadColormapRamp(
+        colorByColormapName(layerObj.style.colorBy),
+        titilerUrlFor(layerObj)
+    )
+    try {
+        return L_.Map_?.restyleLayer?.(layerObj) === true
+    } catch (err) {
+        console.error(`Layers_: could not restyle '${uuid}'`, err)
+        return false
     }
 }
 
@@ -255,7 +294,9 @@ function configuredBoundsFor(uuid) {
 }
 
 /**
- * Refreshes a raster tile layer through the map engine's per-layer refresher.
+ * Refreshes a raster tile layer through the map engine's per-layer refresher,
+ * or repaints a vector layer coloured by a colormap `colorBy` setting (see
+ * restyleColorByLayer).
  *
  * Resolution order — source, then time replacements, then tile-URL options —
  * is the one layer creation and time-driven reloads use, so all three agree on
@@ -272,6 +313,8 @@ function configuredBoundsFor(uuid) {
  */
 async function refreshTileLayer(uuid, updateOptions) {
     const layerObj = L_.layers.data[uuid]
+    // Its colours come from its style configuration, not from a tile URL.
+    if (colorByColormapLayer(layerObj)) return restyleColorByLayer(uuid)
     // Only raster tiles carry a compiled tile URL. The other facade-managed
     // types (vector, vectortile, pointcloud) reload through their own paths.
     if (!isRasterTileLayerType(layerObj)) return false
@@ -509,6 +552,14 @@ const L_ = {
         this.UserInterface_ = userinterface_
         this.Coordinates = coordinates
         this.TimeControl_ = timecontrol_
+
+        // Resolves each colormap ramp a vector layer is coloured by. A layer
+        // built before its ramp arrived painted its fixed colour and is
+        // repainted here; one built later compiles the cached ramp.
+        Object.keys(L_.layers.data).forEach((uuid) => {
+            if (colorByColormapLayer(L_.layers.data[uuid]))
+                restyleColorByLayer(uuid)
+        })
 
         // Register layers providers for mmgisAPI Event Bus
         if (window.mmgisAPI) {

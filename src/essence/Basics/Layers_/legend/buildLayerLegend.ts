@@ -26,6 +26,7 @@ import { resolveColormapColors } from '../../Colormaps/resolveColormapColors'
 import {
     compileColorBy,
     isValueStyledLayerType,
+    loadColormapRamp,
     type CompiledColorBy,
 } from '../ColorBy'
 import { NO_LEGEND, type LayerLegend, type LegendSwatch } from './types'
@@ -173,7 +174,10 @@ const readEntries = (declared: unknown): LegendEntry[] =>
         : []
 
 /** The legend a compiled `colorBy` setting draws as, one case per mode. */
-const readColorByLegend = (colorBy: CompiledColorBy): LayerLegend => {
+const readColorByLegend = async (
+    colorBy: CompiledColorBy,
+    titilerUrl: string | null
+): Promise<LayerLegend> => {
     switch (colorBy.mode) {
         case 'ranges':
             // One swatch per band, in band order. Every band is drawn: each
@@ -185,6 +189,20 @@ const readColorByLegend = (colorBy: CompiledColorBy): LayerLegend => {
                     color,
                     label,
                 })),
+            }
+        case 'colormap':
+            // The bar the raster legends draw, from the very colours the map
+            // is painted with.
+            return {
+                type: 'gradient',
+                stops:
+                    colorBy.colors ??
+                    (await loadColormapRamp(colorBy.colormap, titilerUrl)),
+                min: colorBy.min,
+                max: colorBy.max,
+                unit: colorBy.unit ? { label: colorBy.unit } : null,
+                swatches: null,
+                colormap: colorBy.colormap,
             }
         default:
             return NO_LEGEND
@@ -207,7 +225,7 @@ export const buildLayerLegend = async (
     const colorBy = isValueStyledLayerType(layerConfig.type)
         ? compileColorBy(layerConfig.style?.colorBy)
         : null
-    if (colorBy) return readColorByLegend(colorBy)
+    if (colorBy) return readColorByLegend(colorBy, titilerUrl)
 
     const entries = readEntries(layerConfig._legend)
     const declaredGradient = readGradient(entries)

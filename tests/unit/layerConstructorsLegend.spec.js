@@ -27,6 +27,12 @@ const { default: L_ } = await import(
 const { constructVectorLayer, colorByVectorTileStyles } = await import(
     '../../src/essence/Basics/Layers_/LayerConstructors.js'
 )
+const { loadColormapRamp } = await import(
+    '../../src/essence/Basics/Layers_/ColorBy.ts'
+)
+const { resolveColormapColors } = await import(
+    '../../src/essence/Basics/Colormaps/resolveColormapColors.ts'
+)
 
 /**
  * constructVectorLayer resolves the Leaflet vector path's per-feature style.
@@ -245,6 +251,36 @@ describe('constructVectorLayer colorBy styling', () => {
             styleOf(options, { frp: 400 }, { style: { fill: '#ff00ff' } })
                 .fillColor
         ).toBe('#ff00ff')
+    })
+
+    test('re-reads a colormap setting, so a restyle picks up its ramp and edits', async () => {
+        const layerObj = {
+            name: 'co2',
+            type: 'vector',
+            style: {
+                className: '',
+                ...fixed,
+                colorBy: { mode: 'colormap', property: 'frp', colormap: 'cividis', min: 0, max: 1 },
+            },
+        }
+        L_.layers.data = { co2: { name: 'co2' } }
+        constructVectorLayer({ type: 'FeatureCollection', features: [] }, layerObj, () => {}, { map: {} })
+        const options = capturedOptions
+
+        // Until the ramp is loaded the fixed colour stands.
+        expect(styleOf(options, { frp: 0 }).fillColor).toBe('#00ff00')
+
+        await loadColormapRamp('cividis', null)
+        const cividis = await resolveColormapColors('cividis', null)
+        expect(styleOf(options, { frp: 0 }).fillColor).toBe(cividis[0])
+
+        // A setting written back replaces the object, and is compiled afresh.
+        layerObj.style = {
+            ...layerObj.style,
+            colorBy: { ...layerObj.style.colorBy, reversed: true },
+        }
+        await loadColormapRamp('cividis_r', null)
+        expect(styleOf(options, { frp: 0 }).fillColor).toBe(cividis[255])
     })
 
     test('keeps the configured colours as the fallback across rebuilds', () => {

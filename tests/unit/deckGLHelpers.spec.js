@@ -13,7 +13,10 @@ import {
     hexToRgba,
     isImageTileResponse,
     resolveMvtWorkerUrl,
+    restyleDeckLayer,
 } from '../../src/essence/Basics/MapEngines/Adapters/DeckGLHelpers.ts'
+import { loadColormapRamp } from '../../src/essence/Basics/Layers_/ColorBy.ts'
+import { resolveColormapColors } from '../../src/essence/Basics/Colormaps/resolveColormapColors.ts'
 
 const tileResponse = (ok, status, contentType) => ({
     ok,
@@ -1158,6 +1161,35 @@ test.describe('DeckGLHelpers', () => {
 
         test('parses CSS named color "red"', () => {
             expect(hexToRgba('red')).toEqual([255, 0, 0, 255])
+        })
+    })
+
+    test.describe('restyleDeckLayer', () => {
+        const colorBy = (colormap) => ({
+            fillColor: '#00ff00',
+            colorBy: { mode: 'colormap', property: 'v', colormap, min: 0, max: 1 },
+        })
+
+        test.each([
+            ['vector', { geojson: { type: 'FeatureCollection', features: [] } }],
+            ['vectortile', { url: 'https://example.test/{z}/{x}/{y}.pbf' }],
+        ])('keeps a %s layer\'s data and re-keys its colour triggers', async (type, source) => {
+            await loadColormapRamp('viridis', null)
+            await loadColormapRamp('magma', null)
+            const built = buildDeckLayer('rs', { type, ...source, style: colorBy('viridis') })
+
+            const restyled = restyleDeckLayer(built, colorBy('magma'))
+
+            expect(restyled.id).toBe('rs')
+            expect(restyled.props.data).toBe(built.props.data)
+            expect(restyled.props.updateTriggers.getFillColor).not.toBe(
+                built.props.updateTriggers.getFillColor
+            )
+            expect(
+                restyled.props.getFillColor({ properties: { v: 0 } }).slice(0, 3)
+            ).toEqual(
+                hexToRgba((await resolveColormapColors('magma', null))[0]).slice(0, 3)
+            )
         })
     })
 })
