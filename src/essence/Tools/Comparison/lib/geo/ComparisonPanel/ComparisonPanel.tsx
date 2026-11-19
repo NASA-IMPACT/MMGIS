@@ -67,6 +67,8 @@ export type ComparisonPanelProps = {
      * button; the host owns the state.
      */
     swapped?: boolean
+    /** One line for the user about the current arrangement, or null. */
+    notice?: string | null
     /** Toggle which side of the divider each choice draws on. */
     onSwap?: () => void
     /** End the comparison (EXIT). */
@@ -129,6 +131,7 @@ export function ComparisonPanel({
     compareDatePlaceholder = COMPARE_DATE_PLACEHOLDER,
     timeMode = 'HOUR',
     swapped = false,
+    notice = null,
     onSwap,
     onClose,
 }: ComparisonPanelProps) {
@@ -274,6 +277,15 @@ export function ComparisonPanel({
                                 same layers across time.
                             </p>
                         </>
+                    )}
+
+                    {notice && (
+                        <p
+                            className="blocks-comparison__hint blocks-comparison__hint--notice"
+                            role="status"
+                        >
+                            {notice}
+                        </p>
                     )}
 
                     <div className="blocks-comparison__actions">

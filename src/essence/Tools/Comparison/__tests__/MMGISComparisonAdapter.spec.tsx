@@ -27,6 +27,8 @@ const COMPARE = new Date('2024-06-15T00:00:00Z')
 
 let enableCalls: any[]
 let disableCalls: number
+/** Divider positions the adapter asked core for. */
+let dividerCalls: number[]
 let setCurrentCalls: Date[]
 /** Enables and disables in the order core received them. */
 let order: string[]
@@ -53,6 +55,7 @@ const load = async () => {
     vi.resetModules()
     enableCalls = []
     disableCalls = 0
+    dividerCalls = []
     labelCalls = []
     setCurrentCalls = []
     order = []
@@ -74,6 +77,10 @@ const load = async () => {
         setComparisonLabels: async (labels: unknown) => {
             labelCalls.push(labels)
             order.push('labels')
+        },
+        setComparisonDivider: async (pos: number) => {
+            dividerCalls.push(pos)
+            order.push('divider')
         },
     }))
     vi.doMock('../adapters/useVisibleLayers', () => ({
@@ -540,5 +547,83 @@ describe('MMGISComparisonAdapter swapping', () => {
         expect(panelProps.swapped).toBe(true)
         expect(lastEnable().leftDate).toBe(COMPARE.toISOString())
         expect(lastEnable().rightDate).toBeNull()
+    })
+})
+
+/**
+ * A share link seeds the panel once. The map may have changed since the link
+ * was copied, so a layer it names can be gone; the user is told, rather than
+ * left with one empty dropdown and no reason.
+ */
+describe('MMGISComparisonAdapter link seeding', () => {
+    let container: HTMLElement
+    let root: Root
+
+    const LINK = {
+        mode: 'layers' as const,
+        layout: 'swipe' as const,
+        leftLayerId: 'co2',
+        rightLayerId: 'roads',
+        compareDate: null,
+        swapped: false,
+        dividerPos: 0.3,
+    }
+
+    beforeEach(async () => {
+        await load()
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+    })
+
+    test('applies the divider the link carried after the first enable', async () => {
+        await act(async () => {
+            root.render(<MMGISComparisonAdapter seedUrlState={LINK} />)
+        })
+
+        expect(lastEnable().leftLayers).toEqual(['co2'])
+        expect(lastEnable().rightLayers).toEqual(['roads'])
+        expect(dividerCalls).toEqual([0.3])
+        expect(order.indexOf('enable')).toBeLessThan(order.indexOf('divider'))
+    })
+
+    test('tells the user when the link names a layer the map no longer draws', async () => {
+        await act(async () => {
+            root.render(<MMGISComparisonAdapter seedUrlState={{ ...LINK, leftLayerId: 'gone' }} />)
+        })
+
+        expect(panelProps.leftLayerId).toBeNull()
+        expect(panelProps.rightLayerId).toBe('roads')
+        expect(panelProps.notice).toMatch(/left side is empty/)
+        expect(enableCalls).toHaveLength(0)
+    })
+
+    test('picking a layer for that side answers the notice', async () => {
+        await act(async () => {
+            root.render(<MMGISComparisonAdapter seedUrlState={{ ...LINK, leftLayerId: 'gone' }} />)
+        })
+        await act(async () => { panelProps.onLeftLayerChange('ch4') })
+
+        expect(panelProps.notice).toBeNull()
+        expect(lastEnable().leftLayers).toEqual(['ch4'])
+    })
+
+    test('a layer switched off later ends its side without the link notice', async () => {
+        await act(async () => {
+            root.render(<MMGISComparisonAdapter seedUrlState={LINK} />)
+        })
+
+        visibleLayers = LAYERS.filter((layer) => layer.id !== 'co2')
+        await act(async () => {
+            root.render(<MMGISComparisonAdapter seedUrlState={LINK} />)
+        })
+
+        expect(panelProps.leftLayerId).toBeNull()
+        expect(panelProps.notice).toBeNull()
     })
 })
