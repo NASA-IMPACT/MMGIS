@@ -1335,6 +1335,27 @@
           ]
         },
         {
+          "subname": "Pagination",
+          "components": [
+            {
+              "field": "variables.pagination.pageSize",
+              "name": "Entries Per Page",
+              "description": "Fetches the source URL page by page when set. Write {offset} and {limit} into the URL where the server expects them, e.g. '&resultOffset={offset}&resultRecordCount={limit}' (ArcGIS) or '&offset={offset}&limit={limit}' (OGC API Features). Each request fills {limit} with this number and {offset} with the number of features before that page: with 2000, the requests use offsets 0, 2000, 4000 and so on. Paging stops at the first page that returns fewer features than this number, so it must not exceed the server's own per-request maximum. Leave empty to fetch the URL once.",
+              "type": "number",
+              "min": 1,
+              "width": 3
+            },
+            {
+              "field": "variables.pagination.maxPages",
+              "name": "Max Pages",
+              "description": "Most pages to fetch when 'Entries Per Page' is set. Defaults to 50. If the last page read is still full, the remaining features are not shown and a warning is logged to the browser console.",
+              "type": "number",
+              "min": 1,
+              "width": 3
+            }
+          ]
+        },
+        {
           "subname": "GeoDataset Settings",
           "components": [
             {
