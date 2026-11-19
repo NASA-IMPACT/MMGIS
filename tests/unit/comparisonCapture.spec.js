@@ -67,20 +67,19 @@ const makeCtx = () => {
 }
 
 describe('drawComparisonChrome', () => {
-    test('draws the rule centred on the divider, full height, and the disc at mid-height', () => {
+    // The handle that drags the divider is a control, so the image gets the
+    // rule alone.
+    test('draws the rule centred on the divider, full height, and no handle', () => {
         const { ctx, calls } = makeCtx()
         drawComparisonChrome(ctx, { width: 1000, height: 500, dividerPos: 0.3, dpr: 1, captions: [] })
         const rule = calls.find((c) => c.op === 'fillRect')
         expect(rule.args).toEqual([298.5, 0, 3, 500])
         expect(rule.fillStyle).toBe(DEFAULT_CHROME_THEME.rule)
-        const disc = calls.find((c) => c.op === 'arc')
-        expect(disc.args.slice(0, 3)).toEqual([300, 250, 20])
-        expect(calls.find((c) => c.op === 'fill').fillStyle).toBe(DEFAULT_CHROME_THEME.disc)
-        expect(calls.find((c) => c.op === 'stroke').lineWidth).toBe(2)
+        expect(calls.some((c) => c.op === 'arc')).toBe(false)
     })
 
     // A retina capture is twice the CSS size, so every stroke doubles with it.
-    test('scales the rule, disc and type by the device pixel ratio', () => {
+    test('scales the rule and type by the device pixel ratio', () => {
         const { ctx, calls } = makeCtx()
         drawComparisonChrome(ctx, {
             width: 2000,
@@ -90,7 +89,6 @@ describe('drawComparisonChrome', () => {
             captions: [{ text: 'PM2.5', x: 24, y: 24, width: 160, height: 44 }],
         })
         expect(calls.find((c) => c.op === 'fillRect').args).toEqual([997, 0, 6, 1000])
-        expect(calls.find((c) => c.op === 'arc').args[2]).toBe(40)
         const label = calls.find((c) => c.op === 'fillText')
         expect(label.font).toMatch(/\b24px\b/)
         expect(label.args).toEqual(['PM2.5', 24 + 20, 24 + 22])

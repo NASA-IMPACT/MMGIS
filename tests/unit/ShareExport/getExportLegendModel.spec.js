@@ -77,14 +77,26 @@ describe('getExportLegendModel during a comparison', () => {
     })
 
     // Layers mode: one layer a side. The switched-on layer on neither side is
-    // drawn on neither, so it has no place in the band.
-    test('layers mode: one row per side under its caption, and no row for a layer on neither side', async () => {
+    // drawn on neither, so it has no place in the band. The captions are the
+    // layers' own names, which the titles already print.
+    test('layers mode: one row per side, and no row for a layer on neither side', async () => {
         bus({ 'map:comparison:getState': comparison() })
         const model = await getExportLegendModel()
         expect(rowsOf(model)).toEqual([
-            { side: 'PM2.5', title: 'PM2.5', dateLine: 'Collected 2026-09-01 → 2026-09-15' },
-            { side: 'Ozone', title: 'Ozone', dateLine: 'Collected 2026-09-01 → 2026-09-15' },
+            { side: 'Left', title: 'PM2.5', dateLine: 'Collected 2026-09-01 → 2026-09-15' },
+            { side: 'Right', title: 'Ozone', dateLine: 'Collected 2026-09-01 → 2026-09-15' },
         ])
+    })
+
+    test('layers mode: a caption of its own names the side', async () => {
+        bus({
+            'map:comparison:getState': comparison({
+                left: { layerIds: ['pm25'], date: null, label: 'Before' },
+                right: { layerIds: ['o3'], date: null, label: 'After' },
+            }),
+        })
+        const model = await getExportLegendModel()
+        expect(rowsOf(model).map((r) => r.side)).toEqual(['Before', 'After'])
     })
 
     // Dates mode: the same layers on both sides, one pinned to its own date,
@@ -130,7 +142,30 @@ describe('getExportLegendModel during a comparison', () => {
             }),
         })
         const model = await getExportLegendModel()
-        expect(rowsOf(model)[1]).toEqual({ side: 'Ozone', title: 'Ozone', dateLine: 'Collected 2026-09-01 → 2026-09-02' })
+        expect(rowsOf(model)[1]).toEqual({ side: 'Right', title: 'Ozone', dateLine: 'Collected 2026-09-01 → 2026-09-02' })
+    })
+
+    // A layer that lists Data Dates is drawn for the entry the pin sits in,
+    // never for a span ending at the pin, which it may have no data for.
+    test('a sparse layer pinned inside an entry prints that entry, and outside every entry says so', async () => {
+        const day = (d) => ({
+            start: Date.UTC(2026, 8, d),
+            end: Date.UTC(2026, 8, d, 23, 59, 59, 999),
+            unit: 'day',
+        })
+        const pinned = async (date) => {
+            bus({
+                'layers:getDataCoverage': {
+                    o3: { outOfDataRange: false, kind: 'sparse', spans: [day(1), day(2), day(5)], requestedWindow: null, periodic: false },
+                },
+                'map:comparison:getState': comparison({
+                    right: { layerIds: ['o3'], date, label: 'Ozone' },
+                }),
+            })
+            return rowsOf(await getExportLegendModel())[1].dateLine
+        }
+        expect(await pinned('2026-09-02T12:00:00Z')).toBe('Collected 2026-09-02')
+        expect(await pinned('2026-09-03T12:00:00Z')).toBe('No data at 2026-09-03')
     })
 
     test('a side pinned outside a layer\'s coverage says so instead of dating it', async () => {
@@ -163,7 +198,32 @@ describe('getExportLegendModel during a comparison', () => {
             }),
         })
         const model = await getExportLegendModel()
-        expect(rowsOf(model)[1]).toEqual({ side: 'Roads', title: 'Roads', dateLine: null })
+        expect(rowsOf(model)[1]).toEqual({ side: 'Right', title: 'Roads', dateLine: null })
+    })
+
+    test('dates mode: a side with no caption is named by its date', async () => {
+        bus({
+            'map:comparison:getState': comparison({
+                left: { layerIds: ['pm25'], date: null, label: '' },
+                right: { layerIds: ['pm25'], date: '2026-09-02T00:00:00Z', label: '' },
+            }),
+        })
+        const model = await getExportLegendModel()
+        expect(rowsOf(model)[0].dateLine).toBe('2026-09-15 · 2026-09-02')
+    })
+
+    test('dates mode: the same layers in another order are still one row each', async () => {
+        bus({
+            'map:comparison:getState': comparison({
+                left: { layerIds: ['pm25', 'o3'], date: null, label: 'Sep 15, 2026' },
+                right: { layerIds: ['o3', 'pm25'], date: null, label: 'Sep 15, 2026' },
+            }),
+        })
+        const model = await getExportLegendModel()
+        expect(rowsOf(model).map((r) => [r.side, r.title])).toEqual([
+            [undefined, 'PM2.5'],
+            [undefined, 'Ozone'],
+        ])
     })
 })
 

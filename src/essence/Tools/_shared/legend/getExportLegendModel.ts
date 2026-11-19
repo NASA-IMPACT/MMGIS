@@ -354,33 +354,50 @@ const dateLineFor = (
         if (!time || time.enabled !== true) {
             return extentDateLine(extent, precision)
         }
-        if (record?.outOfDataRange === true) return NO_DATA_AT_CURSOR
-        const request = layerRequest(time, record, globalCursor)
-        if (record?.kind === 'sparse' && request.end) {
-            const cursorMs = parseInstant(request.end)?.ms
-            const sparse =
-                cursorMs === undefined ? null : sparseDateLine(record, cursorMs)
-            if (sparse) return sparse
-        }
-        return cursorDateLine(request, extent, precision)
+        return requestDateLine(
+            extent,
+            record,
+            layerRequest(time, record, globalCursor),
+            precision,
+        )
     } catch (err) {
         console.warn('[export legend] could not build a layer date line', err)
         return null
     }
 }
 
+/** The date line of a time-enabled layer drawn for `request`. */
+const requestDateLine = (
+    extent: TemporalExtent | undefined,
+    record: LayerDataCoverage | undefined,
+    request: LayerRequest,
+    precision: Duration | null,
+): string | null => {
+    if (record?.outOfDataRange === true) return NO_DATA_AT_CURSOR
+    if (record?.kind === 'sparse' && request.end) {
+        const cursorMs = parseInstant(request.end)?.ms
+        const sparse =
+            cursorMs === undefined ? null : sparseDateLine(record, cursorMs)
+        if (sparse) return sparse
+    }
+    return cursorDateLine(request, extent, precision)
+}
+
 /**
- * The band's own facts, under the mission name: where the time cursor sat, and
- * when the picture was made. Both go through core's own formatter so they read
- * the way the mission's Time Control writes a date, followed by the zone core
- * wrote them in. A mission without time has no cursor to name. The export time
- * is the one date always available, so an unformattable one prints as the raw
- * ISO string, which carries its own zone.
+ * Whether a side's pinned instant falls where the layer has nothing: outside
+ * every listed entry for a layer that lists Data Dates, else outside its
+ * extent.
  */
-/** Whether a pinned instant falls outside what the layer's extent covers. */
-const pinnedOutOfRange = (extent: TemporalExtent | undefined, pinned: string): boolean => {
+const pinnedOutOfRange = (
+    extent: TemporalExtent | undefined,
+    record: LayerDataCoverage | undefined,
+    pinned: string,
+): boolean => {
     const pinMs = parseInstant(pinned)?.ms
     if (pinMs === undefined) return false
+    if (record?.kind === 'sparse' && record.spans) {
+        return !record.spans.some((span) => span.start <= pinMs && pinMs <= span.end)
+    }
     const startMs = parseInstant(extent?.start)?.ms
     const endMs = parseInstant(extent?.end)?.ms
     return (startMs !== undefined && pinMs < startMs) || (endMs !== undefined && pinMs > endMs)
@@ -388,39 +405,54 @@ const pinnedOutOfRange = (extent: TemporalExtent | undefined, pinned: string): b
 
 /**
  * The date line of a layer drawn at a side's pinned date rather than at the
- * global cursor. The pin is the whole request, so it is handed to the line
- * builder directly: the layer's own time window, which the global path
- * prefers, is the cursor's, not the pin's.
+ * global cursor. The pin is the whole request, in place of the window core
+ * last requested for the layer, which is the cursor's; and core's verdict on
+ * the layer's data is about the cursor too, so the pin gets its own.
  */
 const pinnedDateLine = (
     cfg: LayerConfig | undefined,
     extent: TemporalExtent | undefined,
+    record: LayerDataCoverage | undefined,
     pinned: string,
 ): string | null => {
     const precision = extent?.interval ?? null
     if (!cfg?.time || cfg.time.enabled !== true) {
         return extentDateLine(extent, precision)
     }
-    if (pinnedOutOfRange(extent, pinned)) {
+    if (pinnedOutOfRange(extent, record, pinned)) {
         return `No data at ${formatAtPrecision(precision, pinned) ?? pinned}`
     }
-    return cursorDateLine({ start: null, end: pinned, periodic: false }, extent, precision)
+    try {
+        return requestDateLine(
+            extent,
+            record && { ...record, outOfDataRange: false },
+            { start: null, end: pinned, periodic: false },
+            precision,
+        )
+    } catch (err) {
+        console.warn('[export legend] could not build a pinned date line', err)
+        return null
+    }
 }
 
 const SIDE_FALLBACK: Record<'left' | 'right', string> = { left: 'Left', right: 'Right' }
 
-const sameLayers = (a: string[], b: string[]): boolean =>
-    a.length === b.length && a.every((id, i) => id === b[i])
+const sameLayers = (a: string[], b: string[]): boolean => {
+    const ids = new Set(b)
+    return a.length === b.length && a.every((id) => ids.has(id))
+}
 
 /**
  * With comparison on, the band describes what each side draws rather than
  * what the layer panel has switched on.
  *
  * Two different layer sets (layers mode) give one row per layer per side,
- * under the side's caption and dated as that side is. The same layers on both
- * sides (dates mode) give each layer once: its colours are the same either
- * side, and only the dates differ, so the row's date line names both sides'
- * dates, and says which has nothing at its date.
+ * dated as that side is, under the side's caption, or under Left or Right
+ * when the caption is the layer's own name and would only repeat the title.
+ * The same layers on both sides (dates mode) give each layer once: its
+ * colours are the same either side, and only the dates differ, so the row's
+ * date line names both sides as the captions do, by date, and says which has
+ * nothing at its date.
  */
 const comparisonRows = (
     comparison: ComparisonState,
@@ -440,17 +472,22 @@ const comparisonRows = (
     const rows: ExportLegendRow[] = []
 
     if (sameLayers(comparison.left.layerIds, comparison.right.layerIds)) {
-        // What a side shows of this layer at its date, in the caption's words.
+        // What a side shows of this layer at its date, named as the image
+        // names the side; a side with no caption is named by its date.
         const sideText = (entry: (typeof sides)[number], id: string): string => {
-            const [, side] = entry
-            const caption = captionOf(entry)
+            const [key, side] = entry
+            const precision = extents?.[id]?.interval ?? null
+            const name =
+                side.label?.trim() ||
+                formatAtPrecision(precision, side.date ?? globalCursor.cursor) ||
+                SIDE_FALLBACK[key]
             const timed = layerConfigs?.[id]?.time?.enabled === true
             const empty =
                 timed &&
                 (side.date != null
-                    ? pinnedOutOfRange(extents?.[id], side.date)
+                    ? pinnedOutOfRange(extents?.[id], coverages?.[id], side.date)
                     : coverages?.[id]?.outOfDataRange === true)
-            return empty ? `No data at ${caption}` : caption
+            return empty ? `No data at ${name}` : name
         }
         for (const id of comparison.left.layerIds) {
             const layer = byId.get(id)
@@ -461,21 +498,32 @@ const comparisonRows = (
     }
 
     for (const entry of sides) {
-        const [, side] = entry
+        const [key, side] = entry
         const caption = captionOf(entry)
         for (const id of side.layerIds) {
             const layer = byId.get(id)
             if (!layer || layer.opacity === 0) continue
             const dateLine =
                 side.date != null
-                    ? pinnedDateLine(layerConfigs?.[id], extents?.[id], side.date)
+                    ? pinnedDateLine(layerConfigs?.[id], extents?.[id], coverages?.[id], side.date)
                     : dateLineFor(layerConfigs?.[id], extents?.[id], coverages?.[id], globalCursor)
-            rows.push({ ...toRow(layer, dateLine), side: caption })
+            rows.push({
+                ...toRow(layer, dateLine),
+                side: caption === layer.title ? SIDE_FALLBACK[key] : caption,
+            })
         }
     }
     return rows
 }
 
+/**
+ * The band's own facts, under the mission name: where the time cursor sat, and
+ * when the picture was made. Both go through core's own formatter so they read
+ * the way the mission's Time Control writes a date, followed by the zone core
+ * wrote them in. A mission without time has no cursor to name. The export time
+ * is the one date always available, so an unformattable one prints as the raw
+ * ISO string, which carries its own zone.
+ */
 const buildHeaderFacts = async (): Promise<ExportHeaderFact[]> => {
     const facts: ExportHeaderFact[] = []
     let zone: string | null = null

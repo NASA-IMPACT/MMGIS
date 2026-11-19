@@ -64,7 +64,6 @@ export type Caption = {
 /** The colours and type the chrome is painted with, read off the theme. */
 export type ChromeTheme = {
     rule: string
-    disc: string
     chipBackground: string
     chipBorder: string
     ink: string
@@ -74,7 +73,6 @@ export type ChromeTheme = {
 // The literal after each token is the value MapComparison.css falls back to.
 export const DEFAULT_CHROME_THEME: ChromeTheme = {
     rule: '#ffffff',
-    disc: '#005ea2',
     chipBackground: '#ffffff',
     chipBorder: '#dfe1e2',
     ink: '#1c1d1f',
@@ -92,7 +90,6 @@ export const resolveChromeTheme = (
     const d = DEFAULT_CHROME_THEME
     return {
         rule: token('--theme-color-white', d.rule),
-        disc: token('--theme-color-primary', d.disc),
         chipBackground: token('--theme-color-white', d.chipBackground),
         chipBorder: token('--theme-color-base-lighter', d.chipBorder),
         ink: token('--theme-color-ink', d.ink),
@@ -138,15 +135,13 @@ export function readCaptions(container: ContainerLike, dpr: number): Caption[] {
 
 // Logical pixels, matching MapComparison.css; multiplied by `dpr` when drawn.
 const RULE_WIDTH = 3
-const DISC_RADIUS = 20
-const DISC_RING = 2
 const CHIP_PAD_X = 10
 const CHIP_FONT = 12
 const CHIP_WEIGHT = '600'
 
 type ChromeCtx = Pick<
     CanvasRenderingContext2D,
-    'fillRect' | 'strokeRect' | 'fillText' | 'beginPath' | 'arc' | 'fill' | 'stroke' | 'save' | 'restore'
+    'fillRect' | 'strokeRect' | 'fillText' | 'save' | 'restore'
 > & {
     fillStyle: unknown
     strokeStyle: unknown
@@ -159,8 +154,9 @@ type ChromeCtx = Pick<
 }
 
 /**
- * Paints the divider (rule and handle disc) at `dividerPos` and the caption
- * chips over a comparison image, in output pixels at `dpr`.
+ * Paints the divider rule at `dividerPos` and the caption chips over a
+ * comparison image, in output pixels at `dpr`. The handle that drags the
+ * divider on screen is a control, not part of the picture, so it is not drawn.
  */
 export function drawComparisonChrome(
     ctx: ChromeCtx,
@@ -182,15 +178,6 @@ export function drawComparisonChrome(
     const rule = RULE_WIDTH * dpr
     ctx.fillStyle = theme.rule
     ctx.fillRect(x - rule / 2, 0, rule, height)
-
-    const radius = DISC_RADIUS * dpr
-    ctx.beginPath()
-    ctx.arc(x, height / 2, radius, 0, Math.PI * 2)
-    ctx.fillStyle = theme.disc
-    ctx.fill()
-    ctx.lineWidth = DISC_RING * dpr
-    ctx.strokeStyle = theme.rule
-    ctx.stroke()
     ctx.restore()
 
     ctx.font = `${CHIP_WEIGHT} ${Math.round(CHIP_FONT * dpr)}px ${theme.family}`
