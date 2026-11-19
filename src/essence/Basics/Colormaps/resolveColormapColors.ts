@@ -39,6 +39,10 @@ const sampleLocal = (key: string): string[] => {
     return colors
 }
 
+/** Whether the bundled ramps hold a name, so it resolves without a service. */
+export const isBundledColormap = (name: string | null | undefined): boolean =>
+    findLocalKey(name) != null
+
 export const resolveColormapColors = async (
     name: string | null | undefined,
     titilerUrl?: string | null

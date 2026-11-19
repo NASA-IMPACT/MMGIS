@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll } from 'vitest'
+import { describe, test, expect, beforeAll, vi } from 'vitest'
 import { color as parseColor } from 'd3'
 import {
     compileColorBy,
@@ -428,6 +428,35 @@ describe('colorBy colormap', () => {
         expect(fill(compileColorBy(colormap({ colormap: 'magma' })), 0)).toBe(
             (await resolveColormapColors('magma', null))[0]
         )
+    })
+
+    test('keeps no custom ramp the service failed to supply', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] })
+        vi.stubGlobal(
+            'fetch',
+            vi
+                .fn()
+                .mockRejectedValueOnce(new Error('service down'))
+                .mockResolvedValueOnce({
+                    ok: true,
+                    json: async () => ({ 0: [255, 0, 0, 255], 1: [0, 0, 255, 255] }),
+                })
+        )
+        const custom = colormap({ colormap: 'site_ramp' })
+        try {
+            // The fallback paints meanwhile, but is not taken for the ramp.
+            expect(await loadColormapRamp('site_ramp', 'https://titiler.test')).toEqual(viridis)
+            expect(compileColorBy(custom).colors).toBeNull()
+
+            // Past the service's failure window the ramp is asked for again.
+            vi.setSystemTime(Date.now() + 61000)
+            const ramp = ['rgba(255, 0, 0, 1)', 'rgba(0, 0, 255, 1)']
+            expect(await loadColormapRamp('site_ramp', 'https://titiler.test')).toEqual(ramp)
+            expect(compileColorBy(custom).colors).toEqual(ramp)
+        } finally {
+            vi.useRealTimers()
+            vi.unstubAllGlobals()
+        }
     })
 
     test.each([

@@ -59,7 +59,11 @@ import {
     type LegendStyleResult,
 } from './LegendStyle'
 import { toCanonicalLayerType } from '../MapEngines/types/engine'
-import { resolveColormapColors } from '../Colormaps/resolveColormapColors'
+import {
+    isBundledColormap,
+    resolveColormapColors,
+} from '../Colormaps/resolveColormapColors'
+import { fetchColormapColors } from '../Colormaps/titilerColormaps'
 import {
     getBaseColormapName,
     isReversedColormap,
@@ -334,7 +338,8 @@ function rangeColor(bands: RangeBand[], value: unknown): string | null {
 
 /**
  * Resolved ramps, keyed by lowercased name with any `_r` suffix. Each is
- * resolved once and shared by every layer naming it.
+ * resolved once and shared by every layer naming it, so two services defining
+ * a custom ramp of the same name share whichever definition arrived first.
  */
 const ramps = new Map<string, string[]>()
 const rampKey = (name: string): string => name.toLowerCase()
@@ -359,7 +364,9 @@ export function colorByColormapName(config: unknown): string | null {
 /**
  * A ramp's colours, resolved through the colormap catalogue raster legends use
  * (bundled ramps first, then the layer's TiTiler) and kept for every later
- * compile. Never rejects.
+ * compile. Only a definition is kept: a custom ramp the service could not
+ * supply resolves to the fallback ramp uncached, so it is asked for again once
+ * the service's failure window has passed. Never rejects.
  */
 export async function loadColormapRamp(
     name: string,
@@ -368,7 +375,12 @@ export async function loadColormapRamp(
     const cached = ramps.get(rampKey(name))
     if (cached) return cached
     const colors = await resolveColormapColors(name, titilerUrl)
-    if (colors && colors.length > 0) ramps.set(rampKey(name), colors)
+    // The service lookup is memoised, so asking again costs no request.
+    const defined =
+        isBundledColormap(name) ||
+        (await fetchColormapColors(name, titilerUrl)) != null
+    if (defined && colors && colors.length > 0)
+        ramps.set(rampKey(name), colors)
     return colors
 }
 
