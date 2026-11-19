@@ -108,9 +108,11 @@ export function ColorRampPicker({
         [layerId, onColormapChange],
     )
 
+    // A ramp with no reversed form is applied forward whatever the toggle says.
     const handleSelect = useCallback(
-        (base: string) => applyRamp(base, reversed),
-        [applyRamp, reversed],
+        (base: string) =>
+            applyRamp(base, reversed && canReverseColormap(base, availableColormaps)),
+        [applyRamp, reversed, availableColormaps],
     )
 
     const handleReverseToggle = useCallback(() => {

@@ -437,7 +437,8 @@ function resolveStyleAccessors(
     // between builds, for the layers' updateTriggers. deck.gl compares
     // accessor props as always equal, so an accessor closing over a different
     // legend or colorBy setting needs a trigger value that differs before it
-    // is re-run. Both compile to plain data a handful of rows long.
+    // is re-run. Both compile to plain data: a handful of rows, or for a
+    // colormap its ramp's colours, whose arrival changes the digest too.
     const colorFingerprint =
         colorBy || legend ? JSON.stringify([colorBy, legend]) : ''
 

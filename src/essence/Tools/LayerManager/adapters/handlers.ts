@@ -211,6 +211,12 @@ export const showAddLayer = (): void => {
 }
 
 /**
+ * Layer types core colours by `style.colorBy`, under their MMGIS and deck.gl
+ * names. Any other type's `colorBy` is not read, so its ramp is a raster's.
+ */
+const COLOR_BY_TYPES = new Set(['vector', 'vectortile', 'query', 'GeoJsonLayer', 'MVTLayer'])
+
+/**
  * Writes changes into a vector layer's `style.colorBy` setting when it is in
  * `colormap` mode, and has core repaint the layer from it.
  *
@@ -220,9 +226,9 @@ const writeColorByColormap = async (
     layerId: string,
     changes: Record<string, unknown>,
 ): Promise<boolean> => {
-    const style = (await mmgisGetLayerConfig(layerId))?.style as
-        | Record<string, unknown>
-        | undefined
+    const config = await mmgisGetLayerConfig(layerId)
+    if (!COLOR_BY_TYPES.has(String(config?.type))) return false
+    const style = config?.style as Record<string, unknown> | undefined
     const colorBy = style?.colorBy as Record<string, unknown> | undefined
     if (colorBy?.mode !== 'colormap') return false
     const updates = { style: { ...style, colorBy: { ...colorBy, ...changes } } }

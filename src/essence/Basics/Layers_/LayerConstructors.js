@@ -185,7 +185,7 @@ export const constructVectorLayer = (
     let memoisedColorByConfig
     let memoisedColorBy = null
     const compiledColorBy = () => {
-        const config = layerObj.style.colorBy
+        const config = L_.layers.data[layerObj.name]?.style?.colorBy
         if (config !== memoisedColorByConfig || memoisedColorBy?.colors === null) {
             memoisedColorByConfig = config
             memoisedColorBy = compileColorBy(config)

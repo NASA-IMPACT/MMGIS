@@ -66,8 +66,10 @@ const build = (style = {}, legend = ramp) => {
         name: 'co2',
         type: 'vector',
         style: { className: '', ...style },
+        _legend: legend,
     }
-    L_.layers.data = { co2: { name: 'co2', _legend: legend } }
+    // The layer's own entry, as Map_ builds it.
+    L_.layers.data = { co2: layerObj }
     capturedOptions = null
     constructVectorLayer(
         { type: 'FeatureCollection', features: [] },
@@ -263,7 +265,7 @@ describe('constructVectorLayer colorBy styling', () => {
                 colorBy: { mode: 'colormap', property: 'frp', colormap: 'cividis', min: 0, max: 1 },
             },
         }
-        L_.layers.data = { co2: { name: 'co2' } }
+        L_.layers.data = { co2: layerObj }
         constructVectorLayer({ type: 'FeatureCollection', features: [] }, layerObj, () => {}, { map: {} })
         const options = capturedOptions
 
@@ -291,7 +293,7 @@ describe('constructVectorLayer colorBy styling', () => {
             type: 'vector',
             style: { className: '', ...fixed, colorBy: colorBy() },
         }
-        L_.layers.data = { co2: { name: 'co2' } }
+        L_.layers.data = { co2: layerObj }
         const construct = () => {
             capturedOptions = null
             constructVectorLayer(

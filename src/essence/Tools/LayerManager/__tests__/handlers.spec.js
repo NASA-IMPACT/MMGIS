@@ -697,6 +697,7 @@ test.describe('group actions', () => {
             const { requests } = setupMock({
                 ...COLORBY_LAYER,
                 'layers:getConfig': () => ({
+                    type: 'MVTLayer',
                     style: { colorBy: { ...STYLE.colorBy, reversed: true } },
                 }),
             })
@@ -706,6 +707,16 @@ test.describe('group actions', () => {
                 colormap: 'plasma',
                 reversed: false,
             })
+        })
+
+        test('leaves a colorBy on a layer type that does not read it to the raster path', async () => {
+            const { requests } = setupMock({
+                ...COLORBY_LAYER,
+                'layers:getConfig': () => ({ type: 'tile', style: STYLE }),
+            })
+            await setColormap('layerA', 'plasma', () => {})
+
+            expect(writtenStyle(requests).updates).toEqual({ currentCogColormap: 'plasma' })
         })
 
         test('setRescale writes min and max into style.colorBy', async () => {
