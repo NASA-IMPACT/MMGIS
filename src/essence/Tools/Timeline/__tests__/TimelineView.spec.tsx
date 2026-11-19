@@ -19,6 +19,7 @@ import { EDGE_MARGIN, TimelineView } from '../lib/geo/TimelineView/TimelineView'
 import type { LayerNavigation } from '../lib/utils/layerNavigation'
 import { transformToWindow, type ViewWindow } from '../lib/utils/zoomWindow'
 import type { LayerTimeData, TimeMode } from '../lib/types'
+import type { LayerGroupNode } from '../lib/utils/layerGroups'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean })
     .IS_REACT_ACT_ENVIRONMENT = true
@@ -765,5 +766,122 @@ describe('TimelineView margin past the global window', () => {
             const [, x] = /translate\(([^,]+),/.exec(tick.getAttribute('transform')!)!
             expect(Number(x)).toBeLessThanOrEqual(WIDTH - EDGE_MARGIN)
         }
+    })
+})
+
+/**
+ * Grouped layers: each group has a row that folds its layers away, and the
+ * sidebar and the chart stay row for row through every fold.
+ */
+describe('TimelineView layer groups', () => {
+    let container: HTMLElement
+    let root: Root
+    let originalResizeObserver: unknown
+
+    const groups: LayerGroupNode[] = [
+        {
+            kind: 'group',
+            id: 'aqs',
+            displayName: 'AQS',
+            children: [
+                { kind: 'layer', id: 'o3' },
+                { kind: 'layer', id: 'no2' },
+            ],
+        },
+    ]
+
+    beforeEach(() => {
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver as typeof ResizeObserver
+    })
+
+    const render = (layers: LayerTimeData[]) => {
+        act(() => {
+            root.render(
+                <TimelineView
+                    startTime={START}
+                    endTime={END}
+                    currentTime={CURRENT}
+                    timeMode="DAY"
+                    configuredGranularity="DAY"
+                    layers={layers}
+                    groups={groups}
+                    view={{ start: START, end: END }}
+                    onViewChange={() => {}}
+                    onCurrentTimeChange={() => {}}
+                    onLayerNavigate={() => {}}
+                    onFitLayer={() => {}}
+                />,
+            )
+        })
+    }
+
+    const sidebarLabels = () =>
+        Array.from(
+            container.querySelectorAll<HTMLElement>(
+                '.layer-group-name, .layer-name',
+            ),
+        ).map((el) => el.textContent)
+    const header = () =>
+        container.querySelector<HTMLButtonElement>('.layer-group-item')!
+    const chartRows = () => container.querySelectorAll('.layer-row-bg')
+    const drawnBars = () =>
+        container.querySelectorAll('.layer-timelines rect:not(.layer-row-bg)')
+    const toggle = () =>
+        act(() => {
+            header().dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        })
+
+    test('lists grouped layers under their group, expanded at first', () => {
+        render([layer('no2'), layer('o3'), layer('basemap')])
+
+        expect(sidebarLabels()).toEqual(['AQS', 'o3', 'no2', 'basemap'])
+        expect(header().getAttribute('aria-expanded')).toBe('true')
+        expect(chartRows()).toHaveLength(4)
+    })
+
+    test('folds a group to one row that draws its combined coverage', () => {
+        render([layer('o3'), layer('no2'), layer('basemap')])
+        const openBars = drawnBars().length
+
+        toggle()
+
+        expect(sidebarLabels()).toEqual(['AQS', 'basemap'])
+        expect(header().getAttribute('aria-expanded')).toBe('false')
+        expect(chartRows()).toHaveLength(2)
+        // Both layers cover the same span, so the folded row draws one bar
+        // where the open group drew one per layer.
+        expect(drawnBars().length).toBe(openBars - 1)
+
+        toggle()
+
+        expect(sidebarLabels()).toEqual(['AQS', 'o3', 'no2', 'basemap'])
+    })
+
+    test('keeps a fold when the layers are rebuilt', () => {
+        render([layer('o3'), layer('no2')])
+        toggle()
+
+        render([layer('o3'), layer('no2')])
+
+        expect(sidebarLabels()).toEqual(['AQS'])
+    })
+
+    test('drops a group none of whose layers are shown', () => {
+        render([layer('basemap')])
+
+        expect(sidebarLabels()).toEqual(['basemap'])
     })
 })

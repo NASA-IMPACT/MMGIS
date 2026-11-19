@@ -12,6 +12,8 @@ import {
     mmgisGetTimeCurrent,
     type LayerConfig,
     mmgisGetTemporalExtents,
+    mmgisGetLayerTree,
+    type LayerTreeNode,
 } from '../_shared/adapters/mmgisAPI'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 import {
@@ -24,7 +26,8 @@ import {
     getNextPlaybackSpeed,
     TIME_MODE_ORDER,
     type TimeMode,
-    type LayerTimeData
+    type LayerTimeData,
+    type LayerGroupNode,
 } from './lib'
 import {
     stepTime,
@@ -69,6 +72,22 @@ const sameInstant = (a: Date, b: Date): boolean => a.getTime() === b.getTime()
 const preserveIdentity = (prev: Date, next: Date): Date =>
     sameInstant(prev, next) ? prev : next
 
+/** Core's grouping, with each group titled from its header layer's config. */
+const nameGroups = (
+    nodes: LayerTreeNode[],
+    configs: Record<string, LayerConfig>
+): LayerGroupNode[] =>
+    nodes.map((node) => {
+        if (node.kind === 'layer') return node
+        const config = configs[node.id]
+        return {
+            kind: 'group',
+            id: node.id,
+            displayName: config?.display_name || config?.name || node.id,
+            children: nameGroups(node.children, configs),
+        }
+    })
+
 export const TimelineAdapter: React.FC = () => {
     const [startTime, setStartTime] = useState<Date>(() => {
         const d = new Date()
@@ -83,6 +102,7 @@ export const TimelineAdapter: React.FC = () => {
     })
     const [timeMode, setTimeMode] = useState<TimeMode>('DAY')
     const [layers, setLayers] = useState<LayerTimeData[]>([])
+    const [layerGroups, setLayerGroups] = useState<LayerGroupNode[] | null>(null)
     const [readiness, setReadiness] = useState<Readiness>('loading')
 
     const [isPlaying, setIsPlaying] = useState(false)
@@ -399,10 +419,11 @@ export const TimelineAdapter: React.FC = () => {
         let cancelled = false
 
         const fetchLayers = async () => {
-            const [configs, visibleLayers, extents] = await Promise.all([
+            const [configs, visibleLayers, extents, tree] = await Promise.all([
                 mmgisGetLayerConfigs(),
                 mmgisGetVisibleLayers(),
                 mmgisGetTemporalExtents(),
+                mmgisGetLayerTree(),
             ])
             if (cancelled || !configs) return
 
@@ -453,6 +474,7 @@ export const TimelineAdapter: React.FC = () => {
             })
 
             setLayers(newLayers)
+            setLayerGroups(tree ? nameGroups(tree, configs) : null)
         }
 
         fetchLayers()
@@ -818,6 +840,7 @@ export const TimelineAdapter: React.FC = () => {
                         timeMode={timeMode}
                         configuredGranularity={configuredGranularity}
                         layers={layers}
+                        groups={layerGroups}
                         view={zoom.view}
                         onViewChange={zoom.setView}
                         onCurrentTimeChange={handleCurrentTimeChange}

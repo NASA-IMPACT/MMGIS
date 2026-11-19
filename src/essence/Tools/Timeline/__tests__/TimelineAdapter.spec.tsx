@@ -1434,3 +1434,72 @@ describe('TimelineAdapter header layers', () => {
         expect(container.textContent).toContain('No visible layers on the map')
     })
 })
+
+describe('TimelineAdapter layer groups', () => {
+    let container: HTMLElement
+    let root: Root
+    let originalResizeObserver: unknown
+
+    beforeEach(async () => {
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+        ;(window as unknown as { mmgisAPI: unknown }).mmgisAPI = {
+            request: async (name: string) => {
+                if (name === 'time:isEnabled') return true
+                if (name === 'time:getStart') return START
+                if (name === 'time:getEnd') return END
+                if (name === 'time:getCurrent') return CURRENT
+                if (name === 'tool:getVars') return {}
+                if (name === 'layers:getAllConfigs')
+                    return {
+                        ...LAYER_CONFIGS,
+                        aqs: { name: 'aqs', display_name: 'AQS', type: 'header' },
+                    }
+                if (name === 'layers:getVisible')
+                    return { basemap: true, short: true }
+                if (name === 'layers:getTree')
+                    return [
+                        { kind: 'layer', id: 'basemap' },
+                        {
+                            kind: 'group',
+                            id: 'aqs',
+                            children: [
+                                { kind: 'layer', id: 'short' },
+                                { kind: 'layer', id: 'sparse' },
+                            ],
+                        },
+                    ]
+                return null
+            },
+            hasHandler: () => true,
+            on: () => () => {},
+            emit: () => {},
+        }
+
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+        await act(async () => {
+            root.render(<TimelineAdapter />)
+        })
+        await act(async () => {})
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        delete (window as { mmgisAPI?: unknown }).mmgisAPI
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver
+    })
+
+    test("titles each group from its header layer's config", () => {
+        const labels = Array.from(
+            container.querySelectorAll('.layer-group-name, .layer-name')
+        ).map((el) => el.textContent)
+
+        expect(labels).toEqual(['Basemap', 'AQS', 'Short Campaign'])
+    })
+})
