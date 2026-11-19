@@ -352,6 +352,27 @@ test.describe('legend compositing in the downloads', () => {
         ])
     })
 
+    // The scale bar is not the legend's: a capture that carries one is still
+    // composed with the legend switched off, with no legend model built.
+    test('the flag off still paints a captured scale bar, with no legend model', async () => {
+        const withBar = { ...screenshot, scaleBar: { label: '1 km', widthPx: 120 } }
+        const composeCalls = []
+        const result = await downloadSharePng({
+            getScreenshot: async () => withBar,
+            download: () => {},
+            includeLegend: false,
+            getLegendModel: () => {
+                throw new Error('should not be called')
+            },
+            compose: async (shot, model) => {
+                composeCalls.push({ shot, model })
+                return composed
+            },
+        })
+        expect(composeCalls).toEqual([{ shot: withBar, model: null }])
+        expect(result).toBe(composed)
+    })
+
     // The band is a nicety; the map is the export. A legend that cannot be
     // built must never cost the user their download.
     test('a legend model failure downloads the plain map instead of throwing', async () => {

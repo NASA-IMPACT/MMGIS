@@ -23,6 +23,7 @@ import {
     MapInitOptions,
     ProjectionOptions,
     BasemapOptions,
+    BasemapControls,
 } from '../types/view'
 import {
     LayerOptions,
@@ -149,6 +150,8 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     private _initOptions: MapInitOptions | null = null
 
     private _basemapLayer: any = null
+    /** Leaflet's own scale control, when `basemap.controls.scaleBar` asks for one. */
+    private _scaleControl: any = null
     private _basemapAccessToken: string | undefined
 
     /**
@@ -248,6 +251,28 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         if (options.basemap && options.basemap.provider && options.basemap.provider !== 'none') {
             this._initBasemapTileLayer(options.basemap)
         }
+        // Leaflet draws its own tiles, so its scale bar needs no basemap provider.
+        this._addScaleControl(options.basemap?.controls?.scaleBar)
+    }
+
+    /**
+     * Adds Leaflet's scale control from the same `basemap.controls.scaleBar`
+     * the deck.gl engine reads. A Leaflet map cannot rotate, so there is no
+     * compass to add. The control is part of the map's DOM, which the
+     * screenshot rasterizes, so exports carry it without further work.
+     */
+    private _addScaleControl(scaleBar: BasemapControls['scaleBar']): void {
+        if (!scaleBar?.show) return
+        const imperial = scaleBar.units === 'imperial'
+        this._scaleControl = L.control
+            .scale({
+                // Leaflet spells its corners without the dash.
+                position: (scaleBar.position ?? 'bottom-left').replace('-', ''),
+                maxWidth: 100,
+                metric: !imperial,
+                imperial,
+            })
+            .addTo(this._map)
     }
 
     /**
@@ -352,6 +377,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         this.hidePopup()
 
         this._removeBasemapLayer()
+
+        if (this._scaleControl) {
+            this._scaleControl.remove()
+            this._scaleControl = null
+        }
 
         this._eventHandlers.forEach(({ eventName, wrapped }) => {
             // Click subscribers never went on the map — they hang off

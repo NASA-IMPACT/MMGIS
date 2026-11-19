@@ -84,6 +84,24 @@ export interface BasemapStyleEntry {
  * `mapbox-gl` is an optional peer dependency; install it separately (`npm install mapbox-gl`)
  * when `provider` is set to `'mapbox'`. `maplibre-gl` is a regular dependency and always available.
  */
+/** A corner of the map a basemap control sits in. */
+export type BasemapControlPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+
+export type ScaleBarUnits = 'metric' | 'imperial'
+
+/**
+ * The basemap library's own controls, drawn by the basemap at its corners.
+ * A control is shown only when its key is present.
+ */
+export interface BasemapControls {
+    /** A scale bar, shown only when `show` is true; metric (m/km) unless
+     *  `units` says imperial (ft/mi). */
+    scaleBar?: { show?: boolean; units?: ScaleBarUnits; position?: BasemapControlPosition }
+    /** A compass that follows bearing and pitch and resets north on click,
+     *  shown only when `show` is true. */
+    compass?: { show?: boolean; position?: BasemapControlPosition }
+}
+
 export interface BasemapOptions {
     /** The map library to use as the basemap. */
     provider: BasemapProvider
@@ -105,6 +123,8 @@ export interface BasemapOptions {
      * styles (e.g. Streets, Satellite, Terrain) at runtime.
      */
     styles?: BasemapStyleEntry[]
+    /** Controls the basemap draws itself, such as a scale bar or compass. */
+    controls?: BasemapControls
 }
 
 /**

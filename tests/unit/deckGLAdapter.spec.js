@@ -44,7 +44,9 @@ vi.mock('maplibre-gl', async (importOriginal) => {
             this._canvas = document.createElement('canvas')
             this._popup = null
         }
-        addControl() {}
+        addControl(control, position) {
+            ;(this.controls ||= []).push([control, position])
+        }
         removeControl() {}
         on(type, handler) {
             ;(this._on ||= []).push([type, handler])
@@ -104,18 +106,41 @@ vi.mock('maplibre-gl', async (importOriginal) => {
             return this
         }
     }
-    return { ...actual, Map: MockMap, Popup: MockPopup }
+    class MockScaleControl {
+        constructor(options) {
+            this.options = options
+        }
+    }
+    class MockNavigationControl {
+        constructor(options) {
+            this.options = options
+        }
+    }
+    return {
+        ...actual,
+        Map: MockMap,
+        Popup: MockPopup,
+        ScaleControl: MockScaleControl,
+        NavigationControl: MockNavigationControl,
+    }
 })
 
 // A mapbox-gl exporting no Popup, which the adapter must still build a map on.
 vi.mock('mapbox-gl', () => {
     class MapboxMapWithoutPopup {
-        addControl() {}
+        addControl(control, position) {
+            ;(this.controls ||= []).push([control, position])
+        }
         on(type, handler) {
             ;(this._on ||= []).push([type, handler])
         }
     }
-    return { default: { Map: MapboxMapWithoutPopup } }
+    class MapboxScaleControl {
+        constructor(options) {
+            this.options = options
+        }
+    }
+    return { default: { Map: MapboxMapWithoutPopup, ScaleControl: MapboxScaleControl } }
 })
 
 function makeAdapter({ longitude = -120, latitude = 40, zoom = 5 } = {}) {
@@ -946,6 +971,98 @@ test.describe('DeckGLAdapter', () => {
                 extension: 'png',
                 width: 256,
                 height: 128,
+                scaleBar: null,
+                compass: null,
+            })
+        })
+
+        // The bar the library draws is the one the user saw, so the capture
+        // reports that bar, not a second measurement: its label verbatim and
+        // its length rescaled from CSS pixels to the image's.
+        test.describe('scale bar', () => {
+            const captureWith = async ({ controls, pitch = 0, bar, containerWidth = 500, canvasWidth = 1000 }) => {
+                const adapter = makeAdapter()
+                adapter._viewState.pitch = pitch
+                adapter._isOverlayMode = true
+                adapter._basemapOptions = { provider: 'maplibre', style: 'style://a', ...(controls ? { controls } : {}) }
+                const container = document.createElement('div')
+                Object.defineProperty(container, 'clientWidth', { value: containerWidth })
+                if (bar) {
+                    const el = document.createElement('div')
+                    el.className = 'maplibregl-ctrl maplibregl-ctrl-scale'
+                    el.style.width = bar.width
+                    el.innerHTML = bar.html
+                    container.appendChild(el)
+                }
+                adapter._container = container
+                let renderHandler = null
+                adapter._basemap = {
+                    once: (_type, handler) => { renderHandler = handler },
+                    triggerRepaint: () => renderHandler(),
+                    getCanvas: () => ({
+                        width: canvasWidth,
+                        height: 400,
+                        toBlob: (callback, type) => callback(new Blob(['x'], { type })),
+                    }),
+                }
+                return (await adapter.captureScreenshot()).scaleBar
+            }
+
+            test("reports the library's label and the bar's length in image pixels", async () => {
+                const bar = await captureWith({
+                    controls: { scaleBar: { show: true } },
+                    bar: { width: '80px', html: '500&nbsp;m' },
+                })
+                expect(bar).toEqual({ label: '500 m', widthPx: 160 })
+            })
+
+            test('is null without a configured bar, even if one is in the DOM', async () => {
+                const bar = { width: '80px', html: '500&nbsp;m' }
+                expect(await captureWith({ bar })).toBeNull()
+                expect(await captureWith({ controls: { scaleBar: { show: false } }, bar })).toBeNull()
+            })
+
+            test('is null when the view is tilted past 10 degrees', async () => {
+                expect(await captureWith({
+                    controls: { scaleBar: { show: true } },
+                    pitch: 11,
+                    bar: { width: '80px', html: '500&nbsp;m' },
+                })).toBeNull()
+            })
+
+            test('is null when the library has drawn no bar yet', async () => {
+                expect(await captureWith({ controls: { scaleBar: { show: true } } })).toBeNull()
+            })
+        })
+
+        // A north arrow needs only the bearing, which the adapter already
+        // holds; it is reported exactly when a compass is configured.
+        test.describe('compass', () => {
+            const captureWith = async ({ controls, bearing = 0 }) => {
+                const adapter = makeAdapter()
+                adapter._viewState.bearing = bearing
+                adapter._isOverlayMode = true
+                adapter._basemapOptions = { provider: 'maplibre', style: 'style://a', ...(controls ? { controls } : {}) }
+                adapter._container = document.createElement('div')
+                let renderHandler = null
+                adapter._basemap = {
+                    once: (_type, handler) => { renderHandler = handler },
+                    triggerRepaint: () => renderHandler(),
+                    getCanvas: () => ({
+                        width: 100,
+                        height: 50,
+                        toBlob: (callback, type) => callback(new Blob(['x'], { type })),
+                    }),
+                }
+                return (await adapter.captureScreenshot()).compass
+            }
+
+            test('reports the bearing when a compass is configured', async () => {
+                expect(await captureWith({ controls: { compass: { show: true } }, bearing: 37 })).toEqual({ bearing: 37 })
+            })
+
+            test('is null without a configured compass', async () => {
+                expect(await captureWith({ controls: { scaleBar: { show: true }, compass: { show: false } }, bearing: 37 })).toBeNull()
             })
         })
 
@@ -1019,12 +1136,15 @@ test.describe('DeckGLAdapter', () => {
 
             const result = await adapter.captureScreenshot()
             expect(redrawArg).toBe('screenshot')
+            // No basemap, so no library-drawn bar to report.
             expect(result).toEqual({
                 blob,
                 mimeType: 'image/png',
                 extension: 'png',
                 width: 300,
                 height: 200,
+                scaleBar: null,
+                compass: null,
             })
         })
 

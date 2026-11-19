@@ -70,12 +70,13 @@ export type LegendDeps = {
     getLegendModel?: () => Promise<ExportLegendModel>
     compose?: (
         screenshot: MapScreenshotResult,
-        model: ExportLegendModel,
+        model: ExportLegendModel | null,
     ) => Promise<MapScreenshotResult>
 }
 
-// The export must never fail because the legend did — deliver the plain map
-// and log, rather than surfacing a broken download.
+// The export must never fail because a decoration did — deliver the plain map
+// and log, rather than surfacing a broken download. The scale bar the capture
+// carries is painted whether or not the legend is wanted.
 async function applyLegend(
     screenshot: MapScreenshotResult,
     deps: LegendDeps,
@@ -85,9 +86,9 @@ async function applyLegend(
         getLegendModel = getExportLegendModel,
         compose = composeExportImage,
     } = deps
-    if (!includeLegend) return screenshot
+    if (!includeLegend && !screenshot.scaleBar && !screenshot.compass) return screenshot
     try {
-        return await compose(screenshot, await getLegendModel())
+        return await compose(screenshot, includeLegend ? await getLegendModel() : null)
     } catch (err) {
         console.warn('Share export: legend omitted', err)
         return screenshot
