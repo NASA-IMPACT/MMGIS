@@ -9,6 +9,7 @@ import {
     mmgisSetLayerOrder,
     mmgisGetVisibleLayers,
     mmgisGetListedLayers,
+    mmgisGetLayerConfig,
     mmgisGetLayerConfigs,
     mmgisGetLayerTree,
     mmgisToggleLayerGroup,
@@ -21,6 +22,7 @@ import {
 } from '../lib/utils/constants'
 import { placeInTree, type Placement } from '../lib/utils/layerTree'
 import { filteredOutLayers } from '../lib/utils/filteredOut'
+import { getBaseColormapName, isReversedColormap } from '../lib/utils/colormaps'
 
 type Refresh = () => Promise<void> | void
 
@@ -208,12 +210,39 @@ export const showAddLayer = (): void => {
         .catch((err) => console.warn('LayerManager: showAddLayer failed', err))
 }
 
+/**
+ * Writes changes into a vector layer's `style.colorBy` setting when it is in
+ * `colormap` mode, and has core repaint the layer from it.
+ *
+ * @returns False, having written nothing, for a layer not coloured that way.
+ */
+const writeColorByColormap = async (
+    layerId: string,
+    changes: Record<string, unknown>,
+): Promise<boolean> => {
+    const style = (await mmgisGetLayerConfig(layerId))?.style as
+        | Record<string, unknown>
+        | undefined
+    const colorBy = style?.colorBy as Record<string, unknown> | undefined
+    if (colorBy?.mode !== 'colormap') return false
+    const updates = { style: { ...style, colorBy: { ...colorBy, ...changes } } }
+    await mmgisRequest('layers:updateConfig', { layerUUID: layerId, updates })
+    await mmgisRequest('layers:refresh', { layerUUID: layerId })
+    return true
+}
+
 export const setColormap = async (layerId: string, colormap: string, refresh: Refresh): Promise<void> => {
     if (!(await canChangeColormap(layerId))) return
-    await mmgisRequest('layers:updateConfig', { layerUUID: layerId, updates: { currentCogColormap: colormap } })
-    // applyCogFieldsToUrl prefers `currentCogColormap` over the mission-configured
-    // `cogColormap`, so the override key has to match the config write above.
-    await mmgisRequest('layers:refresh', { layerUUID: layerId, options: { currentCogColormap: colormap } })
+    const restyled = await writeColorByColormap(layerId, {
+        colormap: getBaseColormapName(colormap),
+        reversed: isReversedColormap(colormap),
+    })
+    if (!restyled) {
+        await mmgisRequest('layers:updateConfig', { layerUUID: layerId, updates: { currentCogColormap: colormap } })
+        // applyCogFieldsToUrl prefers `currentCogColormap` over the mission-configured
+        // `cogColormap`, so the override key has to match the config write above.
+        await mmgisRequest('layers:refresh', { layerUUID: layerId, options: { currentCogColormap: colormap } })
+    }
     mmgisEmit('layer:cogColormapChange', { layerName: layerId, colormap })
     await refresh()
 }
@@ -225,8 +254,10 @@ export const setRescale = async (
     refresh: Refresh,
 ): Promise<void> => {
     if (!(await canChangeColormap(layerId))) return
-    await mmgisRequest('layers:updateConfig', { layerUUID: layerId, updates: { currentCogMin: min, currentCogMax: max } })
-    await mmgisRequest('layers:refresh', { layerUUID: layerId, options: { currentCogMin: min, currentCogMax: max } })
+    if (!(await writeColorByColormap(layerId, { min, max }))) {
+        await mmgisRequest('layers:updateConfig', { layerUUID: layerId, updates: { currentCogMin: min, currentCogMax: max } })
+        await mmgisRequest('layers:refresh', { layerUUID: layerId, options: { currentCogMin: min, currentCogMax: max } })
+    }
     mmgisEmit('layer:cogRescaleChange', { layerName: layerId, min, max })
     await refresh()
 }

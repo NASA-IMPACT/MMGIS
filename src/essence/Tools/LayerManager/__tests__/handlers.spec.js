@@ -655,4 +655,69 @@ test.describe('group actions', () => {
         await setGroupOpacity('g', 2)
         expect(emitCalls).toEqual([])
     })
+
+    test.describe('on a vector layer coloured by a colormap', () => {
+        const STYLE = {
+            fillColor: '#00ff00',
+            colorBy: { mode: 'colormap', property: 'pm25', colormap: 'jet', min: 1, max: 18 },
+        }
+        const COLORBY_LAYER = {
+            ...COG_LAYER,
+            'layers:getConfig': () => ({ type: 'vector', style: STYLE }),
+        }
+        const writtenStyle = (requests) =>
+            requests.find((r) => r.name === 'layers:updateConfig').params
+
+        test('setColormap writes the ramp and direction into style.colorBy', async () => {
+            const { requests, emitCalls } = setupMock(COLORBY_LAYER)
+            let refreshed = false
+            await setColormap('layerA', 'viridis_r', () => { refreshed = true })
+
+            expect(writtenStyle(requests)).toEqual({
+                layerUUID: 'layerA',
+                updates: {
+                    style: {
+                        ...STYLE,
+                        colorBy: { ...STYLE.colorBy, colormap: 'viridis', reversed: true },
+                    },
+                },
+            })
+            // A repaint from the config written, with no tile options.
+            expect(requests.find((r) => r.name === 'layers:refresh').params).toEqual({
+                layerUUID: 'layerA',
+            })
+            expect(emitCalls).toContainEqual({
+                event: 'layer:cogColormapChange',
+                payload: { layerName: 'layerA', colormap: 'viridis_r' },
+            })
+            expect(refreshed).toBe(true)
+        })
+
+        test('setColormap clears reversed for a forward ramp', async () => {
+            const { requests } = setupMock({
+                ...COLORBY_LAYER,
+                'layers:getConfig': () => ({
+                    style: { colorBy: { ...STYLE.colorBy, reversed: true } },
+                }),
+            })
+            await setColormap('layerA', 'plasma', () => {})
+
+            expect(writtenStyle(requests).updates.style.colorBy).toMatchObject({
+                colormap: 'plasma',
+                reversed: false,
+            })
+        })
+
+        test('setRescale writes min and max into style.colorBy', async () => {
+            const { requests } = setupMock(COLORBY_LAYER)
+            await setRescale('layerA', 2, 40, () => {})
+
+            expect(writtenStyle(requests).updates.style.colorBy).toEqual({
+                ...STYLE.colorBy,
+                min: 2,
+                max: 40,
+            })
+            expect(requests.some((r) => r.params?.updates?.currentCogMin != null)).toBe(false)
+        })
+    })
 })

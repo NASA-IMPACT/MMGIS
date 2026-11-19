@@ -1,6 +1,7 @@
 import { test, expect } from 'vitest'
 import {
     applyColormapDirection,
+    canReverseColormap,
     buildGradientCss,
     colormapResponseToColors,
     formatColormapLabel,
@@ -126,4 +127,15 @@ test.describe('validateRescale', () => {
         expect(validateRescale('30', '0').valid).toBe(false)
         expect(validateRescale('5', '5').valid).toBe(false)
     })
+})
+
+test('canReverseColormap offers a reversal only when the service lists the _r form', () => {
+    const listed = ['viridis', 'viridis_r', 'tornado_ef_scale']
+    expect(canReverseColormap('viridis', listed)).toBe(true)
+    expect(canReverseColormap('Viridis', listed)).toBe(true)
+    expect(canReverseColormap('tornado_ef_scale', listed)).toBe(false)
+})
+
+test('canReverseColormap allows every ramp with no service list', () => {
+    expect(canReverseColormap('jet', null)).toBe(true)
 })

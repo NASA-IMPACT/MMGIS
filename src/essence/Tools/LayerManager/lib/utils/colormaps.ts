@@ -30,6 +30,20 @@ export const applyColormapDirection = (base: string, reversed: boolean): string 
     return reversed ? `${normalized}_r` : normalized
 }
 
+/**
+ * Whether a ramp can be offered reversed: when the service lists its `_r`
+ * form. With no list to consult, every ramp can, since the bundled ramps
+ * reverse on the client.
+ */
+export const canReverseColormap = (
+    base: string,
+    available: string[] | null | undefined,
+): boolean => {
+    if (!available) return true
+    const reversed = `${getBaseColormapName(base).toLowerCase()}_r`
+    return available.some((name) => name.toLowerCase() === reversed)
+}
+
 /** Title-cased ramp name for display, e.g. `rd_yl_bu` -> `Rd yl bu`. */
 export const formatColormapLabel = (name: string): string => {
     const base = getBaseColormapName(name)

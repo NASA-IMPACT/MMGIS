@@ -13,6 +13,7 @@ import { ColorRampSwatch } from './ColorRampSwatch'
 import { useAvailableColormaps } from '../../hooks/useAvailableColormaps'
 import {
     applyColormapDirection,
+    canReverseColormap,
     getBaseColormapName,
     isReversedColormap,
     toForwardColormapNames,
@@ -82,6 +83,9 @@ export function ColorRampPicker({
         [availableColormaps],
     )
     const rampsUnavailable = !colormapsLoading && rampNames.length === 0
+    // A reversed ramp can always be turned back.
+    const reversible =
+        reversed || canReverseColormap(selectedBase, availableColormaps)
 
     // Track what the layer reports, so an externally applied rescale shows up
     // here. A focused range is a half-finished edit and is left alone —
@@ -210,7 +214,12 @@ export function ColorRampPicker({
                         reversed ? 'blocks-color-ramp-picker__reverse--active' : ''
                     }`}
                     onClick={handleReverseToggle}
-                    title="Reverse the ramp direction"
+                    disabled={!reversible}
+                    title={
+                        reversible
+                            ? 'Reverse the ramp direction'
+                            : 'This ramp has no reversed form'
+                    }
                 >
                     <i aria-hidden="true" className="mdi mdi-swap-horizontal mdi-14px" />
                     <span>Reverse</span>
