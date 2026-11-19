@@ -39,8 +39,7 @@ describe('resolveLayerTimeRanges', () => {
     })
 
     test('draws a period listed more than once as one box', () => {
-        // Two boxes over one period would stack, and the pair would read
-        // darker than its neighbours through the bars' shared opacity.
+        // Two spans over one period would draw the same box twice.
         const ranges = resolve({
             enabled: true,
             dataDates: [

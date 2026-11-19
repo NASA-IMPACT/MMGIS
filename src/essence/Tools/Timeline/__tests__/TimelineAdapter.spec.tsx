@@ -1434,3 +1434,147 @@ describe('TimelineAdapter header layers', () => {
         expect(container.textContent).toContain('No visible layers on the map')
     })
 })
+
+describe('TimelineAdapter layer groups', () => {
+    let container: HTMLElement
+    let root: Root
+    let originalResizeObserver: unknown
+    let visible: Record<string, boolean>
+    let order: string[]
+    let tree: unknown[]
+    let listeners: Record<string, Listener>
+
+    beforeEach(async () => {
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+        visible = { basemap: true, short: true }
+        order = ['basemap', 'short', 'sparse']
+        tree = [
+            { kind: 'layer', id: 'basemap' },
+            {
+                kind: 'group',
+                id: 'aqs',
+                children: [
+                    { kind: 'layer', id: 'short' },
+                    { kind: 'layer', id: 'sparse' },
+                ],
+            },
+        ]
+        listeners = {}
+        ;(window as unknown as { mmgisAPI: unknown }).mmgisAPI = {
+            request: async (name: string) => {
+                if (name === 'time:isEnabled') return true
+                if (name === 'time:getStart') return START
+                if (name === 'time:getEnd') return END
+                if (name === 'time:getCurrent') return CURRENT
+                if (name === 'tool:getVars') return {}
+                if (name === 'layers:getAllConfigs')
+                    return {
+                        ...LAYER_CONFIGS,
+                        aqs: { name: 'aqs', display_name: 'AQS', type: 'header' },
+                    }
+                if (name === 'layers:getVisible') return { ...visible }
+                if (name === 'layers:getOrder') return [...order]
+                if (name === 'layers:getTree') return tree
+                return null
+            },
+            hasHandler: () => true,
+            on: (event: string, handler: Listener) => {
+                listeners[event] = handler
+                return () => {}
+            },
+            emit: () => {},
+        }
+
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+        await act(async () => {
+            root.render(<TimelineAdapter />)
+        })
+        await act(async () => {})
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        delete (window as { mmgisAPI?: unknown }).mmgisAPI
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver
+    })
+
+    const labels = () =>
+        Array.from(
+            container.querySelectorAll('.layer-group-name, .layer-name')
+        ).map((el) => el.textContent)
+
+    const fire = async (event: string) => {
+        expect(listeners[event]).toBeDefined()
+        await act(async () => {
+            listeners[event]()
+        })
+        await act(async () => {})
+    }
+
+    test("titles each group from its header layer's config", () => {
+        expect(labels()).toEqual(['Basemap', 'AQS', 'Short Campaign'])
+    })
+
+    test('folds a mixed group into one row, its time-enabled bars painted over its gray ones', async () => {
+        tree = [
+            {
+                kind: 'group',
+                id: 'aqs',
+                children: [
+                    { kind: 'layer', id: 'basemap' },
+                    { kind: 'layer', id: 'short' },
+                ],
+            },
+        ]
+        await fire('layers:configChanged')
+        act(() => {
+            container
+                .querySelector<HTMLButtonElement>('.layer-group-item')!
+                .click()
+        })
+
+        expect(labels()).toEqual(['AQS'])
+        // In document order, which is paint order: later bars draw on top.
+        const bars = Array.from(
+            container.querySelectorAll<SVGRectElement>(
+                '.layer-timelines > g:first-child .layer-time-range'
+            )
+        )
+        expect(new Set(bars.map((bar) => bar.getAttribute('y'))).size).toBe(1)
+        expect(bars).toHaveLength(2)
+        expect(bars[0].style.fill).toContain('--theme-color-base,')
+        expect(bars[1].style.fill).toContain('--theme-color-secondary,')
+    })
+
+    test('follows a reorder of the layers', async () => {
+        order = ['short', 'sparse', 'basemap']
+
+        await fire('layers:orderChanged')
+
+        expect(labels()).toEqual(['AQS', 'Short Campaign', 'Basemap'])
+    })
+
+    test('keeps a group folded while no layer is visible', async () => {
+        act(() => {
+            container
+                .querySelector<HTMLButtonElement>('.layer-group-item')!
+                .click()
+        })
+        expect(labels()).toEqual(['Basemap', 'AQS'])
+
+        visible = {}
+        await fire('layer:visibilityChange')
+        expect(labels()).toEqual([])
+
+        visible = { short: true }
+        await fire('layer:visibilityChange')
+        expect(labels()).toEqual(['AQS'])
+    })
+})

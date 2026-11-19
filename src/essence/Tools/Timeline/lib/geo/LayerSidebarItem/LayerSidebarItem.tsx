@@ -2,12 +2,15 @@ import React from 'react'
 import type { LayerTimeData, TimeMode } from '../../types'
 import type { LayerNavigation } from '../../utils/layerNavigation'
 import { LayerNavControls } from '../LayerNavControls/LayerNavControls'
+import { GROUP_INDENT } from '../LayerGroupSidebarItem/LayerGroupSidebarItem'
 import './LayerSidebarItem.css'
 
 export interface LayerSidebarItemProps {
     layer: LayerTimeData
     /** The row pitch, shared with the chart row drawn beside it. */
     height: number
+    /** How many groups the layer sits inside; 0 when ungrouped. */
+    depth?: number
     /** The current time the navigation controls move away from. */
     currentTime: Date
     /** The timeline's granularity, the step a periodic layer moves by. */
@@ -41,6 +44,7 @@ const FIT_ICON =
 export const LayerSidebarItem: React.FC<LayerSidebarItemProps> = ({
     layer,
     height,
+    depth = 0,
     currentTime,
     timeMode,
     onNavigate,
@@ -61,7 +65,10 @@ export const LayerSidebarItem: React.FC<LayerSidebarItemProps> = ({
     const slotStyle = { '--layer-color': layer.color } as React.CSSProperties
 
     return (
-        <div className="layer-item" style={{ height, flexShrink: 0 }}>
+        <div
+            className="layer-item"
+            style={{ height, flexShrink: 0, paddingLeft: 10 + depth * GROUP_INDENT }}
+        >
             {layer.navigation ? (
                 <span className="layer-fit-slot" style={slotStyle}>
                     {dot}
