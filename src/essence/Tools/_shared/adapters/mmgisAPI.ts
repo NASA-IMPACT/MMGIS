@@ -525,6 +525,22 @@ export const mmgisGetTiTilerUrls = (): Promise<Record<
 }
 
 /**
+ * The colormap ramps core bundles, forward and `_r`, for a picker with no
+ * tiling service to list them. Null against a core without the handler.
+ */
+export const mmgisGetBundledColormapNames = (): Promise<string[] | null> =>
+    mmgisRequestIfProvided<string[]>('colormaps:getBundledNames')
+
+/**
+ * One bundled ramp's colours as core paints them. Null for a ramp core does
+ * not bundle, or against a core without the handler.
+ */
+export const mmgisGetBundledColormapColors = (
+    name: string,
+): Promise<string[] | null> =>
+    mmgisRequestIfProvided<string[]>('colormaps:getBundledColors', name)
+
+/**
  * Where the active mission's files are served from, e.g. `Missions/MSL/`.
  * Uploads configured through the Configure page are stored as paths relative
  * to this. Null before a mission loads, or against a core without the handler.

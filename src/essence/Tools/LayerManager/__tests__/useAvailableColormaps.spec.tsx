@@ -1,5 +1,7 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { useAvailableColormaps } from '../lib/hooks/useAvailableColormaps'
+import { setColormapFallback } from '../lib/utils/colormapCache'
+import { canReverseColormap } from '../lib/utils/colormaps'
 import { mountHook } from '../../_shared/__tests__/reactHarness'
 
 /**
@@ -84,6 +86,49 @@ describe('useAvailableColormaps', () => {
         const { unmount } = await mountHook(() => useAvailableColormaps(`${BASE}/`))
 
         expect(global.fetch).toHaveBeenCalledWith(`${BASE}/colorMaps`)
+        await unmount()
+    })
+})
+
+/**
+ * With no service, or one whose list cannot be read, the host's own ramps are
+ * listed instead, so a layer the host paints from bundled ramps can still
+ * change them.
+ */
+describe('useAvailableColormaps with a host fallback', () => {
+    const BUNDLED = ['jet', 'viridis', 'jet_r', 'viridis_r']
+    beforeEach(() => {
+        setColormapFallback({ list: async () => BUNDLED, colors: async () => null })
+    })
+    afterEach(() => setColormapFallback(null))
+
+    test('lists the bundled ramps when no service is supplied', async () => {
+        global.fetch = vi.fn() as never
+        const { result, unmount } = await mountHook(() => useAvailableColormaps(null))
+
+        await vi.waitFor(() => expect(result.current.loading).toBe(false))
+        expect(global.fetch).not.toHaveBeenCalled()
+        expect(result.current.colormaps).toEqual(['jet', 'jet_r', 'viridis', 'viridis_r'])
+        // A bundled ramp's reversed form is listed, so it can be reversed.
+        expect(canReverseColormap('jet', result.current.colormaps)).toBe(true)
+        await unmount()
+    })
+
+    test('lists the bundled ramps when the service list fails', async () => {
+        global.fetch = vi.fn(async () => ({ ok: false, status: 502 })) as never
+        const { result, unmount } = await mountHook(() => useAvailableColormaps(BASE))
+
+        await vi.waitFor(() => expect(result.current.loading).toBe(false))
+        expect(result.current.colormaps).toEqual(['jet', 'jet_r', 'viridis', 'viridis_r'])
+        await unmount()
+    })
+
+    test('keeps the service list when the service answers', async () => {
+        global.fetch = vi.fn(async () => okResponse(NAMES)) as never
+        const { result, unmount } = await mountHook(() => useAvailableColormaps(BASE))
+
+        await vi.waitFor(() => expect(result.current.loading).toBe(false))
+        expect(result.current.colormaps).toEqual(['accent', 'viridis', 'viridis_r'])
         await unmount()
     })
 })

@@ -3,6 +3,7 @@ import {
     fetchColormapColors,
     clearColormapCache,
     resolveTiTilerBase,
+    setColormapFallback,
 } from '../lib/utils/colormapCache.ts'
 
 const BASE = 'https://titiler.test'
@@ -94,5 +95,35 @@ test.describe('fetchColormapColors', () => {
         expect(await fetchColormapColors('viridis', null)).toBe(null)
         expect(await fetchColormapColors('', BASE)).toBe(null)
         expect(global.fetch).not.toHaveBeenCalled()
+    })
+})
+
+test.describe('fetchColormapColors with a host fallback', () => {
+    const BUNDLED_JET = ['rgb(0, 0, 128)', 'rgb(128, 0, 0)']
+    const colors = vi.fn(async (name) => (name === 'jet' ? BUNDLED_JET : null))
+    beforeEach(() => {
+        colors.mockClear()
+        setColormapFallback({ list: async () => null, colors })
+    })
+    afterEach(() => setColormapFallback(null))
+
+    test('draws a ramp from the fallback when no service is supplied', async () => {
+        global.fetch = vi.fn()
+        expect(await fetchColormapColors('jet', null)).toEqual(BUNDLED_JET)
+        expect(global.fetch).not.toHaveBeenCalled()
+    })
+
+    test('draws a ramp from the fallback when the service cannot', async () => {
+        global.fetch = vi.fn(async () => ({ ok: false, status: 404 }))
+        expect(await fetchColormapColors('jet', BASE)).toEqual(BUNDLED_JET)
+    })
+
+    test('prefers the service when it answers', async () => {
+        global.fetch = vi.fn(async () => okResponse(VIRIDIS))
+        expect(await fetchColormapColors('viridis', BASE)).toEqual([
+            'rgba(68, 1, 84, 1)',
+            'rgba(253, 231, 37, 1)',
+        ])
+        expect(colors).not.toHaveBeenCalled()
     })
 })

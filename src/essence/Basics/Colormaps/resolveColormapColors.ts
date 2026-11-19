@@ -39,6 +39,9 @@ const sampleLocal = (key: string): string[] => {
     return colors
 }
 
+/** The bundled ramps' names, forward only, in their published casing. */
+export const bundledColormapNames = (): string[] => Object.keys(jsColormapData)
+
 /** Whether the bundled ramps hold a name, so it resolves without a service. */
 export const isBundledColormap = (name: string | null | undefined): boolean =>
     findLocalKey(name) != null
