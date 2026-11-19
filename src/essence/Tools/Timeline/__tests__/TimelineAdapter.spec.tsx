@@ -1522,9 +1522,7 @@ describe('TimelineAdapter layer groups', () => {
         expect(labels()).toEqual(['Basemap', 'AQS', 'Short Campaign'])
     })
 
-    test('colours a folded group as time-enabled when a visible layer in it is', async () => {
-        // The group's first layer is not time-enabled, so the colour cannot
-        // come from its first layer alone.
+    test('folds a mixed group into one row, its time-enabled bars painted over its gray ones', async () => {
         tree = [
             {
                 kind: 'group',
@@ -1543,11 +1541,16 @@ describe('TimelineAdapter layer groups', () => {
         })
 
         expect(labels()).toEqual(['AQS'])
-        const folded = container.querySelector<SVGGElement>(
-            '.layer-timelines > g'
-        )!
-        const bar = folded.querySelector<SVGRectElement>('.layer-time-range')!
-        expect(bar.style.fill).toContain('--theme-color-secondary')
+        // In document order, which is paint order: later bars draw on top.
+        const bars = Array.from(
+            container.querySelectorAll<SVGRectElement>(
+                '.layer-timelines > g:first-child .layer-time-range'
+            )
+        )
+        expect(new Set(bars.map((bar) => bar.getAttribute('y'))).size).toBe(1)
+        expect(bars).toHaveLength(2)
+        expect(bars[0].style.fill).toContain('--theme-color-base,')
+        expect(bars[1].style.fill).toContain('--theme-color-secondary,')
     })
 
     test('follows a reorder of the layers', async () => {

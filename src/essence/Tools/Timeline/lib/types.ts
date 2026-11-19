@@ -19,6 +19,8 @@ export interface LayerTimeData {
     displayName: string
     timeRanges: TimeRange[]
     color: string
+    /** Whether the layer's data varies over time. */
+    timeEnabled?: boolean
     // Where the layer's own row can put the current time. Absent when the
     // layer names no instant to move to, which is how a row goes without
     // navigation controls.

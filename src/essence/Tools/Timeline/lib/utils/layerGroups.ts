@@ -10,8 +10,6 @@ export type LayerGroupNode =
           kind: 'group'
           id: string
           displayName: string
-          /** The colour of the group's bars while it is folded. */
-          color: string
           children: LayerGroupNode[]
       }
     | { kind: 'layer'; id: string }
@@ -30,11 +28,39 @@ export type TimelineRow =
           depth: number
           collapsed: boolean
           /**
-           * The group's combined coverage, drawn on its row while collapsed.
-           * Carries no navigation, so the row has no stepping controls.
+           * The group's coverage, drawn on its row while collapsed, in paint
+           * order: its untimed layers' bars, then its time-enabled layers'
+           * bars over them, so gray shows only where no time-enabled layer
+           * has data. Each is present only when the group holds such a
+           * layer. Neither carries navigation, so the row has no stepping
+           * controls.
            */
-          summary: LayerTimeData
+          coverage: LayerTimeData[]
       }
+
+/**
+ * One coverage per kind of layer in `members`, untimed first, each in the
+ * colour of its first layer.
+ */
+const groupCoverage = (
+    id: string,
+    displayName: string,
+    members: LayerTimeData[]
+): LayerTimeData[] =>
+    [false, true].flatMap((timeEnabled) => {
+        const kind = members.filter((m) => !!m.timeEnabled === timeEnabled)
+        if (kind.length === 0) return []
+        return [
+            {
+                name: id,
+                displayName,
+                color: kind[0].color,
+                timeEnabled,
+                timeRanges: kind.flatMap((m) => m.timeRanges),
+                navigation: null,
+            },
+        ]
+    })
 
 type Built = { rows: TimelineRow[]; members: LayerTimeData[]; rank: number }
 
@@ -86,13 +112,7 @@ export function buildTimelineRows(
                         displayName: node.displayName,
                         depth,
                         collapsed: isCollapsed,
-                        summary: {
-                            name: node.id,
-                            displayName: node.displayName,
-                            color: node.color,
-                            timeRanges: members.flatMap((m) => m.timeRanges),
-                            navigation: null,
-                        },
+                        coverage: groupCoverage(node.id, node.displayName, members),
                     },
                     ...(isCollapsed ? [] : children.flatMap((c) => c.rows)),
                 ],

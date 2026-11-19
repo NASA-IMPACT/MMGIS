@@ -184,8 +184,8 @@ describe('LayerTimeline', () => {
 
     /**
      * A sparse layer can list thousands of hours. Zoomed out, their floored
-     * boxes land on top of each other, and each stacked pair would read
-     * darker than its neighbours through the shared opacity.
+     * boxes land on top of each other, and drawing each would cost a box per
+     * hour for boxes that cannot be told apart.
      */
     test('draws spans whose boxes overlap as one box', () => {
         const rects = render(layerWith([hour(0), hour(3), hour(7)]))

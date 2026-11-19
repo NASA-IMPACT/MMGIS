@@ -791,14 +791,12 @@ describe('TimelineView layer groups', () => {
             kind: 'group',
             id: 'aqs',
             displayName: 'AQS',
-            color: '#c91b6e',
             children: [
                 { kind: 'layer', id: 'o3' },
                 {
                     kind: 'group',
                     id: 'nitrogen',
                     displayName: 'Nitrogen',
-                    color: '#c91b6e',
                     children: [{ kind: 'layer', id: 'no2' }],
                 },
             ],

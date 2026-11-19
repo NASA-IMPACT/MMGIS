@@ -612,10 +612,10 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                 {rows.map((row, index) => {
                                     const drawn =
                                         row.kind === 'layer'
-                                            ? row.layer
+                                            ? [row.layer]
                                             : row.collapsed
-                                              ? row.summary
-                                              : null
+                                              ? row.coverage
+                                              : []
                                     const y = headGutter + index * layerBarHeight
                                     return (
                                         <g
@@ -633,15 +633,16 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                                 fill="transparent"
                                                 className="layer-row-bg"
                                             />
-                                            {drawn && (
+                                            {drawn.map((layer, layerIndex) => (
                                                 <LayerTimeline
-                                                    layer={drawn}
+                                                    key={layerIndex}
+                                                    layer={layer}
                                                     xScale={transformedXScale}
                                                     bounds={bounds}
                                                     y={y}
                                                     height={layerBarHeight}
                                                 />
-                                            )}
+                                            ))}
                                         </g>
                                     )
                                 })}

@@ -10,11 +10,13 @@ const d = (iso: string) => new Date(`${iso}T00:00:00Z`)
 
 const layer = (
     name: string,
-    ranges: [string, string][] = [['2020-01-01', '2020-02-01']]
+    ranges: [string, string][] = [['2020-01-01', '2020-02-01']],
+    timeEnabled = true
 ): LayerTimeData => ({
     name,
     displayName: name.toUpperCase(),
     color: `#${name}`,
+    timeEnabled,
     timeRanges: ranges.map(([start, end]) => ({ start: d(start), end: d(end) })),
 })
 
@@ -25,7 +27,6 @@ const group = (
     kind: 'group',
     id,
     displayName: `Group ${id}`,
-    color: `#group-${id}`,
     children,
 })
 const leaf = (id: string): LayerGroupNode => ({ kind: 'layer', id })
@@ -76,31 +77,61 @@ describe('buildTimelineRows', () => {
         expect(outline(rows)).toEqual(['[g+]@0', 'c@0'])
     })
 
-    test("a group's row carries every range of the layers beneath it, in its own colour", () => {
-        const tree = [group('g', [leaf('a'), group('h', [leaf('b')])])]
-        const rows = buildTimelineRows(
-            tree,
-            [
-                layer('a', [['2020-01-01', '2020-02-01']]),
-                layer('b', [
-                    ['2020-01-15', '2020-03-01'],
-                    ['2020-06-01', '2020-07-01'],
-                ]),
-            ],
-            new Set(['g'])
+    const coverageOf = (rows: TimelineRow[]) => {
+        const row = rows[0]
+        if (row.kind !== 'group') throw new Error('expected a group row')
+        return row.coverage
+    }
+
+    test("a group's row paints its untimed coverage, then its time-enabled coverage over it", () => {
+        const tree = [group('g', [leaf('a'), group('h', [leaf('base'), leaf('b')])])]
+        const coverage = coverageOf(
+            buildTimelineRows(
+                tree,
+                [
+                    layer('a', [['2020-01-01', '2020-02-01']]),
+                    layer('base', [['2020-01-01', '2020-12-01']], false),
+                    layer('b', [
+                        ['2020-01-15', '2020-03-01'],
+                        ['2020-06-01', '2020-07-01'],
+                    ]),
+                ],
+                new Set(['g'])
+            )
         )
 
-        const row = rows[0]
-        expect(row.kind).toBe('group')
-        if (row.kind !== 'group') return
-        expect(row.summary.timeRanges).toEqual([
+        expect(coverage.map((c) => [c.timeEnabled, c.color])).toEqual([
+            [false, '#base'],
+            [true, '#a'],
+        ])
+        expect(coverage[0].timeRanges).toEqual([
+            { start: d('2020-01-01'), end: d('2020-12-01') },
+        ])
+        expect(coverage[1].timeRanges).toEqual([
             { start: d('2020-01-01'), end: d('2020-02-01') },
             { start: d('2020-01-15'), end: d('2020-03-01') },
             { start: d('2020-06-01'), end: d('2020-07-01') },
         ])
-        expect(row.summary.color).toBe('#group-g')
-        expect(row.summary.navigation).toBeNull()
-        expect(row.summary.displayName).toBe('Group g')
+        for (const c of coverage) {
+            expect(c.navigation).toBeNull()
+            expect(c.displayName).toBe('Group g')
+        }
+    })
+
+    test('a group holding one kind of layer paints one coverage', () => {
+        const timedOnly = coverageOf(
+            buildTimelineRows([group('g', [leaf('a')])], [layer('a')], none)
+        )
+        const untimedOnly = coverageOf(
+            buildTimelineRows(
+                [group('g', [leaf('a')])],
+                [layer('a', undefined, false)],
+                none
+            )
+        )
+
+        expect(timedOnly.map((c) => c.timeEnabled)).toEqual([true])
+        expect(untimedOnly.map((c) => c.timeEnabled)).toEqual([false])
     })
 
     test('nested groups indent and collapse independently', () => {
