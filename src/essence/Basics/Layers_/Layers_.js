@@ -157,7 +157,11 @@ async function legendFor(uuid) {
     const layerObj = L_.layers.data[uuid]
     if (layerObj == null) return null
     try {
-        return await buildLayerLegend(layerObj, titilerUrlFor(layerObj))
+        return await buildLayerLegend(
+            layerObj,
+            titilerUrlFor(layerObj),
+            L_.Map_?.engine?.engineType
+        )
     } catch (err) {
         console.warn(`Layers_: could not build a legend for '${uuid}'`, err)
         return NO_LEGEND
