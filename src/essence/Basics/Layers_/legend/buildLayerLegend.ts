@@ -80,7 +80,7 @@ const parseNumericValue = (
  * entries disagree on their unit (which is what a set of binned labels looks
  * like once each bin's remainder is read as a unit).
  */
-const readScaleValues = (
+export const readScaleValues = (
     entries: LegendEntry[]
 ): { numbers: number[]; unit: string | null } | null => {
     const parsed = entries.map((entry) => parseNumericValue(entry.value))
