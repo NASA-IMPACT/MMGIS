@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react'
-import { getColormapFallback, resolveTiTilerBase } from '../utils/colormapCache'
-import { parseColormapList } from '../utils/colormaps'
+import { getColormapSource } from '../utils/colormapSource'
 
 type Result = {
     colormaps: string[] | null
     loading: boolean
-    error: Error | null
 }
 
 /** Each ramp's reversed variant directly after its forward form. */
@@ -18,46 +16,29 @@ const sortColormaps = (names: string[]): string[] =>
     })
 
 /**
- * Ramp names the tiling service reports, sorted with each ramp's reversed
- * variant directly after its forward form. With no service supplied, or one
- * whose list cannot be read, the installed fallback's ramps are listed
- * instead (see setColormapFallback). Resolves to null when neither has a list,
- * which callers surface as "ramps unavailable" rather than an empty list.
+ * The ramp names the host offers for a layer, sorted with each ramp's
+ * reversed variant directly after its forward form. Null when the host has no
+ * list, which callers surface as "ramps unavailable" rather than an empty list.
  */
-export const useAvailableColormaps = (titilerUrl: string | null = null): Result => {
-    const baseUrl = resolveTiTilerBase(titilerUrl)
-    const fallback = getColormapFallback()
+export const useAvailableColormaps = (layerId: string): Result => {
+    const source = getColormapSource()
     const [colormaps, setColormaps] = useState<string[] | null>(null)
-    // Anything to ask is presumed to be loading from the first render, before
-    // the effect has had a chance to start the request. Without that, the
-    // empty initial list is indistinguishable from "no ramps exist" and
-    // callers flash an unavailable state on every mount.
-    const [loading, setLoading] = useState(() => baseUrl != null || fallback != null)
-    const [error, setError] = useState<Error | null>(null)
+    // Presumed loading from the first render, before the effect has had a
+    // chance to ask. Without that, the empty initial list is indistinguishable
+    // from "no ramps exist" and callers flash an unavailable state on every
+    // mount.
+    const [loading, setLoading] = useState(() => source != null)
 
     useEffect(() => {
         let cancelled = false
-        const fromService = async (): Promise<string[] | null> => {
-            if (baseUrl == null) return null
-            try {
-                const response = await fetch(`${baseUrl}/colorMaps`)
-                if (!response.ok) throw new Error(`Failed to fetch colormaps: ${response.status}`)
-                return parseColormapList(await response.json())
-            } catch (err) {
-                if (!cancelled) {
-                    console.warn('Failed to fetch available colormaps:', err)
-                    setError(err as Error)
-                }
-                return null
-            }
-        }
+        setLoading(source != null)
         const load = async () => {
-            setLoading(baseUrl != null || fallback != null)
-            setError(null)
-            const list =
-                (await fromService()) ??
-                (await fallback?.list().catch(() => null)) ??
-                null
+            const list = source
+                ? await source.list(layerId).catch((err) => {
+                      console.warn('Failed to list colormaps:', err)
+                      return null
+                  })
+                : null
             if (cancelled) return
             setColormaps(list ? sortColormaps(list) : null)
             setLoading(false)
@@ -66,7 +47,7 @@ export const useAvailableColormaps = (titilerUrl: string | null = null): Result 
         return () => {
             cancelled = true
         }
-    }, [baseUrl, fallback])
+    }, [layerId, source])
 
-    return { colormaps, loading, error }
+    return { colormaps, loading }
 }

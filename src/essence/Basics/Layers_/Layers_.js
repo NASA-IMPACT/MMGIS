@@ -49,6 +49,14 @@ import {
     isSameCoverage,
 } from '../TimeControl_/layerDataCoverage'
 import { buildLayerLegend } from './legend/buildLayerLegend'
+import {
+    listColormaps,
+    lookupColormapColors,
+} from '../Colormaps/resolveColormapColors'
+import {
+    getBaseColormapName,
+    isReversedColormap,
+} from '../Colormaps/colormapNaming'
 import { NO_LEGEND } from './legend/types'
 import { detached } from '../../mmgisAPI/providers/_shared'
 import { bbox } from '@turf/turf'
@@ -152,6 +160,55 @@ async function restyleColorByLayer(uuid) {
         console.error(`Layers_: could not restyle '${uuid}'`, err)
         return false
     }
+}
+
+/**
+ * Change a layer's colormap ramp, its bounds, or both, and repaint it. A vector
+ * layer coloured by a colormap `colorBy` setting has the setting rewritten and
+ * is restyled in place; a raster layer takes the runtime colormap fields its
+ * tile URL is compiled from and is refreshed.
+ *
+ * @param {string} uuid - A key of `L_.layers.data`.
+ * @param {{colormap?: string, min?: number, max?: number}} change - A ramp
+ * name, `_r`-suffixed for the reversed ramp, and/or both bounds.
+ * @returns {Promise<boolean>} Whether the layer took the change, repainted
+ * or not: a layer that is off takes it and shows it when turned on.
+ */
+async function setLayerColormap(uuid, { colormap, min, max } = {}) {
+    const layerObj = L_.layers.data[uuid]
+    if (!layerObj || !cogCapabilitiesFor(uuid).canChangeColormap) return false
+    const hasRamp = typeof colormap === 'string' && colormap !== ''
+    const hasRange = Number.isFinite(min) && Number.isFinite(max) && min < max
+    if (!hasRamp && !hasRange) return false
+
+    if (colorByColormapLayer(layerObj)) {
+        const colorBy = { ...layerObj.style.colorBy }
+        if (hasRamp) {
+            colorBy.colormap = getBaseColormapName(colormap)
+            colorBy.reversed = isReversedColormap(colormap)
+        }
+        if (hasRange) Object.assign(colorBy, { min, max })
+        layerObj.style = { ...layerObj.style, colorBy }
+        window.mmgisAPI?.emit?.('layers:configChanged', {
+            layerName: uuid,
+            keys: ['style'],
+        })
+        await restyleColorByLayer(uuid)
+        return true
+    }
+
+    // refreshTileLayer reads these keys over the mission-configured
+    // `cogColormap`/`cogMin`/`cogMax`, so the override has to use them too.
+    const updates = {}
+    if (hasRamp) updates.currentCogColormap = colormap
+    if (hasRange) Object.assign(updates, { currentCogMin: min, currentCogMax: max })
+    Object.assign(layerObj, updates)
+    window.mmgisAPI?.emit?.('layers:configChanged', {
+        layerName: uuid,
+        keys: Object.keys(updates),
+    })
+    await refreshTileLayer(uuid, updates)
+    return true
 }
 
 /**
@@ -741,6 +798,39 @@ const L_ = {
                     })
                     return urls
                 }),
+                // The ramp names a layer can be offered, forward and `_r`:
+                // its tiling service's list, or the bundled ramps when it has
+                // none. Null for an unknown layer.
+                window.mmgisAPI.provide('layers:getColormaps', (layerUUID) => {
+                    const uuid = L_.asLayerUUID(layerUUID)
+                    const layerObj = uuid == null ? null : L_.layers.data[uuid]
+                    return layerObj ? listColormaps(titilerUrlFor(layerObj)) : null
+                }),
+                // One ramp's colours as the layer's sources define them, for
+                // a swatch. Null for a ramp no source holds, rather than the
+                // fallback ramp a layer would paint with.
+                window.mmgisAPI.provide(
+                    'layers:getColormapColors',
+                    ({ layerUUID, colormap } = {}) => {
+                        const uuid = L_.asLayerUUID(layerUUID)
+                        const layerObj =
+                            uuid == null ? null : L_.layers.data[uuid]
+                        return layerObj
+                            ? lookupColormapColors(colormap, titilerUrlFor(layerObj))
+                            : null
+                    }
+                ),
+                // Changes a layer's ramp and/or bounds and repaints it. See
+                // setLayerColormap.
+                window.mmgisAPI.provide(
+                    'layers:setColormap',
+                    ({ layerUUID, colormap, min, max } = {}) => {
+                        const uuid = L_.asLayerUUID(layerUUID)
+                        return uuid == null
+                            ? false
+                            : setLayerColormap(uuid, { colormap, min, max })
+                    }
+                ),
                 window.mmgisAPI.provide('layers:isVisible', (layerUUID) => {
                     const uuid = L_.asLayerUUID(layerUUID)
                     return L_.layers.on?.[uuid] === true

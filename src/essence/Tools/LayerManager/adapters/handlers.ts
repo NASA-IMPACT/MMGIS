@@ -2,18 +2,17 @@ import {
     mmgisRequest,
     mmgisEmit,
     mmgisShowPlugin,
-    mmgisGetLayerCogCapabilities,
     mmgisGetLayerBounds,
     mmgisFitBounds,
     mmgisGetLayerOrder,
     mmgisSetLayerOrder,
     mmgisGetVisibleLayers,
     mmgisGetListedLayers,
-    mmgisGetLayerConfig,
     mmgisGetLayerConfigs,
     mmgisGetLayerTree,
     mmgisToggleLayerGroup,
     mmgisSetLayerGroupOpacity,
+    mmgisSetLayerColormap,
     type LayerConfig,
 } from '../../_shared/adapters/mmgisAPI'
 import {
@@ -22,19 +21,8 @@ import {
 } from '../lib/utils/constants'
 import { placeInTree, type Placement } from '../lib/utils/layerTree'
 import { filteredOutLayers } from '../lib/utils/filteredOut'
-import { getBaseColormapName, isReversedColormap } from '../lib/utils/colormaps'
 
 type Refresh = () => Promise<void> | void
-
-/**
- * Whether core accepts a colormap or rescale change for this layer, by its
- * config shape and tile source. The same verdict makes the controls editable
- * in the legend, so a write is only sent for a layer core can recompile.
- */
-const canChangeColormap = async (layerId: string): Promise<boolean> => {
-    const capabilities = await mmgisGetLayerCogCapabilities(layerId)
-    return capabilities?.canChangeColormap === true
-}
 
 export const toggleVisibility = async (layerId: string): Promise<void> => {
     const newVisibility = await mmgisRequest<boolean>('layers:toggle', layerId)
@@ -210,45 +198,10 @@ export const showAddLayer = (): void => {
         .catch((err) => console.warn('LayerManager: showAddLayer failed', err))
 }
 
-/**
- * Layer types core colours by `style.colorBy`, under their MMGIS and deck.gl
- * names. Any other type's `colorBy` is not read, so its ramp is a raster's.
- */
-const COLOR_BY_TYPES = new Set(['vector', 'vectortile', 'query', 'GeoJsonLayer', 'MVTLayer'])
-
-/**
- * Writes changes into a vector layer's `style.colorBy` setting when it is in
- * `colormap` mode, and has core repaint the layer from it.
- *
- * @returns False, having written nothing, for a layer not coloured that way.
- */
-const writeColorByColormap = async (
-    layerId: string,
-    changes: Record<string, unknown>,
-): Promise<boolean> => {
-    const config = await mmgisGetLayerConfig(layerId)
-    if (!COLOR_BY_TYPES.has(String(config?.type))) return false
-    const style = config?.style as Record<string, unknown> | undefined
-    const colorBy = style?.colorBy as Record<string, unknown> | undefined
-    if (colorBy?.mode !== 'colormap') return false
-    const updates = { style: { ...style, colorBy: { ...colorBy, ...changes } } }
-    await mmgisRequest('layers:updateConfig', { layerUUID: layerId, updates })
-    await mmgisRequest('layers:refresh', { layerUUID: layerId })
-    return true
-}
-
+// Core decides how a layer takes the change (a raster's tile URL or a vector
+// layer's colour setting) and refuses one the layer cannot take.
 export const setColormap = async (layerId: string, colormap: string, refresh: Refresh): Promise<void> => {
-    if (!(await canChangeColormap(layerId))) return
-    const restyled = await writeColorByColormap(layerId, {
-        colormap: getBaseColormapName(colormap),
-        reversed: isReversedColormap(colormap),
-    })
-    if (!restyled) {
-        await mmgisRequest('layers:updateConfig', { layerUUID: layerId, updates: { currentCogColormap: colormap } })
-        // applyCogFieldsToUrl prefers `currentCogColormap` over the mission-configured
-        // `cogColormap`, so the override key has to match the config write above.
-        await mmgisRequest('layers:refresh', { layerUUID: layerId, options: { currentCogColormap: colormap } })
-    }
+    if (!(await mmgisSetLayerColormap(layerId, { colormap }))) return
     mmgisEmit('layer:cogColormapChange', { layerName: layerId, colormap })
     await refresh()
 }
@@ -259,11 +212,7 @@ export const setRescale = async (
     max: number,
     refresh: Refresh,
 ): Promise<void> => {
-    if (!(await canChangeColormap(layerId))) return
-    if (!(await writeColorByColormap(layerId, { min, max }))) {
-        await mmgisRequest('layers:updateConfig', { layerUUID: layerId, updates: { currentCogMin: min, currentCogMax: max } })
-        await mmgisRequest('layers:refresh', { layerUUID: layerId, options: { currentCogMin: min, currentCogMax: max } })
-    }
+    if (!(await mmgisSetLayerColormap(layerId, { min, max }))) return
     mmgisEmit('layer:cogRescaleChange', { layerName: layerId, min, max })
     await refresh()
 }

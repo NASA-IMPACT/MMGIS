@@ -28,7 +28,6 @@ export type ColorRampPickerProps = {
     min: number | null
     max: number | null
     units?: string | null
-    titilerUrl?: string | null
     onColormapChange?: (layerId: string, colormap: string) => void
     onRescaleChange?: (layerId: string, min: number, max: number) => void
 }
@@ -47,7 +46,6 @@ export function ColorRampPicker({
     min,
     max,
     units,
-    titilerUrl,
     onColormapChange,
     onRescaleChange,
 }: ColorRampPickerProps) {
@@ -74,7 +72,7 @@ export function ColorRampPicker({
     const {
         colormaps: availableColormaps,
         loading: colormapsLoading,
-    } = useAvailableColormaps(titilerUrl)
+    } = useAvailableColormaps(layerId)
 
     // The service reports each ramp twice, forward and reversed; direction is
     // the toggle's job, so only the forward names are listed.
@@ -250,7 +248,7 @@ export function ColorRampPicker({
                                 name={name}
                                 reversed={reversed}
                                 selected={name.toLowerCase() === selectedBase}
-                                titilerUrl={titilerUrl}
+                                layerId={layerId}
                                 rootRef={listRef}
                                 onSelect={handleSelect}
                             />

@@ -1,17 +1,9 @@
-// Colormap naming, list parsing, and rescale validation.
+// Colormap naming, gradient building, and rescale validation.
 //
 // TiTiler encodes a ramp's direction in its name: `viridis` is the forward
 // ramp, `viridis_r` the reversed one, and `/colorMaps` reports both. The UI
 // treats direction as a separate toggle rather than two list entries, so these
 // helpers split a name into (base, reversed) and recombine it on apply.
-
-export type ColormapListResponse = {
-    // TiTiler <= 0.22 reports a flat array of names under `colorMaps`.
-    colorMaps?: unknown
-    // Later releases spell the key `colormaps` and carry each ramp as an
-    // object holding its name and links.
-    colormaps?: unknown
-}
 
 const REVERSED_SUFFIX = /_r$/i
 
@@ -31,9 +23,8 @@ export const applyColormapDirection = (base: string, reversed: boolean): string 
 }
 
 /**
- * Whether a ramp can be offered reversed: when the service lists its `_r`
- * form. With no list to consult, every ramp can, since the bundled ramps
- * reverse on the client.
+ * Whether a ramp can be offered reversed: when the host lists its `_r` form.
+ * With no list to consult, every ramp is offered both ways.
  */
 export const canReverseColormap = (
     base: string,
@@ -49,33 +40,6 @@ export const formatColormapLabel = (name: string): string => {
     const base = getBaseColormapName(name)
     if (!base) return ''
     return base.charAt(0).toUpperCase() + base.slice(1).replace(/_/g, ' ')
-}
-
-/**
- * Read a ramp-name list out of a `/colorMaps` payload. The endpoint's shape
- * varies across TiTiler releases — a flat array of names, or entries carrying
- * the name under `id`/`name` — so accept either rather than pinning the UI to
- * one deployment's version. Returns null when nothing recognizable is present.
- */
-export const parseColormapList = (data: unknown): string[] | null => {
-    if (data == null || typeof data !== 'object') return null
-    const payload = data as ColormapListResponse
-    const raw = payload.colorMaps ?? payload.colormaps
-    if (!Array.isArray(raw)) return null
-
-    const names = raw
-        .map((entry): string | null => {
-            if (typeof entry === 'string') return entry
-            if (entry && typeof entry === 'object') {
-                const record = entry as Record<string, unknown>
-                const id = record.id ?? record.name
-                if (typeof id === 'string') return id
-            }
-            return null
-        })
-        .filter((name): name is string => name != null && name.length > 0)
-
-    return names.length > 0 ? names : null
 }
 
 /** Forward-only ramp names, deduplicated and alphabetized. */
@@ -100,32 +64,6 @@ export const buildGradientCss = (colors: string[] | null | undefined): string =>
     return `linear-gradient(to right, ${colors
         .map((color, i) => `${color} ${i * step}%`)
         .join(', ')})`
-}
-
-/**
- * Convert TiTiler's index -> RGBA map into ordered CSS color strings. Object
- * keys are numeric strings, whose insertion order is not guaranteed to be the
- * ramp order, so sort numerically before reading them off.
- */
-export const colormapResponseToColors = (data: unknown): string[] | null => {
-    if (data == null || typeof data !== 'object') return null
-    const entries = data as Record<string, unknown>
-    const indices = Object.keys(entries)
-        .map(Number)
-        .filter((index) => !Number.isNaN(index))
-        .sort((a, b) => a - b)
-    if (indices.length === 0) return null
-
-    const colors = indices
-        .map((index) => {
-            const channels = entries[String(index)]
-            if (!Array.isArray(channels) || channels.length < 3) return null
-            const [r, g, b, a = 255] = channels as number[]
-            return `rgba(${r}, ${g}, ${b}, ${a / 255})`
-        })
-        .filter((color): color is string => color != null)
-
-    return colors.length > 0 ? colors : null
 }
 
 export type RescaleValidation =

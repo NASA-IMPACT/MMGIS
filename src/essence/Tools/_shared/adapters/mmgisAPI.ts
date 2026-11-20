@@ -525,20 +525,38 @@ export const mmgisGetTiTilerUrls = (): Promise<Record<
 }
 
 /**
- * The colormap ramps core bundles, forward and `_r`, for a picker with no
- * tiling service to list them. Null against a core without the handler.
+ * The ramp names a layer can be offered, forward and `_r`. Null for an
+ * unknown layer, or against a core without the handler.
  */
-export const mmgisGetBundledColormapNames = (): Promise<string[] | null> =>
-    mmgisRequestIfProvided<string[]>('colormaps:getBundledNames')
+export const mmgisGetLayerColormaps = (layerId: string): Promise<string[] | null> =>
+    mmgisRequestIfProvided<string[]>('layers:getColormaps', layerId)
 
 /**
- * One bundled ramp's colours as core paints them. Null for a ramp core does
- * not bundle, or against a core without the handler.
+ * One ramp's colours as the layer's sources define them, `_r` for reversed.
+ * Null for a ramp none holds, or against a core without the handler.
  */
-export const mmgisGetBundledColormapColors = (
-    name: string,
+export const mmgisGetLayerColormapColors = (
+    layerId: string,
+    colormap: string,
 ): Promise<string[] | null> =>
-    mmgisRequestIfProvided<string[]>('colormaps:getBundledColors', name)
+    mmgisRequestIfProvided<string[]>('layers:getColormapColors', {
+        layerUUID: layerId,
+        colormap,
+    })
+
+/**
+ * Change a layer's ramp (`_r` for reversed), its bounds, or both; core
+ * repaints it. False when the layer cannot take the change, or against a core
+ * without the handler.
+ */
+export const mmgisSetLayerColormap = async (
+    layerId: string,
+    change: { colormap?: string; min?: number; max?: number },
+): Promise<boolean> =>
+    (await mmgisRequestIfProvided<boolean>('layers:setColormap', {
+        layerUUID: layerId,
+        ...change,
+    })) === true
 
 /**
  * Where the active mission's files are served from, e.g. `Missions/MSL/`.

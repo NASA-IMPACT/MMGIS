@@ -60,10 +60,9 @@ import {
 } from './LegendStyle'
 import { toCanonicalLayerType } from '../MapEngines/types/engine'
 import {
-    isBundledColormap,
+    lookupColormapColors,
     resolveColormapColors,
 } from '../Colormaps/resolveColormapColors'
-import { fetchColormapColors } from '../Colormaps/titilerColormaps'
 import {
     getBaseColormapName,
     isReversedColormap,
@@ -374,14 +373,12 @@ export async function loadColormapRamp(
 ): Promise<string[] | null> {
     const cached = ramps.get(rampKey(name))
     if (cached) return cached
-    const colors = await resolveColormapColors(name, titilerUrl)
-    // The service lookup is memoised, so asking again costs no request.
-    const defined =
-        isBundledColormap(name) ||
-        (await fetchColormapColors(name, titilerUrl)) != null
-    if (defined && colors && colors.length > 0)
-        ramps.set(rampKey(name), colors)
-    return colors
+    const defined = await lookupColormapColors(name, titilerUrl)
+    if (defined && defined.length > 0) {
+        ramps.set(rampKey(name), defined)
+        return defined
+    }
+    return resolveColormapColors(name, titilerUrl)
 }
 
 const toFinite = (value: unknown): number | null => {

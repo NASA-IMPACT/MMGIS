@@ -33,18 +33,17 @@ import {
     mmgisGetLayerConfigs,
     type LayerDataCoverageChange,
     type LayerTreeNode,
-    mmgisGetBundledColormapNames,
-    mmgisGetBundledColormapColors,
+    mmgisGetLayerColormaps,
+    mmgisGetLayerColormapColors,
     type LayerConfig,
 } from '../_shared/adapters/mmgisAPI'
 import { getGroupInfo } from '../_shared/adapters/groupInfo'
-import { setColormapFallback } from './lib/utils/colormapCache'
+import { setColormapSource } from './lib/utils/colormapSource'
 
-// A layer with no tiling service to list ramps from — or one that cannot —
-// is offered core's bundled ramps, the ones it paints with.
-setColormapFallback({
-    list: mmgisGetBundledColormapNames,
-    colors: mmgisGetBundledColormapColors,
+// The ramp picker offers and previews the ramps core paints layers with.
+setColormapSource({
+    list: mmgisGetLayerColormaps,
+    colors: mmgisGetLayerColormapColors,
 })
 
 type ToolVars = { showOnlyVisible?: boolean; width?: number }

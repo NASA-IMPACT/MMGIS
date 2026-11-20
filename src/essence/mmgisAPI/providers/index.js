@@ -1,6 +1,5 @@
 import { registerPanelProviders } from './panels'
 import { registerPluginProviders } from './plugins'
-import { registerColormapProviders } from './colormaps'
 
 /**
  * Register every core provider against the bus.
@@ -12,5 +11,4 @@ import { registerColormapProviders } from './colormaps'
 export function registerCoreProviders(api, { getPanelManager, getPluginController }) {
     registerPanelProviders(api, getPanelManager)
     registerPluginProviders(api, getPluginController)
-    registerColormapProviders(api)
 }
