@@ -524,6 +524,12 @@ export function mapResponseSeries(
     return series
 }
 
+// Enough of a comparison to keep a mismatch warning quiet over spelling:
+// the two micro signs, case and surrounding space.
+const looselySameLabel = (a: string, b: string) =>
+    a.replace(/\u00B5/g, '\u03BC').trim().toLowerCase() ===
+    b.replace(/\u00B5/g, '\u03BC').trim().toLowerCase()
+
 function findGroup(
     groups: unknown,
     key: string,
@@ -573,8 +579,25 @@ export function buildPayload(args: {
     layerDisplayName: string
     layerName: string
     featureId?: string | number
+    /** The unit the layer declares; it outranks what the response says. */
+    layerUnit?: string | null
 }): ChartSeriesPayload {
     const mapped = mapResponseSeries(args.response, args.config)
+    const layerUnit = args.layerUnit || undefined
+    if (layerUnit) {
+        const differing = mapped
+            .map((m) => m.unit)
+            .filter((u): u is string => !!u && !looselySameLabel(u, layerUnit))
+        if (differing.length) {
+            console.warn(
+                `[FetchTimeseries] ${args.layerDisplayName}: the response names ${[
+                    ...new Set(differing),
+                ]
+                    .map((u) => `'${u}'`)
+                    .join(', ')} but the layer declares '${layerUnit}'; showing the layer's`,
+            )
+        }
+    }
     const pointCount = mapped.reduce((n, m) => n + m.points.length, 0)
     const note = truncationNote(args.response, pointCount)
     // Only a declared cadence travels: without one the chart keeps its own
@@ -605,7 +628,7 @@ export function buildPayload(args: {
                     m.key !== ''
                         ? m.key
                         : args.config.label || args.layerDisplayName,
-                unit: m.unit,
+                unit: layerUnit ?? m.unit,
                 points: m.points,
                 ...(group?.label ? { displayLabel: group.label } : {}),
                 ...(group?.title ? { title: withNote(group.title) } : {}),

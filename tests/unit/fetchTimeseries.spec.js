@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect, vi } from 'vitest'
 import {
     getTimeseriesConfig,
     templateUrl,
@@ -625,6 +625,41 @@ describe('fetchTimeseries lib', () => {
     })
 
     describe('buildPayload', () => {
+        test("the layer's declared unit outranks the response's, and a mismatch is warned", () => {
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+            const base = {
+                chartId: 'c',
+                response: AQS_RESPONSE,
+                config: { ...AQS_CONFIG },
+                title: 'Site',
+                layerDisplayName: 'AQS PM2.5',
+                layerName: 'uuid-1',
+            }
+            const declared = buildPayload({ ...base, layerUnit: 'µg/m³' })
+            expect(declared.series.every((s) => s.unit === 'µg/m³')).toBe(true)
+            expect(warn).toHaveBeenCalledTimes(1)
+            expect(warn.mock.calls[0][0]).toContain("declares 'µg/m³'")
+
+            warn.mockClear()
+            const spelled = buildPayload({
+                ...base,
+                response: [
+                    { datetime: '2026-01-01', value: 1, u: '\u00B5g/m³' },
+                ],
+                config: { url: 'x', unitKey: 'u' },
+                layerUnit: ' \u03BCG/M³ ',
+            })
+            expect(spelled.series[0].unit).toBe(' \u03BCG/M³ ')
+            expect(warn).not.toHaveBeenCalled()
+
+            const undeclared = buildPayload({ ...base, layerUnit: null })
+            expect(undeclared.series.map((s) => s.unit)).toEqual(
+                mapResponseSeries(AQS_RESPONSE, AQS_CONFIG).map((s) => s.unit),
+            )
+            expect(warn).not.toHaveBeenCalled()
+            warn.mockRestore()
+        })
+
         test('produces a valid single-series time payload with provenance', () => {
             const payload = buildPayload({
                 chartId: 'vector-timeseries',

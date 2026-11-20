@@ -45,6 +45,7 @@ import {
     mmgisEmit,
     mmgisForPlugin,
     mmgisGetLayerConfigs,
+    mmgisGetLayerUnits,
     mmgisOn,
     mmgisRequest,
 } from '../_shared/adapters/mmgisAPI'
@@ -155,11 +156,16 @@ const FeaturePopupTool = {
         Promise.all([
             mmgisGetLayerConfigs(),
             mmgisRequest('map:getEngineType'),
+            // Units are a courtesy: a core without the provider, or one that
+            // fails to answer, leaves every value printed bare as before.
+            mmgisGetLayerUnits().catch(() => null),
         ])
-            .then(([configs, engineType]) => {
+            .then(([configs, engineType, units]) => {
                 if (token !== this._readToken) return
                 this._configs =
-                    engineType === LEAFLET ? new Map() : optedInLayers(configs)
+                    engineType === LEAFLET
+                        ? new Map()
+                        : optedInLayers(configs, units)
             })
             .catch((err) => {
                 if (token !== this._readToken) return
@@ -188,7 +194,7 @@ const FeaturePopupTool = {
 
         const properties = info.feature.properties || {}
         const title = cardTitle(properties, config)
-        const html = propertyTable(properties, config.popup.properties)
+        const html = propertyTable(properties, config.popup.properties, config.unit)
         // The service refuses a card with neither, and leaves the open one in
         // place when it does. Take ours down instead, so a card never outlives
         // the feature it describes.
@@ -584,7 +590,7 @@ function cardTitle(properties, config) {
  * handed, which stops a script from running but not a value holding `<` from
  * swallowing the rest of the row.
  */
-function propertyTable(properties, keys) {
+function propertyTable(properties, keys, unit = null) {
     // Configure stores this list by splitting on commas and nothing else, so
     // 'depth_m, sample_class' arrives with the space still attached; the
     // parser trims it, along with the space around a label's pipe.
@@ -598,7 +604,7 @@ function propertyTable(properties, keys) {
         .map(
             ({ prop, label }) =>
                 `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(
-                    formatValue(readProperty(properties, prop))
+                    formatValue(readProperty(properties, prop), prop, unit)
                 )}</td></tr>`
         )
     return rows.length ? `<table>${rows.join('')}</table>` : undefined
@@ -616,8 +622,12 @@ function readProperty(properties, key) {
     return getIn(properties, key)
 }
 
-/** A nested value would otherwise reach the card as '[object Object]'. */
-function formatValue(value) {
+/**
+ * A nested value would otherwise reach the card as '[object Object]'. The
+ * layer's measured property prints with the layer's unit after it, so the
+ * label no longer has to carry the unit by hand.
+ */
+function formatValue(value, prop, unit) {
     if (typeof value === 'object') {
         try {
             return JSON.stringify(value)
@@ -625,7 +635,17 @@ function formatValue(value) {
             return String(value)
         }
     }
-    return String(value)
+    const text = String(value)
+    if (unit && prop === unit.property && isMeasurement(value)) {
+        return `${text} ${unit.source_unit}`
+    }
+    return text
+}
+
+/** A number, or a string holding one, which CSV-derived data often stores. */
+function isMeasurement(value) {
+    if (typeof value === 'number') return Number.isFinite(value)
+    return isNonBlank(value) && Number.isFinite(Number(value))
 }
 
 function escapeHtml(value) {
@@ -644,15 +664,17 @@ function escapeHtml(value) {
  * the fields an admin touches, so a block can exist because someone filled in
  * a heading and left the switch alone.
  */
-function optedInLayers(configs) {
+function optedInLayers(configs, units) {
     const opted = new Map()
     Object.entries(configs || {}).forEach(([id, layer]) => {
         const popup = layer?.variables?.featurePopup
         if (popup && popup.enabled === true) {
+            const unit = units && typeof units === 'object' ? units[id] : null
             opted.set(id, {
                 popup,
                 useKeyAsName: layer.variables.useKeyAsName,
                 actions: resolveActions(popup.actions, id),
+                unit: unit && unit.property ? unit : null,
             })
         }
     })

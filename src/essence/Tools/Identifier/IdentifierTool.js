@@ -5,6 +5,7 @@ import { isStaticBuild } from '../../../pre/capabilities'
 import { utcFormat } from 'd3-time-format'
 import F_ from '../../Basics/Formulae_/Formulae_'
 import L_ from '../../Basics/Layers_/Layers_'
+import { resolveLayerUnit } from '../../Basics/Layers_/units/units'
 import Map_ from '../../Basics/Map_/Map_'
 import Globe_ from '../../Basics/Globe_/Globe_'
 import CursorInfo from '../../Ancillary/CursorInfo'
@@ -339,8 +340,9 @@ var IdentifierTool = {
                         url: IdentifierTool.activeLayerURLs[i],
                         bands: 1,
                         units:
-                            L_.layers.data[IdentifierTool.activeLayerNames[i]]
-                                .cogUnits || '',
+                            resolveLayerUnit(
+                                L_.layers.data[IdentifierTool.activeLayerNames[i]]
+                            )?.source_unit || '',
                         sigfigs: 2,
                         scalefactor: 1,
                     },
@@ -385,7 +387,18 @@ var IdentifierTool = {
                                         )
                                         let cnt = 0
                                         for (let v in value) {
-                                            let unit = d2.units || ''
+                                            // Configure writes `unit` on an entry; `units` is
+                                            // what an automatic entry carries from its layer.
+                                            let unit =
+                                                d2.unit ||
+                                                d2.units ||
+                                                resolveLayerUnit(
+                                                    L_.layers.data[
+                                                        IdentifierTool
+                                                            .activeLayerNames[i]
+                                                    ]
+                                                )?.source_unit ||
+                                                ''
                                             if (
                                                 d2.units &&
                                                 d2.units.constructor ===
