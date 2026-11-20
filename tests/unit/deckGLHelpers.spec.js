@@ -531,6 +531,43 @@ test.describe('DeckGLHelpers', () => {
             ).toEqual([255, 0, 0, 255])
         })
 
+        test.describe('colorBy', () => {
+            const colorBy = {
+                mode: 'ranges',
+                property: 'frp',
+                ranges: [
+                    { min: 0, color: '#ff0000' },
+                    { min: 10, color: '#0000ff' },
+                ],
+            }
+
+            test.each([['vectortile'], ['vector']])(
+                'colours %s fills by value over legend rows and *Prop colours',
+                (type) => {
+                    const layer = rampedLayer(`colorby-${type}`, type, {
+                        colorBy,
+                        fillColorProp: 'c',
+                    })
+                    const feature = { properties: { frp: 12, co2: 400, c: '#ffffff' } }
+                    expect(layer.props.getFillColor(feature)).toEqual([0, 0, 255, 255])
+                    // The stroke is left alone without applyToStroke, legend rows included.
+                    expect(layer.props.getLineColor(feature)).toEqual([0, 255, 0, 255])
+                }
+            )
+
+            test('reads properties a geodataset tile packs into one string', () => {
+                const layer = rampedLayer('colorby-packed', 'vectortile', { colorBy })
+                const packed = { properties: { id: 1, properties: '{"frp": 3}' } }
+                expect(layer.props.getFillColor(packed)).toEqual([255, 0, 0, 255])
+            })
+
+            test('decodes vector tiles as GeoJSON, and fingerprints the setting', () => {
+                const layer = rampedLayer('colorby-binary', 'vectortile', { colorBy })
+                expect(layer.props.binary).toBe(false)
+                expect(layer.props.updateTriggers.getFillColor).toContain('#0000ff')
+            })
+        })
+
         test('keeps the layer opacity when a legend supplies the colour', () => {
             const layer = rampedLayer('legend-opacity', 'vectortile', {
                 fillOpacity: 0.5,

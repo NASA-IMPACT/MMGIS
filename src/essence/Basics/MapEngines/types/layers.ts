@@ -69,6 +69,8 @@ export interface TileLayerOptions extends LayerOptions {
  *   style.color (hex) + style.opacity → getLineColor [r,g,b,a]
  *   style.weight → getLineWidth (pixels)
  *   style.radius → getPointRadius (pixels)
+ *   style.colorBy → getFillColor, and getLineColor with applyToStroke, per
+ *     feature (see ColorBy); it outranks `legend` and the colour fields
  *
  * deck.gl GeoJsonLayer specific props like pointType, lineWidthUnits,
  * lineJointRounded, elevationScale, extruded, material etc. are passed
