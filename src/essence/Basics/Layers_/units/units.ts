@@ -40,15 +40,24 @@ export const sameUnit = (a: unknown, b: unknown): boolean => {
     return left !== '' && left === normalize(b)
 }
 
-const isUsableOption = (option: unknown): option is UnitOption =>
-    option != null &&
-    typeof option === 'object' &&
-    typeof (option as UnitOption).label === 'string' &&
-    (option as UnitOption).label.trim() !== '' &&
-    Number.isFinite((option as UnitOption).scale) &&
-    (option as UnitOption).scale !== 0 &&
-    ((option as UnitOption).offset == null ||
-        Number.isFinite((option as UnitOption).offset))
+// Configure's number fields store what was typed, so a factor may arrive as
+// '0.001'; a blank offset means none.
+const asNumber = (value: unknown): number | undefined => {
+    if (value == null || value === '') return undefined
+    const num = typeof value === 'number' ? value : Number(value)
+    return Number.isFinite(num) ? num : NaN
+}
+
+const usableOption = (option: unknown): UnitOption | null => {
+    if (option == null || typeof option !== 'object') return null
+    const { label, scale, offset } = option as Record<string, unknown>
+    if (typeof label !== 'string' || label.trim() === '') return null
+    const factor = asNumber(scale)
+    if (factor === undefined || !Number.isFinite(factor) || factor === 0) return null
+    const shift = asNumber(offset)
+    if (shift !== undefined && !Number.isFinite(shift)) return null
+    return { label: label.trim(), scale: factor, ...(shift != null ? { offset: shift } : {}) }
+}
 
 const declaredUnit = (config: LayerConfig): LayerUnit | null => {
     const unit = config.variables?.unit as Partial<LayerUnit> | undefined
@@ -56,7 +65,7 @@ const declaredUnit = (config: LayerConfig): LayerUnit | null => {
     if (typeof unit.source_unit !== 'string' || unit.source_unit.trim() === '')
         return null
     const options = Array.isArray(unit.options)
-        ? unit.options.filter(isUsableOption)
+        ? unit.options.map(usableOption).filter((o): o is UnitOption => o !== null)
         : []
     return {
         source_unit: unit.source_unit.trim(),

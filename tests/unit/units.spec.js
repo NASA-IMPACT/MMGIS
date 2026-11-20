@@ -68,6 +68,24 @@ describe('resolveLayerUnit', () => {
         })
         expect(unit.options).toEqual([{ label: 'ft', scale: 3.28084 }])
     })
+    it('reads a factor or offset typed as a string, and a blank offset as none', () => {
+        const unit = resolveLayerUnit({
+            variables: {
+                unit: {
+                    source_unit: 'K',
+                    options: [
+                        { label: '°C', scale: '1', offset: '-273.15' },
+                        { label: ' mK ', scale: '1000', offset: '' },
+                        { label: 'bad', scale: 'abc' },
+                    ],
+                },
+            },
+        })
+        expect(unit.options).toEqual([
+            { label: '°C', scale: 1, offset: -273.15 },
+            { label: 'mK', scale: 1000 },
+        ])
+    })
     it('falls back to cogUnits', () => {
         expect(resolveLayerUnit({ cogUnits: 'molec/cm²' })).toEqual({
             source_unit: 'molec/cm²',
