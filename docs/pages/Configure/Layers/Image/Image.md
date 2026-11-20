@@ -25,6 +25,22 @@ A file path that points to a GeoTIFF or COG image. If the path is relative, it w
 _type:_ string  
 An absolute or relative file path pointing to a `legend.csv` that describes the symbology of the layer. Please see the Legend Tool to see how to form a `legend.csv`.
 
+#### Unit
+
+_type:_ object  
+Declares the unit the layer's data is in, which the legend, the feature popup, the timeseries card and the Identifier all print. Set on the Legend tab as `variables.unit`:
+
+- **Unit** (`source_unit`): the data's unit, e.g. `μg/m³`. Wins over the raster Units field and over a unit written into the legend labels.
+- **Show In** (`display_unit`): the unit to show by default; one of the options, or empty for the data's own.
+- **Unit Options** (`options`): other units the layer can be shown in, each a `label`, a `scale` and an optional `offset`, converting as `shown = value × scale + offset`. A layer with options shows a unit picker on its legend card; picking one relabels the legend bounds, the popup value and the timeseries together. Colors never change, only the printed numbers. The factor is often specific to the layer (μg/m³ to ppb depends on the pollutant).
+
+```json
+"unit": {
+  "source_unit": "μg/m³",
+  "options": [{ "label": "mg/m³", "scale": 0.001 }]
+}
+```
+
 #### Fill min/max
 
 _type:_ bool  

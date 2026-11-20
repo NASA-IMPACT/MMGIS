@@ -147,7 +147,7 @@
             {
               "field": "cogUnits",
               "name": "Units",
-              "description": "Units string by which to suffix values. For instance if the units are meters, use 'm' so that values are displayed as '100m'.",
+              "description": "Units string by which to suffix values. For instance if the units are meters, use 'm' so that values are displayed as '100m'. The Legend tab's Unit wins over this when set.",
               "type": "textnotrim",
               "width": 2
             },
@@ -232,6 +232,61 @@
               "description": "Hide layer name in the legend.",
               "type": "checkbox",
               "width": 2
+            }
+          ]
+        },
+        {
+          "name": "Unit",
+          "components": [
+            {
+              "field": "variables.unit.source_unit",
+              "name": "Unit",
+              "description": "The unit the layer's data is in, e.g. 'μg/m³' or 'ppb'. Printed by the legend, the feature popup, the timeseries card and the Identifier. When set it wins over the raster Units field and over any unit written into the legend labels.",
+              "type": "textnotrim",
+              "width": 3
+            },
+            {
+              "field": "variables.unit.display_unit",
+              "name": "Show In",
+              "description": "The unit to show the layer in by default. One of the options below, or empty to show the data's own unit.",
+              "type": "textnotrim",
+              "width": 3
+            }
+          ]
+        },
+        {
+          "components": [
+            {
+              "field": "variables.unit.options",
+              "name": "Unit Options",
+              "description": "Other units the layer can be shown in. A viewer picks one on the layer's legend card and the legend, popup and timeseries follow. Each converts from the data's unit as shown = value × Factor + Offset. The factor is often specific to this layer: µg/m³ to ppb depends on the pollutant's molecular weight. Colors never change; only the printed numbers do.",
+              "type": "objectarray",
+              "width": 12,
+              "object": [
+                {
+                  "field": "label",
+                  "name": "Label",
+                  "description": "The unit as printed, e.g. 'mg/m³'.",
+                  "type": "textnotrim",
+                  "width": 4
+                },
+                {
+                  "field": "scale",
+                  "name": "Factor",
+                  "description": "Multiply a value in the data's unit by this. 0.001 turns µg/m³ into mg/m³.",
+                  "type": "number",
+                  "step": "any",
+                  "width": 4
+                },
+                {
+                  "field": "offset",
+                  "name": "Offset",
+                  "description": "Added after the factor. 0 unless the units differ by a shift, e.g. -273.15 for K to °C.",
+                  "type": "number",
+                  "step": "any",
+                  "width": 4
+                }
+              ]
             }
           ]
         },
