@@ -11,6 +11,8 @@ import {
     mmgisGetListedLayers,
     mmgisGetLayerConfigs,
     mmgisGetLayerTree,
+    mmgisGetLayerUnit,
+    mmgisSetLayerUnit,
     mmgisToggleLayerGroup,
     mmgisSetLayerGroupOpacity,
     type LayerConfig,
@@ -218,13 +220,31 @@ export const setColormap = async (layerId: string, colormap: string, refresh: Re
     await refresh()
 }
 
+/**
+ * Shows a layer in one of the units core lists for it. Core keeps the state
+ * and announces the change, so nothing is emitted here. True when it took.
+ */
+export const setUnit = async (layerId: string, unit: string): Promise<boolean> =>
+    (await mmgisSetLayerUnit(layerId, unit)) === true
+
+/**
+ * Writes the bounds the viewer typed. They are read against the unit the
+ * legend shows, which may be a converted one, while the tiles are rescaled
+ * in the data's unit; so the bounds go back through the shown unit's map
+ * before anything is stored or announced.
+ */
 export const setRescale = async (
     layerId: string,
-    min: number,
-    max: number,
+    shownMin: number,
+    shownMax: number,
     refresh: Refresh,
 ): Promise<void> => {
     if (!(await canChangeColormap(layerId))) return
+    const active = (await mmgisGetLayerUnit(layerId).catch(() => null))?.active
+    const toSource = (value: number) =>
+        active ? Number(((value - active.offset) / active.scale).toPrecision(12)) : value
+    const min = toSource(shownMin)
+    const max = toSource(shownMax)
     await mmgisRequest('layers:updateConfig', { layerUUID: layerId, updates: { currentCogMin: min, currentCogMax: max } })
     await mmgisRequest('layers:refresh', { layerUUID: layerId, options: { currentCogMin: min, currentCogMax: max } })
     mmgisEmit('layer:cogRescaleChange', { layerName: layerId, min, max })

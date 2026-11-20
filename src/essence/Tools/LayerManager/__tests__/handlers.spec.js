@@ -7,6 +7,7 @@ import {
     setOpacity,
     setColormap,
     setRescale,
+    setUnit,
     zoomToLayer,
     compareLayer,
     showAddLayer,
@@ -205,6 +206,40 @@ test.describe('handlers', () => {
             event: 'layer:cogRescaleChange',
             payload: { layerName: 'layerA', min: 0, max: 5 },
         })
+    })
+
+    test('setRescale stores bounds typed in a shown unit back in the data\'s unit', async () => {
+        const { requests, emitCalls } = setupMock({
+            ...COG_LAYER,
+            'layers:getUnit': {
+                source_unit: 'µg/m³',
+                property: null,
+                active: { source_unit: 'µg/m³', label: 'mg/m³', scale: 0.001, offset: 0 },
+                options: [],
+            },
+        })
+        await setRescale('layerA', 0.002, 0.02, () => {})
+
+        const update = requests.find((r) => r.name === 'layers:updateConfig')
+        expect(update.params.updates).toEqual({ currentCogMin: 2, currentCogMax: 20 })
+        expect(emitCalls).toContainEqual({
+            event: 'layer:cogRescaleChange',
+            payload: { layerName: 'layerA', min: 2, max: 20 },
+        })
+    })
+
+    test('setUnit asks core and reports whether it took, emitting nothing itself', async () => {
+        const { requests, emitCalls } = setupMock({ 'layers:setUnit': true })
+        expect(await setUnit('layerA', 'mg/m³')).toBe(true)
+        expect(requests).toEqual([
+            { name: 'layers:setUnit', params: { layerUUID: 'layerA', unit: 'mg/m³' } },
+        ])
+        expect(emitCalls).toHaveLength(0)
+
+        setupMock({ 'layers:setUnit': false })
+        expect(await setUnit('layerA', 'ppb')).toBe(false)
+        setupMock({})
+        expect(await setUnit('layerA', 'ppb')).toBe(false)
     })
 
     test('setRescale is a no-op when core reports the layer unchangeable', async () => {

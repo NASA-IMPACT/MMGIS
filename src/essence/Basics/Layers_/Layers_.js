@@ -44,7 +44,7 @@ import {
 } from '../TimeControl_/layerDataCoverage'
 import { buildLayerLegend } from './legend/buildLayerLegend'
 import { NO_LEGEND } from './legend/types'
-import { layerUnitAnswer } from './units/units'
+import { activeUnit, findUnitOption, layerUnitAnswer } from './units/units'
 import { detached } from '../../mmgisAPI/providers/_shared'
 import { bbox } from '@turf/turf'
 import $ from 'jquery'
@@ -625,6 +625,28 @@ const L_ = {
                         units[uuid] = layerUnitAnswer(L_.layers.data[uuid])
                     })
                     return units
+                }),
+                // Show a layer in one of the units it lists. Only the numbers
+                // a viewer reads change: no tile is re-requested and no style
+                // recompiled, since both stay in the data's unit. A label the
+                // layer does not list, or a layer with no unit, changes
+                // nothing and answers false.
+                window.mmgisAPI.provide('layers:setUnit', ({ layerUUID, unit } = {}) => {
+                    const uuid = L_.asLayerUUID(layerUUID)
+                    const layerConfig = uuid == null ? null : L_.layers.data[uuid]
+                    if (!layerConfig) return false
+                    const option = findUnitOption(layerConfig, unit)
+                    if (!option) return false
+                    layerConfig.currentUnit = option.label
+                    window.mmgisAPI.emit('layers:configChanged', {
+                        layerName: uuid,
+                        keys: ['currentUnit'],
+                    })
+                    window.mmgisAPI.emit('layer:unitChange', {
+                        layerName: uuid,
+                        unit: activeUnit(layerConfig),
+                    })
+                    return true
                 }),
                 // When each layer has data, as ISO datetimes or null, and its
                 // parsed cadence (`interval`, or null). The config's

@@ -263,6 +263,7 @@ $legend-hover-surface: var(--theme-color-base-lightest, #f1f3f6);
        indents by its width and the handle gap to stay aligned. */
     &--draggable &__marks,
     &--draggable &__run,
+    &--draggable &__unit,
     &--draggable &__unit-label,
     &--draggable &__content {
         padding-left: calc(#{$legend-content-indent} + 22px + #{$legend-handle-gap});
@@ -380,6 +381,44 @@ $legend-hover-surface: var(--theme-color-base-lightest, #f1f3f6);
         flex: 0 0 auto;
         margin-left: auto;
         white-space: nowrap;
+    }
+
+    /* Unit the layer is shown in, when it offers a choice: the label and the
+       picked unit on one line, the picker reading like the model run's. */
+    &__unit {
+        display: flex;
+        align-items: center;
+        gap: var(--theme-spacing-1, 0.5rem);
+        padding-left: $legend-content-indent;
+        margin-bottom: var(--theme-spacing-05, 0.25rem);
+        font-size: var(--theme-font-size-3xs, 0.75rem);
+        line-height: 1.6;
+        color: var(--theme-color-base-dark, #565c65);
+
+        .blocks-layer-legend__unit-label {
+            padding-left: 0;
+        }
+    }
+
+    &__unit-select {
+        @extend .blocks-layer-legend__run-select;
+    }
+
+    &__unit-select--active {
+        @extend .blocks-layer-legend__run-select--active;
+    }
+
+    &__unit-value {
+        @extend .blocks-layer-legend__run-value;
+    }
+
+    &__unit-chevron {
+        @extend .blocks-layer-legend__run-chevron;
+    }
+
+    &__unit-select:hover &__unit-chevron,
+    &__unit-select--active &__unit-chevron {
+        color: inherit;
     }
 
     /* Unit label shown above the legend graphic */

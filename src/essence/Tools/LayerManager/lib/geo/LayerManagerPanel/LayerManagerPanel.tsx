@@ -32,6 +32,7 @@ export type LayerManagerPanelProps = {
     /** Titles of those layers. No handler or none to hide, no button. */
     filteredOutLayers?: string[]
     onRunChange?: LayerTreeListProps['onRunChange']
+    onUnitChange?: LayerTreeListProps['onUnitChange']
 }
 
 export function LayerManagerPanel({
@@ -55,6 +56,7 @@ export function LayerManagerPanel({
     onHideFilteredLayers,
     filteredOutLayers = [],
     onRunChange,
+    onUnitChange,
 }: LayerManagerPanelProps) {
     const filteredOutCount = filteredOutLayers.length
     return (
@@ -113,6 +115,7 @@ export function LayerManagerPanel({
                         onGroupVisibilityChange={onGroupVisibilityChange}
                         onGroupOpacityChange={onGroupOpacityChange}
                         onRunChange={onRunChange}
+                        onUnitChange={onUnitChange}
                     />
                 )}
             </div>

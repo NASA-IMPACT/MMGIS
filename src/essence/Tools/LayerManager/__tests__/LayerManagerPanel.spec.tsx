@@ -436,3 +436,66 @@ describe('LayerManagerPanel forecast runs', () => {
         await unknown.unmount()
     })
 })
+
+describe('LayerManagerPanel unit picker', () => {
+    const unitLayer = (overrides: Partial<Layer> = {}): Layer => ({
+        ...GRADIENT_LAYER,
+        id: 'PM25_00aa11bb22cc33dd',
+        title: 'PM2.5',
+        unit: { label: 'µg/m³' },
+        unitOptions: ['µg/m³', 'mg/m³'],
+        ...overrides,
+    })
+
+    const select = (container: HTMLElement) =>
+        container.querySelector<HTMLButtonElement>('.blocks-layer-legend__unit-select')
+
+    const openUnits = async (container: HTMLElement) => {
+        await click(select(container)!)
+        return Array.from(
+            document.body.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'),
+        )
+    }
+
+    test('a layer with one unit prints it as plain text, with no picker', async () => {
+        const { container, unmount } = await mount(<LayerManagerPanel layers={[GRADIENT_LAYER]} />)
+        expect(select(container)).toBeNull()
+        expect(container.querySelector('.blocks-layer-legend__unit-label')!.textContent).toBe('m')
+        await unmount()
+    })
+
+    test('a layer with a choice shows the picker on the shown unit, listing every unit', async () => {
+        const { container, unmount } = await mount(<LayerManagerPanel layers={[unitLayer()]} />)
+        expect(select(container)!.textContent).toBe('µg/m³')
+        const options = await openUnits(container)
+        expect(
+            document.body.querySelector('.blocks-layer-legend__run-popover-heading')!.textContent,
+        ).toBe('Unit')
+        expect(options.map((o) => o.textContent)).toEqual(['µg/m³', 'mg/m³'])
+        expect(options.map((o) => o.getAttribute('aria-checked'))).toEqual(['true', 'false'])
+        await unmount()
+    })
+
+    test('picking a unit reports it and shows it at once', async () => {
+        const onUnitChange = vi.fn(async () => true)
+        const { container, unmount } = await mount(
+            <LayerManagerPanel layers={[unitLayer()]} onUnitChange={onUnitChange} />,
+        )
+        const options = await openUnits(container)
+        await click(options[1])
+        expect(onUnitChange).toHaveBeenCalledWith('PM25_00aa11bb22cc33dd', 'mg/m³')
+        expect(select(container)!.textContent).toBe('mg/m³')
+        await unmount()
+    })
+
+    test('snaps back to the shown unit when the host reports a refusal', async () => {
+        const onUnitChange = vi.fn(async () => false)
+        const { container, unmount } = await mount(
+            <LayerManagerPanel layers={[unitLayer()]} onUnitChange={onUnitChange} />,
+        )
+        const options = await openUnits(container)
+        await click(options[1])
+        expect(select(container)!.textContent).toBe('µg/m³')
+        await unmount()
+    })
+})

@@ -2,6 +2,7 @@ import {
     mmgisGetCogCapabilities,
     mmgisGetDataCoverage,
     mmgisGetLayerConfigs,
+    mmgisGetLayerUnits,
     mmgisGetListedLayers,
     mmgisGetTiTilerUrls,
     type CogCapabilities,
@@ -15,6 +16,14 @@ export type FetchOptions = {
     /** Every layer's config, when the caller has already read them. */
     layerConfigs?: Record<string, LayerConfig> | null
 }
+
+/** The units a layer can be shown in, only when there is a choice to make. */
+const unitOptionsOf = (
+    options: { label: string }[] | undefined,
+): { unitOptions?: string[] } =>
+    options && options.length > 1
+        ? { unitOptions: options.map((o) => o.label) }
+        : {}
 
 /**
  * Whether a layer offers area analysis, read from the same mission-config flag
@@ -65,13 +74,14 @@ export const getVisibleLayersWithLegends = async ({
     // Coverage is read with the rest, so a layer core is already holding back
     // for lack of data is flagged on the first render rather than at the next
     // change core announces.
-    const [layers, listed, cogCapabilities, titilerUrls, coverage] =
+    const [layers, listed, cogCapabilities, titilerUrls, coverage, units] =
         await Promise.all([
             getLayersWithLegends({ showOnlyVisible, layerConfigs }),
             mmgisGetListedLayers(),
             mmgisGetCogCapabilities(),
             mmgisGetTiTilerUrls(),
             mmgisGetDataCoverage(),
+            mmgisGetLayerUnits(),
         ])
 
     return layers
@@ -85,5 +95,6 @@ export const getVisibleLayersWithLegends = async ({
             ),
             outOfDataRange: coverage?.[layer.id]?.outOfDataRange === true,
             analysisSupported: supportsAnalysis(layerConfigs?.[layer.id]),
+            ...unitOptionsOf(units?.[layer.id]?.options),
         }))
 }
