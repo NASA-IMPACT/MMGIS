@@ -19,6 +19,7 @@ export interface ActiveUnit {
 
 export interface LayerUnitAnswer {
     sourceUnit: string
+    property: string | null
     active: ActiveUnit
     options: Required<UnitOption>[]
 }
