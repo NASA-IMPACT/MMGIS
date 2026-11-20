@@ -13,6 +13,7 @@ import {
     setOpacity,
     setColormap,
     setRescale,
+    setUnit,
     zoomToLayer,
     compareLayer,
     showAddLayer,
@@ -304,6 +305,23 @@ export function MMGISLayerManagerAdapter() {
     }, [])
     useMMGISEvent('time:changed', followSelectedTime)
 
+    // Core refuses a unit the layer does not list; the rows then re-read
+    // core's truth so the picker snaps back to what is shown.
+    const onUnitChange = useCallback(
+        async (layerId: string, unit: string): Promise<boolean> => {
+            let shown = false
+            try {
+                shown = await setUnit(layerId, unit)
+                if (!shown) console.warn(`LayerManager: core refused unit ${unit} for ${layerId}`)
+            } catch (err) {
+                console.error('LayerManager: setUnit failed', err)
+            }
+            if (!shown) void refresh()
+            return shown
+        },
+        [refresh],
+    )
+
     return (
         <LayerManagerPanel
             layers={layers}
@@ -325,6 +343,7 @@ export function MMGISLayerManagerAdapter() {
             onHideFilteredLayers={() => { report('hideFilteredOutLayers', hideFilteredOutLayers()) }}
             filteredOutLayers={filteredOut}
             onRunChange={onRunChange}
+            onUnitChange={onUnitChange}
         />
     )
 }

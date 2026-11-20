@@ -53,7 +53,7 @@ const EDITABLE = { hasColormap: true, canChangeColormap: true }
 const READ_ONLY = { hasColormap: true, canChangeColormap: false }
 const NONE = { hasColormap: false, canChangeColormap: false }
 
-const setupMock = ({ legends, listed, capabilities, titilerUrls, coverage, order } = {}) => {
+const setupMock = ({ legends, listed, capabilities, titilerUrls, coverage, order, units } = {}) => {
     const responses = {
         'layers:getAllConfigs': CONFIGS,
         'layers:getVisible': { [DISPLACEMENT]: true, [BASEMAP]: true },
@@ -65,6 +65,7 @@ const setupMock = ({ legends, listed, capabilities, titilerUrls, coverage, order
     if (titilerUrls) responses['layers:getTiTilerUrl'] = titilerUrls
     if (coverage) responses['layers:getDataCoverage'] = coverage
     if (order) responses['layers:getOrder'] = order
+    if (units) responses['layers:getUnit'] = units
 
     global.window = global.window || {}
     global.window.mmgisAPI = {
@@ -103,6 +104,38 @@ describe('getVisibleLayersWithLegends', () => {
             unit: { label: 'm' },
         })
         expect(byId(layers, BASEMAP).type).toBe('none')
+    })
+
+    // A picker is only worth drawing where there is a choice: the row lists
+    // the units when core names more than one, and nothing otherwise.
+    test('lists the units a layer can be shown in, only when there is more than one', async () => {
+        const option = (label, scale) => ({ label, scale, offset: 0 })
+        setupMock({
+            legends: { [DISPLACEMENT]: GRADIENT, [BASEMAP]: NO_LEGEND },
+            units: {
+                [DISPLACEMENT]: {
+                    source_unit: 'm',
+                    property: null,
+                    active: { source_unit: 'm', label: 'm', scale: 1, offset: 0 },
+                    options: [option('m', 1), option('ft', 3.28084)],
+                },
+                [BASEMAP]: {
+                    source_unit: 'K',
+                    property: null,
+                    active: { source_unit: 'K', label: 'K', scale: 1, offset: 0 },
+                    options: [option('K', 1)],
+                },
+            },
+        })
+        const layers = await getVisibleLayersWithLegends()
+        expect(byId(layers, DISPLACEMENT).unitOptions).toEqual(['m', 'ft'])
+        expect(byId(layers, BASEMAP)).not.toHaveProperty('unitOptions')
+    })
+
+    test('leaves the units off against a core without the handler', async () => {
+        setupMock({ legends: { [DISPLACEMENT]: GRADIENT, [BASEMAP]: NO_LEGEND } })
+        const layers = await getVisibleLayersWithLegends()
+        expect(byId(layers, DISPLACEMENT)).not.toHaveProperty('unitOptions')
     })
 
     // Every map crossing the seam is UUID-keyed, and a layer's UUID is not its
