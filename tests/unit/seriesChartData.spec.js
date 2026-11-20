@@ -302,6 +302,16 @@ describe('seriesChart chartData', () => {
             ])
         })
 
+        test('the value column names the unit the series carries', () => {
+            const csv = seriesToCsv({
+                id: 'pm',
+                label: 'PM2.5',
+                unit: 'mg/m³',
+                points: [{ x: '2026-01-01T00:00:00Z', y: 0.018 }],
+            })
+            expect(csv.split('\n')[0]).toBe('timestamp,PM2.5 (mg/m³)')
+        })
+
         test('fields with commas or quotes are quoted and escaped', () => {
             const csv = seriesToCsv({
                 id: 's',

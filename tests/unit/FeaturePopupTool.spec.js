@@ -119,15 +119,22 @@ test('lists the configured properties, and leaves the rest off', async () => {
     expect(html).not.toContain('internal_id')
 })
 
+const METRES = { source_unit: 'm', label: 'm', scale: 1, offset: 0 }
+const FEET = { source_unit: 'm', label: 'ft', scale: 3.28084, offset: 0 }
+const depthUnit = (active = METRES) => ({
+    craters: {
+        source_unit: 'm',
+        property: 'depth_m',
+        active,
+        options: [
+            { label: 'm', scale: 1, offset: 0 },
+            { label: 'ft', scale: 3.28084, offset: 0 },
+        ],
+    },
+})
+
 test('prints the layer unit after its measured property, and nothing else changes', async () => {
-    api.requestImpl.set('layers:getUnit', () => ({
-        craters: {
-            source_unit: 'm',
-            property: 'depth_m',
-            active: { source_unit: 'm', label: 'm', scale: 1, offset: 0 },
-            options: [{ label: 'm', scale: 1, offset: 0 }],
-        },
-    }))
+    api.requestImpl.set('layers:getUnit', () => depthUnit())
     await start()
 
     api.emit('map:featureClick', clickOn('craters'))
@@ -136,6 +143,54 @@ test('prints the layer unit after its measured property, and nothing else change
     const { html } = api.namesOf('map:showPopup')[0].payload
     expect(html).toContain('<td>12 m</td>')
     expect(html).toContain('<td>sedimentary</td>')
+})
+
+test('prints the measured value in the unit the layer is shown in', async () => {
+    api.requestImpl.set('layers:getUnit', () => depthUnit(FEET))
+    await start()
+
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+
+    const { html } = api.namesOf('map:showPopup')[0].payload
+    expect(html).toContain('<td>39.37008 ft</td>')
+    expect(html).toContain('<td>sedimentary</td>')
+})
+
+test('an open card is shown again in the new unit when the layer switches, and later clicks use it', async () => {
+    api.requestImpl.set('layers:getUnit', () => depthUnit())
+    await start()
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+    expect(api.namesOf('map:showPopup')).toHaveLength(1)
+
+    api.emit('layer:unitChange', { layerName: 'craters', unit: FEET })
+    await flushBus()
+    const shows = api.namesOf('map:showPopup')
+    expect(shows).toHaveLength(2)
+    expect(shows[1].payload.html).toContain('<td>39.37008 ft</td>')
+    expect(shows[1].payload).toMatchObject({ latlng: CLICK, title: 'Jezero' })
+    // The replaced card's request answered 'closed': nothing was pressed.
+    expect(api.emitsOf('plugin:feature-popup:analyze')).toEqual([])
+
+    api.reset()
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+    expect(api.namesOf('map:showPopup')[0].payload.html).toContain('<td>39.37008 ft</td>')
+})
+
+test('a switch on another layer, or with no card open, shows nothing', async () => {
+    api.requestImpl.set('layers:getUnit', () => depthUnit())
+    await start()
+    api.emit('layer:unitChange', { layerName: 'craters', unit: FEET })
+    await flushBus()
+    expect(api.namesOf('map:showPopup')).toHaveLength(0)
+
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+    api.emit('layer:unitChange', { layerName: 'basemapLabels', unit: FEET })
+    await flushBus()
+    expect(api.namesOf('map:showPopup')).toHaveLength(1)
 })
 
 test('prints values bare when the layer declares no unit or core cannot say', async () => {
