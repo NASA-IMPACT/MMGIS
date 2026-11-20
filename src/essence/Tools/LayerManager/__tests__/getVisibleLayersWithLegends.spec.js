@@ -53,7 +53,7 @@ const EDITABLE = { hasColormap: true, canChangeColormap: true }
 const READ_ONLY = { hasColormap: true, canChangeColormap: false }
 const NONE = { hasColormap: false, canChangeColormap: false }
 
-const setupMock = ({ legends, listed, capabilities, titilerUrls, coverage, order } = {}) => {
+const setupMock = ({ legends, listed, capabilities, coverage, order } = {}) => {
     const responses = {
         'layers:getAllConfigs': CONFIGS,
         'layers:getVisible': { [DISPLACEMENT]: true, [BASEMAP]: true },
@@ -62,7 +62,6 @@ const setupMock = ({ legends, listed, capabilities, titilerUrls, coverage, order
     if (listed) responses['layers:getListed'] = listed
     if (legends) responses['layers:getLegend'] = legends
     if (capabilities) responses['layers:getCogCapabilities'] = capabilities
-    if (titilerUrls) responses['layers:getTiTilerUrl'] = titilerUrls
     if (coverage) responses['layers:getDataCoverage'] = coverage
     if (order) responses['layers:getOrder'] = order
 
@@ -126,25 +125,21 @@ describe('getVisibleLayersWithLegends', () => {
         expect(byId(layers, BASEMAP).cog).toBeNull()
     })
 
-    // The controls follow the capability, and each layer gets the service core
-    // resolved for it — a mission can point one layer at its own.
+    // The controls follow the capability.
     test('offers colormap controls only where core reports the capability', async () => {
         setupMock({
             legends: { [DISPLACEMENT]: GRADIENT, [BASEMAP]: GRADIENT },
             capabilities: { [DISPLACEMENT]: READ_ONLY, [BASEMAP]: EDITABLE },
-            titilerUrls: { [DISPLACEMENT]: null, [BASEMAP]: 'https://titiler.test' },
         })
         const layers = await getVisibleLayersWithLegends()
 
         expect(byId(layers, DISPLACEMENT).cog).toEqual({
             editable: false,
             colormap: 'plasma',
-            titilerUrl: null,
         })
         expect(byId(layers, BASEMAP).cog).toEqual({
             editable: true,
             colormap: 'plasma',
-            titilerUrl: 'https://titiler.test',
         })
     })
 

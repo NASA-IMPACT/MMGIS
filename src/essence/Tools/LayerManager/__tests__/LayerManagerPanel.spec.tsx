@@ -35,7 +35,6 @@ const editableCogLayer = (): Layer => ({
     cog: {
         editable: true,
         colormap: 'viridis',
-        titilerUrl: null,
     },
 })
 

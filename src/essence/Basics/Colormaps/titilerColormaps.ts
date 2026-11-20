@@ -7,10 +7,10 @@
 
 import { getBaseColormapName } from './colormapNaming'
 
-/** A ramp that resolved is kept for the session; one that did not is not. */
-type CachedRamp = { colors: Promise<string[] | null>; expiresAt: number }
+/** An answer that resolved is kept for the session; one that did not is not. */
+type CachedAnswer = { answer: Promise<string[] | null>; expiresAt: number }
 
-const cache = new Map<string, CachedRamp>()
+const cache = new Map<string, CachedAnswer>()
 
 /**
  * How long a failed lookup is remembered. Long enough that an unreachable
@@ -75,7 +75,7 @@ export const fetchColormapColors = (
     // the same ramp name do not collide.
     const key = `${baseUrl}|${rampName}`
     const cached = cache.get(key)
-    if (cached && cached.expiresAt > Date.now()) return cached.colors
+    if (cached && cached.expiresAt > Date.now()) return cached.answer
 
     const pending = (async (): Promise<string[] | null> => {
         try {
@@ -94,7 +94,7 @@ export const fetchColormapColors = (
         }
     })()
 
-    const entry: CachedRamp = { colors: pending, expiresAt: Infinity }
+    const entry: CachedAnswer = { answer: pending, expiresAt: Infinity }
     cache.set(key, entry)
     // Dated once the answer is in, on the entry itself rather than through a
     // timer: an expired entry is simply replaced by the next lookup.
@@ -104,7 +104,73 @@ export const fetchColormapColors = (
     return pending
 }
 
+/**
+ * Read a ramp-name list out of a `/colorMaps` payload. The endpoint's shape
+ * varies across TiTiler releases — a flat array of names under `colorMaps`, or
+ * entries under `colormaps` carrying the name as `id`/`name` — so either is
+ * accepted. Null when nothing recognizable is present.
+ */
+export const parseColormapList = (data: unknown): string[] | null => {
+    if (data == null || typeof data !== 'object') return null
+    const payload = data as { colorMaps?: unknown; colormaps?: unknown }
+    const raw = payload.colorMaps ?? payload.colormaps
+    if (!Array.isArray(raw)) return null
+
+    const names = raw
+        .map((entry): string | null => {
+            if (typeof entry === 'string') return entry
+            if (entry && typeof entry === 'object') {
+                const record = entry as Record<string, unknown>
+                const id = record.id ?? record.name
+                if (typeof id === 'string') return id
+            }
+            return null
+        })
+        .filter((name): name is string => name != null && name.length > 0)
+
+    return names.length > 0 ? names : null
+}
+
+/** Each service's ramp list, cached the way a ramp is. */
+const listCache = new Map<string, CachedAnswer>()
+
+/**
+ * The ramp names a service lists, forward and `_r`, or null when there is no
+ * service to ask or it cannot answer. Never rejects.
+ */
+export const fetchColormapNames = (
+    titilerUrl?: string | null
+): Promise<string[] | null> => {
+    const baseUrl = resolveBase(titilerUrl)
+    if (baseUrl == null) return Promise.resolve(null)
+
+    const cached = listCache.get(baseUrl)
+    if (cached && cached.expiresAt > Date.now()) return cached.answer
+
+    const pending = (async (): Promise<string[] | null> => {
+        try {
+            const response = await fetch(`${baseUrl}/colorMaps`, {
+                signal: AbortSignal.timeout(COLORMAP_FETCH_TIMEOUT_MS),
+            })
+            if (!response.ok)
+                throw new Error(`Failed to list colormaps: ${response.status}`)
+            return parseColormapList(await response.json())
+        } catch (err) {
+            console.warn('Failed to list colormaps:', err)
+            return null
+        }
+    })()
+
+    const entry: CachedAnswer = { answer: pending, expiresAt: Infinity }
+    listCache.set(baseUrl, entry)
+    void pending.then((names) => {
+        if (names == null) entry.expiresAt = Date.now() + FAILURE_TTL_MS
+    })
+    return pending
+}
+
 /** Test seam — clears memoized ramps so specs don't leak state across cases. */
 export const clearColormapCache = (): void => {
     cache.clear()
+    listCache.clear()
 }

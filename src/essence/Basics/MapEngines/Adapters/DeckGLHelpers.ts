@@ -486,6 +486,29 @@ function resolveStyleAccessors(
 }
 
 /**
+ * A copy of a vector or vector tile layer from {@link buildDeckLayer} with its
+ * colours re-read from `style` and `legend`. Everything else, its data and
+ * loaded tiles included, is kept, so a restyle never refetches.
+ */
+export function restyleDeckLayer(
+    layer: Layer,
+    style: Record<string, unknown>,
+    legend?: unknown
+): Layer {
+    const { getFillColor, getLineColor, legendFingerprint } =
+        resolveStyleAccessors(style || {}, legend)
+    return layer.clone({
+        getFillColor,
+        getLineColor,
+        updateTriggers: {
+            ...(layer.props as { updateTriggers?: object }).updateTriggers,
+            getFillColor: legendFingerprint,
+            getLineColor: legendFingerprint,
+        },
+    } as Record<string, unknown>) as Layer
+}
+
+/**
  * Construct a deck.gl layer from a {@link LayerOptions} spec.
  * Supports `'tile'` (TileLayer + BitmapLayer, or WMSLayer when tileformat is
  * 'wms'), `'vector'` (GeoJsonLayer), and `'pointcloud'` (PointCloudLayer).

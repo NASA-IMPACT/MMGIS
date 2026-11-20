@@ -3,7 +3,6 @@ import {
     mmgisGetDataCoverage,
     mmgisGetLayerConfigs,
     mmgisGetListedLayers,
-    mmgisGetTiTilerUrls,
     type CogCapabilities,
     type LayerConfig,
 } from '../../_shared/adapters/mmgisAPI'
@@ -39,13 +38,11 @@ const supportsAnalysis = (cfg: LayerConfig | undefined): boolean =>
 const buildCogData = (
     capabilities: CogCapabilities | undefined,
     colormap: string | null | undefined,
-    titilerUrl: string | null,
 ): CogData | null => {
     if (capabilities?.hasColormap !== true || colormap == null) return null
     return {
         editable: capabilities.canChangeColormap === true,
         colormap,
-        titilerUrl,
     }
 }
 
@@ -65,12 +62,11 @@ export const getVisibleLayersWithLegends = async ({
     // Coverage is read with the rest, so a layer core is already holding back
     // for lack of data is flagged on the first render rather than at the next
     // change core announces.
-    const [layers, listed, cogCapabilities, titilerUrls, coverage] =
+    const [layers, listed, cogCapabilities, coverage] =
         await Promise.all([
             getLayersWithLegends({ showOnlyVisible, layerConfigs }),
             mmgisGetListedLayers(),
             mmgisGetCogCapabilities(),
-            mmgisGetTiTilerUrls(),
             mmgisGetDataCoverage(),
         ])
 
@@ -78,11 +74,7 @@ export const getVisibleLayersWithLegends = async ({
         .filter((layer) => listed?.[layer.id] !== false)
         .map(({ colormap, ...layer }) => ({
             ...layer,
-            cog: buildCogData(
-                cogCapabilities?.[layer.id],
-                colormap,
-                titilerUrls?.[layer.id] ?? null,
-            ),
+            cog: buildCogData(cogCapabilities?.[layer.id], colormap),
             outOfDataRange: coverage?.[layer.id]?.outOfDataRange === true,
             analysisSupported: supportsAnalysis(layerConfigs?.[layer.id]),
         }))

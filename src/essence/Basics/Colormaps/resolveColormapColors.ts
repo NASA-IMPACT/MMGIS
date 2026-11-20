@@ -14,7 +14,7 @@ import {
     evaluate_cmap,
     data as jsColormapData,
 } from '../../../external/js-colormaps/js-colormaps.js'
-import { fetchColormapColors } from './titilerColormaps'
+import { fetchColormapColors, fetchColormapNames } from './titilerColormaps'
 import { findColormapKey, isReversedColormap } from './colormapNaming'
 
 // Matches TiTiler's own granularity, so a bundled ramp and a fetched one
@@ -52,14 +52,28 @@ export const bundledColormapColors = (
     return isReversedColormap(name) ? colors.reverse() : colors
 }
 
-export const resolveColormapColors = async (
+/**
+ * The ramp names a layer can be offered, forward and `_r`: what its tiling
+ * service lists, or the bundled ramps when it has none or that list cannot be
+ * read. Never rejects.
+ */
+export const listColormaps = async (
+    titilerUrl?: string | null
+): Promise<string[]> =>
+    (await fetchColormapNames(titilerUrl)) ??
+    Object.keys(jsColormapData).flatMap((name) => [name, `${name}_r`])
+
+/**
+ * A ramp's colours as a source defines them: the bundled ramp of that name,
+ * or the tiling service's. Null for a name neither holds. Never rejects.
+ */
+export const lookupColormapColors = async (
     name: string | null | undefined,
     titilerUrl?: string | null
 ): Promise<string[] | null> => {
     if (!name) return null
     const bundled = bundledColormapColors(name)
     if (bundled) return bundled
-    const reversed = isReversedColormap(name)
 
     let fetched: string[] | null = null
     try {
@@ -72,8 +86,20 @@ export const resolveColormapColors = async (
         console.warn('resolveColormapColors: colormap lookup failed', err)
         fetched = null
     }
-    if (fetched) return reversed ? [...fetched].reverse() : fetched
+    return fetched && isReversedColormap(name) ? [...fetched].reverse() : fetched
+}
 
+/**
+ * A ramp's colours for painting: as lookupColormapColors finds them, or the
+ * fallback ramp for a name no source defines.
+ */
+export const resolveColormapColors = async (
+    name: string | null | undefined,
+    titilerUrl?: string | null
+): Promise<string[] | null> => {
+    if (!name) return null
+    const colors = await lookupColormapColors(name, titilerUrl)
+    if (colors) return colors
     const fallbackKey = findLocalKey(FALLBACK_COLORMAP)
     return fallbackKey ? sampleLocal(fallbackKey) : null
 }

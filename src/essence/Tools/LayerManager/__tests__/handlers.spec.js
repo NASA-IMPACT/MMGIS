@@ -40,20 +40,6 @@ const setupMock = (responses = {}, emitCalls = []) => {
 // showAddLayer fires its request without returning it.
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-const EDITABLE = { hasColormap: true, canChangeColormap: true }
-// What an image layer reports: a ramp to show, but nothing to change.
-const READ_ONLY = { hasColormap: true, canChangeColormap: false }
-
-// Core answers the capability handler per layer, resolving the identifier it
-// is given; unknown layers get null.
-const capabilities = (byLayer) => (layerId) => byLayer[layerId] ?? null
-
-const COG_LAYER = {
-    'layers:getCogCapabilities': capabilities({ layerA: EDITABLE }),
-    'layers:updateConfig': true,
-    'layers:refresh': true,
-}
-
 test.describe('handlers', () => {
     test('toggleVisibility issues layers:toggle and emits visibilityChange', async () => {
         const { emitCalls } = setupMock({ 'layers:toggle': true })
@@ -124,121 +110,54 @@ test.describe('handlers', () => {
         })
     })
 
-    test('setColormap is a no-op when core reports the layer unchangeable', async () => {
-        const { emitCalls } = setupMock({
-            'layers:getCogCapabilities': capabilities({ layerA: READ_ONLY }),
-        })
+    test('setColormap hands the ramp to core, then announces and refreshes', async () => {
+        const { requests, emitCalls } = setupMock({ 'layers:setColormap': true })
         let refreshCalled = false
-        await setColormap('layerA', 'plasma', () => { refreshCalled = true })
-        expect(emitCalls).toHaveLength(0)
-        expect(refreshCalled).toBe(false)
-    })
+        await setColormap('layerA', 'viridis_r', () => { refreshCalled = true })
 
-    // Core resolves the identifier, so the handler asks about one layer rather
-    // than indexing a UUID-keyed map with whatever id the panel holds.
-    test('setColormap asks core about the layer it is changing', async () => {
-        const { requests } = setupMock(COG_LAYER)
-        await setColormap('layerA', 'plasma', () => {})
-
-        expect(requests[0]).toEqual({
-            name: 'layers:getCogCapabilities',
-            params: 'layerA',
-        })
-    })
-
-    // Without the handler there is no way to know core can repaint the layer,
-    // so the write is withheld rather than sent and silently dropped.
-    test('setColormap is a no-op against a core without the capability handler', async () => {
-        const { emitCalls, requests } = setupMock({
-            'layers:updateConfig': true,
-            'layers:refresh': true,
-        })
-        await setColormap('layerA', 'plasma', () => {})
-        expect(emitCalls).toHaveLength(0)
-        expect(requests).toHaveLength(0)
-    })
-
-    test('setColormap calls refresh on success', async () => {
-        const { emitCalls } = setupMock(COG_LAYER)
-        let refreshCalled = false
-        await setColormap('layerA', 'plasma', () => { refreshCalled = true })
+        expect(requests).toEqual([
+            {
+                name: 'layers:setColormap',
+                params: { layerUUID: 'layerA', colormap: 'viridis_r' },
+            },
+        ])
         expect(emitCalls).toContainEqual({
             event: 'layer:cogColormapChange',
-            payload: { layerName: 'layerA', colormap: 'plasma' },
+            payload: { layerName: 'layerA', colormap: 'viridis_r' },
         })
         expect(refreshCalled).toBe(true)
     })
 
-    // applyCogFieldsToUrl prefers `currentCogColormap`, so a `cogColormap`
-    // override would lose to the value the config write puts there.
-    test('setColormap writes and refreshes on the same currentCogColormap field', async () => {
-        const { requests } = setupMock(COG_LAYER)
-        await setColormap('layerA', 'plasma', () => {})
-
-        const update = requests.find((r) => r.name === 'layers:updateConfig')
-        const refresh = requests.find((r) => r.name === 'layers:refresh')
-        expect(update.params).toEqual({
-            layerUUID: 'layerA',
-            updates: { currentCogColormap: 'plasma' },
-        })
-        expect(refresh.params).toEqual({
-            layerUUID: 'layerA',
-            options: { currentCogColormap: 'plasma' },
-        })
-    })
-
-    test('setRescale writes and refreshes on the same currentCogMin/Max fields', async () => {
-        const { requests, emitCalls } = setupMock(COG_LAYER)
+    test('setRescale hands the bounds to core, then announces', async () => {
+        const { requests, emitCalls } = setupMock({ 'layers:setColormap': true })
         await setRescale('layerA', 0, 5, () => {})
 
-        const update = requests.find((r) => r.name === 'layers:updateConfig')
-        const refresh = requests.find((r) => r.name === 'layers:refresh')
-        expect(update.params).toEqual({
-            layerUUID: 'layerA',
-            updates: { currentCogMin: 0, currentCogMax: 5 },
-        })
-        expect(refresh.params).toEqual({
-            layerUUID: 'layerA',
-            options: { currentCogMin: 0, currentCogMax: 5 },
-        })
+        expect(requests).toEqual([
+            {
+                name: 'layers:setColormap',
+                params: { layerUUID: 'layerA', min: 0, max: 5 },
+            },
+        ])
         expect(emitCalls).toContainEqual({
             event: 'layer:cogRescaleChange',
             payload: { layerName: 'layerA', min: 0, max: 5 },
         })
     })
 
-    test('setRescale is a no-op when core reports the layer unchangeable', async () => {
-        const { emitCalls, requests } = setupMock({
-            'layers:getCogCapabilities': capabilities({ layerA: READ_ONLY }),
-        })
+    test('a change core refuses is neither announced nor refreshed', async () => {
+        const { emitCalls } = setupMock({ 'layers:setColormap': false })
         let refreshCalled = false
+        await setColormap('layerA', 'plasma', () => { refreshCalled = true })
         await setRescale('layerA', 0, 5, () => { refreshCalled = true })
         expect(emitCalls).toHaveLength(0)
         expect(refreshCalled).toBe(false)
-        expect(requests.map((r) => r.name)).toEqual(['layers:getCogCapabilities'])
     })
 
-    test('setRescale is a no-op against a core without the capability handler', async () => {
-        const { emitCalls, requests } = setupMock({
-            'layers:updateConfig': true,
-            'layers:refresh': true,
-        })
-        await setRescale('layerA', 0, 5, () => {})
-        expect(emitCalls).toHaveLength(0)
+    test('a change against a core without the handler is not sent', async () => {
+        const { emitCalls, requests } = setupMock({})
+        await setColormap('layerA', 'plasma', () => {})
         expect(requests).toHaveLength(0)
-    })
-
-    // A layer core has never heard of answers null, which must read as
-    // "cannot change" rather than throw.
-    test('setColormap is a no-op for a layer core does not know', async () => {
-        const { emitCalls, requests } = setupMock({
-            'layers:getCogCapabilities': capabilities({ layerA: EDITABLE }),
-            'layers:updateConfig': true,
-            'layers:refresh': true,
-        })
-        await setColormap('layerB', 'plasma', () => {})
         expect(emitCalls).toHaveLength(0)
-        expect(requests.map((r) => r.name)).toEqual(['layers:getCogCapabilities'])
     })
 
     // [[south, west], [north, east]] — the pair both map engines normalise.
