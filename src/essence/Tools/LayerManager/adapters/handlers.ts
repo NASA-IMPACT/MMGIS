@@ -23,6 +23,7 @@ import {
 } from '../lib/utils/constants'
 import { placeInTree, type Placement } from '../lib/utils/layerTree'
 import { filteredOutLayers } from '../lib/utils/filteredOut'
+import { unapplyUnit } from '../../_shared/units/applyUnit'
 
 type Refresh = () => Promise<void> | void
 
@@ -241,10 +242,8 @@ export const setRescale = async (
 ): Promise<void> => {
     if (!(await canChangeColormap(layerId))) return
     const active = (await mmgisGetLayerUnit(layerId).catch(() => null))?.active
-    const toSource = (value: number) =>
-        active ? Number(((value - active.offset) / active.scale).toPrecision(12)) : value
-    const min = toSource(shownMin)
-    const max = toSource(shownMax)
+    const min = unapplyUnit(shownMin, active)
+    const max = unapplyUnit(shownMax, active)
     await mmgisRequest('layers:updateConfig', { layerUUID: layerId, updates: { currentCogMin: min, currentCogMax: max } })
     await mmgisRequest('layers:refresh', { layerUUID: layerId, options: { currentCogMin: min, currentCogMax: max } })
     mmgisEmit('layer:cogRescaleChange', { layerName: layerId, min, max })
