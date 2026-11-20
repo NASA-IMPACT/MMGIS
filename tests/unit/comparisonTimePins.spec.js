@@ -240,6 +240,42 @@ describe('visibility at the pinned date', () => {
         expect(buildTimePinnedProps(['raster'], PIN).raster.visible).toBe(false)
     })
 
+    // A GeoJSON source has no time in its URL, so the only thing that differs
+    // between dates is whether the layer has data there. A near-real-time feed
+    // covering only today must not be drawn on a side pinned to another day.
+    describe('a layer whose source a pin cannot change', () => {
+        beforeEach(() => {
+            on = { vec: true }
+            configs.vec.url = 'https://host/query?f=geojson'
+            configs.vec.time.dataStartTime = '2024-11-01T00:00:00Z'
+            configs.vec.time.dataEndTime = '2024-11-01T23:59:59Z'
+        })
+
+        test('is not drawn on a pinned date outside its coverage', () => {
+            expect(buildTimePinnedProps(['vec'], PIN)).toEqual({
+                vec: { visible: false },
+            })
+        })
+
+        test('is drawn on a pinned date inside its coverage', () => {
+            configs.vec.time.dataStartTime = '2024-10-31T00:00:00Z'
+            expect(buildTimePinnedProps(['vec'], PIN)).toEqual({
+                vec: { visible: true },
+            })
+        })
+
+        test('keeps the live layer as it is when it declares no coverage', () => {
+            delete configs.vec.time.dataStartTime
+            delete configs.vec.time.dataEndTime
+            expect(buildTimePinnedProps(['vec'], PIN)).toEqual({})
+        })
+
+        test('keeps its own visibility where the coverage gate does not reach', () => {
+            configs.vec.variables = { dynamicExtent: true }
+            expect(buildTimePinnedProps(['vec'], PIN)).toEqual({})
+        })
+    })
+
     test('a layer the coverage gate does not reach keeps its own visibility', () => {
         configs.raster.time.dataDates = ['2024-10-30']
         configs.raster.variables = { dynamicExtent: true }
