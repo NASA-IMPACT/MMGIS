@@ -35,6 +35,7 @@ import { fillRunPlaceholders } from '../TimeControl_/layerRunSource'
 import {
     evaluateLayerDataCoverage,
     isCoverageGated,
+    resolveDataCoverage,
 } from '../TimeControl_/layerDataCoverage'
 
 /** The window one comparison side pins its layers to. */
@@ -81,9 +82,11 @@ function isAfter(a: string, b: string): boolean {
 /**
  * The deck prop patch each of `layerIds` needs to draw at `pin`.
  *
- * A layer is absent from the result when its source carries no time — an
- * untimed layer, or a kind whose data is fetched rather than templated (vector
- * GeoJSON) — in which case it draws the same on both sides.
+ * A layer whose source carries no time — an untimed layer, or a kind whose
+ * data is fetched rather than templated (vector GeoJSON) — draws the same data
+ * on both sides. When such a layer declares coverage, its patch is visibility
+ * alone, so a layer covering only today is not drawn on a side pinned to
+ * another date. Otherwise it is absent from the result.
  */
 export function buildTimePinnedProps(
     layerIds: string[],
@@ -95,7 +98,14 @@ export function buildTimePinnedProps(
         if (!layerObj || layerObj.time?.enabled !== true) continue
         const pinned = withPinnedTime(layerObj, pin)
         const patch = sourcePatchFor(layerObj, pinned)
-        if (patch) patches[id] = { ...patch, ...visibilityAt(id, pinned) }
+        if (patch) {
+            patches[id] = { ...patch, ...visibilityAt(id, pinned) }
+        } else if (
+            resolveDataCoverage(pinned.time) != null &&
+            isCoverageGated(pinned)
+        ) {
+            patches[id] = visibilityAt(id, pinned)
+        }
     }
     return patches
 }
