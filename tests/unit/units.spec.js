@@ -1,0 +1,172 @@
+import { describe, it, expect } from 'vitest'
+import {
+    resolveLayerUnit,
+    activeUnit,
+    toDisplay,
+    toSource,
+    sameUnit,
+} from '../../src/essence/Basics/Layers_/units/units'
+
+const pm25 = {
+    variables: {
+        unit: {
+            source_unit: 'µg/m³',
+            display_unit: 'µg/m³',
+            options: [
+                { label: 'mg/m³', scale: 0.001 },
+                { label: 'ppb', scale: 0.4087 },
+            ],
+        },
+    },
+}
+
+const kelvin = {
+    variables: {
+        unit: {
+            source_unit: 'K',
+            options: [{ label: '°C', scale: 1, offset: -273.15 }],
+        },
+    },
+}
+
+describe('sameUnit', () => {
+    it('folds the two micro signs, case and surrounding spaces', () => {
+        expect(sameUnit('µg/m³', ' μG/M³ ')).toBe(true)
+    })
+    it('is false for different labels and for blanks', () => {
+        expect(sameUnit('ppb', 'ppm')).toBe(false)
+        expect(sameUnit('', '')).toBe(false)
+        expect(sameUnit(null, undefined)).toBe(false)
+    })
+})
+
+describe('resolveLayerUnit', () => {
+    it('reads variables.unit as one typed shape', () => {
+        expect(resolveLayerUnit(pm25)).toEqual({
+            source_unit: 'µg/m³',
+            display_unit: 'µg/m³',
+            options: [
+                { label: 'mg/m³', scale: 0.001 },
+                { label: 'ppb', scale: 0.4087 },
+            ],
+        })
+    })
+    it('drops options with no label, a zero scale or a non-numeric scale', () => {
+        const unit = resolveLayerUnit({
+            variables: {
+                unit: {
+                    source_unit: 'm',
+                    options: [
+                        { label: 'ft', scale: 3.28084 },
+                        { label: '', scale: 2 },
+                        { label: 'bad', scale: 0 },
+                        { label: 'worse', scale: 'x' },
+                        null,
+                    ],
+                },
+            },
+        })
+        expect(unit.options).toEqual([{ label: 'ft', scale: 3.28084 }])
+    })
+    it('falls back to cogUnits', () => {
+        expect(resolveLayerUnit({ cogUnits: 'molec/cm²' })).toEqual({
+            source_unit: 'molec/cm²',
+        })
+    })
+    it('falls back to the shared trailing text of legend entries', () => {
+        const _legend = [
+            { shape: 'continuous', value: '1 μg/m³' },
+            { shape: 'continuous', value: '18 μg/m³' },
+        ]
+        expect(resolveLayerUnit({ _legend })).toEqual({ source_unit: 'μg/m³' })
+    })
+    it('prefers the declared unit over the older fields', () => {
+        expect(
+            resolveLayerUnit({ ...pm25, cogUnits: 'other' }).source_unit
+        ).toBe('µg/m³')
+    })
+    it('is null when nothing declares a unit', () => {
+        expect(resolveLayerUnit({})).toBeNull()
+        expect(resolveLayerUnit(null)).toBeNull()
+        expect(resolveLayerUnit({ variables: { unit: { source_unit: ' ' } } })).toBeNull()
+        expect(
+            resolveLayerUnit({
+                _legend: [
+                    { shape: 'continuous', value: '1 ppm' },
+                    { shape: 'continuous', value: '2 ppb' },
+                ],
+            })
+        ).toBeNull()
+    })
+})
+
+describe('activeUnit', () => {
+    it('is the source unit with scale 1 when nothing is picked', () => {
+        expect(activeUnit({ cogUnits: 'ppm' })).toEqual({
+            source_unit: 'ppm',
+            label: 'ppm',
+            scale: 1,
+            offset: 0,
+        })
+    })
+    it('picks the option named by currentUnit', () => {
+        expect(activeUnit({ ...pm25, currentUnit: 'mg/m³' })).toEqual({
+            source_unit: 'µg/m³',
+            label: 'mg/m³',
+            scale: 0.001,
+            offset: 0,
+        })
+    })
+    it('matches currentUnit tolerantly', () => {
+        expect(activeUnit({ ...pm25, currentUnit: ' MG/M³ ' }).label).toBe('mg/m³')
+    })
+    it('falls back to display_unit, then to the source', () => {
+        const withDisplay = {
+            variables: { unit: { ...pm25.variables.unit, display_unit: 'ppb' } },
+        }
+        expect(activeUnit(withDisplay).label).toBe('ppb')
+        expect(activeUnit({ ...withDisplay, currentUnit: 'nope' }).label).toBe('ppb')
+        expect(
+            activeUnit({
+                variables: { unit: { ...pm25.variables.unit, display_unit: 'nope' } },
+            }).label
+        ).toBe('µg/m³')
+    })
+    it('lets currentUnit name the source unit itself', () => {
+        expect(activeUnit({ ...pm25, currentUnit: 'µg/m³' }).scale).toBe(1)
+    })
+    it('is null when the layer resolves to no unit', () => {
+        expect(activeUnit({ currentUnit: 'mg/m³' })).toBeNull()
+    })
+})
+
+describe('toDisplay / toSource', () => {
+    const mg = activeUnit({ ...pm25, currentUnit: 'mg/m³' })
+    const celsius = activeUnit({ ...kelvin, currentUnit: '°C' })
+
+    it('scales into the picked unit and back exactly', () => {
+        expect(toDisplay(330, mg)).toBeCloseTo(0.33, 12)
+        expect(toSource(toDisplay(330, mg), mg)).toBe(330)
+    })
+    it('applies an offset and inverts it', () => {
+        expect(toDisplay(273.15, celsius)).toBeCloseTo(0, 12)
+        expect(toSource(toDisplay(300, celsius), celsius)).toBeCloseTo(300, 12)
+    })
+    it('is the identity for the source unit', () => {
+        const src = activeUnit(pm25)
+        expect(toDisplay(9.7, src)).toBe(9.7)
+        expect(toSource(9.7, src)).toBe(9.7)
+    })
+    it('passes non-numbers and non-finite values through', () => {
+        expect(toDisplay(null, mg)).toBeNull()
+        expect(toDisplay(undefined, mg)).toBeUndefined()
+        expect(toDisplay('n/a', mg)).toBe('n/a')
+        expect(toDisplay(NaN, mg)).toBeNaN()
+        expect(toDisplay(Infinity, mg)).toBe(Infinity)
+        expect(toSource(null, mg)).toBeNull()
+    })
+    it('passes the value through when there is no unit', () => {
+        expect(toDisplay(5, null)).toBe(5)
+        expect(toSource(5, undefined)).toBe(5)
+    })
+})
