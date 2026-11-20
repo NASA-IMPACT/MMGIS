@@ -31,6 +31,7 @@
  *   - map:featureClick    (engine bus; filtered to layers that opted in)
  *   - layers:listChanged  (a layer gained or lost, so re-read the opt-ins)
  *   - layer:viewportLoaded  (re-anchor the card and pin to the clicked point)
+ *   - layer:unitChange    (the open card prints its value in the new unit)
  *
  * Requests:
  *   - layers:getAllConfigs / map:getEngineType / map:getZoom
@@ -52,6 +53,7 @@ import {
 import { fillTemplate, getIn } from '../_shared/content/fillTemplate'
 import { parseNamingProperties } from '../_shared/content/namingProperty'
 import { whenMMGISHandlerReady } from '../_shared/adapters/whenMMGISHandlerReady'
+import { applyUnit } from '../_shared/units/applyUnit'
 
 const PLUGIN_ID = 'feature-popup'
 
@@ -77,6 +79,8 @@ const FeaturePopupTool = {
     _configs: new Map(),
     /** The card this plugin has open, so teardown takes down only its own. */
     _openCard: null,
+    /** What the open card shows, so a unit switch can show it again. */
+    _shown: null,
     /** Guards against an older config read landing after a newer one. */
     _readToken: 0,
     /**
@@ -123,6 +127,9 @@ const FeaturePopupTool = {
         // A mission can gain or lose a layer after load, and with it the
         // popup a layer opted into.
         subscribe('layers:listChanged', () => this._readLayerConfigs())
+        // The next click prints in the new unit without a re-read, and a
+        // card already open is shown again rather than left in the old one.
+        subscribe('layer:unitChange', (change) => this._onUnitChange(change))
     },
 
     destroy() {
@@ -174,6 +181,16 @@ const FeaturePopupTool = {
             })
     },
 
+    _onUnitChange(change) {
+        const layerName = change?.layerName
+        const config = layerName == null ? null : this._configs.get(layerName)
+        if (!config?.unit || !change?.unit) return
+        config.unit = { ...config.unit, active: change.unit }
+        if (this._openCard && this._shown?.layerId === layerName) {
+            this._showCard(this._shown, config, this._point)
+        }
+    },
+
     _onFeatureClick(info) {
         // A click that opens no card still ends the one showing: empty space,
         // or a feature of a layer that wants no popup. The map library closes
@@ -193,17 +210,6 @@ const FeaturePopupTool = {
         }
 
         const properties = info.feature.properties || {}
-        const title = cardTitle(properties, config)
-        const html = propertyTable(properties, config.popup.properties, config.unit)
-        // The service refuses a card with neither, and leaves the open one in
-        // place when it does. Take ours down instead, so a card never outlives
-        // the feature it describes.
-        if (title == null && html == null) {
-            this._hideOwnCard()
-            this._removePin()
-            return
-        }
-
         const exactLatLng = propertyLatLng(properties, config.popup)
         const latlng = exactLatLng ?? cardAnchor(info.feature, info.latlng)
 
@@ -233,9 +239,31 @@ const FeaturePopupTool = {
             this._removePin()
         }
 
+        this._showCard({ ...info, latlng }, config, point)
+    },
+
+    /**
+     * Show the card for a click. The service refuses a card with neither a
+     * title nor rows, and leaves the open one in place when it does; ours is
+     * taken down instead, so a card never outlives the feature it describes.
+     * Showing again replaces the open card in place; its request answers
+     * 'closed', which presses nothing.
+     */
+    _showCard(info, config, point) {
+        const properties = info.feature.properties || {}
+        const title = cardTitle(properties, config)
+        const html = propertyTable(properties, config.popup.properties, config.unit)
+        if (title == null && html == null) {
+            this._hideOwnCard()
+            this._removePin()
+            return
+        }
+        const latlng = point?.latlng ?? info.latlng
+
         const actions = config.actions
         const card = {}
         this._openCard = card
+        this._shown = info
         mmgisRequest('map:showPopup', {
                 latlng,
                 title,
@@ -301,6 +329,7 @@ const FeaturePopupTool = {
     _hideOwnCard() {
         if (!this._openCard) return
         this._openCard = null
+        this._shown = null
         mmgisRequest('map:hidePopup').catch(() => {})
     },
 
@@ -624,8 +653,8 @@ function readProperty(properties, key) {
 
 /**
  * A nested value would otherwise reach the card as '[object Object]'. The
- * layer's measured property prints with the layer's unit after it, so the
- * label no longer has to carry the unit by hand.
+ * layer's measured property prints in the unit the layer is shown in, with
+ * that unit after it, so the label no longer has to carry the unit by hand.
  */
 function formatValue(value, prop, unit) {
     if (typeof value === 'object') {
@@ -635,11 +664,11 @@ function formatValue(value, prop, unit) {
             return String(value)
         }
     }
-    const text = String(value)
     if (unit && prop === unit.property && isMeasurement(value)) {
-        return `${text} ${unit.sourceUnit}`
+        const shown = applyUnit(Number(value), unit.active)
+        return `${shown} ${unit.active?.label ?? unit.sourceUnit}`
     }
-    return text
+    return String(value)
 }
 
 /** A number, or a string holding one, which CSV-derived data often stores. */
