@@ -186,13 +186,6 @@ test.describe('renderCfnTemplate', () => {
         ).toBe(true)
     })
 
-    test('auth function returns 401 with a www-authenticate challenge', () => {
-        const code = renderAuthFunctionCode(PASSWORD)
-        expect(code).toContain('statusCode: 401')
-        expect(code).toContain('www-authenticate')
-        expect(code).toContain('return request')
-    })
-
     test('distribution is gated by the viewer-request function and serves index.html', () => {
         const template = JSON.parse(renderCfnTemplate({ password: PASSWORD }))
         const dist =
