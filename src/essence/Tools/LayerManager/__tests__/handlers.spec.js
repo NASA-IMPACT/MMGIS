@@ -7,6 +7,7 @@ import {
     setOpacity,
     setColormap,
     setRescale,
+    setUnit,
     zoomToLayer,
     compareLayer,
     showAddLayer,
@@ -225,6 +226,20 @@ test.describe('handlers', () => {
             event: 'layer:cogRescaleChange',
             payload: { layerName: 'layerA', min: 2, max: 20 },
         })
+    })
+
+    test('setUnit asks core and reports whether it took, emitting nothing itself', async () => {
+        const { requests, emitCalls } = setupMock({ 'layers:setUnit': true })
+        expect(await setUnit('layerA', 'mg/m³')).toBe(true)
+        expect(requests).toEqual([
+            { name: 'layers:setUnit', params: { layerUUID: 'layerA', unit: 'mg/m³' } },
+        ])
+        expect(emitCalls).toHaveLength(0)
+
+        setupMock({ 'layers:setUnit': false })
+        expect(await setUnit('layerA', 'ppb')).toBe(false)
+        setupMock({})
+        expect(await setUnit('layerA', 'ppb')).toBe(false)
     })
 
     test('setRescale is a no-op when core reports the layer unchangeable', async () => {

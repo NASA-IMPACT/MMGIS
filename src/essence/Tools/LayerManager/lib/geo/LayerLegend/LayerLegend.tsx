@@ -53,6 +53,8 @@ export type LayerLegendProps = {
     dragHandle?: DragHandleProps
     /** The user picked a model run for a forecast layer. */
     onRunChange?: (layerId: string, run: string) => void | Promise<boolean>
+    /** The user picked one of the units the layer can be shown in. */
+    onUnitChange?: (layerId: string, unit: string) => void | Promise<boolean>
 }
 
 export type DragHandleProps = {
@@ -75,6 +77,7 @@ export function LayerLegend({
     selectedTime,
     dragHandle,
     onRunChange,
+    onUnitChange,
 }: LayerLegendProps) {
     const {
         id,
@@ -85,6 +88,7 @@ export function LayerLegend({
         min,
         max,
         unit,
+        unitOptions,
         opacity,
         visible,
         cog,
@@ -112,12 +116,20 @@ export function LayerLegend({
     const selectedRunLabel =
         selectedRunIndex >= 0 ? runLabel(selectedRun, selectedRunIndex) : selectedRun
 
+    // Follows the unit core shows the layer in; a pick shows at once and
+    // snaps back when the host reports that core refused it.
+    const shownUnit = unit?.label ?? ''
+    const [selectedUnit, setSelectedUnit] = useState(shownUnit)
+    useEffect(() => setSelectedUnit(shownUnit), [shownUnit])
+    const hasUnitChoice = (unitOptions?.length ?? 0) > 1
+
     const [isVisible, setIsVisible] = useState(visible)
     const [isInfoOpen, setIsInfoOpen] = useState(defaultInfoExpanded)
     const [isOpacityExpanded, setIsOpacityExpanded] = useState(false)
     const [isRampPickerOpen, setIsRampPickerOpen] = useState(false)
     const [isMenuOpen, setIsMenuOpen] = useState(false)
     const [isRunPickerOpen, setIsRunPickerOpen] = useState(false)
+    const [isUnitPickerOpen, setIsUnitPickerOpen] = useState(false)
     // Null while the answer is outstanding, which keeps the action inert until
     // it is known to lead somewhere.
     const [canZoom, setCanZoom] = useState<boolean | null>(null)
@@ -127,6 +139,7 @@ export function LayerLegend({
     const infoBtnRef = useRef<HTMLButtonElement | null>(null)
     const menuBtnRef = useRef<HTMLButtonElement | null>(null)
     const runBtnRef = useRef<HTMLButtonElement | null>(null)
+    const unitBtnRef = useRef<HTMLButtonElement | null>(null)
     const opacityPopoverId = useId()
     const opacityHeadingId = useId()
     const rampPopoverId = useId()
@@ -135,6 +148,8 @@ export function LayerLegend({
     const runPopoverId = useId()
     const runLabelId = useId()
     const runValueId = useId()
+    const unitPopoverId = useId()
+    const unitLabelId = useId()
 
     // Only raster layers carry rescale/ramp settings to expose, and only those
     // whose colormap can actually be changed. A layer painting from a COG
@@ -167,6 +182,8 @@ export function LayerLegend({
     const closeMenu = useCallback(() => setIsMenuOpen(false), [])
 
     const closeRunPicker = useCallback(() => setIsRunPickerOpen(false), [])
+
+    const closeUnitPicker = useCallback(() => setIsUnitPickerOpen(false), [])
 
     // The trigger goes with the layer, and a picker left open would float
     // with nothing to anchor to.
@@ -254,6 +271,21 @@ export function LayerLegend({
             },
         }),
     )
+
+    const unitItems: PopoverMenuItem[] = (unitOptions ?? []).map((option) => ({
+        id: option,
+        label: option,
+        checked: option === selectedUnit,
+        onSelect: () => {
+            setSelectedUnit(option)
+            Promise.resolve(onUnitChange?.(id, option)).then(
+                (shown) => {
+                    if (shown === false) setSelectedUnit(shownUnit)
+                },
+                () => setSelectedUnit(shownUnit),
+            )
+        },
+    }))
 
     const handleVisibilityToggle = () => {
         const newState = !isVisible
@@ -505,8 +537,34 @@ export function LayerLegend({
                     </div>
                 </div>
             )}
-            {unit?.label && (
-                <div className="blocks-layer-legend__unit-label">{unit.label}</div>
+            {hasUnitChoice ? (
+                <div className="blocks-layer-legend__unit">
+                    <span className="blocks-layer-legend__unit-label" id={unitLabelId}>
+                        Unit
+                    </span>
+                    <button
+                        ref={unitBtnRef}
+                        type="button"
+                        className={`blocks-layer-legend__unit-select ${isUnitPickerOpen ? 'blocks-layer-legend__unit-select--active' : ''}`}
+                        onClick={() =>
+                            isUnitPickerOpen ? closeUnitPicker() : setIsUnitPickerOpen(true)
+                        }
+                        aria-haspopup="menu"
+                        aria-expanded={isUnitPickerOpen}
+                        aria-controls={isUnitPickerOpen ? unitPopoverId : undefined}
+                        aria-labelledby={unitLabelId}
+                    >
+                        <span className="blocks-layer-legend__unit-value">{selectedUnit}</span>
+                        <i
+                            className="mdi mdi-chevron-down blocks-layer-legend__unit-chevron"
+                            aria-hidden="true"
+                        />
+                    </button>
+                </div>
+            ) : (
+                unit?.label && (
+                    <div className="blocks-layer-legend__unit-label">{unit.label}</div>
+                )
             )}
             {isVisible && hasLegendContent && (
                 <div className="blocks-layer-legend__content">
@@ -616,6 +674,26 @@ export function LayerLegend({
             </FloatingPopover>
             {/* Portaled like the other row popovers. Focus lands on the pinned
                 run, so arrowing starts from what is showing. */}
+            {hasUnitChoice && (
+                <FloatingPopover
+                    id={unitPopoverId}
+                    anchorRef={unitBtnRef}
+                    isOpen={isUnitPickerOpen}
+                    onClose={closeUnitPicker}
+                    placement="bottom"
+                    offset={4}
+                    className="blocks-layer-legend__run-popover"
+                    label={`Unit for ${title}`}
+                    autoFocus
+                >
+                    <div className="blocks-layer-legend__run-popover-heading">Unit</div>
+                    <PopoverMenu
+                        items={unitItems}
+                        onSelect={closeUnitPicker}
+                        className="blocks-layer-legend__run-menu"
+                    />
+                </FloatingPopover>
+            )}
             {forecast && (
                 <FloatingPopover
                     id={runPopoverId}
