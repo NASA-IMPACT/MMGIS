@@ -37,6 +37,7 @@ import {
     mmgisEmit,
     mmgisGetLayerConfig,
     mmgisGetLayerTemporalExtent,
+    mmgisGetLayerUnit,
     mmgisHidePlugin,
     mmgisGetTimeEnd,
     mmgisGetTimeStart,
@@ -103,6 +104,8 @@ interface Selection {
     config: TimeseriesConfig
     title: string
     layerDisplayName: string
+    /** The unit the layer declares, or null when it declares none. */
+    layerUnit: string | null
 }
 
 const FetchTimeseriesTool = {
@@ -290,7 +293,10 @@ const FetchTimeseriesTool = {
         const seq = ++this._fetchSeq
         // hasHandler-guarded: during mission load/reload the provider isn't
         // registered yet and this resolves null — the request is a no-op.
-        const layerConfig = await mmgisGetLayerConfig(layerName)
+        const [layerConfig, unitAnswer] = await Promise.all([
+            mmgisGetLayerConfig(layerName),
+            mmgisGetLayerUnit(layerName).catch(() => null),
+        ])
         if (seq !== this._fetchSeq) return
         const config = getTimeseriesConfig(layerConfig)
         // Layers without a timeseries block do nothing — no fetch, no card,
@@ -308,6 +314,7 @@ const FetchTimeseriesTool = {
             config,
             title: featureTitle(feature, config, layerDisplayName),
             layerDisplayName,
+            layerUnit: unitAnswer?.sourceUnit ?? null,
         }
         await this._ensureRange(this._selection)
         if (seq !== this._fetchSeq) return
@@ -319,7 +326,8 @@ const FetchTimeseriesTool = {
     },
 
     async _fetchFor(selection: Selection) {
-        const { feature, layerName, latlng, config, title, layerDisplayName } = selection
+        const { feature, layerName, latlng, config, title, layerDisplayName, layerUnit } =
+            selection
         const range = await this._ensureRange(selection)
 
         this._abort?.abort()
@@ -410,6 +418,7 @@ const FetchTimeseriesTool = {
                 layerDisplayName,
                 layerName,
                 featureId: feature.id,
+                layerUnit,
             })
             this._setStatus({ kind: 'idle' })
             mmgisEmit(EVENTS.ready, chartPayload)
