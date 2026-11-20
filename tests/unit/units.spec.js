@@ -80,6 +80,14 @@ describe('resolveLayerUnit', () => {
         ]
         expect(resolveLayerUnit({ _legend })).toEqual({ source_unit: 'μg/m³' })
     })
+    it('ignores hidden legend entries, as the legend itself does', () => {
+        const _legend = [
+            { shape: 'continuous', value: 'NaN', hideFromLegend: true },
+            { shape: 'continuous', value: '1 ppm' },
+            { shape: 'continuous', value: '2 ppm' },
+        ]
+        expect(resolveLayerUnit({ _legend })).toEqual({ source_unit: 'ppm' })
+    })
     it('prefers the declared unit over the older fields', () => {
         expect(
             resolveLayerUnit({ ...pm25, cogUnits: 'other' }).source_unit

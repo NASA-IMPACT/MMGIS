@@ -1,10 +1,10 @@
-import { readScaleValues } from '../legend/buildLayerLegend'
+import { readEntries, readScaleValues } from '../legend/entries'
 import type { ActiveUnit, LayerUnit, LayerUnitAnswer, UnitOption } from './types'
 
 type LayerConfig = {
     cogUnits?: string | null
     currentUnit?: string | null
-    _legend?: { value?: string | number }[]
+    _legend?: unknown
     variables?: { unit?: unknown } | null
     [key: string]: unknown
 }
@@ -55,8 +55,8 @@ export const resolveLayerUnit = (config: LayerConfig | null | undefined): LayerU
     if (declared) return declared
     if (typeof config.cogUnits === 'string' && config.cogUnits.trim())
         return { source_unit: config.cogUnits.trim() }
-    const legend = Array.isArray(config._legend) ? config._legend : []
-    const scale = legend.length ? readScaleValues(legend) : null
+    const entries = readEntries(config._legend)
+    const scale = entries.length ? readScaleValues(entries) : null
     if (scale?.unit) return { source_unit: scale.unit }
     return null
 }
