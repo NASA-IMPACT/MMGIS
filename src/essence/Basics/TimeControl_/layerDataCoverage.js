@@ -2,6 +2,7 @@ import {
     resolveTimePolicy,
     isPeriodicRequest,
     takesPeriodWindow,
+    periodHolding,
 } from './layerTimePolicy'
 import { readEntry, resolveListedEntries } from './listedDates'
 
@@ -21,26 +22,39 @@ const isMovingBound = (raw) =>
     typeof raw === 'string' && raw.trim().startsWith('now')
 
 /**
- * One bound of an extent. Absent or unreadable is open. A `now` bound is
- * resolved by the core's time-policy reader, so it accepts the same
- * `now [± <ISO 8601 duration>] [/ y|M|d|h]` forms every other reader of
- * these fields does.
- * An ISO 8601 bound covers its whole unit, so a start opens at the beginning
- * of what it names and an end closes at the close of it: an end of 2020-03
- * runs to the last instant of March. Anything else is read leniently as the
- * exact instant it names, because configs carry these bounds in looser
- * formats too.
+ * The instant one extent bound names, or null when it is absent or
+ * unreadable. A `now` bound is resolved by the core's time-policy reader,
+ * so it accepts the same `now [± <ISO 8601 duration>] [/ y|M|d|h]` forms
+ * every other reader of these fields does. An ISO 8601 bound is read in
+ * UTC, any part left out filled with its start, so 2020-03 is 1 March
+ * 00:00. Anything else is read leniently, because configs carry these
+ * bounds in looser formats too.
  */
-function resolveBound(raw, open, edge) {
-    if (raw == null || raw === '') return open
+function resolveInstant(raw) {
+    if (raw == null || raw === '') return null
     if (isMovingBound(raw)) {
         const iso = resolveTimePolicy(raw, { now: new Date(Date.now()) })
-        return iso == null ? open : new Date(iso).getTime()
+        return iso == null ? null : new Date(iso).getTime()
     }
     const entry = readEntry(raw)
-    if (entry) return edge === 'start' ? entry.start : entry.end
+    if (entry) return entry.at
     const parsed = new Date(raw).getTime()
-    return Number.isNaN(parsed) ? open : parsed
+    return Number.isNaN(parsed) ? null : parsed
+}
+
+/**
+ * One bound of an extent. Absent or unreadable is open. The bound is the
+ * exact instant it names, unless the layer is periodic (see
+ * `periodHolding`): its data then comes a whole period at a time, so a start
+ * opens at the beginning of the period holding it and an end closes at that
+ * period's last instant.
+ */
+function resolveBound(time, raw, open, edge) {
+    const instant = resolveInstant(raw)
+    if (instant == null) return open
+    const period = periodHolding(time, new Date(instant))
+    if (period == null) return instant
+    return edge === 'start' ? period[0].getTime() : period[1].getTime() - 1
 }
 
 // time config -> its resolved coverage and the fields it was read from
@@ -60,13 +74,14 @@ const resolved = new WeakMap()
 export function resolveDataCoverage(time) {
     if (time?.enabled !== true) return null
 
-    const { dataDates, dataStartTime, dataEndTime } = time
+    const { dataDates, dataStartTime, dataEndTime, interval } = time
     const hit = resolved.get(time)
     if (
         hit &&
         hit.dataDates === dataDates &&
         hit.dataStartTime === dataStartTime &&
-        hit.dataEndTime === dataEndTime
+        hit.dataEndTime === dataEndTime &&
+        hit.interval === interval
     )
         return hit.coverage
 
@@ -75,7 +90,13 @@ export function resolveDataCoverage(time) {
         coverage?.kind !== 'sparse' &&
         (isMovingBound(dataStartTime) || isMovingBound(dataEndTime))
     if (!moving)
-        resolved.set(time, { dataDates, dataStartTime, dataEndTime, coverage })
+        resolved.set(time, {
+            dataDates,
+            dataStartTime,
+            dataEndTime,
+            interval,
+            coverage,
+        })
     return coverage
 }
 
@@ -97,8 +118,8 @@ function readDataCoverage(time) {
     const hasEnd = time.dataEndTime != null && time.dataEndTime !== ''
     if (!hasStart && !hasEnd) return null
 
-    const start = resolveBound(time.dataStartTime, -Infinity, 'start')
-    const end = resolveBound(time.dataEndTime, Infinity, 'end')
+    const start = resolveBound(time, time.dataStartTime, -Infinity, 'start')
+    const end = resolveBound(time, time.dataEndTime, Infinity, 'end')
 
     if (start > end) {
         console.warn(

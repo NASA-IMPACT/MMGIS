@@ -152,28 +152,28 @@ describe('resolveDataCoverage over listed entries', () => {
 })
 
 /**
- * The extent follows the same rule: a start runs from the beginning of the
- * unit it names, and an end runs to the close of its unit.
+ * An extent bound is the exact instant it names, read in UTC, unless the
+ * layer is periodic.
  */
 describe('resolveDataCoverage over an extent', () => {
     const extent = (dataStartTime, dataEndTime) =>
         resolveDataCoverage({ enabled: true, dataStartTime, dataEndTime })
 
-    test('runs a month-only end to the close of that month', () => {
-        expect(extent('2020-01', '2020-03').spans).toEqual([
-            { start: ms('2020-01-01T00:00:00Z'), end: ms('2020-03-31T23:59:59.999Z') },
+    test('reads bounds given to the second as those instants', () => {
+        expect(extent('2026-11-20T00:00:00Z', '2026-11-20T14:15:27Z').spans).toEqual([
+            { start: ms('2026-11-20T00:00:00Z'), end: ms('2026-11-20T14:15:27Z') },
         ])
     })
 
-    test('reads a start and end naming the same day as that whole day', () => {
-        expect(extent('2020-03-04', '2020-03-04').spans).toEqual([
-            { start: ms('2020-03-04T00:00:00Z'), end: ms('2020-03-04T23:59:59.999Z') },
+    test('reads a date-only or month-only bound as its first instant', () => {
+        expect(extent('2020-01', '2020-03-04').spans).toEqual([
+            { start: ms('2020-01-01T00:00:00Z'), end: ms('2020-03-04T00:00:00Z') },
         ])
     })
 
-    test('widens bounds given to the minute to their hours', () => {
-        expect(extent('2020-03-04T14:30Z', '2020-03-04T16:10Z').spans).toEqual([
-            { start: ms('2020-03-04T14:00:00Z'), end: ms('2020-03-04T16:59:59.999Z') },
+    test('reads an ISO 8601 bound with no offset in UTC', () => {
+        expect(extent('2020-03-04T14:30', '2020-03-04T16:10').spans).toEqual([
+            { start: ms('2020-03-04T14:30:00Z'), end: ms('2020-03-04T16:10:00Z') },
         ])
     })
 
@@ -187,7 +187,7 @@ describe('resolveDataCoverage over an extent', () => {
 
         expect(coverage.kind).toBe('continuous')
         expect(coverage.spans).toEqual([
-            { start: ms('2020-01-01T00:00:00Z'), end: ms('2020-12-31T23:59:59.999Z') },
+            { start: ms('2020-01-01T00:00:00Z'), end: ms('2020-12-31T00:00:00Z') },
         ])
     })
 
@@ -196,7 +196,7 @@ describe('resolveDataCoverage over an extent', () => {
             { start: ms('2020-01-01T00:00:00Z'), end: Infinity },
         ])
         expect(extent(undefined, '2020-12-31').spans).toEqual([
-            { start: -Infinity, end: ms('2020-12-31T23:59:59.999Z') },
+            { start: -Infinity, end: ms('2020-12-31T00:00:00Z') },
         ])
     })
 
@@ -254,6 +254,79 @@ describe('resolveDataCoverage over an extent', () => {
 })
 
 /**
+ * A periodic layer (`time.interval` of an hour or more) holds data a whole
+ * period at a time, so each extent bound widens to the period holding it:
+ * a start to the period's first instant, an end to its last. Periods step
+ * from a concrete `dataStartTime`, or follow UTC calendar boundaries for a
+ * cadence of exactly one year, month, day or hour.
+ */
+describe('resolveDataCoverage over a periodic extent', () => {
+    const extent = (dataStartTime, dataEndTime, interval) =>
+        resolveDataCoverage({ enabled: true, dataStartTime, dataEndTime, interval })
+
+    test('widens the end of a daily layer to the close of its day', () => {
+        expect(extent('2020-01-01', '2020-03-04T14:30Z', 'P1D').spans).toEqual([
+            { start: ms('2020-01-01T00:00:00Z'), end: ms('2020-03-04T23:59:59.999Z') },
+        ])
+    })
+
+    test('steps periods from a concrete start', () => {
+        expect(
+            extent('2020-01-01T06:00Z', '2020-01-10T12:00Z', 'P7D').spans
+        ).toEqual([
+            { start: ms('2020-01-01T06:00:00Z'), end: ms('2020-01-15T05:59:59.999Z') },
+        ])
+    })
+
+    test('widens moving bounds to calendar periods when nothing anchors them', () => {
+        vi.spyOn(Date, 'now').mockReturnValue(ms('2026-06-01T12:30:00Z'))
+
+        expect(extent('now - PT3H', 'now', 'PT1H').spans).toEqual([
+            { start: ms('2026-06-01T09:00:00Z'), end: ms('2026-06-01T12:59:59.999Z') },
+        ])
+    })
+
+    test('widens a bound open on one side only on the other', () => {
+        expect(extent(undefined, '2025-03-17', 'P1M').spans).toEqual([
+            { start: -Infinity, end: ms('2025-03-31T23:59:59.999Z') },
+        ])
+    })
+
+    test('reads exact instants when the period cannot be placed', () => {
+        vi.spyOn(Date, 'now').mockReturnValue(ms('2026-06-01T12:30:00Z'))
+
+        expect(extent('now - P7D', 'now', 'P7D').spans).toEqual([
+            { start: ms('2026-05-25T12:30:00Z'), end: ms('2026-06-01T12:30:00Z') },
+        ])
+    })
+
+    test('reads exact instants for an interval shorter than an hour', () => {
+        expect(
+            extent('2020-03-04T14:05Z', '2020-03-04T14:35Z', 'PT10M').spans
+        ).toEqual([
+            { start: ms('2020-03-04T14:05:00Z'), end: ms('2020-03-04T14:35:00Z') },
+        ])
+    })
+
+    test('resolves again when the interval changes', () => {
+        const time = {
+            enabled: true,
+            dataStartTime: '2020-01-01',
+            dataEndTime: '2020-03-04T14:30Z',
+        }
+        expect(resolveDataCoverage(time).spans[0].end).toBe(
+            ms('2020-03-04T14:30:00Z')
+        )
+
+        time.interval = 'P1D'
+
+        expect(resolveDataCoverage(time).spans[0].end).toBe(
+            ms('2020-03-04T23:59:59.999Z')
+        )
+    })
+})
+
+/**
  * Coverage is resolved for every time-enabled layer on every time step, and
  * a layer may list years of dates, so the resolution is kept per config and
  * only redone when the config it was read from changes.
@@ -284,7 +357,7 @@ describe('resolveDataCoverage caching', () => {
         time.dataEndTime = '2020-06-30'
 
         expect(resolveDataCoverage(time).spans[0].end).toBe(
-            ms('2020-06-30T23:59:59.999Z')
+            ms('2020-06-30T00:00:00Z')
         )
     })
 
@@ -444,6 +517,21 @@ describe('evaluateLayerDataCoverage verdict', () => {
         expect(hasData(layer('2025-01-09T00:00:00Z'))).toBe(true)
         expect(hasData(layer('2025-01-09T23:59:59Z'))).toBe(true)
         expect(hasData(layer('2025-01-10T00:00:00Z'))).toBe(false)
+    })
+
+    test('is false past an extent end given to the second, within its hour', () => {
+        const layer = (end) => ({
+            name: 'Fire detection (NRT)',
+            time: {
+                enabled: true,
+                dataStartTime: '2026-11-20T00:00:00Z',
+                dataEndTime: '2026-11-20T14:15:27Z',
+                start: '2020-01-01T00:00:00Z',
+                end,
+            },
+        })
+        expect(hasData(layer('2026-11-20T14:15:27Z'))).toBe(true)
+        expect(hasData(layer('2026-11-20T14:39:08Z'))).toBe(false)
     })
 
     test('reads listed times over the extent', () => {
@@ -667,8 +755,8 @@ describe('evaluateLayerDataCoverage for a periodic request', () => {
                 {
                     type: timeType,
                     interval: 'P1M',
-                    dataEndTime: '2025-03-17T00:00:00Z',
-                    start: '2025-03-01T00:00:00Z',
+                    dataEndTime: '2025-02-17T00:00:00Z',
+                    start: '2025-02-01T00:00:00Z',
                     end: '2025-03-31T23:59:59Z',
                 },
                 type

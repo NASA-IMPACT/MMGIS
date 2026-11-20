@@ -349,6 +349,23 @@ function periodAt(
     return unit == null ? null : calendarPeriod(cursor, unit)
 }
 
+/**
+ * The period [start, next start) holding `at` for a periodic layer — the
+ * same period `layerRequestWindow` would request at that instant — or null
+ * when the layer is not periodic or no period can be placed there.
+ */
+export function periodHolding(
+    time: RequestTimeConfig | null | undefined,
+    at: Date
+): [Date, Date] | null {
+    const cadence = requestCadenceOf(time)
+    if (cadence == null || time == null || isNaN(at.getTime())) return null
+    const period = periodAt(time, cadence, at)
+    if (period == null || period.some((edge) => isNaN(edge.getTime())))
+        return null
+    return period
+}
+
 const PERIOD_WINDOW_TYPES = new Set(['tile', 'vector', 'vectortile'])
 
 /**

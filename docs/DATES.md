@@ -85,6 +85,11 @@ The only home for a layer's acquisition range is a pair of fields on the layer i
 - `now - P1D`, `now + P5D`, and any other ISO 8601 duration offset from `now`
 - a trailing `/y`, `/M`, `/d` or `/h` (case-sensitive) rounds the result down to the start of that UTC year, month, day or hour, after any offset: `now/d` is 00:00 UTC today, `now - P1D/d` is 00:00 UTC yesterday. Rounding is always down, so on `dataEndTime` it ends coverage at the start of the unit
 
+The coverage gate (`layerDataCoverage.js`) hides a layer when the cursor is outside these two times. It reads them in UTC:
+
+- **By default, exactly as written.** An end of `2026-11-20T14:15:27Z` stops coverage at that second. A date with no time, like `2020-03-04`, means midnight at the start of that day.
+- **For a periodic layer, widened to whole periods.** A layer is periodic when its `interval` is an hour or longer and it has no Data Dates. The start moves back to the beginning of its period and the end moves forward to the end of its period. With `interval: P1D`, an end of `2020-03-04T14:30Z` covers all of 4 March.
+
 `temporalExtentFor` in `src/essence/Basics/Layers_/Layers_.js` resolves the policy at call time through `layerTimePolicy.ts`, and the `layers:getTemporalExtent` bus request serves the result for one layer, by UUID or name, or for all layers at once. The Timeline and the Layers panel read it.
 
 Two ways the fields get filled:
