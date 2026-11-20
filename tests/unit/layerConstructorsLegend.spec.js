@@ -171,3 +171,31 @@ describe('constructVectorLayer legend styling', () => {
         expect(styleOf(options, { co2: 400 }).fillColor).toBe('#0000ff')
     })
 })
+
+describe('constructVectorLayer colorBy styling', () => {
+    beforeEach(() => {
+        installLeafletStub()
+    })
+
+    const colorBy = {
+        mode: 'ranges',
+        property: 'frp',
+        ranges: [
+            { min: 0, color: '#FEF0D9' },
+            { min: 350, color: '#B30000' },
+        ],
+    }
+    const fixed = { color: '#00ff00', fillColor: '#00ff00' }
+
+    test('colours the fill by value over legend rows and fillColorProp', () => {
+        const options = build({ ...fixed, colorBy, fillColorProp: 'c' })
+        const style = styleOf(options, { frp: 400, co2: 400, c: '#ffffff' })
+        expect(style.fillColor).toBe('#B30000')
+        expect(style.color).toBe('#00ff00')
+    })
+
+    test('keeps the fixed colours for a value it cannot place', () => {
+        const options = build({ ...fixed, colorBy }, null)
+        expect(styleOf(options, { frp: 'n/a' }).fillColor).toBe('#00ff00')
+    })
+})

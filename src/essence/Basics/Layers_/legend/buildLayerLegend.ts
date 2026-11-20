@@ -14,9 +14,15 @@
 // no colormap can stand in for those, so its swatches survive. A raster whose
 // declared entries are all scale-shaped is describing a ramp, whether or not
 // its labels read as numbers, so the live colormap draws it.
+//
+// A vector layer coloured by a `style.colorBy` setting is described by that
+// setting alone. Its legend rows play no part in its colouring (see
+// resolveFeatureColors), so drawing them would legend colours the map does not
+// use.
 
 import { hasCogColormap } from '../tileUrlUtils'
 import { resolveColormapColors } from '../../Colormaps/resolveColormapColors'
+import { compileColorBy, readsColorBy, type CompiledColorBy } from '../ColorBy'
 import { NO_LEGEND, type LayerLegend, type LegendSwatch } from './types'
 
 type LegendEntry = {
@@ -38,6 +44,7 @@ type LayerConfig = {
     cogMax?: number | string
     currentCogMax?: number | string
     cogUnits?: string | null
+    style?: { colorBy?: unknown; [key: string]: unknown } | null
     [key: string]: unknown
 }
 
@@ -161,17 +168,48 @@ const readEntries = (declared: unknown): LegendEntry[] =>
         : []
 
 /**
+ * A `colorBy` setting's legend: one swatch per band for ranges, every band
+ * shown; the ramp's gradient from min to max for a colormap.
+ */
+const readColorByLegend = (colorBy: CompiledColorBy): LayerLegend =>
+    colorBy.mode === 'ranges'
+        ? {
+              ...NO_LEGEND,
+              type: 'categorical',
+              swatches: colorBy.bands.map(({ color, label }) => ({
+                  color,
+                  label,
+              })),
+          }
+        : {
+              ...NO_LEGEND,
+              type: 'gradient',
+              stops: colorBy.colors,
+              min: colorBy.min,
+              max: colorBy.max,
+              unit: colorBy.unit ? { label: colorBy.unit } : null,
+              colormap: colorBy.colormap,
+          }
+
+/**
  * What the given layer's legend is, right now.
  *
  * `titilerUrl` is where a colormap the bundled ramps do not hold is looked up;
  * null leaves such a ramp falling back rather than resolved. Resolving colors
  * is why this is async — see `layers:getLegend`, which awaits it.
+ * `engineType` decides whether a `colorBy` setting applies; see readsColorBy.
  */
 export const buildLayerLegend = async (
     layerConfig: LayerConfig | null | undefined,
-    titilerUrl: string | null = null
+    titilerUrl: string | null = null,
+    engineType?: string
 ): Promise<LayerLegend> => {
     if (layerConfig == null) return NO_LEGEND
+
+    const colorBy = readsColorBy(layerConfig.type, engineType)
+        ? compileColorBy(layerConfig.style?.colorBy)
+        : null
+    if (colorBy) return readColorByLegend(colorBy)
 
     const entries = readEntries(layerConfig._legend)
     const declaredGradient = readGradient(entries)

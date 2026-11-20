@@ -39,18 +39,27 @@ const sampleLocal = (key: string): string[] => {
     return colors
 }
 
+/**
+ * A bundled ramp's colours, `_r` read as the ramp reversed, or null for a name
+ * the bundle does not hold. Synchronous: nothing is fetched.
+ */
+export const bundledColormapColors = (
+    name: string | null | undefined
+): string[] | null => {
+    const localKey = findLocalKey(name)
+    if (!localKey) return null
+    const colors = sampleLocal(localKey)
+    return isReversedColormap(name) ? colors.reverse() : colors
+}
+
 export const resolveColormapColors = async (
     name: string | null | undefined,
     titilerUrl?: string | null
 ): Promise<string[] | null> => {
     if (!name) return null
+    const bundled = bundledColormapColors(name)
+    if (bundled) return bundled
     const reversed = isReversedColormap(name)
-
-    const localKey = findLocalKey(name)
-    if (localKey) {
-        const colors = sampleLocal(localKey)
-        return reversed ? colors.reverse() : colors
-    }
 
     let fetched: string[] | null = null
     try {
