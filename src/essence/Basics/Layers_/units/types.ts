@@ -16,3 +16,9 @@ export interface ActiveUnit {
     scale: number
     offset: number
 }
+
+export interface LayerUnitAnswer {
+    source_unit: string
+    active: ActiveUnit
+    options: Required<UnitOption>[]
+}

@@ -1,5 +1,5 @@
 import { readScaleValues } from '../legend/buildLayerLegend'
-import type { ActiveUnit, LayerUnit, UnitOption } from './types'
+import type { ActiveUnit, LayerUnit, LayerUnitAnswer, UnitOption } from './types'
 
 type LayerConfig = {
     cogUnits?: string | null
@@ -87,4 +87,13 @@ export const toDisplay = <T>(value: T, unit: ActiveUnit | null | undefined): T |
 export const toSource = <T>(value: T, unit: ActiveUnit | null | undefined): T | number => {
     if (!unit || typeof value !== 'number' || !Number.isFinite(value)) return value
     return (value - unit.offset) / unit.scale
+}
+
+export const layerUnitAnswer = (config: LayerConfig | null | undefined): LayerUnitAnswer | null => {
+    const unit = resolveLayerUnit(config)
+    const active = activeUnit(config)
+    if (!unit || !active) return null
+    const source = { label: unit.source_unit, scale: 1, offset: 0 }
+    const options = (unit.options ?? []).map((o) => ({ ...o, offset: o.offset ?? 0 }))
+    return { source_unit: unit.source_unit, active, options: [source, ...options] }
 }
