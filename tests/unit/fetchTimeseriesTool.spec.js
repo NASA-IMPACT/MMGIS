@@ -256,6 +256,32 @@ describe('FetchTimeseriesTool', () => {
         expect(ready.series.map((s) => s.unit)).toEqual(['µg/m³'])
     })
 
+    test('a unit switch on the shown layer redraws the chart from the response it has', async () => {
+        layerUnits[LAYER] = {
+            sourceUnit: 'µg/m³',
+            property: 'value',
+            active: { sourceUnit: 'µg/m³', label: 'µg/m³', scale: 1, offset: 0 },
+            options: [
+                { label: 'µg/m³', scale: 1, offset: 0 },
+                { label: 'mg/m³', scale: 0.001, offset: 0 },
+            ],
+        }
+        await request()
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+
+        const mg = { sourceUnit: 'µg/m³', label: 'mg/m³', scale: 0.001, offset: 0 }
+        handlers['layer:unitChange'][0]({ layerName: LAYER, unit: mg })
+        const readies = emittedFor(READY)
+        expect(readies).toHaveLength(2)
+        expect(readies[1].series[0].unit).toBe('mg/m³')
+        expect(readies[1].series[0].points[0].y).toBe(0.001)
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+
+        // Another layer's switch is not this chart's business.
+        handlers['layer:unitChange'][0]({ layerName: 'other', unit: mg })
+        expect(emittedFor(READY)).toHaveLength(2)
+    })
+
     test('without a layer extent, the range seeds from the mission time window, clipped to its last year', async () => {
         timeEnabled = true
         await request()
