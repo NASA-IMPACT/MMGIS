@@ -162,6 +162,10 @@ describe('toDisplay / toSource', () => {
         expect(toDisplay(273.15, celsius)).toBeCloseTo(0, 12)
         expect(toSource(toDisplay(300, celsius), celsius)).toBeCloseTo(300, 12)
     })
+    it('drops floating-point noise from a conversion', () => {
+        expect(toDisplay(18, mg)).toBe(0.018)
+        expect(toSource(0.02, mg)).toBe(20)
+    })
     it('is the identity for the source unit', () => {
         const src = activeUnit(pm25)
         expect(toDisplay(9.7, src)).toBe(9.7)
@@ -224,5 +228,21 @@ describe('layerUnitState property', () => {
             _legend: [{ propertyName: 'frp', value: '1 MW' }],
         }
         expect(layerUnitState(processed).property).toBe('frp')
+    })
+})
+
+describe('findUnitOption', () => {
+    it('finds a listed unit by label, tolerantly, and nothing otherwise', async () => {
+        const { findUnitOption } = await import(
+            '../../src/essence/Basics/Layers_/units/units'
+        )
+        expect(findUnitOption(pm25, ' MG/M³ ')).toEqual({
+            label: 'mg/m³',
+            scale: 0.001,
+            offset: 0,
+        })
+        expect(findUnitOption(pm25, 'µg/m³').scale).toBe(1)
+        expect(findUnitOption(pm25, 'ppm')).toBeNull()
+        expect(findUnitOption({}, 'ppm')).toBeNull()
     })
 })

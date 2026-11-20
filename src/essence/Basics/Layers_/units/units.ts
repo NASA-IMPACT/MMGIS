@@ -95,14 +95,18 @@ export const activeUnit = (config: LayerConfig | null | undefined): ActiveUnit |
     return asActive(unit.sourceUnit, chosen)
 }
 
+// 18 × 0.001 is 0.018000000000000002 in floating point; twelve significant
+// digits keep every real measurement and drop that noise.
+const tidy = (value: number): number => Number(value.toPrecision(12))
+
 export const toDisplay = <T>(value: T, unit: ActiveUnit | null | undefined): T | number => {
     if (!unit || typeof value !== 'number' || !Number.isFinite(value)) return value
-    return value * unit.scale + unit.offset
+    return tidy(value * unit.scale + unit.offset)
 }
 
 export const toSource = <T>(value: T, unit: ActiveUnit | null | undefined): T | number => {
     if (!unit || typeof value !== 'number' || !Number.isFinite(value)) return value
-    return (value - unit.offset) / unit.scale
+    return tidy((value - unit.offset) / unit.scale)
 }
 
 export const layerUnitState = (config: LayerConfig | null | undefined): LayerUnitState | null => {
@@ -117,4 +121,13 @@ export const layerUnitState = (config: LayerConfig | null | undefined): LayerUni
         active,
         options: [source, ...options],
     }
+}
+
+export const findUnitOption = (
+    config: LayerConfig | null | undefined,
+    label: unknown,
+): Required<UnitOption> | null => {
+    const answer = layerUnitState(config)
+    if (!answer) return null
+    return answer.options.find((o) => sameUnit(o.label, label)) ?? null
 }

@@ -18,7 +18,7 @@
 import { hasCogColormap } from '../tileUrlUtils'
 import { resolveColormapColors } from '../../Colormaps/resolveColormapColors'
 import { NO_LEGEND, type LayerLegend, type LegendSwatch } from './types'
-import { resolveLayerUnit } from '../units/units'
+import { activeUnit, toDisplay } from '../units/units'
 import { isScale, readEntries, readScaleValues, type LegendEntry } from './entries'
 
 type LayerConfig = {
@@ -70,10 +70,23 @@ const readGradient = (entries: LegendEntry[]) => {
     }
 }
 
-/** The unit the layer declares, whichever field it declares it in, as the legend prints it. */
-const unitLabel = (layerConfig: LayerConfig): LayerLegend['unit'] => {
-    const unit = resolveLayerUnit(layerConfig)
-    return unit ? { label: unit.sourceUnit } : null
+/**
+ * The unit the layer is shown in, with the map from its data's unit, and the
+ * given bounds converted into it. Colors are never converted: tiles and point
+ * styles stay in the data's unit, so only the numbers a viewer reads change.
+ */
+const shownIn = (
+    layerConfig: LayerConfig,
+    min: number | null,
+    max: number | null
+): Pick<LayerLegend, 'min' | 'max' | 'unit'> => {
+    const unit = activeUnit(layerConfig)
+    if (!unit) return { min, max, unit: null }
+    return {
+        min: toDisplay(min, unit),
+        max: toDisplay(max, unit),
+        unit: { label: unit.label, scale: unit.scale, offset: unit.offset },
+    }
 }
 
 const hasSwatch = (entry: LegendEntry): boolean =>
@@ -113,11 +126,11 @@ export const buildLayerLegend = async (
             layerConfig.currentCogColormap ||
             layerConfig.cogColormap ||
             DEFAULT_COLORMAP
-        const bounds = {
-            min: toBound(layerConfig.currentCogMin ?? layerConfig.cogMin),
-            max: toBound(layerConfig.currentCogMax ?? layerConfig.cogMax),
-            unit: unitLabel(layerConfig),
-        }
+        const bounds = shownIn(
+            layerConfig,
+            toBound(layerConfig.currentCogMin ?? layerConfig.cogMin),
+            toBound(layerConfig.currentCogMax ?? layerConfig.cogMax)
+        )
         // Classes the colormap cannot stand in for. The ramp and its bounds
         // still come along, so the controls over them survive. Entries that
         // are all scale-shaped describe a ramp rather than classes, even when
@@ -147,8 +160,8 @@ export const buildLayerLegend = async (
     if (declaredGradient)
         return {
             type: 'gradient',
-            ...declaredGradient,
-            unit: unitLabel(layerConfig),
+            stops: declaredGradient.stops,
+            ...shownIn(layerConfig, declaredGradient.min, declaredGradient.max),
             swatches: null,
             colormap: null,
         }

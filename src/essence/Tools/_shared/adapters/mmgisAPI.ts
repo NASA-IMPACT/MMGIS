@@ -1,5 +1,5 @@
 import type { LayerLegend } from '../../../Basics/Layers_/legend/types'
-import type { LayerUnitState } from '../../../Basics/Layers_/units/types'
+import type { ActiveUnit, LayerUnitState } from '../../../Basics/Layers_/units/types'
 
 type EventCleanup = () => void
 
@@ -345,6 +345,26 @@ export const mmgisGetLayerUnit = (
 ): Promise<LayerUnitState | null> => {
     return mmgisRequestIfProvided<LayerUnitState>('layers:getUnit', layerUUID)
 }
+
+/**
+ * Show a layer in one of the units `layers:getUnit` lists for it. True when
+ * the layer changed; false for a label it does not list, an unknown layer,
+ * or a core without the handler.
+ */
+export const mmgisSetLayerUnit = (
+    layerUUID: string,
+    unit: string,
+): Promise<boolean | null> => {
+    return mmgisRequestIfProvided<boolean>('layers:setUnit', { layerUUID, unit })
+}
+
+export type LayerUnitChange = { layerName: string; unit: ActiveUnit }
+
+/** Follow a layer being shown in another unit. */
+export const mmgisOnLayerUnitChange = (
+    handler: (change: LayerUnitChange) => void,
+): EventCleanup =>
+    mmgisOn('layer:unitChange', (payload) => handler(payload as LayerUnitChange))
 
 /** Every layer's unit answer, keyed by layer UUID; null entries for layers without one. */
 export const mmgisGetLayerUnits = (): Promise<Record<
