@@ -170,3 +170,21 @@ describe('toDisplay / toSource', () => {
         expect(toSource(5, undefined)).toBe(5)
     })
 })
+
+describe('layerUnitAnswer', () => {
+    it('lists the source first and fills every offset', async () => {
+        const { layerUnitAnswer } = await import(
+            '../../src/essence/Basics/Layers_/units/units'
+        )
+        expect(layerUnitAnswer({ ...pm25, currentUnit: 'ppb' })).toEqual({
+            sourceUnit: 'µg/m³',
+            active: { sourceUnit: 'µg/m³', label: 'ppb', scale: 0.4087, offset: 0 },
+            options: [
+                { label: 'µg/m³', scale: 1, offset: 0 },
+                { label: 'mg/m³', scale: 0.001, offset: 0 },
+                { label: 'ppb', scale: 0.4087, offset: 0 },
+            ],
+        })
+        expect(layerUnitAnswer({})).toBeNull()
+    })
+})
