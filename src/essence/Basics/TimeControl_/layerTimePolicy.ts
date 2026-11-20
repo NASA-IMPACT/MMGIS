@@ -28,7 +28,7 @@
  * `layers:getTemporalExtent` and receive plain ISO datetimes.
  */
 
-import { hasListedEntries } from './listedDates'
+import { hasListedEntries, readEntry } from './listedDates'
 import { toCanonicalLayerType } from '../MapEngines/types/engine'
 
 const DURATION_RE =
@@ -104,6 +104,28 @@ function toIso(date: Date): string | null {
     return date.toISOString().split('.')[0] + 'Z'
 }
 
+// A zone written after a time of day: Z or a numeric offset (+05:30, -0800).
+// A UTC or GMT label anywhere also names one ("... 16:10:00 GMT").
+const NAMED_ZONE_RE =
+    /\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?\s*(?:Z|[+-]\d{2}:?\d{2})$|\b(?:UTC|GMT)\b/i
+
+/**
+ * A concrete datetime as epoch milliseconds, read in UTC, or null when it
+ * is absent or unparseable. ISO 8601 is read strictly. Anything else is read
+ * leniently, because configs carry datetimes in looser formats too; a zone
+ * it names is kept, and without one it is UTC, never the viewer's local time.
+ */
+export function parseUtc(raw: unknown): number | null {
+    const text = String(raw ?? '').trim()
+    if (text === '') return null
+    const iso = readEntry(text)
+    if (iso != null) return iso.at
+    const parsed = new Date(text)
+    if (isNaN(parsed.getTime())) return null
+    if (NAMED_ZONE_RE.test(text)) return parsed.getTime()
+    return parsed.getTime() - parsed.getTimezoneOffset() * 60000
+}
+
 /**
  * Resolves a data time value — concrete or policy — to an ISO datetime
  * string, or null when the value is absent, unparseable, or resolves
@@ -121,8 +143,8 @@ export function resolveTimePolicy(
 
     const policy = POLICY_RE.exec(value.trim())
     if (policy == null) {
-        const concrete = new Date(value)
-        return isNaN(concrete.getTime()) ? null : toIso(concrete)
+        const concrete = parseUtc(value)
+        return concrete == null ? null : toIso(new Date(concrete))
     }
 
     let resolved = options.now != null ? new Date(options.now) : new Date()
@@ -300,8 +322,8 @@ function anchorOf(time: RequestTimeConfig): Date | null {
     const raw = time.dataStartTime
     if (raw == null || raw === '') return null
     if (POLICY_RE.test(String(raw).trim())) return null
-    const anchor = new Date(raw)
-    return isNaN(anchor.getTime()) ? null : anchor
+    const anchor = parseUtc(raw)
+    return anchor == null ? null : new Date(anchor)
 }
 
 // The cadence a layer requests one period of at a time, or null when the
@@ -347,6 +369,23 @@ function periodAt(
     }
     const unit = calendarUnitOf(cadence)
     return unit == null ? null : calendarPeriod(cursor, unit)
+}
+
+/**
+ * The period [start, next start) holding `at` for a periodic layer — the
+ * same period `layerRequestWindow` would request at that instant — or null
+ * when the layer is not periodic or no period can be placed there.
+ */
+export function periodHolding(
+    time: RequestTimeConfig | null | undefined,
+    at: Date
+): [Date, Date] | null {
+    const cadence = requestCadenceOf(time)
+    if (cadence == null || time == null || isNaN(at.getTime())) return null
+    const period = periodAt(time, cadence, at)
+    if (period == null || period.some((edge) => isNaN(edge.getTime())))
+        return null
+    return period
 }
 
 const PERIOD_WINDOW_TYPES = new Set(['tile', 'vector', 'vectortile'])

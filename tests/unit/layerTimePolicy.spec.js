@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect, vi } from 'vitest'
 import {
     resolveTimePolicy,
     resolveTemporalExtent,
@@ -10,6 +10,15 @@ import {
     takesPeriodWindow,
     periodAnchorOf,
 } from '../../src/essence/Basics/TimeControl_/layerTimePolicy'
+
+/**
+ * Every time a layer config names is UTC. The timezone is pinned behind UTC
+ * so a reader that fell back to local time would surface here. `vi.hoisted`
+ * runs before the imports, so the module loads with the offset already set.
+ */
+vi.hoisted(() => {
+    process.env.TZ = 'America/Los_Angeles'
+})
 
 // Injected "now" so results are exact: mid-afternoon UTC.
 const NOW = new Date('2026-08-25T15:42:31.500Z')
@@ -36,6 +45,21 @@ describe('layer time policy', () => {
             expect(
                 resolveTimePolicy('2025-01-12T23:59:59+00:00', { now: NOW }),
             ).toBe('2025-01-12T23:59:59Z')
+        })
+
+        test('concrete datetimes with no zone are read in UTC', () => {
+            expect(resolveTimePolicy('2025-01-12T23:59', { now: NOW })).toBe(
+                '2025-01-12T23:59:00Z'
+            )
+            expect(
+                resolveTimePolicy('2025/01/12 23:59:59', { now: NOW })
+            ).toBe('2025-01-12T23:59:59Z')
+        })
+
+        test('a zone a looser datetime names is kept', () => {
+            expect(
+                resolveTimePolicy('2025/01/12 23:59:59 GMT+0200', { now: NOW })
+            ).toBe('2025-01-12T21:59:59Z')
         })
 
         test('absent or unparseable values resolve to null', () => {
@@ -386,6 +410,19 @@ describe('layerRequestWindow', () => {
         expect(at({})).toEqual(passthrough)
         expect(at({ interval: 'garbage' })).toEqual(passthrough)
         expect(at({ interval: 'P0D' })).toEqual(passthrough)
+    })
+
+    test('steps periods from a dataStartTime with no zone read in UTC', () => {
+        expect(
+            at(
+                { interval: 'P1D', dataStartTime: '2026-01-01T06:00' },
+                '2026-08-25T03:00:00Z'
+            )
+        ).toEqual({
+            start: '2026-08-24T06:00:00Z',
+            end: '2026-08-25T05:59:59Z',
+            periodic: true,
+        })
     })
 
     test('a disabled or absent time block requests the window', () => {
