@@ -1,12 +1,11 @@
 import { test, expect } from 'vitest'
 import {
     applyColormapDirection,
+    canReverseColormap,
     buildGradientCss,
-    colormapResponseToColors,
     formatColormapLabel,
     getBaseColormapName,
     isReversedColormap,
-    parseColormapList,
     toForwardColormapNames,
     validateRescale,
 } from '../lib/utils/colormaps.ts'
@@ -40,28 +39,6 @@ test.describe('colormap names', () => {
     })
 })
 
-test.describe('parseColormapList', () => {
-    test('reads a flat array of names', () => {
-        expect(parseColormapList({ colorMaps: ['viridis', 'viridis_r'] })).toEqual([
-            'viridis',
-            'viridis_r',
-        ])
-    })
-
-    test('reads entries carrying the name under id', () => {
-        const payload = { colormaps: [{ id: 'accent', links: [] }, { id: 'accent_r' }] }
-        expect(parseColormapList(payload)).toEqual(['accent', 'accent_r'])
-    })
-
-    test('returns null when nothing recognizable is present', () => {
-        expect(parseColormapList(null)).toBe(null)
-        expect(parseColormapList({})).toBe(null)
-        expect(parseColormapList({ colorMaps: [] })).toBe(null)
-        expect(parseColormapList({ colorMaps: 'viridis' })).toBe(null)
-        expect(parseColormapList({ colorMaps: [{ nope: 1 }] })).toBe(null)
-    })
-})
-
 test.describe('toForwardColormapNames', () => {
     test('keeps one forward entry per ramp and sorts them', () => {
         const names = ['viridis', 'viridis_r', 'accent', 'accent_r', 'magma']
@@ -85,27 +62,6 @@ test.describe('gradients', () => {
         expect(buildGradientCss([])).toBe('transparent')
         expect(buildGradientCss(null)).toBe('transparent')
     })
-
-    test('orders colors numerically rather than by key order', () => {
-        const response = {
-            10: [0, 0, 0, 255],
-            2: [255, 255, 255, 255],
-        }
-        expect(colormapResponseToColors(response)).toEqual([
-            'rgba(255, 255, 255, 1)',
-            'rgba(0, 0, 0, 1)',
-        ])
-    })
-
-    test('defaults a missing alpha channel to opaque', () => {
-        expect(colormapResponseToColors({ 0: [1, 2, 3] })).toEqual(['rgba(1, 2, 3, 1)'])
-    })
-
-    test('returns null for an unusable response', () => {
-        expect(colormapResponseToColors(null)).toBe(null)
-        expect(colormapResponseToColors({})).toBe(null)
-        expect(colormapResponseToColors({ 0: 'nope' })).toBe(null)
-    })
 })
 
 test.describe('validateRescale', () => {
@@ -126,4 +82,15 @@ test.describe('validateRescale', () => {
         expect(validateRescale('30', '0').valid).toBe(false)
         expect(validateRescale('5', '5').valid).toBe(false)
     })
+})
+
+test('canReverseColormap offers a reversal only when the service lists the _r form', () => {
+    const listed = ['viridis', 'viridis_r', 'tornado_ef_scale']
+    expect(canReverseColormap('viridis', listed)).toBe(true)
+    expect(canReverseColormap('Viridis', listed)).toBe(true)
+    expect(canReverseColormap('tornado_ef_scale', listed)).toBe(false)
+})
+
+test('canReverseColormap allows every ramp with no service list', () => {
+    expect(canReverseColormap('jet', null)).toBe(true)
 })

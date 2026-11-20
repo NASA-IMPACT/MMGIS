@@ -33,9 +33,18 @@ import {
     mmgisGetLayerConfigs,
     type LayerDataCoverageChange,
     type LayerTreeNode,
+    mmgisGetLayerColormaps,
+    mmgisGetLayerColormapColors,
     type LayerConfig,
 } from '../_shared/adapters/mmgisAPI'
 import { getGroupInfo } from '../_shared/adapters/groupInfo'
+import { setColormapSource } from './lib/utils/colormapSource'
+
+// The ramp picker offers and previews the ramps core paints layers with.
+setColormapSource({
+    list: mmgisGetLayerColormaps,
+    colors: mmgisGetLayerColormapColors,
+})
 
 type ToolVars = { showOnlyVisible?: boolean; width?: number }
 

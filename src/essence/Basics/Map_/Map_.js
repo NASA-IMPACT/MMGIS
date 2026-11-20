@@ -48,7 +48,11 @@ import {
     DeckGLAdapter,
 } from '../MapEngines/index'
 import { resolveInitialBasemap } from './basemapStyles'
-import { buildDeckLayer, buildDeckCOGLayer } from '../MapEngines/Adapters/DeckGLHelpers'
+import {
+    buildDeckLayer,
+    buildDeckCOGLayer,
+    restyleDeckLayer,
+} from '../MapEngines/Adapters/DeckGLHelpers'
 import MapComparison from './MapComparison'
 import MapPopup_ from '../MapPopup_/MapPopup_'
 
@@ -626,6 +630,34 @@ let Map_ = {
             layer = null
         }
     },
+    /**
+     * Repaint a built vector, vector tile or query layer from its current
+     * style configuration, keeping the data it already holds.
+     * @param {object} layerObj - An entry of `L_.layers.data`.
+     * @returns {boolean} Whether there was a built layer to repaint. One not
+     *   yet built reads its style when it is.
+     */
+    restyleLayer: function (layerObj) {
+        const name = layerObj.name
+        const built = this.nativeLayer(L_.layers.layer[name])
+        if (!built || typeof built !== 'object') return false
+        const style = layerObj.style || {}
+        if (typeof built.clone === 'function') {
+            // deck.gl: the engine restyles the copy it holds, keeping that
+            // copy's opacity and visibility; the registry's copy is the one
+            // a later re-add draws, so it is restyled too.
+            const legend = layerObj._legend
+            if (L_.layers.layer[name] === built)
+                L_.layers.layer[name] = restyleDeckLayer(built, style, legend)
+            this.engine.updateLayer(name, { style, legend })
+        } else if (typeof built.setStyle === 'function' && built.options?.style) {
+            // A Leaflet GeoJSON layer re-runs its style function over every
+            // feature. Markers drawn as icons keep the colour they were built
+            // with.
+            built.setStyle(built.options.style)
+        } else return false
+        return true
+    },
     refreshLayer: async function (
         layerObj,
         cb,
@@ -1007,6 +1039,8 @@ async function makeLayer(
         // Every builder above is awaited, so the layer exists by now. Image
         // and video finish on their own schedule and hand off themselves.
         handOffToEngine(layerObj, mapContext)
+
+        L_.ensureColorByRamp(layerName)
 
         // release hold on layer
         L_._layersBeingMade[layerName] = false
