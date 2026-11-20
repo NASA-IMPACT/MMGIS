@@ -5,8 +5,26 @@ type LayerConfig = {
     cogUnits?: string | null
     currentUnit?: string | null
     _legend?: unknown
-    variables?: { unit?: unknown } | null
+    variables?: { unit?: unknown; legend?: unknown } | null
     [key: string]: unknown
+}
+
+const nonBlank = (value: unknown): string | null =>
+    typeof value === 'string' && value.trim() !== '' ? value.trim() : null
+
+// The property a layer's values live in: declared on the unit, else the one
+// its legend styles by.
+const measuredProperty = (config: LayerConfig): string | null => {
+    const declared = nonBlank((config.variables?.unit as { property?: unknown })?.property)
+    if (declared) return declared
+    for (const legend of [config.variables?.legend, config._legend]) {
+        if (!Array.isArray(legend)) continue
+        for (const entry of legend) {
+            const name = nonBlank((entry as { propertyName?: unknown })?.propertyName)
+            if (name) return name
+        }
+    }
+    return null
 }
 
 const MICRO = /[µμ]/g
@@ -95,5 +113,10 @@ export const layerUnitAnswer = (config: LayerConfig | null | undefined): LayerUn
     if (!unit || !active) return null
     const source = { label: unit.source_unit, scale: 1, offset: 0 }
     const options = (unit.options ?? []).map((o) => ({ ...o, offset: o.offset ?? 0 }))
-    return { source_unit: unit.source_unit, active, options: [source, ...options] }
+    return {
+        source_unit: unit.source_unit,
+        property: measuredProperty(config),
+        active,
+        options: [source, ...options],
+    }
 }

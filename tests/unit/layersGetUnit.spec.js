@@ -44,6 +44,7 @@ const mission = () => ({
                 source_unit: 'µg/m³',
                 options: [{ label: 'mg/m³', scale: 0.001 }],
             },
+            legend: [{ propertyName: 'sample_measurement', value: '1 µg/m³' }],
         },
     },
     [NAQFC]: { type: 'tile', cogUnits: 'μg/m³' },
@@ -55,6 +56,7 @@ describe('layers:getUnit', () => {
         withLayers(mission())
         expect(await providers['layers:getUnit'](PM25)).toEqual({
             source_unit: 'µg/m³',
+            property: 'sample_measurement',
             active: { source_unit: 'µg/m³', label: 'µg/m³', scale: 1, offset: 0 },
             options: [
                 { label: 'µg/m³', scale: 1, offset: 0 },
@@ -85,6 +87,7 @@ describe('layers:getUnit', () => {
         withLayers(mission())
         const answer = await providers['layers:getUnit'](NAQFC)
         expect(answer.source_unit).toBe('μg/m³')
+        expect(answer.property).toBeNull()
         expect(answer.options).toHaveLength(1)
     })
 

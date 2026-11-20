@@ -186,6 +186,7 @@ describe('layerUnitAnswer', () => {
         )
         expect(layerUnitAnswer({ ...pm25, currentUnit: 'ppb' })).toEqual({
             source_unit: 'µg/m³',
+            property: null,
             active: { source_unit: 'µg/m³', label: 'ppb', scale: 0.4087, offset: 0 },
             options: [
                 { label: 'µg/m³', scale: 1, offset: 0 },
@@ -194,5 +195,32 @@ describe('layerUnitAnswer', () => {
             ],
         })
         expect(layerUnitAnswer({})).toBeNull()
+    })
+})
+
+describe('layerUnitAnswer property', () => {
+    it('names the property declared on the unit, else the one the legend styles by', async () => {
+        const { layerUnitAnswer } = await import(
+            '../../src/essence/Basics/Layers_/units/units'
+        )
+        const declared = {
+            variables: {
+                unit: { source_unit: 'ppm', property: 'conc' },
+                legend: [{ propertyName: 'other', value: '1 ppm' }],
+            },
+        }
+        expect(layerUnitAnswer(declared).property).toBe('conc')
+        const styled = {
+            variables: {
+                unit: { source_unit: 'ppm' },
+                legend: [{ propertyName: ' ' }, { propertyName: 'conc' }],
+            },
+        }
+        expect(layerUnitAnswer(styled).property).toBe('conc')
+        const processed = {
+            cogUnits: 'MW',
+            _legend: [{ propertyName: 'frp', value: '1 MW' }],
+        }
+        expect(layerUnitAnswer(processed).property).toBe('frp')
     })
 })
