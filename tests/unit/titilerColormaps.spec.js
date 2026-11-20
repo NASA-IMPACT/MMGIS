@@ -1,6 +1,8 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
     fetchColormapColors,
+    fetchColormapNames,
+    parseColormapList,
     clearColormapCache,
 } from '../../src/essence/Basics/Colormaps/titilerColormaps'
 
@@ -62,5 +64,48 @@ describe('fetchColormapColors', () => {
         expect(await fetchColormapColors('custom_ramp', BASE)).toBeNull()
         expect(await fetchColormapColors('custom_ramp', BASE)).toBeNull()
         expect(fetch).toHaveBeenCalledTimes(1)
+    })
+})
+
+describe('parseColormapList', () => {
+    test('reads a flat array of names', () => {
+        expect(parseColormapList({ colorMaps: ['viridis', 'viridis_r'] })).toEqual([
+            'viridis',
+            'viridis_r',
+        ])
+    })
+
+    test('reads entries carrying the name under id', () => {
+        const payload = { colormaps: [{ id: 'accent', links: [] }, { id: 'accent_r' }] }
+        expect(parseColormapList(payload)).toEqual(['accent', 'accent_r'])
+    })
+
+    test('returns null when nothing recognizable is present', () => {
+        expect(parseColormapList(null)).toBe(null)
+        expect(parseColormapList({})).toBe(null)
+        expect(parseColormapList({ colorMaps: [] })).toBe(null)
+        expect(parseColormapList({ colorMaps: 'viridis' })).toBe(null)
+        expect(parseColormapList({ colorMaps: [{ nope: 1 }] })).toBe(null)
+    })
+})
+
+describe('fetchColormapNames', () => {
+    test('asks the service once for its list, trailing slash normalised', async () => {
+        const fetch = vi.fn(async () => ({
+            ok: true,
+            json: async () => ({ colorMaps: ['viridis', 'viridis_r'] }),
+        }))
+        vi.stubGlobal('fetch', fetch)
+
+        expect(await fetchColormapNames(`${BASE}/`)).toEqual(['viridis', 'viridis_r'])
+        await fetchColormapNames(BASE)
+        expect(fetch).toHaveBeenCalledTimes(1)
+        expect(fetch.mock.calls[0][0]).toBe(`${BASE}/colorMaps`)
+    })
+
+    test('answers null with no service, or one that fails', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 503 })))
+        expect(await fetchColormapNames(null)).toBeNull()
+        expect(await fetchColormapNames(BASE)).toBeNull()
     })
 })

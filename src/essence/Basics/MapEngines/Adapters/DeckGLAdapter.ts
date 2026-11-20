@@ -67,6 +67,7 @@ import {
     resolveLayerId,
     pickInfoToResult,
     buildDeckLayer,
+    restyleDeckLayer,
 } from './DeckGLHelpers'
 import {
     TerraDraw,
@@ -1314,11 +1315,14 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const existing = this._layers.get(id)
         if (!existing) return existing as unknown as Layer
         if (!this._holdsDeckLayer(id, existing)) return existing
-        const updated = existing.clone({
+        let updated = existing.clone({
             ...(options.opacity !== undefined ? { opacity: options.opacity } : {}),
             ...(options.visible !== undefined ? { visible: options.visible } : {}),
             ...(options.url !== undefined ? { data: options.url } : {}),
         }) as Layer
+        // A vector layer given a style takes its colours from it and the legend.
+        if (options.style !== undefined)
+            updated = restyleDeckLayer(updated, options.style, options.legend)
         this._layers.set(id, updated)
         this._syncLayers()
         return updated

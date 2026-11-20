@@ -17,7 +17,6 @@ export type CogData = {
   editable: boolean
   /** The ramp currently applied, including any `_r` suffix. */
   colormap: string
-  titilerUrl: string | null
 }
 
 export type ForecastRun = {

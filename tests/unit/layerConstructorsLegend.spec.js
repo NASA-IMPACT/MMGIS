@@ -60,8 +60,10 @@ const build = (style = {}, legend = ramp) => {
         name: 'co2',
         type: 'vector',
         style: { className: '', ...style },
+        _legend: legend,
     }
-    L_.layers.data = { co2: { name: 'co2', _legend: legend } }
+    // The layer's own entry, as Map_ builds it.
+    L_.layers.data = { co2: layerObj }
     capturedOptions = null
     constructVectorLayer(
         { type: 'FeatureCollection', features: [] },
@@ -197,5 +199,16 @@ describe('constructVectorLayer colorBy styling', () => {
     test('keeps the fixed colours for a value it cannot place', () => {
         const options = build({ ...fixed, colorBy }, null)
         expect(styleOf(options, { frp: 'n/a' }).fillColor).toBe('#00ff00')
+    })
+
+    test('re-reads a setting written back, so a restyle picks up the change', () => {
+        const options = build({ ...fixed, colorBy }, null)
+        expect(styleOf(options, { frp: 400 }).fillColor).toBe('#B30000')
+        const layerObj = L_.layers.data.co2
+        layerObj.style = {
+            ...layerObj.style,
+            colorBy: { ...colorBy, ranges: [{ min: 0, color: '#0000ff' }] },
+        }
+        expect(styleOf(options, { frp: 400 }).fillColor).toBe('#0000ff')
     })
 })

@@ -85,9 +85,19 @@ export const constructVectorLayer = (
         return memoisedCompiledLegend
     }
 
-    // Part of the layer's own configuration, so unlike the legend it is
-    // settled before the layer is built and compiles once.
-    const compiledColorBy = compileColorBy(layerObj.style.colorBy)
+    // Re-read per feature so a restyle (see Map_.restyleLayer) picks up a
+    // changed setting or a colormap ramp that has since arrived. Compiled
+    // again only when the setting is replaced or its ramp is still pending.
+    let memoisedColorByConfig
+    let memoisedColorBy = null
+    const compiledColorBy = () => {
+        const config = L_.layers.data[layerObj.name]?.style?.colorBy
+        if (config !== memoisedColorByConfig || memoisedColorBy?.colors === null) {
+            memoisedColorByConfig = config
+            memoisedColorBy = compileColorBy(config)
+        }
+        return memoisedColorBy
+    }
 
     let leafletLayerObject = {
         style: function (feature, preferredStyle) {
@@ -123,7 +133,7 @@ export const constructVectorLayer = (
             // shared by every feature, so assigning to them leaked one
             // feature's colour into the next feature's fallback.
             const legendStyle = resolveFeatureColors(
-                compiledColorBy,
+                compiledColorBy(),
                 compiledLegend(),
                 feature.properties
             )

@@ -1,72 +1,53 @@
 import { useEffect, useState } from 'react'
-import { resolveTiTilerBase } from '../utils/colormapCache'
-import { parseColormapList } from '../utils/colormaps'
+import { getColormapSource } from '../utils/colormapSource'
 
 type Result = {
     colormaps: string[] | null
     loading: boolean
-    error: Error | null
 }
 
+/** Each ramp's reversed variant directly after its forward form. */
+const sortColormaps = (names: string[]): string[] =>
+    [...names].sort((a, b) => {
+        const aBase = a.replace(/_r$/, '')
+        const bBase = b.replace(/_r$/, '')
+        if (aBase !== bBase) return aBase.localeCompare(bBase)
+        return a.endsWith('_r') ? 1 : -1
+    })
+
 /**
- * Ramp names the tiling service reports, sorted with each ramp's reversed
- * variant directly after its forward form. Resolves to null whenever no list
- * can be obtained — no service supplied, or the request failed — which callers
- * surface as "ramps unavailable" rather than an empty list.
+ * The ramp names the host offers for a layer, sorted with each ramp's
+ * reversed variant directly after its forward form. Null when the host has no
+ * list, which callers surface as "ramps unavailable" rather than an empty list.
  */
-export const useAvailableColormaps = (titilerUrl: string | null = null): Result => {
-    const baseUrl = resolveTiTilerBase(titilerUrl)
+export const useAvailableColormaps = (layerId: string): Result => {
+    const source = getColormapSource()
     const [colormaps, setColormaps] = useState<string[] | null>(null)
-    // A reachable service is presumed to be loading from the first render,
-    // before the effect has had a chance to start the request. Without that,
-    // the empty initial list is indistinguishable from "no ramps exist" and
-    // callers flash an unavailable state on every mount.
-    const [loading, setLoading] = useState(() => baseUrl != null)
-    const [error, setError] = useState<Error | null>(null)
+    // Presumed loading from the first render, before the effect has had a
+    // chance to ask. Without that, the empty initial list is indistinguishable
+    // from "no ramps exist" and callers flash an unavailable state on every
+    // mount.
+    const [loading, setLoading] = useState(() => source != null)
 
     useEffect(() => {
-        if (baseUrl == null) {
-            setColormaps(null)
-            setLoading(false)
-            setError(null)
-            return
-        }
         let cancelled = false
-        const fetchColormaps = async () => {
-            setLoading(true)
-            setError(null)
-            try {
-                const response = await fetch(`${baseUrl}/colorMaps`)
-                if (!response.ok) throw new Error(`Failed to fetch colormaps: ${response.status}`)
-                const data = await response.json()
-                if (cancelled) return
-                const colormapList = parseColormapList(data)
-                if (colormapList == null) {
-                    setColormaps(null)
-                    return
-                }
-                const sorted = [...colormapList].sort((a, b) => {
-                    const aBase = a.replace(/_r$/, '')
-                    const bBase = b.replace(/_r$/, '')
-                    if (aBase !== bBase) return aBase.localeCompare(bBase)
-                    return a.endsWith('_r') ? 1 : -1
-                })
-                setColormaps(sorted)
-            } catch (err) {
-                if (!cancelled) {
-                    console.warn('Failed to fetch available colormaps:', err)
-                    setError(err as Error)
-                    setColormaps(null)
-                }
-            } finally {
-                if (!cancelled) setLoading(false)
-            }
+        setLoading(source != null)
+        const load = async () => {
+            const list = source
+                ? await source.list(layerId).catch((err) => {
+                      console.warn('Failed to list colormaps:', err)
+                      return null
+                  })
+                : null
+            if (cancelled) return
+            setColormaps(list ? sortColormaps(list) : null)
+            setLoading(false)
         }
-        fetchColormaps()
+        load()
         return () => {
             cancelled = true
         }
-    }, [baseUrl])
+    }, [layerId, source])
 
-    return { colormaps, loading, error }
+    return { colormaps, loading }
 }

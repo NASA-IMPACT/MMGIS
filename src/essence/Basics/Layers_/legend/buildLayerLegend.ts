@@ -22,7 +22,12 @@
 
 import { hasCogColormap } from '../tileUrlUtils'
 import { resolveColormapColors } from '../../Colormaps/resolveColormapColors'
-import { compileColorBy, readsColorBy, type CompiledColorBy } from '../ColorBy'
+import {
+    compileColorBy,
+    loadColormapRamp,
+    readsColorBy,
+    type CompiledColorBy,
+} from '../ColorBy'
 import { NO_LEGEND, type LayerLegend, type LegendSwatch } from './types'
 
 type LegendEntry = {
@@ -171,7 +176,10 @@ const readEntries = (declared: unknown): LegendEntry[] =>
  * A `colorBy` setting's legend: one swatch per band for ranges, every band
  * shown; the ramp's gradient from min to max for a colormap.
  */
-const readColorByLegend = (colorBy: CompiledColorBy): LayerLegend =>
+const readColorByLegend = async (
+    colorBy: CompiledColorBy,
+    titilerUrl: string | null
+): Promise<LayerLegend> =>
     colorBy.mode === 'ranges'
         ? {
               ...NO_LEGEND,
@@ -184,7 +192,9 @@ const readColorByLegend = (colorBy: CompiledColorBy): LayerLegend =>
         : {
               ...NO_LEGEND,
               type: 'gradient',
-              stops: colorBy.colors,
+              stops:
+                  colorBy.colors ??
+                  (await loadColormapRamp(colorBy.colormap, titilerUrl)),
               min: colorBy.min,
               max: colorBy.max,
               unit: colorBy.unit ? { label: colorBy.unit } : null,
@@ -209,7 +219,7 @@ export const buildLayerLegend = async (
     const colorBy = readsColorBy(layerConfig.type, engineType)
         ? compileColorBy(layerConfig.style?.colorBy)
         : null
-    if (colorBy) return readColorByLegend(colorBy)
+    if (colorBy) return readColorByLegend(colorBy, titilerUrl)
 
     const entries = readEntries(layerConfig._legend)
     const declaredGradient = readGradient(entries)
