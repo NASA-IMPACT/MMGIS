@@ -177,6 +177,20 @@ describe('resolveDataCoverage over an extent', () => {
         ])
     })
 
+    test('reads a looser bound with no zone in UTC', () => {
+        expect(extent('2020/03/04 14:30:00', '2020/03/05').spans).toEqual([
+            { start: ms('2020-03-04T14:30:00Z'), end: ms('2020-03-05T00:00:00Z') },
+        ])
+    })
+
+    test('keeps the zone a looser bound names', () => {
+        expect(
+            extent('2020/03/04 14:30:00 GMT+0200', 'Wed, 04 Mar 2020 16:10:00 GMT').spans
+        ).toEqual([
+            { start: ms('2020-03-04T12:30:00Z'), end: ms('2020-03-04T16:10:00Z') },
+        ])
+    })
+
     test('falls back to the extent when nothing listed is readable', () => {
         const coverage = resolveDataCoverage({
             enabled: true,
@@ -255,74 +269,91 @@ describe('resolveDataCoverage over an extent', () => {
 
 /**
  * A periodic layer (`time.interval` of an hour or more) holds data a whole
- * period at a time, so each extent bound widens to the period holding it:
- * a start to the period's first instant, an end to its last. Periods step
- * from a concrete `dataStartTime`, or follow UTC calendar boundaries for a
- * cadence of exactly one year, month, day or hour.
+ * period at a time. Its published spans are the exact instants its extent
+ * names, so they match the timeline; only the cursor test widens each bound
+ * to the period holding it: a start to the period's first instant, an end to
+ * its last. Periods step from a concrete `dataStartTime`, or follow UTC
+ * calendar boundaries for a cadence of exactly one year, month, day or hour.
+ * A query layer is used throughout: it never requests periods, so it is
+ * judged at the cursor.
  */
-describe('resolveDataCoverage over a periodic extent', () => {
-    const extent = (dataStartTime, dataEndTime, interval) =>
-        resolveDataCoverage({ enabled: true, dataStartTime, dataEndTime, interval })
+describe('evaluateLayerDataCoverage over a periodic extent', () => {
+    const judge = (dataStartTime, dataEndTime, interval, cursor) =>
+        evaluateLayerDataCoverage({
+            name: 'Periodic',
+            type: 'query',
+            time: {
+                enabled: true,
+                type: 'requery',
+                dataStartTime,
+                dataEndTime,
+                interval,
+                start: '1970-01-01T00:00:00Z',
+                end: cursor,
+            },
+        })
+    const shown = (...args) => !judge(...args).outOfDataRange
 
-    test('widens the end of a daily layer to the close of its day', () => {
-        expect(extent('2020-01-01', '2020-03-04T14:30Z', 'P1D').spans).toEqual([
-            { start: ms('2020-01-01T00:00:00Z'), end: ms('2020-03-04T23:59:59.999Z') },
+    test('publishes the exact extent', () => {
+        expect(
+            judge('2020-01-01', '2020-03-04T14:30Z', 'P1D', '2020-03-04T20:00Z')
+                .spans
+        ).toEqual([
+            { start: ms('2020-01-01T00:00:00Z'), end: ms('2020-03-04T14:30:00Z') },
         ])
     })
 
+    test('holds a daily layer through the close of its last day', () => {
+        const args = ['2020-01-01', '2020-03-04T14:30Z', 'P1D']
+        expect(shown(...args, '2020-03-04T23:59:59Z')).toBe(true)
+        expect(shown(...args, '2020-03-05T00:00:00Z')).toBe(false)
+    })
+
     test('steps periods from a concrete start', () => {
-        expect(
-            extent('2020-01-01T06:00Z', '2020-01-10T12:00Z', 'P7D').spans
-        ).toEqual([
-            { start: ms('2020-01-01T06:00:00Z'), end: ms('2020-01-15T05:59:59.999Z') },
-        ])
+        const args = ['2020-01-01T06:00Z', '2020-01-10T12:00Z', 'P7D']
+        expect(shown(...args, '2020-01-15T05:59:59Z')).toBe(true)
+        expect(shown(...args, '2020-01-15T06:00:00Z')).toBe(false)
+    })
+
+    test('steps periods from a start with no offset read in UTC', () => {
+        const args = ['2020-01-01T06:00', '2020-01-10T12:00', 'P7D']
+        expect(shown(...args, '2020-01-15T05:59:59Z')).toBe(true)
+        expect(shown(...args, '2020-01-15T06:00:00Z')).toBe(false)
     })
 
     test('widens moving bounds to calendar periods when nothing anchors them', () => {
         vi.spyOn(Date, 'now').mockReturnValue(ms('2026-06-01T12:30:00Z'))
-
-        expect(extent('now - PT3H', 'now', 'PT1H').spans).toEqual([
-            { start: ms('2026-06-01T09:00:00Z'), end: ms('2026-06-01T12:59:59.999Z') },
-        ])
+        const args = ['now - PT3H', 'now', 'PT1H']
+        expect(shown(...args, '2026-06-01T09:00:00Z')).toBe(true)
+        expect(shown(...args, '2026-06-01T12:59:59Z')).toBe(true)
+        expect(shown(...args, '2026-06-01T08:59:59Z')).toBe(false)
+        expect(shown(...args, '2026-06-01T13:00:00Z')).toBe(false)
     })
 
     test('widens a bound open on one side only on the other', () => {
-        expect(extent(undefined, '2025-03-17', 'P1M').spans).toEqual([
-            { start: -Infinity, end: ms('2025-03-31T23:59:59.999Z') },
-        ])
+        const args = [undefined, '2025-03-17', 'P1M']
+        expect(shown(...args, '2000-01-01T00:00:00Z')).toBe(true)
+        expect(shown(...args, '2025-03-31T23:59:59Z')).toBe(true)
+        expect(shown(...args, '2025-04-01T00:00:00Z')).toBe(false)
     })
 
     test('reads exact instants when the period cannot be placed', () => {
         vi.spyOn(Date, 'now').mockReturnValue(ms('2026-06-01T12:30:00Z'))
-
-        expect(extent('now - P7D', 'now', 'P7D').spans).toEqual([
-            { start: ms('2026-05-25T12:30:00Z'), end: ms('2026-06-01T12:30:00Z') },
-        ])
+        const args = ['now - P7D', 'now', 'P7D']
+        expect(shown(...args, '2026-06-01T12:30:00Z')).toBe(true)
+        expect(shown(...args, '2026-06-01T12:31:00Z')).toBe(false)
     })
 
     test('reads exact instants for an interval shorter than an hour', () => {
-        expect(
-            extent('2020-03-04T14:05Z', '2020-03-04T14:35Z', 'PT10M').spans
-        ).toEqual([
-            { start: ms('2020-03-04T14:05:00Z'), end: ms('2020-03-04T14:35:00Z') },
-        ])
+        const args = ['2020-03-04T14:05Z', '2020-03-04T14:35Z', 'PT10M']
+        expect(shown(...args, '2020-03-04T14:35:00Z')).toBe(true)
+        expect(shown(...args, '2020-03-04T14:36:00Z')).toBe(false)
     })
 
-    test('resolves again when the interval changes', () => {
-        const time = {
-            enabled: true,
-            dataStartTime: '2020-01-01',
-            dataEndTime: '2020-03-04T14:30Z',
-        }
-        expect(resolveDataCoverage(time).spans[0].end).toBe(
-            ms('2020-03-04T14:30:00Z')
-        )
-
-        time.interval = 'P1D'
-
-        expect(resolveDataCoverage(time).spans[0].end).toBe(
-            ms('2020-03-04T23:59:59.999Z')
-        )
+    test('reads exact instants for a layer with no interval', () => {
+        const args = ['2020-01-01', '2020-03-04T14:30Z', undefined]
+        expect(shown(...args, '2020-03-04T14:30:00Z')).toBe(true)
+        expect(shown(...args, '2020-03-04T14:31:00Z')).toBe(false)
     })
 })
 

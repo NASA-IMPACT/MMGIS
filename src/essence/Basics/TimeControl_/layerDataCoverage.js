@@ -3,8 +3,9 @@ import {
     isPeriodicRequest,
     takesPeriodWindow,
     periodHolding,
+    parseUtc,
 } from './layerTimePolicy'
-import { readEntry, resolveListedEntries } from './listedDates'
+import { resolveListedEntries } from './listedDates'
 
 /**
  * A layer's declared data coverage, read from its `time` config.
@@ -25,10 +26,9 @@ const isMovingBound = (raw) =>
  * The instant one extent bound names, or null when it is absent or
  * unreadable. A `now` bound is resolved by the core's time-policy reader,
  * so it accepts the same `now [± <ISO 8601 duration>] [/ y|M|d|h]` forms
- * every other reader of these fields does. An ISO 8601 bound is read in
- * UTC, any part left out filled with its start, so 2020-03 is 1 March
- * 00:00. Anything else is read leniently, because configs carry these
- * bounds in looser formats too.
+ * every other reader of these fields does. Anything else is a concrete
+ * datetime read in UTC (`parseUtc`), any part left out filled with its
+ * start, so 2020-03 is 1 March 00:00.
  */
 function resolveInstant(raw) {
     if (raw == null || raw === '') return null
@@ -36,25 +36,13 @@ function resolveInstant(raw) {
         const iso = resolveTimePolicy(raw, { now: new Date(Date.now()) })
         return iso == null ? null : new Date(iso).getTime()
     }
-    const entry = readEntry(raw)
-    if (entry) return entry.at
-    const parsed = new Date(raw).getTime()
-    return Number.isNaN(parsed) ? null : parsed
+    return parseUtc(raw)
 }
 
-/**
- * One bound of an extent. Absent or unreadable is open. The bound is the
- * exact instant it names, unless the layer is periodic (see
- * `periodHolding`): its data then comes a whole period at a time, so a start
- * opens at the beginning of the period holding it and an end closes at that
- * period's last instant.
- */
-function resolveBound(time, raw, open, edge) {
+/** One bound of an extent: the exact instant it names, or open. */
+function resolveBound(raw, open) {
     const instant = resolveInstant(raw)
-    if (instant == null) return open
-    const period = periodHolding(time, new Date(instant))
-    if (period == null) return instant
-    return edge === 'start' ? period[0].getTime() : period[1].getTime() - 1
+    return instant == null ? open : instant
 }
 
 // time config -> its resolved coverage and the fields it was read from
@@ -74,14 +62,13 @@ const resolved = new WeakMap()
 export function resolveDataCoverage(time) {
     if (time?.enabled !== true) return null
 
-    const { dataDates, dataStartTime, dataEndTime, interval } = time
+    const { dataDates, dataStartTime, dataEndTime } = time
     const hit = resolved.get(time)
     if (
         hit &&
         hit.dataDates === dataDates &&
         hit.dataStartTime === dataStartTime &&
-        hit.dataEndTime === dataEndTime &&
-        hit.interval === interval
+        hit.dataEndTime === dataEndTime
     )
         return hit.coverage
 
@@ -94,7 +81,6 @@ export function resolveDataCoverage(time) {
             dataDates,
             dataStartTime,
             dataEndTime,
-            interval,
             coverage,
         })
     return coverage
@@ -118,8 +104,8 @@ function readDataCoverage(time) {
     const hasEnd = time.dataEndTime != null && time.dataEndTime !== ''
     if (!hasStart && !hasEnd) return null
 
-    const start = resolveBound(time, time.dataStartTime, -Infinity, 'start')
-    const end = resolveBound(time, time.dataEndTime, Infinity, 'end')
+    const start = resolveBound(time.dataStartTime, -Infinity)
+    const end = resolveBound(time.dataEndTime, Infinity)
 
     if (start > end) {
         console.warn(
@@ -158,6 +144,30 @@ function spansOverlap(spans, start, end) {
 }
 
 /**
+ * A continuous layer's spans as the cursor test reads them. A periodic layer
+ * (see `periodHolding`) has its data a whole period at a time, so each span
+ * opens at the start of the period holding its start and closes at the last
+ * instant of the period holding its end. Any other layer, and every listed
+ * entry, is read as declared. The published spans stay exact; only the
+ * verdict sees these.
+ */
+function spansForCursor(time, coverage) {
+    if (coverage.kind !== 'continuous') return coverage.spans
+    return coverage.spans.map(({ start, end }) => {
+        const first = Number.isFinite(start)
+            ? periodHolding(time, new Date(start))
+            : null
+        const last = Number.isFinite(end)
+            ? periodHolding(time, new Date(end))
+            : null
+        return {
+            start: first == null ? start : first[0].getTime(),
+            end: last == null ? end : last[1].getTime() - 1,
+        }
+    })
+}
+
+/**
  * Whether the layer requests one period rather than the Time Control
  * window: a layer that takes periods (takesPeriodWindow), lists no readable
  * Data Dates and whose `time.interval` places a period at the cursor.
@@ -192,7 +202,8 @@ function awaitsRun(time) {
  * instant. The window's start is the chart's left edge and says nothing
  * about the layer, so however much coverage the rest of the window holds, a
  * layer is out of range at an instant it has nothing for, and the gate
- * agrees with where the timeline draws the layer's data.
+ * agrees with where the timeline draws the layer's data. A periodic layer's
+ * extent is first widened to whole periods (`spansForCursor`).
  *
  * For a layer requesting one period (`periodic: true`), the whole period is
  * the request: it is out of range only when `[start, end]` overlaps no
@@ -224,7 +235,10 @@ export function evaluateLayerDataCoverage(layer) {
                   requestedWindow.start,
                   requestedWindow.end
               )
-            : spansContain(coverage.spans, requestedWindow.end)))
+            : spansContain(
+                  spansForCursor(layer.time, coverage),
+                  requestedWindow.end
+              )))
 
     return {
         outOfDataRange,
