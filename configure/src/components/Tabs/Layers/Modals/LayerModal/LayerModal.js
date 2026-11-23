@@ -247,27 +247,20 @@ const LayerModal = (props) => {
   // Hide engine-specific or deck-only fields for all engines (including leaflet).
   config = stripHiddenFields(config, getHiddenFieldsForEngine(mapEngine, layer.type));
 
-  // Two characters read as µ (U+00B5 and U+03BC); core compares them as one,
-  // and the saved config keeps one so the labels an author types match the
-  // ones the data carries. Factors arrive as strings from the number fields.
+  // The number fields store what was typed, so a factor arrives as a string;
+  // the saved config keeps numbers. Labels are saved exactly as written.
   const normalizeUnit = (unit) => {
-    if (unit == null || typeof unit !== "object") return unit;
-    const mu = (v) => (typeof v === "string" ? v.replace(/\u00B5/g, "\u03BC") : v);
+    if (unit == null || typeof unit !== "object" || !Array.isArray(unit.options)) return unit;
     const num = (v) =>
       typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))
         ? Number(v)
         : v;
-    const next = { ...unit };
-    if ("sourceUnit" in next) next.sourceUnit = mu(next.sourceUnit);
-    if ("displayUnit" in next) next.displayUnit = mu(next.displayUnit);
-    if (Array.isArray(next.options)) {
-      next.options = next.options.map((o) =>
-        o && typeof o === "object"
-          ? { ...o, label: mu(o.label), scale: num(o.scale), offset: num(o.offset) }
-          : o
-      );
-    }
-    return next;
+    return {
+      ...unit,
+      options: unit.options.map((o) =>
+        o && typeof o === "object" ? { ...o, scale: num(o.scale), offset: num(o.offset) } : o
+      ),
+    };
   };
 
   const handleClose = (skipSetConfiguration) => {
