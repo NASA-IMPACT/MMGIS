@@ -91,6 +91,43 @@ test.describe('DashboardConfigValidator', () => {
             expect(result.errors[0]).toMatch(/panelSettings.layoutStyle must be one of/);
         });
 
+        test('warns on an unusable floatingOffset and accepts pixel counts per side', () => {
+            const config = (floatingOffset) => ({
+                panelSettings: {
+                    floatingOffset,
+                    panels: [
+                        {
+                            id: 'panel-1',
+                            position: 'left',
+                            priority: 1,
+                            layoutType: 'stacked',
+                            stateConstraints: {
+                                allowedStates: ['expanded'],
+                                defaultState: 'expanded'
+                            }
+                        }
+                    ]
+                }
+            });
+            const warningsFor = (offset) => validateModernConfig(config(offset)).warnings;
+
+            expect(warningsFor(undefined)).toHaveLength(0);
+            expect(warningsFor([0, 0, 24, 0])).toHaveLength(0);
+            expect(warningsFor(['8', '16px', 200, 0])).toHaveLength(0);
+            expect(warningsFor([null, null, 32])).toHaveLength(0);
+            expect(warningsFor(['', '', '', ''])).toHaveLength(0);
+            expect(warningsFor([Infinity, 0, '1e400', 0])).toHaveLength(2);
+            expect(warningsFor([0, 0, '201px', 0])[0]).toMatch(
+                /floatingOffset\[2\] \(bottom\) must be at most 200 pixels/
+            );
+            expect(warningsFor([0, 0, 0, -5])[0]).toMatch(
+                /floatingOffset\[3\] \(left\) must be a non-negative number/
+            );
+            expect(warningsFor(24)[0]).toMatch(/floatingOffset must be an array/);
+            expect(warningsFor([1, 2, 3, 4, 5])[0]).toMatch(/more than 4 entries/);
+            expect(validateModernConfig(config([0, 0, 0, -5])).valid).toBe(true);
+        });
+
         test('catches defaultState not in allowedStates', () => {
             const config = {
                 panelSettings: {

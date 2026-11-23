@@ -23,7 +23,9 @@ import {
 import moment from 'moment'
 import { LayerTimeline } from '../LayerTimeline/LayerTimeline'
 import { LayerSidebarItem } from '../LayerSidebarItem/LayerSidebarItem'
+import { LayerGroupSidebarItem } from '../LayerGroupSidebarItem/LayerGroupSidebarItem'
 import type { LayerNavigation } from '../../utils/layerNavigation'
+import { buildTimelineRows, type LayerGroupNode } from '../../utils/layerGroups'
 
 /** Room a top-axis label takes, in pixels, the widest being "Mar 30, 2020". */
 const CONTEXT_LABEL_WIDTH = 96
@@ -40,12 +42,30 @@ const MARKER_SIZE = 18
  */
 export const EDGE_MARGIN = MARKER_SIZE
 
+// Defaults for a view without fold state, held at module level so the row
+// list is not rebuilt on every render.
+const NO_FOLDS: ReadonlySet<string> = new Set()
+const ignoreToggle = () => {}
+
 export interface TimelineViewProps {
     startTime: Date
     endTime: Date
     currentTime: Date
     timeMode: TimeMode
     layers: LayerTimeData[]
+    /**
+     * How the layers are grouped. Each group gets a row that folds its layers
+     * away; a layer it does not mention sits at the top level. Absent, the
+     * layers are listed flat, in the order given.
+     */
+    groups?: LayerGroupNode[] | null
+    /** Ids of the groups folded away. None when absent. */
+    collapsedGroups?: ReadonlySet<string>
+    /**
+     * Folds a group away, or brings a folded one back. Absent, the group
+     * rows do nothing when pressed.
+     */
+    onToggleGroup?: (id: string) => void
     /** Committed time change — fires once the scrubber is released. */
     onCurrentTimeChange: (time: Date) => void
     /** Live time while the scrubber is being dragged, for display only. */
@@ -78,6 +98,9 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     currentTime,
     timeMode,
     layers,
+    groups,
+    collapsedGroups = NO_FOLDS,
+    onToggleGroup = ignoreToggle,
     onCurrentTimeChange,
     onCurrentTimePreview,
     onCurrentTimeStep,
@@ -109,8 +132,13 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     // keep each name level with its row.
     const headGutter = markerSize
 
+    const rows = useMemo(
+        () => buildTimelineRows(groups, layers, collapsedGroups),
+        [groups, layers, collapsedGroups]
+    )
+
     // Calculate total height needed for layers
-    const totalLayersHeight = layers.length * layerBarHeight
+    const totalLayersHeight = rows.length * layerBarHeight
     // Where the layer rows end, and with them the chart
     const layersBottom = headGutter + totalLayersHeight
 
@@ -526,17 +554,30 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                 style={{ height: headGutter, flexShrink: 0 }}
                                 aria-hidden="true"
                             />
-                            {layers.map((layer) => (
-                                <LayerSidebarItem
-                                    key={layer.name}
-                                    layer={layer}
-                                    height={layerBarHeight}
-                                    currentTime={currentTime}
-                                    timeMode={timeMode}
-                                    onNavigate={onLayerNavigate}
-                                    onFit={onFitLayer}
-                                />
-                            ))}
+                            {rows.map((row) =>
+                                row.kind === 'group' ? (
+                                    <LayerGroupSidebarItem
+                                        key={`group:${row.id}`}
+                                        id={row.id}
+                                        displayName={row.displayName}
+                                        depth={row.depth}
+                                        collapsed={row.collapsed}
+                                        height={layerBarHeight}
+                                        onToggle={onToggleGroup}
+                                    />
+                                ) : (
+                                    <LayerSidebarItem
+                                        key={row.layer.name}
+                                        layer={row.layer}
+                                        height={layerBarHeight}
+                                        depth={row.depth}
+                                        currentTime={currentTime}
+                                        timeMode={timeMode}
+                                        onNavigate={onLayerNavigate}
+                                        onFit={onFitLayer}
+                                    />
+                                )
+                            )}
                         </div>
                     </div>
 
@@ -572,27 +613,47 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                 </filter>
                             </defs>
 
-                            {/* Layer timelines (rendered first so grid/scrubber goes on top) */}
+                            {/* Layer timelines (rendered first so grid/scrubber goes on
+                                top). An open group's row is left empty: its layers
+                                draw their own bars beneath it. */}
                             <g className="layer-timelines">
-                                {layers.map((layer, index) => (
-                                    <g key={layer.name}>
-                                        <rect 
-                                            x={0} 
-                                            y={headGutter + index * layerBarHeight} 
-                                            width={dimensions.width} 
-                                            height={layerBarHeight} 
-                                            fill="transparent"
-                                            className="layer-row-bg"
-                                        />
-                                        <LayerTimeline
-                                            layer={layer}
-                                            xScale={transformedXScale}
-                                            bounds={bounds}
-                                            y={headGutter + index * layerBarHeight}
-                                            height={layerBarHeight}
-                                        />
-                                    </g>
-                                ))}
+                                {rows.map((row, index) => {
+                                    const drawn =
+                                        row.kind === 'layer'
+                                            ? [row.layer]
+                                            : row.collapsed
+                                              ? row.coverage
+                                              : []
+                                    const y = headGutter + index * layerBarHeight
+                                    return (
+                                        <g
+                                            key={
+                                                row.kind === 'group'
+                                                    ? `group:${row.id}`
+                                                    : row.layer.name
+                                            }
+                                        >
+                                            <rect
+                                                x={0}
+                                                y={y}
+                                                width={dimensions.width}
+                                                height={layerBarHeight}
+                                                fill="transparent"
+                                                className="layer-row-bg"
+                                            />
+                                            {drawn.map((layer, layerIndex) => (
+                                                <LayerTimeline
+                                                    key={layerIndex}
+                                                    layer={layer}
+                                                    xScale={transformedXScale}
+                                                    bounds={bounds}
+                                                    y={y}
+                                                    height={layerBarHeight}
+                                                />
+                                            ))}
+                                        </g>
+                                    )
+                                })}
                             </g>
 
                             {/* Grid lines at the bottom axis's ticks, through

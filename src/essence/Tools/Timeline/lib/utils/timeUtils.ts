@@ -384,8 +384,7 @@ export function resolveLayerTimeRanges(
     const entries = resolveListedEntries(time)
 
     if (entries.length > 0) {
-        // Two spans over one period would stack, and the pair would read
-        // darker than its neighbours through the bars' shared opacity.
+        // Two spans over one period would draw the same box twice.
         const bySpan = new Map<string, TimeRange>()
         entries.forEach((entry) => {
             const key = `${entry.start.getTime()}|${entry.end.getTime()}`

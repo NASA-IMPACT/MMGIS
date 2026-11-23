@@ -157,8 +157,8 @@ const useStyles = makeStyles((theme) => ({
 /**
  * Layer types each engine supports for the Layer Type dropdown.
  * Mirrors ENGINE_LAYER_SUPPORT in src/essence/Basics/MapEngines/types/engine.ts.
- * Structural types are filtered per engine because not all engines support layer
- * tree grouping.
+ * Structural types are listed per engine: every engine groups layers under
+ * headers, while query and model layers render on Leaflet alone.
  */
 const ENGINE_LAYER_SUPPORT = {
   leaflet: ["vector", "tile", "vectortile", "data", "image", "video", "velocity"],
@@ -174,7 +174,7 @@ const ENGINE_LAYER_SUPPORT = {
 
 const ENGINE_STRUCTURAL_LAYER_TYPES = {
   leaflet: ["header", "query", "model"],
-  deckgl: [],
+  deckgl: ["header"],
 };
 
 /**

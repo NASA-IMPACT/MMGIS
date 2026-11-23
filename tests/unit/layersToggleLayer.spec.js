@@ -297,6 +297,26 @@ describe('catching a layer up on the time it missed', () => {
         )
     })
 
+    // A vector layer that starts hidden is not fetched until its first
+    // switch-on, and that build already requests the current window. Asking
+    // again would fetch the same data a second time.
+    test('does not ask for a layer built by this toggle', async () => {
+        const layer = timeLayer({ type: 'GeoJsonLayer' })
+        L_.layers.data[FLOOD.name] = layer
+        L_.layers.layer[FLOOD.name] = false
+        L_.Map_.makeLayer = vi.fn(async (s) => {
+            L_.layers.layer[s.name] = { id: s.name, props: { opacity: 1 } }
+        })
+        L_.Globe_ = { litho: new Proxy({}, { get: () => vi.fn() }) }
+
+        await L_.toggleLayerHelper(layer, false)
+
+        expect(L_.Map_.makeLayer).toHaveBeenCalledTimes(1)
+        expect(reloadLayer).not.toHaveBeenCalled()
+        // Stamped as current, so the next switch-on does not refetch either.
+        expect(layer.time.current).toBe(L_.TimeControl_.currentTime)
+    })
+
     test('does not ask when the layer is being turned off', async () => {
         const layer = timeLayer()
         L_.layers.data[FLOOD.name] = layer

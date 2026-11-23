@@ -325,11 +325,19 @@ async function refreshTileLayer(uuid, updateOptions) {
  * some layer types pass two show paths, and `reloadLayer` stamps
  * `time.current` so the second finds the layer current.
  *
+ * A layer this toggle just built already holds the current window, so it is
+ * only stamped.
+ *
  * @param {object} s - Layer config.
+ * @param {boolean} [justBuilt] - The toggle built the layer just now.
  */
-async function catchUpLayerTime(s) {
+async function catchUpLayerTime(s, justBuilt = false) {
     if (s.time?.enabled !== true) return
     if (s.time.current === L_.TimeControl_.currentTime) return
+    if (justBuilt) {
+        s.time.current = L_.TimeControl_.currentTime
+        return
+    }
 
     // evenIfOff: the layer is still recorded as off while the toggle runs.
     await L_.TimeControl_.reloadLayer(s, true)
@@ -606,8 +614,9 @@ const L_ = {
                 // When each layer has data, as ISO datetimes or null, and its
                 // parsed cadence (`interval`, or null). The config's
                 // dataStartTime/dataEndTime may be a policy ("now",
-                // "now - P1D"); this is where it is resolved, so a plugin
-                // never sees the policy string. Same call shapes as above.
+                // "now - P1D", "now/d"); this is where it is resolved, so a
+                // plugin never sees the policy string. Same call shapes as
+                // above.
                 window.mmgisAPI.provide('layers:getTemporalExtent', (layerUUID) => {
                     if (layerUUID != null) {
                         const uuid = L_.asLayerUUID(layerUUID)
@@ -731,6 +740,20 @@ const L_ = {
                 window.mmgisAPI.provide('layers:getOrder', () => [
                     ...L_._layersOrdered,
                 ]),
+                // The configured grouping: headers as groups with their
+                // children, in config order, keyed by UUID.
+                window.mmgisAPI.provide('layers:getTree', () =>
+                    L_.getLayerTree()
+                ),
+                // Switches a whole group: every layer off when any of them is
+                // on, otherwise every layer on.
+                window.mmgisAPI.provide('layers:toggleGroup', (groupId) =>
+                    L_.toggleGroup(groupId)
+                ),
+                // Sets one opacity on every layer in a group.
+                window.mmgisAPI.provide('layers:setGroupOpacity', (payload) =>
+                    L_.setGroupOpacity(payload?.groupId, payload?.opacity)
+                ),
                 window.mmgisAPI.provide('layers:setOrder', (payload) => {
                     const order = payload?.order
                     if (!Array.isArray(order)) return false
@@ -1384,7 +1407,7 @@ const L_ = {
                             }
                             // Before showing, not after: a layer that is behind still
                             // holds the URL it was built with, placeholders and all.
-                            await catchUpLayerTime(s)
+                            await catchUpLayerTime(s, hadToMake)
                             L_.Map_.engine.setLayerVisibility(
                                 s.name,
                                 L_.assessLayerDataCoverage(s)
@@ -3250,8 +3273,67 @@ const L_ = {
             return false
         }
 
-        L_.applyLayerOrder(newLayersOrdered)
+        const isCurrent = (order) =>
+            order.every((name, i) => name === L_._layersOrdered[i])
+
+        const grouped = L_.groupLayerOrder(newLayersOrdered)
+        if (grouped.some((name, i) => name !== newLayersOrdered[i])) {
+            // Gathering the split groups can undo the whole move. The caller
+            // asked for a change and got none, so it hears false and knows
+            // to re-read the order rather than wait for a broadcast.
+            if (!isCurrent(newLayersOrdered) && isCurrent(grouped)) {
+                console.warn(
+                    'reorderLayers: the order only split a layer group, so nothing moved.'
+                )
+                return false
+            }
+            console.warn(
+                'reorderLayers: the order split a layer group, so each group was drawn as one block.'
+            )
+        }
+        L_.applyLayerOrder(grouped)
         return true
+    },
+    /**
+     * `order` with each group's layers drawn as one block. A group sits where
+     * its top-most layer was asked to go, and every level keeps the requested
+     * order otherwise, so an order that splits no group comes back unchanged.
+     * Layers outside the grouping keep their requested place among the
+     * top-level entries.
+     * @param {string[]} order - layer UUIDs, top first
+     * @returns {string[]}
+     */
+    groupLayerOrder: function (order) {
+        const rank = new Map(order.map((name, i) => [name, i]))
+        const seen = new Set()
+        const byRank = (a, b) => a.rank - b.rank
+
+        const build = (nodes) =>
+            nodes
+                .flatMap((node) => {
+                    if (node.kind === 'group') {
+                        const children = build(node.children)
+                        return children.length
+                            ? [{ rank: children[0].rank, children }]
+                            : []
+                    }
+                    if (!rank.has(node.id) || seen.has(node.id)) return []
+                    seen.add(node.id)
+                    return [{ rank: rank.get(node.id), id: node.id }]
+                })
+                .sort(byRank)
+
+        const root = build(L_.getLayerTree())
+        order.forEach((name) => {
+            if (!seen.has(name)) root.push({ rank: rank.get(name), id: name })
+        })
+        root.sort(byRank)
+
+        const out = []
+        const flatten = (list) =>
+            list.forEach((n) => (n.children ? flatten(n.children) : out.push(n.id)))
+        flatten(root)
+        return out
     },
     // Trusts `order` to be a permutation of `_layersOrdered`.
     applyLayerOrder: function (order) {
@@ -4190,6 +4272,92 @@ const L_ = {
                 delete L_.layers.coverageHidden[layerUUID]
             }
         }
+    },
+    /**
+     * The config's layer hierarchy as ids only: a header becomes
+     * `{ kind: 'group', id, children }`, any other layer
+     * `{ kind: 'layer', id }`. Details for either come from the layer
+     * configs. Nodes core does not know are left out.
+     * @returns {Array<object>}
+     */
+    getLayerTree: function () {
+        const walk = (nodes) =>
+            (Array.isArray(nodes) ? nodes : []).flatMap((node) => {
+                if (node == null || L_.layers.data[node.name] == null)
+                    return []
+                if (node.type === 'header') {
+                    const children = walk(node.sublayers)
+                    return [{ kind: 'group', id: node.name, children }]
+                }
+                // Only headers group; anything nested under a plain layer
+                // is listed beside it.
+                return [{ kind: 'layer', id: node.name }, ...walk(node.sublayers)]
+            })
+        return walk(L_.configData?.layers)
+    },
+    /**
+     * The UUIDs of every layer inside a group, nested groups included, or
+     * null when no group has that id.
+     * @param {string} groupId - Group (header) UUID or display name.
+     * @returns {string[] | null}
+     */
+    getGroupLayerIds: function (groupId) {
+        const uuid = L_.asLayerUUID(groupId)
+        const find = (nodes) => {
+            for (const node of nodes) {
+                if (node.kind !== 'group') continue
+                if (node.id === uuid) return node
+                const found = find(node.children)
+                if (found) return found
+            }
+            return null
+        }
+        const group = find(L_.getLayerTree())
+        if (!group) return null
+        const ids = []
+        const collect = (nodes) =>
+            nodes.forEach((n) =>
+                n.kind === 'group' ? collect(n.children) : ids.push(n.id)
+            )
+        collect(group.children)
+        return ids
+    },
+    /**
+     * Switches every layer in a group off when any of them is on, otherwise
+     * switches every layer on.
+     * @param {string} groupId - Group (header) UUID or display name.
+     * @returns {Promise<{ visible: boolean, changed: string[] } | null>}
+     *   The group's new state and the layers whose visibility changed; null
+     *   for an unknown group.
+     */
+    toggleGroup: async function (groupId) {
+        const ids = L_.getGroupLayerIds(groupId)
+        if (ids == null) return null
+        const turnOff = ids.some((id) => L_.layers.on[id] === true)
+        const changed = []
+        for (const id of ids) {
+            if ((L_.layers.on[id] === true) !== turnOff) continue
+            await L_.toggleLayer(L_.layers.data[id])
+            if ((L_.layers.on[id] === true) !== turnOff) changed.push(id)
+        }
+        return { visible: turnOff ? false : changed.length > 0, changed }
+    },
+    /**
+     * Sets one opacity on every layer in a group.
+     * @param {string} groupId - Group (header) UUID or display name.
+     * @param {number} opacity - In [0, 1].
+     * @returns {string[] | null} The layers set; null for an unknown group or
+     *   an opacity outside [0, 1].
+     */
+    setGroupOpacity: function (groupId, opacity) {
+        if (!Number.isFinite(opacity) || opacity < 0 || opacity > 1) return null
+        const ids = L_.getGroupLayerIds(groupId)
+        if (ids == null) return null
+        ids.forEach((id) => {
+            L_.layers.opacity[id] = opacity
+            L_.setLayerOpacity(id, opacity)
+        })
+        return ids
     },
     expandLayersToArray: function (layer) {
         // Recursively going through the removed layer to get all of its sub layers

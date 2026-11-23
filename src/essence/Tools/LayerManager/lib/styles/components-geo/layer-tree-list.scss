@@ -1,0 +1,147 @@
+/* Group rows of a grouped layer list. A group's header lines up with the
+   layer rows around it; its children sit under a rule that marks the depth.
+
+   Every row's leading controls fall in the same columns: the drag handle,
+   then the chevron (a blank of its width on a layer row), then the switch.
+   A level's children start one column in, so their handles sit under the
+   group's chevron.
+
+   The gaps are set by what shows rather than by the boxes. The handle's
+   dots leave about 8px clear inside the right of their box, and the switch
+   fills its own, so the handle sits flush against the chevron while the
+   switch keeps a gap: the space you see either side of the chevron then
+   comes out even. */
+$tree-column: 22px;
+$tree-handle-gap: 0px;
+$tree-column-gap: 8px;
+/* A layer row's indent for the content under its title, as the row sets it:
+   the switch (16px) and the title gap (12px). */
+$tree-row-content-indent: 28px;
+
+.blocks-layer-tree {
+    /* Surfaced like a layer row while its header is pointed at or focused,
+       or while one of its popovers is open, so the highlight covers
+       everything the header's controls act on. The border is always present
+       so revealing it shifts nothing. */
+    &__group {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        background: transparent;
+        border: 1px solid transparent;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+        &:has(> .blocks-layer-tree__group-header:hover),
+        &:has(> .blocks-layer-tree__group-header:focus-within),
+        &--open {
+            background: var(--theme-color-base-lightest, #f1f3f6);
+            border-color: var(--theme-color-base-lighter, #dfe1e2);
+        }
+    }
+
+    /* Same padding and gap as a layer row's header, so handles and titles
+       line up down the list whatever the row kind. */
+    &__group-header {
+        display: flex;
+        align-items: center;
+        gap: var(--theme-spacing-105, 0.75rem);
+        min-height: 22px;
+        padding: var(--theme-spacing-1, 1rem);
+        padding-bottom: var(--theme-spacing-05, 0.25rem);
+        font-family: var(--theme-font-body, 'Public Sans Web', sans-serif);
+    }
+
+    &__chevron {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        width: 22px;
+        height: 22px;
+        padding: 0;
+        border: none;
+        background: transparent;
+        color: var(--theme-color-base-dark, #565c65);
+        font-size: 18px;
+        cursor: pointer;
+
+        &:hover {
+            color: var(--theme-color-primary, #0e7482);
+        }
+
+        &:focus-visible {
+            outline: 2px solid var(--theme-color-primary, #0e7482);
+            outline-offset: 1px;
+        }
+    }
+
+    /* Both close the header's wider gap down to the column gaps above. */
+    .blocks-layer-legend__drag-handle {
+        margin-right: calc(#{$tree-handle-gap} - var(--theme-spacing-105, 0.75rem));
+    }
+
+    &__chevron + .blocks-layer-legend__checkbox-wrapper {
+        margin-left: calc(#{$tree-column-gap} - var(--theme-spacing-105, 0.75rem));
+    }
+
+    /* A layer row keeps the chevron's column blank, so its switch lines up
+       with a group's. */
+    .blocks-layer-legend__header > .blocks-layer-legend__checkbox-wrapper {
+        margin-left: $tree-column + $tree-column-gap;
+    }
+
+    /* The row's content under its title moves over by the same blank column. */
+    .blocks-layer-legend {
+        &__marks,
+        &__run,
+        &__unit-label,
+        &__content {
+            padding-left: $tree-row-content-indent + $tree-column + $tree-column-gap;
+        }
+    }
+
+    .blocks-layer-legend--draggable {
+        .blocks-layer-legend__marks,
+        .blocks-layer-legend__run,
+        .blocks-layer-legend__unit-label,
+        .blocks-layer-legend__content {
+            padding-left: $tree-row-content-indent + $tree-column + $tree-handle-gap +
+                $tree-column + $tree-column-gap;
+        }
+    }
+
+    &__group-title {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        /* Set like a layer title. */
+        font-size: var(--theme-font-size-2xs, 0.88rem);
+        font-weight: calc(var(--theme-font-weight-normal, 400) + 100);
+        line-height: 1.6;
+        color: var(--theme-color-ink, #1c1d1f);
+    }
+
+    /* A group's controls: the layer rows' own buttons, so icons line up. */
+    &__actions {
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
+    }
+
+    &__children {
+        display: flex;
+        flex-direction: column;
+        margin-left: var(--theme-spacing-205, 1.25rem);
+        border-left: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    }
+
+    /* In a reorderable list, children's drag handles line up under the
+       group's chevron: the handle and its gap, less the rule here and the
+       child's own border (1px each). */
+    &__group:has(> .blocks-layer-tree__group-header > .blocks-layer-legend__drag-handle)
+        > &__children {
+        margin-left: $tree-column + $tree-handle-gap - 2px;
+    }
+}

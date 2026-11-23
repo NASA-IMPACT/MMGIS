@@ -1,0 +1,58 @@
+/* Laid out like a layer row so names line up down the sidebar, with the
+   chevron in place of the colour dot. Reset from the browser's button look. */
+.layer-group-item {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding-right: 10px;
+    margin: 0;
+    box-sizing: border-box;
+    background: transparent;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    color: var(--theme-color-base-darker, #3d4551);
+}
+
+.layer-group-item:hover {
+    background: var(--theme-color-primary-lightest, #e6f4f6);
+}
+
+/* The host's design system rings every focused button, a mouse click
+   included; on a full-width row that frames the row after each fold. */
+.layer-group-item:focus:not(:focus-visible) {
+    outline: none;
+}
+
+/* Inset rather than offset outward like the plugin's other rings: the row
+   spans the sidebar, whose scrolling list would clip a ring drawn outside. */
+.timeline .layer-group-item:focus-visible {
+    outline-offset: -2px;
+}
+
+.layer-group-chevron {
+    display: flex;
+    width: 16px;
+    height: 16px;
+    margin-right: 4px;
+    flex-shrink: 0;
+    transition: transform 0.15s ease;
+}
+
+.layer-group-chevron.is-open {
+    transform: rotate(90deg);
+}
+
+.layer-group-name {
+    font-size: var(--theme-font-size-3xs, 12px);
+    font-weight: var(--theme-font-weight-semibold, 600);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .layer-group-chevron {
+        transition: none;
+    }
+}

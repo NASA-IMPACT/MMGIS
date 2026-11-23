@@ -520,14 +520,14 @@
             {
               "field": "time.dataStartTime",
               "name": "Data Start Time",
-              "description": "The earliest time this layer has data for. The layer is not requested while the timeline's current time is before it. Use an ISO 8601 datetime (e.g., 2020-01-01T00:00:00Z); a partial date starts at the beginning of what it names, so 2020-03 starts on 1 March. Or use now to follow the current date, optionally offset by an ISO 8601 duration (e.g., now - P1D). Leave empty to leave the start unconstrained. An unreadable value is ignored. When a Time Extent URL is set below and its path finds a value, that value is used instead and this one is the fallback.",
+              "description": "The earliest time this layer has data for. The layer is not requested while the timeline's current time is before it. Use an ISO 8601 datetime (e.g., 2020-01-01T00:00:00Z); a partial date starts at the beginning of what it names, so 2020-03 starts on 1 March. Or use now to follow the current date, optionally offset by an ISO 8601 duration (e.g., now - P1D) and rounded down to the start of a UTC year, month, day or hour with /y, /M, /d or /h, case-sensitive (e.g., now/d for the start of today). Leave empty to leave the start unconstrained. An unreadable value is ignored. When a Time Extent URL is set below and its path finds a value, that value is used instead and this one is the fallback.",
               "type": "text",
               "width": 4
             },
             {
               "field": "time.dataEndTime",
               "name": "Data End Time",
-              "description": "The latest time this layer has data for. The layer is not requested while the timeline's current time is after it. Use an ISO 8601 datetime (e.g., 2025-12-31T23:59:59Z); a partial date runs to the end of what it names, so 2020-03 runs to the end of March. Or use now for a collection that is still growing, so the layer stays current without edits, optionally offset by an ISO 8601 duration (e.g., now + P5D). Leave empty to leave the end unconstrained. An unreadable value is ignored. When a Time Extent URL is set below and its path finds a value, that value is used instead and this one is the fallback.",
+              "description": "The latest time this layer has data for. The layer is not requested while the timeline's current time is after it. Use an ISO 8601 datetime (e.g., 2025-12-31T23:59:59Z); a partial date runs to the end of what it names, so 2020-03 runs to the end of March. Or use now for a collection that is still growing, so the layer stays current without edits, optionally offset by an ISO 8601 duration (e.g., now + P5D) and rounded down to the start of a UTC year, month, day or hour with /y, /M, /d or /h, case-sensitive (e.g., now/d to end at the start of today; rounding is always down, even for an end time). Leave empty to leave the end unconstrained. An unreadable value is ignored. When a Time Extent URL is set below and its path finds a value, that value is used instead and this one is the fallback.",
               "type": "text",
               "width": 4
             },
@@ -1330,6 +1330,27 @@
               "name": "Threshold",
               "description": "If dynamicExtent is true, only requery if the map was panned past the stated threshold. Unit is in meters. If a zoom-dependent threshold is desired, set this value to a string ending in '/z'. This will then internally use 'dynamicExtentMoveThreshold / Math.pow(2, zoom)' as the threshold value.",
               "type": "text",
+              "width": 3
+            }
+          ]
+        },
+        {
+          "subname": "Pagination",
+          "components": [
+            {
+              "field": "variables.pagination.pageSize",
+              "name": "Entries Per Page",
+              "description": "Fetches the source URL page by page when set. Write {offset} and {limit} into the URL where the server expects them, e.g. '&resultOffset={offset}&resultRecordCount={limit}' (ArcGIS) or '&offset={offset}&limit={limit}' (OGC API Features). Each request fills {limit} with this number and {offset} with the number of features before that page: with 2000, the requests use offsets 0, 2000, 4000 and so on. Paging stops at the first page that returns fewer features than this number, so it must not exceed the server's own per-request maximum. Leave empty to fetch the URL once.",
+              "type": "number",
+              "min": 1,
+              "width": 3
+            },
+            {
+              "field": "variables.pagination.maxPages",
+              "name": "Max Pages",
+              "description": "Most pages to fetch when 'Entries Per Page' is set. Defaults to 50. If the last page read is still full, the remaining features are not shown and a warning is logged to the browser console.",
+              "type": "number",
+              "min": 1,
               "width": 3
             }
           ]

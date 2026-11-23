@@ -10,7 +10,11 @@ import {
 import { getLayersWithLegends } from '../../_shared/legend/getLayersWithLegends'
 import type { CogData, Layer } from '../lib/types'
 
-export type FetchOptions = { showOnlyVisible?: boolean }
+export type FetchOptions = {
+    showOnlyVisible?: boolean
+    /** Every layer's config, when the caller has already read them. */
+    layerConfigs?: Record<string, LayerConfig> | null
+}
 
 /**
  * Whether a layer offers area analysis, read from the same mission-config flag
@@ -53,10 +57,11 @@ const buildCogData = (
  */
 export const getVisibleLayersWithLegends = async ({
     showOnlyVisible = false,
+    layerConfigs: givenConfigs,
 }: FetchOptions = {}): Promise<Layer[]> => {
     // The configs are asked for once: the analysis mark reads them here, and
     // the row assembly is handed them rather than requesting them again.
-    const layerConfigs = await mmgisGetLayerConfigs()
+    const layerConfigs = givenConfigs ?? (await mmgisGetLayerConfigs())
     // Coverage is read with the rest, so a layer core is already holding back
     // for lack of data is flagged on the first render rather than at the next
     // change core announces.

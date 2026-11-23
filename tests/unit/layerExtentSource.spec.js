@@ -178,6 +178,8 @@ describe('layer extent source', () => {
         test.each([
             ['now - P1D'],
             ['now + P5D'],
+            ['now/d'],
+            ['now - P1D/d'],
             ['2020-03'],
             ['2020-03-04T14:30:00+02:00'],
         ])('%s is still accepted as a start value', (value) => {

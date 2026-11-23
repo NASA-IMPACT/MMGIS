@@ -83,6 +83,7 @@ The only home for a layer's acquisition range is a pair of fields on the layer i
 
 - `now` resolves to the current date at the moment it is read
 - `now - P1D`, `now + P5D`, and any other ISO 8601 duration offset from `now`
+- a trailing `/y`, `/M`, `/d` or `/h` (case-sensitive) rounds the result down to the start of that UTC year, month, day or hour, after any offset: `now/d` is 00:00 UTC today, `now - P1D/d` is 00:00 UTC yesterday. Rounding is always down, so on `dataEndTime` it ends coverage at the start of the unit
 
 `temporalExtentFor` in `src/essence/Basics/Layers_/Layers_.js` resolves the policy at call time through `layerTimePolicy.ts`, and the `layers:getTemporalExtent` bus request serves the result for one layer, by UUID or name, or for all layers at once. The Timeline and the Layers panel read it.
 

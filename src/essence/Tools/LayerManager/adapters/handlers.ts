@@ -10,12 +10,16 @@ import {
     mmgisGetVisibleLayers,
     mmgisGetListedLayers,
     mmgisGetLayerConfigs,
+    mmgisGetLayerTree,
+    mmgisToggleLayerGroup,
+    mmgisSetLayerGroupOpacity,
+    type LayerConfig,
 } from '../../_shared/adapters/mmgisAPI'
 import {
     ZOOM_TO_LAYER_PADDING,
     ZOOM_TO_LAYER_POINT_MAX_ZOOM,
 } from '../lib/utils/constants'
-import { placeInOrder } from '../lib/utils/layerOrder'
+import { placeInTree, type Placement } from '../lib/utils/layerTree'
 import { filteredOutLayers } from '../lib/utils/filteredOut'
 
 type Refresh = () => Promise<void> | void
@@ -39,11 +43,13 @@ export const toggleVisibility = async (layerId: string): Promise<void> => {
 
 export type FilteredOutLayer = { id: string; title: string }
 
-export const getFilteredOutLayers = async (): Promise<FilteredOutLayer[]> => {
+export const getFilteredOutLayers = async (
+    layerConfigs?: Record<string, LayerConfig> | null,
+): Promise<FilteredOutLayer[]> => {
     const [visible, listed, configs] = await Promise.all([
         mmgisGetVisibleLayers(),
         mmgisGetListedLayers(),
-        mmgisGetLayerConfigs(),
+        layerConfigs ?? mmgisGetLayerConfigs(),
     ])
     return filteredOutLayers(visible, listed).map((id) => ({
         id,
@@ -69,6 +75,34 @@ export const setOpacity = async (layerId: string, opacity: number): Promise<void
     const success = await mmgisRequest<boolean>('layers:setOpacity', { layerUUID: layerId, opacity })
     if (success) {
         mmgisEmit('layer:opacityChange', { layerName: layerId, opacity })
+    }
+}
+
+/**
+ * Switches a whole group on or off. Each layer whose visibility changed is
+ * announced on its own, as a single layer's toggle is. When nothing changed,
+ * or the request failed, nothing is announced, so the list is refreshed
+ * directly and the switch shows the group's actual state.
+ */
+export const toggleGroupVisibility = async (groupId: string, refresh: Refresh): Promise<void> => {
+    let changed: string[] = []
+    try {
+        const result = await mmgisToggleLayerGroup(groupId)
+        if (!result) return
+        changed = result.changed
+        for (const layerName of changed) {
+            mmgisEmit('layer:visibilityChange', { layerName, visible: result.visible })
+        }
+    } finally {
+        if (changed.length === 0) await refresh()
+    }
+}
+
+/** Sets one opacity on every layer in a group, announcing each layer set. */
+export const setGroupOpacity = async (groupId: string, opacity: number): Promise<void> => {
+    const changed = await mmgisSetLayerGroupOpacity(groupId, opacity)
+    for (const layerName of changed ?? []) {
+        mmgisEmit('layer:opacityChange', { layerName, opacity })
     }
 }
 
@@ -132,14 +166,24 @@ const writeOrder = async (
     }
 }
 
-/** Drops a dragged layer at `toIndex` of the list the user dragged it through. */
-export const dropLayer = (
-    layerId: string,
-    toIndex: number,
-    shownIds: string[],
+/**
+ * Drops a dragged layer or group just before or after `overId`. The grouping
+ * is read from core at the drop, since core draws each group as one block
+ * and a move must not split one.
+ */
+export const dropLayer = async (
+    id: string,
+    overId: string,
+    placement: Placement,
     refresh?: Refresh,
-): Promise<void> =>
-    writeOrder(layerId, (order) => placeInOrder(order, shownIds, layerId, toIndex), refresh)
+): Promise<void> => {
+    const tree = await mmgisGetLayerTree()
+    await writeOrder(
+        id,
+        (order) => placeInTree(order, tree, id, overId, placement),
+        refresh,
+    )
+}
 
 /**
  * Hands a layer to the Comparison plugin as the first of the two sides it

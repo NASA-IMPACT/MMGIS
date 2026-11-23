@@ -1,7 +1,8 @@
 import React from 'react'
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { LayerManagerPanel } from './lib'
-import type { Layer } from './lib/types'
+import type { GroupInfo, Layer, LayerListNode } from './lib/types'
+import { buildLayerList, type LayerStates, type Placement } from './lib/utils/layerTree'
 import { useMMGISEvent } from '../_shared/adapters/useMMGISEvent'
 import { useMMGISToolVars } from '../_shared/adapters/useMMGISToolVars'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
@@ -16,6 +17,8 @@ import {
     compareLayer,
     showAddLayer,
     dropLayer,
+    toggleGroupVisibility,
+    setGroupOpacity,
     getFilteredOutLayers,
     hideFilteredOutLayers,
     selectRun,
@@ -23,10 +26,16 @@ import {
 import {
     mmgisGetLayerBounds,
     mmgisGetTimeCurrent,
+    mmgisRequest,
     mmgisRequestIfProvided,
     mmgisOnDataCoverageChanged,
+    mmgisGetLayerTree,
+    mmgisGetLayerConfigs,
     type LayerDataCoverageChange,
+    type LayerTreeNode,
+    type LayerConfig,
 } from '../_shared/adapters/mmgisAPI'
+import { getGroupInfo } from '../_shared/adapters/groupInfo'
 
 type ToolVars = { showOnlyVisible?: boolean; width?: number }
 
@@ -73,8 +82,44 @@ const withOutOfRange = (rows: Layer[], flags: Map<string, boolean>): Layer[] => 
     )
 }
 
+const hasGroups = (tree: LayerTreeNode[] | null): boolean =>
+    tree?.some((node) => node.kind === 'group') === true
+
+type Grouping = {
+    tree: LayerTreeNode[] | null
+    groups: Record<string, GroupInfo>
+    states?: LayerStates
+}
+
+/**
+ * The grouping core reports, with each group's header details read from its
+ * header layer's config and, when there are groups, every layer's visibility
+ * and opacity, which a group's controls read across all of its layers. A core
+ * too old to answer, or a failed read, leaves the list flat.
+ */
+const readGrouping = async (
+    configs: Record<string, LayerConfig> | null,
+): Promise<Grouping | null> => {
+    try {
+        const tree = await mmgisGetLayerTree()
+        let states: LayerStates | undefined
+        if (hasGroups(tree)) {
+            const [visible, opacities] = await Promise.all([
+                mmgisRequest<Record<string, boolean>>('layers:getVisible'),
+                mmgisRequest<Record<string, number>>('layers:getAllOpacities'),
+            ])
+            states = { visible, opacities }
+        }
+        return { tree, groups: getGroupInfo(configs), states }
+    } catch (err) {
+        console.warn('LayerManager: layer groups unavailable', err)
+        return null
+    }
+}
+
 export function MMGISLayerManagerAdapter() {
     const [layers, setLayers] = useState<Layer[]>([])
+    const [grouping, setGrouping] = useState<Grouping | null>(null)
     const [filteredOut, setFilteredOut] = useState<string[]>([])
     const [loading, setLoading] = useState(true)
     const toolVars = useMMGISToolVars<ToolVars>('layermanager')
@@ -117,12 +162,17 @@ export function MMGISLayerManagerAdapter() {
         const announced = new Map<string, boolean>()
         inFlight.current.add(announced)
         try {
-            const [data, leftOut] = await Promise.all([
+            // Read once and handed to every reader below: the rows, the
+            // filtered-out names and the group headers all come from it.
+            const configs = await mmgisGetLayerConfigs()
+            const [data, leftOut, , structure] = await Promise.all([
                 getVisibleLayersWithLegends({
                     showOnlyVisible: toolVars.showOnlyVisible === true,
+                    layerConfigs: configs,
                 }),
-                getFilteredOutLayers(),
+                getFilteredOutLayers(configs),
                 readRuns(),
+                readGrouping(configs),
             ])
             // A newer refresh already landed while this one was reading —
             // its answer is stale, so drop it.
@@ -133,6 +183,7 @@ export function MMGISLayerManagerAdapter() {
                 withOutOfRange(withRuns(data, latestRuns.current), announced),
             )
             setFilteredOut(leftOut.map((layer) => layer.title))
+            setGrouping(structure)
         } catch (err) {
             console.error('LayerManager: refresh failed', err)
             if (seq === refreshSeq.current) {
@@ -201,9 +252,21 @@ export function MMGISLayerManagerAdapter() {
         return (await mmgisGetLayerBounds(layerId)) !== null
     }, [])
 
-    useMMGISEvent('layer:visibilityChange', refresh)
+    // A group action announces each of its layers in one go; those
+    // announcements share a single refresh.
+    const refreshQueued = useRef(false)
+    const refreshOnce = useCallback(() => {
+        if (refreshQueued.current) return
+        refreshQueued.current = true
+        queueMicrotask(() => {
+            refreshQueued.current = false
+            void refresh()
+        })
+    }, [refresh])
+
+    useMMGISEvent('layer:visibilityChange', refreshOnce)
     useMMGISEvent('layer:refreshStatusChange', refresh)
-    useMMGISEvent('layer:opacityChange', refresh)
+    useMMGISEvent('layer:opacityChange', refreshOnce)
     useMMGISEvent('layer:listedChange', refresh)
     useMMGISEvent('layers:configChanged', refresh)
     useMMGISEvent('layer:runChange', refresh)
@@ -211,12 +274,16 @@ export function MMGISLayerManagerAdapter() {
     useMMGISEvent('layers:listChanged', refresh)
     useMMGISEvent('layers:orderChanged', refresh)
 
-    // A drop lands relative to this list, not to the full order.
-    const onReorder = useCallback(
-        (id: string, toIndex: number) => {
-            report('dropLayer', dropLayer(id, toIndex, layers.map((l) => l.id), refresh))
+    const onMove = useCallback(
+        (id: string, overId: string, placement: Placement) => {
+            report('dropLayer', dropLayer(id, overId, placement, refresh))
         },
-        [layers, refresh],
+        [refresh],
+    )
+
+    const nodes = useMemo<LayerListNode[]>(
+        () => buildLayerList(layers, grouping?.tree, grouping?.groups, grouping?.states),
+        [layers, grouping],
     )
 
     // 'layers:getAll' is registered by Layers_.fina() during mission load.
@@ -240,6 +307,10 @@ export function MMGISLayerManagerAdapter() {
     return (
         <LayerManagerPanel
             layers={layers}
+            nodes={nodes}
+            onMove={onMove}
+            onGroupVisibilityChange={(id) => { report('toggleGroupVisibility', toggleGroupVisibility(id, refresh)) }}
+            onGroupOpacityChange={(id, op) => { report('setGroupOpacity', setGroupOpacity(id, op)) }}
             loading={loading}
             renderDescription={renderDescription}
             onVisibilityChange={(id) => { report('toggleVisibility', toggleVisibility(id)) }}
@@ -250,7 +321,6 @@ export function MMGISLayerManagerAdapter() {
             canZoomToLayer={canZoomToLayer}
             selectedTime={selectedTime}
             onCompareLayer={compareLayer}
-            onReorder={onReorder}
             onAddLayer={showAddLayer}
             onHideFilteredLayers={() => { report('hideFilteredOutLayers', hideFilteredOutLayers()) }}
             filteredOutLayers={filteredOut}

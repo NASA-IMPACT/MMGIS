@@ -91,6 +91,50 @@ describe('layer time policy', () => {
                 '2026-08-26T15:42:31Z',
             )
         })
+
+        test('"/unit" rounds down to the start of that UTC unit', () => {
+            expect(resolveTimePolicy('now/d', { now: NOW })).toBe(
+                '2026-08-25T00:00:00Z',
+            )
+            expect(resolveTimePolicy('now/h', { now: NOW })).toBe(
+                '2026-08-25T15:00:00Z',
+            )
+            expect(resolveTimePolicy('now/M', { now: NOW })).toBe(
+                '2026-08-01T00:00:00Z',
+            )
+            expect(resolveTimePolicy('now/y', { now: NOW })).toBe(
+                '2026-01-01T00:00:00Z',
+            )
+        })
+
+        test('rounding applies after the offset', () => {
+            expect(resolveTimePolicy('now - P1D/d', { now: NOW })).toBe(
+                '2026-08-24T00:00:00Z',
+            )
+            expect(resolveTimePolicy('now-P1D / d', { now: NOW })).toBe(
+                '2026-08-24T00:00:00Z',
+            )
+        })
+
+        test('a time already on the unit boundary rounds to itself', () => {
+            const midnight = new Date('2026-08-25T00:00:00Z')
+            expect(resolveTimePolicy('now/d', { now: midnight })).toBe(
+                '2026-08-25T00:00:00Z',
+            )
+        })
+
+        test('rounding keeps years 0-99 as written', () => {
+            expect(resolveTimePolicy('now - P2000Y/y', { now: NOW })).toBe(
+                '0026-01-01T00:00:00Z',
+            )
+        })
+
+        test('an unknown rounding unit resolves to null', () => {
+            expect(resolveTimePolicy('now/q', { now: NOW })).toBeNull()
+            expect(resolveTimePolicy('now/toString', { now: NOW })).toBeNull()
+            expect(resolveTimePolicy('now/D', { now: NOW })).toBeNull()
+            expect(resolveTimePolicy('now/d - P1D', { now: NOW })).toBeNull()
+        })
     })
 
     describe('resolveTemporalExtent', () => {
@@ -491,6 +535,13 @@ describe('isPeriodicRequest', () => {
         expect(isPeriodicRequest({ enabled: true, interval: 'P1D' })).toBe(true)
         expect(isPeriodicRequest({ enabled: true, interval: 'P7D' })).toBe(false)
         expect(isPeriodicRequest({ enabled: true })).toBe(false)
+    })
+
+    test('a rounded now start anchors nothing, so periods follow the calendar', () => {
+        const daily = { enabled: true, interval: 'P1D', dataStartTime: 'now/d' }
+        const weekly = { enabled: true, interval: 'P7D', dataStartTime: 'now/d' }
+        expect(isPeriodicRequest(daily)).toBe(true)
+        expect(isPeriodicRequest(weekly)).toBe(false)
     })
 })
 

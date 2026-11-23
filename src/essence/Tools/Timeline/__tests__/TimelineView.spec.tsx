@@ -19,6 +19,7 @@ import { EDGE_MARGIN, TimelineView } from '../lib/geo/TimelineView/TimelineView'
 import type { LayerNavigation } from '../lib/utils/layerNavigation'
 import { transformToWindow, type ViewWindow } from '../lib/utils/zoomWindow'
 import type { LayerTimeData, TimeMode } from '../lib/types'
+import type { LayerGroupNode } from '../lib/utils/layerGroups'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean })
     .IS_REACT_ACT_ENVIRONMENT = true
@@ -765,5 +766,184 @@ describe('TimelineView margin past the global window', () => {
             const [, x] = /translate\(([^,]+),/.exec(tick.getAttribute('transform')!)!
             expect(Number(x)).toBeLessThanOrEqual(WIDTH - EDGE_MARGIN)
         }
+    })
+})
+
+/**
+ * Grouped layers: each group has a row that folds its layers away, and the
+ * sidebar and the chart stay row for row through every fold.
+ */
+describe('TimelineView layer groups', () => {
+    let container: HTMLElement
+    let root: Root
+    let originalResizeObserver: unknown
+
+    const groups: LayerGroupNode[] = [
+        {
+            kind: 'group',
+            id: 'aqs',
+            displayName: 'AQS',
+            children: [
+                { kind: 'layer', id: 'o3' },
+                {
+                    kind: 'group',
+                    id: 'nitrogen',
+                    displayName: 'Nitrogen',
+                    children: [{ kind: 'layer', id: 'no2' }],
+                },
+            ],
+        },
+    ]
+
+    /** Holds the fold state as the adapter does. */
+    const Harness: React.FC<{ layers: LayerTimeData[] }> = ({ layers }) => {
+        const [collapsed, setCollapsed] = React.useState<ReadonlySet<string>>(
+            () => new Set(),
+        )
+        return (
+            <TimelineView
+                startTime={START}
+                endTime={END}
+                currentTime={CURRENT}
+                timeMode="DAY"
+                configuredGranularity="DAY"
+                layers={layers}
+                groups={groups}
+                collapsedGroups={collapsed}
+                onToggleGroup={(id) =>
+                    setCollapsed((prev) => {
+                        const next = new Set(prev)
+                        if (!next.delete(id)) next.add(id)
+                        return next
+                    })
+                }
+                view={{ start: START, end: END }}
+                onViewChange={() => {}}
+                onCurrentTimeChange={() => {}}
+                onLayerNavigate={() => {}}
+                onFitLayer={() => {}}
+            />
+        )
+    }
+
+    beforeEach(() => {
+        originalResizeObserver = (globalThis as { ResizeObserver?: unknown })
+            .ResizeObserver
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            NoopResizeObserver
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+        ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+            originalResizeObserver as typeof ResizeObserver
+    })
+
+    const render = (layers: LayerTimeData[]) => {
+        act(() => {
+            root.render(<Harness layers={layers} />)
+        })
+    }
+
+    const sidebarLabels = () =>
+        Array.from(
+            container.querySelectorAll<HTMLElement>(
+                '.layer-group-name, .layer-name',
+            ),
+        ).map((el) => el.textContent)
+    const header = (name: string) =>
+        Array.from(
+            container.querySelectorAll<HTMLButtonElement>('.layer-group-item'),
+        ).find((el) => el.textContent === name)!
+    const toggle = (name: string) =>
+        act(() => {
+            header(name).dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        })
+
+    /**
+     * Each chart row's y and the names its bars are titled with, in row
+     * order. An open group's row draws nothing, so it has no names.
+     */
+    const chartRows = () =>
+        Array.from(
+            container.querySelectorAll<SVGGElement>('.layer-timelines > g'),
+        ).map((row) => ({
+            y: Number(row.querySelector('.layer-row-bg')!.getAttribute('y')),
+            names: Array.from(new Set(
+                Array.from(row.querySelectorAll('title')).map(
+                    (title) => title.textContent!.split('\n')[0],
+                ),
+            )),
+        }))
+
+    /** Sidebar row i and chart row i: same pitch, and the chart row draws
+     *  the sidebar row's layer or folded group, or nothing for an open
+     *  group. */
+    const expectAligned = () => {
+        const labels = sidebarLabels()
+        const items = Array.from(
+            container.querySelectorAll<HTMLElement>(
+                '.layer-group-item, .layer-item',
+            ),
+        )
+        const rows = chartRows()
+        expect(rows).toHaveLength(labels.length)
+        const pitch = rows.length > 1 ? rows[1].y - rows[0].y : 0
+        rows.forEach((row, index) => {
+            expect(row.y).toBe(rows[0].y + index * pitch)
+            const open = items[index].getAttribute('aria-expanded') === 'true'
+            expect(row.names).toEqual(open ? [] : [labels[index]])
+        })
+    }
+
+    test('lists grouped layers under their group, expanded at first', () => {
+        render([layer('o3'), layer('no2'), layer('basemap')])
+
+        expect(sidebarLabels()).toEqual([
+            'AQS', 'o3', 'Nitrogen', 'no2', 'basemap',
+        ])
+        expect(header('AQS').getAttribute('aria-expanded')).toBe('true')
+        expectAligned()
+    })
+
+    test('folds a group to one row that draws its layers\' coverage', () => {
+        render([layer('o3'), layer('no2'), layer('basemap')])
+
+        toggle('AQS')
+
+        expect(sidebarLabels()).toEqual(['AQS', 'basemap'])
+        expect(header('AQS').getAttribute('aria-expanded')).toBe('false')
+        expect(chartRows()[0].names).toEqual(['AQS'])
+        expectAligned()
+
+        toggle('AQS')
+
+        expect(sidebarLabels()).toEqual([
+            'AQS', 'o3', 'Nitrogen', 'no2', 'basemap',
+        ])
+        expectAligned()
+    })
+
+    test('keeps names level with their bars through nested folds', () => {
+        render([layer('o3'), layer('no2'), layer('basemap')])
+
+        toggle('Nitrogen')
+        expect(sidebarLabels()).toEqual(['AQS', 'o3', 'Nitrogen', 'basemap'])
+        expectAligned()
+
+        toggle('AQS')
+        toggle('AQS')
+        expect(sidebarLabels()).toEqual(['AQS', 'o3', 'Nitrogen', 'basemap'])
+        expectAligned()
+    })
+
+    test('drops a group none of whose layers are shown', () => {
+        render([layer('basemap')])
+
+        expect(sidebarLabels()).toEqual(['basemap'])
     })
 })
