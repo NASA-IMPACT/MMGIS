@@ -131,10 +131,10 @@ When a point feature is encountered, this value will be it's radius in pixels.
 
 #### Color by Value
 
-_type:_ single | colormap | ranges _optional_  
+_type:_ none | colormap | ranges _optional_  
 Colors each feature by the value of one of its properties, set in Value Property. Only numeric values are colored; a feature without one keeps its fixed color. This takes priority over Fill Color and over colors from the legend, and the legend is drawn from this setting. With Color the Stroke Too on, the stroke takes the same color as the fill.
 
-- **single**: no coloring by value; Fill Color is used.
+- **none**: no coloring by value. The layer is colored as it would be without this setting: by its legend rows with Style Matching on, otherwise by Fill Color.
 - **colormap**: the value is spread across a color ramp between Minimum Data Value and Maximum Data Value. Values outside them take the ramp's end colors. The ramp list is the one raster layers offer, and a name ending in `_r` is the reversed ramp. Units are shown in the legend.
 - **ranges**: the value is placed in bands. A band runs from its Lower Bound up to the next band's Lower Bound; the highest band has no upper limit, and a value equal to a Lower Bound takes that band. Values below the lowest bound keep the fixed color. A band without a Label is labeled from its bounds.
 

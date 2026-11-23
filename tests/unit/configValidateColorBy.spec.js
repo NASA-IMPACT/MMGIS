@@ -26,7 +26,7 @@ const ranges = {
 describe('Color by Value on save', () => {
     test.each([
         ['no setting', undefined],
-        ['single color', { mode: 'single', colormap: 'viridis' }],
+        ['no coloring by value', { mode: 'none', colormap: 'viridis' }],
         ['a usable colormap', colormap],
         ['a colormap with bounds written as text', { ...colormap, min: '1', max: '18' }],
         ['usable ranges', ranges],

@@ -215,15 +215,15 @@
             {
               "field": "style.colorBy.mode",
               "name": "Color by Value",
-              "description": "Colors each feature by the value of one of its properties. 'single' uses the Fill Color above. 'colormap' spreads the value across a color ramp between a minimum and a maximum. 'ranges' places the value in bands, each with its own color. Takes priority over Fill Color and over legend-driven colors.",
+              "description": "Colors each feature by the value of one of its properties. 'none' leaves the layer colored as it would be without this setting: by its legend rows with Style Matching on, otherwise by Fill Color. 'colormap' spreads the value across a color ramp between a minimum and a maximum. 'ranges' places the value in bands, each with its own color. Takes priority over Fill Color and over legend-driven colors.",
               "type": "dropdown",
               "width": 3,
               "options": [
-                "single",
+                "none",
                 "colormap",
                 "ranges"
               ],
-              "default": "single",
+              "default": "none",
               "keepUnset": true
             },
             {
