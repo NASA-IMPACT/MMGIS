@@ -10,12 +10,16 @@
  *         "ranges": [
  *             { "min": 0,   "color": "#FEF0D9", "label": "<10 MW" },
  *             { "min": 10,  "color": "#FDCC8A", "label": "10-49 MW" },
+ *             { "min": 50,  "color": "#FC8D59", "label": "50-149 MW" },
+ *             { "min": 150, "color": "#E34A33", "label": "150-349 MW" },
  *             { "min": 350, "color": "#B30000", "label": "≥350 MW" }
  *         ]
  *     }
  *
- * A value takes the band with the greatest `min` at or below it. The last
- * band is open above; the first is open below when its `min` is null.
+ * A value takes the band with the greatest `min` at or below it, so a band
+ * runs up to the next band's `min`. The last band is open above; the first is
+ * open below when its `min` is null. A label is display text only; a band
+ * without one is labelled from its bounds.
  *
  * `colormap` scales the value linearly across a named ramp, the same names
  * raster layers use, clamping below `min` and above `max` to the end colours:
