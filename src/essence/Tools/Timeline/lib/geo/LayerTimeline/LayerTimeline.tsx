@@ -132,11 +132,17 @@ interface DrawnBar {
 }
 
 /**
+ * A bar's fill: the layer's colour softened toward the timeline's background,
+ * solid so that bars drawn over one another do not show through.
+ */
+const barFill = (color: string) =>
+    `color-mix(in srgb, ${color} 85%, var(--theme-color-white, #ffffff))`
+
+/**
  * The boxes a layer's spans are drawn as. Spans whose boxes would overlap or
  * touch at the current zoom are drawn as one box, so a sparse layer listing
  * thousands of periods costs the boxes that can be told apart, not a box a
- * period, and no stacked pair reads darker than its neighbours through the
- * bars' shared opacity. A box wholly off the chart is not drawn.
+ * period. A box wholly off the chart is not drawn.
  */
 function drawnBars(
     ranges: TimeRange[],
@@ -244,8 +250,7 @@ export const LayerTimeline: React.FC<LayerTimelineProps> = React.memo(({
                             width={width}
                             height={BAR_THICKNESS}
                             /* Set as a style, not a fill attribute, so a var() colour resolves */
-                            style={{ fill: layer.color }}
-                            opacity={0.85}
+                            style={{ fill: barFill(layer.color) }}
                             rx={4}
                             className="layer-time-range"
                         >
