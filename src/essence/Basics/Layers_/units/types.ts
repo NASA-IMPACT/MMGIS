@@ -17,7 +17,7 @@ export interface ActiveUnit {
     offset: number
 }
 
-export interface LayerUnitAnswer {
+export interface LayerUnitState {
     sourceUnit: string
     property: string | null
     active: ActiveUnit

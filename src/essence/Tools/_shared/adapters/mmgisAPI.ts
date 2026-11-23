@@ -1,5 +1,5 @@
 import type { LayerLegend } from '../../../Basics/Layers_/legend/types'
-import type { LayerUnitAnswer } from '../../../Basics/Layers_/units/types'
+import type { LayerUnitState } from '../../../Basics/Layers_/units/types'
 
 type EventCleanup = () => void
 
@@ -318,7 +318,7 @@ export type {
  */
 export type {
     ActiveUnit,
-    LayerUnitAnswer,
+    LayerUnitState,
     UnitOption,
 } from '../../../Basics/Layers_/units/types'
 
@@ -342,16 +342,16 @@ export const mmgisGetLayerLegends = (): Promise<Record<
 /** One layer's unit answer, by UUID or display name. */
 export const mmgisGetLayerUnit = (
     layerUUID: string,
-): Promise<LayerUnitAnswer | null> => {
-    return mmgisRequestIfProvided<LayerUnitAnswer>('layers:getUnit', layerUUID)
+): Promise<LayerUnitState | null> => {
+    return mmgisRequestIfProvided<LayerUnitState>('layers:getUnit', layerUUID)
 }
 
 /** Every layer's unit answer, keyed by layer UUID; null entries for layers without one. */
 export const mmgisGetLayerUnits = (): Promise<Record<
     string,
-    LayerUnitAnswer | null
+    LayerUnitState | null
 > | null> => {
-    return mmgisRequestIfProvided<Record<string, LayerUnitAnswer | null>>(
+    return mmgisRequestIfProvided<Record<string, LayerUnitState | null>>(
         'layers:getUnit',
     )
 }

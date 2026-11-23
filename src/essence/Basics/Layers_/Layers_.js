@@ -44,7 +44,7 @@ import {
 } from '../TimeControl_/layerDataCoverage'
 import { buildLayerLegend } from './legend/buildLayerLegend'
 import { NO_LEGEND } from './legend/types'
-import { layerUnitAnswer } from './units/units'
+import { layerUnitState } from './units/units'
 import { detached } from '../../mmgisAPI/providers/_shared'
 import { bbox } from '@turf/turf'
 import $ from 'jquery'
@@ -618,11 +618,11 @@ const L_ = {
                 window.mmgisAPI.provide('layers:getUnit', (layerUUID) => {
                     if (layerUUID != null) {
                         const uuid = L_.asLayerUUID(layerUUID)
-                        return uuid == null ? null : layerUnitAnswer(L_.layers.data[uuid])
+                        return uuid == null ? null : layerUnitState(L_.layers.data[uuid])
                     }
                     const units = {}
                     Object.keys(L_.layers.data).forEach((uuid) => {
-                        units[uuid] = layerUnitAnswer(L_.layers.data[uuid])
+                        units[uuid] = layerUnitState(L_.layers.data[uuid])
                     })
                     return units
                 }),

@@ -181,12 +181,12 @@ describe('toDisplay / toSource', () => {
     })
 })
 
-describe('layerUnitAnswer', () => {
+describe('layerUnitState', () => {
     it('lists the source first and fills every offset', async () => {
-        const { layerUnitAnswer } = await import(
+        const { layerUnitState } = await import(
             '../../src/essence/Basics/Layers_/units/units'
         )
-        expect(layerUnitAnswer({ ...pm25, currentUnit: 'ppb' })).toEqual({
+        expect(layerUnitState({ ...pm25, currentUnit: 'ppb' })).toEqual({
             sourceUnit: 'µg/m³',
             property: null,
             active: { sourceUnit: 'µg/m³', label: 'ppb', scale: 0.4087, offset: 0 },
@@ -196,13 +196,13 @@ describe('layerUnitAnswer', () => {
                 { label: 'ppb', scale: 0.4087, offset: 0 },
             ],
         })
-        expect(layerUnitAnswer({})).toBeNull()
+        expect(layerUnitState({})).toBeNull()
     })
 })
 
-describe('layerUnitAnswer property', () => {
+describe('layerUnitState property', () => {
     it('names the property declared on the unit, else the one the legend styles by', async () => {
-        const { layerUnitAnswer } = await import(
+        const { layerUnitState } = await import(
             '../../src/essence/Basics/Layers_/units/units'
         )
         const declared = {
@@ -211,18 +211,18 @@ describe('layerUnitAnswer property', () => {
                 legend: [{ propertyName: 'other', value: '1 ppm' }],
             },
         }
-        expect(layerUnitAnswer(declared).property).toBe('conc')
+        expect(layerUnitState(declared).property).toBe('conc')
         const styled = {
             variables: {
                 unit: { sourceUnit: 'ppm' },
                 legend: [{ propertyName: ' ' }, { propertyName: 'conc' }],
             },
         }
-        expect(layerUnitAnswer(styled).property).toBe('conc')
+        expect(layerUnitState(styled).property).toBe('conc')
         const processed = {
             cogUnits: 'MW',
             _legend: [{ propertyName: 'frp', value: '1 MW' }],
         }
-        expect(layerUnitAnswer(processed).property).toBe('frp')
+        expect(layerUnitState(processed).property).toBe('frp')
     })
 })

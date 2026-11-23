@@ -1,5 +1,5 @@
 import { readEntries, readScaleValues } from '../legend/entries'
-import type { ActiveUnit, LayerUnitConfig, LayerUnitAnswer, UnitOption } from './types'
+import type { ActiveUnit, LayerUnitConfig, LayerUnitState, UnitOption } from './types'
 
 type LayerConfig = {
     cogUnits?: string | null
@@ -105,7 +105,7 @@ export const toSource = <T>(value: T, unit: ActiveUnit | null | undefined): T | 
     return (value - unit.offset) / unit.scale
 }
 
-export const layerUnitAnswer = (config: LayerConfig | null | undefined): LayerUnitAnswer | null => {
+export const layerUnitState = (config: LayerConfig | null | undefined): LayerUnitState | null => {
     const unit = resolveLayerUnit(config)
     const active = activeUnit(config)
     if (!unit || !active) return null
