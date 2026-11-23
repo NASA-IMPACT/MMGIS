@@ -595,8 +595,10 @@ const toRow = (
 export const getExportLegendModel = async (): Promise<ExportLegendModel> => {
     // The configs are asked for once and handed to the row assembly, which
     // would otherwise request them again for itself.
-    const layerConfigs = await mmgisGetLayerConfigs()
-    const comparison = await comparisonState()
+    const [layerConfigs, comparison] = await Promise.all([
+        mmgisGetLayerConfigs(),
+        comparisonState(),
+    ])
     const comparing = comparison?.enabled === true
     const [viewState, layers, headerFacts, globalCursor, extents, coverages] =
         await Promise.all([
