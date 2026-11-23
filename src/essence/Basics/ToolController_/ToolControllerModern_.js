@@ -520,6 +520,30 @@ const ToolControllerModern_ = {
     },
 
     /**
+     * Build the share link's `tools=` entry from the loaded tools
+     *
+     * @returns {string|false} `id$urlString,...` or false when no tool has one
+     */
+    getToolsUrl: function () {
+        const entries = []
+        for (const toolId of toolIdToTargetId.keys()) {
+            const tool = toolModules[toolId]
+            if (typeof tool?.getUrlString !== 'function') continue
+            let text
+            try {
+                text = tool.getUrlString()
+            } catch (err) {
+                logger.warn(`${toolId}.getUrlString threw; the link leaves it out`, err)
+                continue
+            }
+            if (typeof text !== 'string' || text.length === 0) continue
+            // Reserved characters would split or end the query; the reader decodes.
+            entries.push(toolId + '$' + encodeURIComponent(text))
+        }
+        return entries.length > 0 ? entries.join(',') : false
+    },
+
+    /**
      * Reload a tool in its container (destroy + load)
      *
      * @param {Object} toolMetadata - Tool metadata object
