@@ -176,6 +176,53 @@ describe('layers:setColormap', () => {
     })
 })
 
+describe('layers:setColormap ramp names', () => {
+    test('refuses a ramp the layer does not list, changing nothing', async () => {
+        withLayers(RASTER, VECTOR)
+        for (const layerUUID of ['Displacement', 'PM25']) {
+            expect(
+                await providers['layers:setColormap']({
+                    layerUUID,
+                    colormap: 'typo_ramp',
+                    min: 2,
+                    max: 5,
+                })
+            ).toBe(false)
+        }
+        expect(L_.layers.data.Displacement.currentCogColormap).toBeUndefined()
+        expect(L_.layers.data.PM25.style.colorBy).toEqual(COLOR_BY)
+        expect(configChanges).toEqual([])
+    })
+
+    test('accepts a listed ramp in any casing', async () => {
+        withLayers(VECTOR)
+        expect(
+            await providers['layers:setColormap']({ layerUUID: 'PM25', colormap: 'Viridis_R' })
+        ).toBe(true)
+        expect(L_.layers.data.PM25.style.colorBy).toMatchObject({
+            colormap: 'Viridis',
+            reversed: true,
+        })
+    })
+
+    test('refuses a reversed form the layer’s service does not list', async () => {
+        withLayers({ ...VECTOR, titilerUrl: TITILER })
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => ({
+                ok: true,
+                json: async () => ({ colorMaps: ['naqfc_pm25', 'viridis', 'viridis_r'] }),
+            }))
+        )
+        expect(
+            await providers['layers:setColormap']({ layerUUID: 'PM25', colormap: 'naqfc_pm25_r' })
+        ).toBe(false)
+        expect(
+            await providers['layers:setColormap']({ layerUUID: 'PM25', colormap: 'jet' })
+        ).toBe(false)
+    })
+})
+
 describe('layers:getColormaps', () => {
     test('lists the bundled ramps, both directions, for a layer with no service', async () => {
         withLayers(VECTOR)

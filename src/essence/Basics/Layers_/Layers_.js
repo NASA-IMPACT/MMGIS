@@ -181,7 +181,8 @@ async function restyleColorByLayer(uuid) {
  * @param {{colormap?: string, min?: number, max?: number}} change - A ramp
  * name, `_r`-suffixed for the reversed ramp, and/or both bounds.
  * @returns {Promise<boolean>} Whether the layer took the change, repainted
- * or not: a layer that is off takes it and shows it when turned on.
+ * or not: a layer that is off takes it and shows it when turned on. False,
+ * changing nothing, for a ramp the layer is not offered.
  */
 async function setLayerColormap(uuid, { colormap, min, max } = {}) {
     const layerObj = L_.layers.data[uuid]
@@ -189,6 +190,13 @@ async function setLayerColormap(uuid, { colormap, min, max } = {}) {
     const hasRamp = typeof colormap === 'string' && colormap !== ''
     const hasRange = Number.isFinite(min) && Number.isFinite(max) && min < max
     if (!hasRamp && !hasRange) return false
+    // Only a ramp the layer is offered (see layers:getColormaps): any other
+    // name paints nothing. The whole change is refused, range included.
+    if (hasRamp) {
+        const wanted = colormap.toLowerCase()
+        const offered = await listColormaps(titilerUrlFor(layerObj))
+        if (!offered.some((name) => name.toLowerCase() === wanted)) return false
+    }
 
     if (colorByColormapLayer(layerObj)) {
         const colorBy = { ...layerObj.style.colorBy }
