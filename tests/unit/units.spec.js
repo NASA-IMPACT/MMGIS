@@ -30,8 +30,10 @@ const kelvin = {
 }
 
 describe('sameUnit', () => {
-    it('folds the two micro signs, case and surrounding spaces', () => {
-        expect(sameUnit('µg/m³', ' μG/M³ ')).toBe(true)
+    it('matches labels that differ only in lookalike characters, case or spaces', () => {
+        expect(sameUnit('\u00B5g/m³', ' \u03BCG/M³ ')).toBe(true)
+        expect(sameUnit('mg/m³', 'mg/m3')).toBe(true)
+        expect(sameUnit('°C', '°c ')).toBe(true)
     })
     it('is false for different labels and for blanks', () => {
         expect(sameUnit('ppb', 'ppm')).toBe(false)

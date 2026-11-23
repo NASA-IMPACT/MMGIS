@@ -27,17 +27,15 @@ const measuredProperty = (config: LayerConfig): string | null => {
     return null
 }
 
-const MICRO = /[µμ]/g
-
-const normalize = (label: unknown): string =>
-    String(label ?? '')
-        .replace(MICRO, 'μ')
-        .trim()
-        .toLowerCase()
+// Unicode compatibility normalization folds lookalikes that are typed
+// differently but mean the same thing (the micro sign and Greek mu, a
+// superscript three and a 3), so a label matches however it was spelled.
+export const unitKey = (label: unknown): string =>
+    String(label ?? '').normalize('NFKC').trim().toLowerCase()
 
 export const sameUnit = (a: unknown, b: unknown): boolean => {
-    const left = normalize(a)
-    return left !== '' && left === normalize(b)
+    const left = unitKey(a)
+    return left !== '' && left === unitKey(b)
 }
 
 const isUnitOption = (option: unknown): option is UnitOption =>

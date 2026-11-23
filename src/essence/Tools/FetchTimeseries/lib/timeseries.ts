@@ -524,11 +524,10 @@ export function mapResponseSeries(
     return series
 }
 
-// Enough of a comparison to keep a mismatch warning quiet over spelling:
-// the two micro signs, case and surrounding space.
+// Keeps the mismatch warning quiet over spelling: compatibility
+// normalization folds lookalike characters, then case and surrounding space.
 const looselySameLabel = (a: string, b: string) =>
-    a.replace(/\u00B5/g, '\u03BC').trim().toLowerCase() ===
-    b.replace(/\u00B5/g, '\u03BC').trim().toLowerCase()
+    a.normalize('NFKC').trim().toLowerCase() === b.normalize('NFKC').trim().toLowerCase()
 
 function findGroup(
     groups: unknown,
