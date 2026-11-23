@@ -175,31 +175,35 @@ const readEntries = (declared: unknown): LegendEntry[] =>
 /**
  * A `colorBy` setting's legend: one swatch per band for ranges, every band
  * shown; the ramp's gradient from min to max for a colormap.
+ *
+ * A colormap no source defines paints nothing, so it draws no gradient. Its
+ * name and range are still reported, so a ramp picker can offer to change it.
  */
 const readColorByLegend = async (
     colorBy: CompiledColorBy,
     titilerUrl: string | null
-): Promise<LayerLegend> =>
-    colorBy.mode === 'ranges'
-        ? {
-              ...NO_LEGEND,
-              type: 'categorical',
-              swatches: colorBy.bands.map(({ color, label }) => ({
-                  color,
-                  label,
-              })),
-          }
-        : {
-              ...NO_LEGEND,
-              type: 'gradient',
-              stops:
-                  colorBy.colors ??
-                  (await loadColormapRamp(colorBy.colormap, titilerUrl)),
-              min: colorBy.min,
-              max: colorBy.max,
-              unit: colorBy.unit ? { label: colorBy.unit } : null,
-              colormap: colorBy.colormap,
-          }
+): Promise<LayerLegend> => {
+    if (colorBy.mode === 'ranges')
+        return {
+            ...NO_LEGEND,
+            type: 'categorical',
+            swatches: colorBy.bands.map(({ color, label }) => ({
+                color,
+                label,
+            })),
+        }
+    const stops =
+        colorBy.colors ?? (await loadColormapRamp(colorBy.colormap, titilerUrl))
+    return {
+        ...NO_LEGEND,
+        type: stops ? 'gradient' : 'none',
+        stops,
+        min: colorBy.min,
+        max: colorBy.max,
+        unit: colorBy.unit ? { label: colorBy.unit } : null,
+        colormap: colorBy.colormap,
+    }
+}
 
 /**
  * What the given layer's legend is, right now.

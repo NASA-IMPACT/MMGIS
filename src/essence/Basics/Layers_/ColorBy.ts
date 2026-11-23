@@ -60,7 +60,6 @@ import { toCanonicalLayerType, MAP_ENGINE } from '../MapEngines/types/engine'
 import {
     bundledColormapColors,
     lookupColormapColors,
-    resolveColormapColors,
 } from '../Colormaps/resolveColormapColors'
 import {
     getBaseColormapName,
@@ -303,9 +302,8 @@ const rampKey = (name: string): string => name.toLowerCase()
 
 /**
  * A ramp's colours: bundled, or looked up from the layer's tiling service and
- * kept for every later compile. A ramp the service could not supply resolves
- * to the fallback ramp, uncached, so it is asked for again later. Never
- * rejects.
+ * kept for every later compile. Null for a ramp no source defines, which is
+ * not kept, so it is asked for again later. Never rejects.
  */
 export async function loadColormapRamp(
     name: string,
@@ -318,7 +316,7 @@ export async function loadColormapRamp(
         ramps.set(rampKey(name), defined)
         return defined
     }
-    return resolveColormapColors(name, titilerUrl)
+    return null
 }
 
 const toFinite = (value: unknown): number | null => {
