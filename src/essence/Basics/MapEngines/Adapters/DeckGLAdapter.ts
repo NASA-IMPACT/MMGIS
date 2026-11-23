@@ -246,6 +246,9 @@ interface SideBySidePane {
     offMap: () => void
 }
 
+/** One WebGL surface a capture reads: a basemap canvas or a deck's. */
+type CaptureSurface = { basemap: BasemapInstance } | { deck: Deck | null }
+
 /**
  * How long {@link DeckGLAdapter.captureScreenshot} waits for the basemap's
  * `render` event before rejecting. Generous enough for a slow first frame,
@@ -789,52 +792,54 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * Captures only the GL canvas: HTML overlays/markers added via
      * {@link addOverlay} are separate DOM nodes and are not included.
      */
-    captureScreenshot(): Promise<MapScreenshotResult> {
+    async captureScreenshot(): Promise<MapScreenshotResult> {
         if (this._comparisonEnabled) return this._captureComparison()
-        return new Promise<MapScreenshotResult>((resolve, reject) => {
-            try {
-                if (this._isOverlayMode && this._basemap) {
-                    const basemap = this._basemap
-                    const onRender = () => {
-                        clearTimeout(timeout)
-                        canvasToPngScreenshot(basemap.getCanvas()).then(
-                            resolve,
-                            reject
-                        )
-                    }
-                    const timeout = setTimeout(() => {
-                        // Unhook, or the listener stays armed to fire a wasted
-                        // capture on some later render (e.g. backgrounded tab).
-                        basemap.off('render', onRender)
-                        reject(
-                            new Error(
-                                '[DeckGLAdapter] captureScreenshot: timed out waiting for the basemap render event'
-                            )
-                        )
-                    }, SCREENSHOT_RENDER_TIMEOUT_MS)
-                    basemap.once('render', onRender)
-                    basemap.triggerRepaint()
-                    return
-                }
+        const surface = this._primarySurface()
+        if (!surface) throw new Error('[DeckGLAdapter] captureScreenshot: no active map to capture')
+        const result = await this._readSurface(surface, canvasToPngScreenshot)
+        if (!result) throw new Error('[DeckGLAdapter] captureScreenshot: deck canvas unavailable')
+        return result
+    }
 
-                const deck = this._deck
-                if (!deck) {
-                    reject(new Error('[DeckGLAdapter] captureScreenshot: no active map to capture'))
-                    return
+    /**
+     * Read a surface at the one moment its buffer holds pixels: a basemap
+     * inside its `render` event after a repaint, a deck right after a
+     * synchronous redraw. `read` runs at that moment. Null for a deck with no
+     * canvas to read.
+     */
+    private async _readSurface<T>(
+        surface: CaptureSurface,
+        read: (canvas: HTMLCanvasElement) => T | PromiseLike<T>,
+    ): Promise<T | null> {
+        if ('deck' in surface) {
+            const deck = surface.deck
+            if (!deck) return null
+            deck.redraw('screenshot')
+            const canvas = this._deckCanvas(deck)
+            return canvas ? read(canvas) : null
+        }
+        const { basemap } = surface
+        return new Promise<T>((resolve, reject) => {
+            const onRender = () => {
+                clearTimeout(timeout)
+                try {
+                    resolve(read(basemap.getCanvas()))
+                } catch (err) {
+                    reject(err as Error)
                 }
-                deck.redraw('screenshot')
-                const canvas = (deck as unknown as { getCanvas?: () => HTMLCanvasElement })
-                    .getCanvas?.()
-                if (!canvas) {
-                    reject(
-                        new Error('[DeckGLAdapter] captureScreenshot: deck canvas unavailable')
-                    )
-                    return
-                }
-                canvasToPngScreenshot(canvas).then(resolve, reject)
-            } catch (err) {
-                reject(err as Error)
             }
+            const timeout = setTimeout(() => {
+                // Unhook, or the listener stays armed to fire a wasted
+                // capture on some later render (e.g. backgrounded tab).
+                basemap.off('render', onRender)
+                reject(
+                    new Error(
+                        '[DeckGLAdapter] captureScreenshot: timed out waiting for the basemap render event'
+                    )
+                )
+            }, SCREENSHOT_RENDER_TIMEOUT_MS)
+            basemap.once('render', onRender)
+            basemap.triggerRepaint()
         })
     }
 
@@ -882,9 +887,16 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         return canvasToPngScreenshot(out)
     }
 
+    /** The surface the primary map draws on: the basemap in overlay mode, else the deck. */
+    private _primarySurface(): CaptureSurface | null {
+        if (this._isOverlayMode && this._basemap) return { basemap: this._basemap }
+        return this._deck ? { deck: this._deck } : null
+    }
+
     private _primaryCanvas(): HTMLCanvasElement | null {
-        if (this._isOverlayMode) return this._basemap?.getCanvas() ?? null
-        return this._deckCanvas(this._deck)
+        const surface = this._primarySurface()
+        if (!surface) return null
+        return 'basemap' in surface ? surface.basemap.getCanvas() : this._deckCanvas(surface.deck)
     }
 
     private _deckCanvas(deck: Deck | null): HTMLCanvasElement | null {
@@ -892,63 +904,26 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     /** Which surface draws a side, in the current layout and mode. */
-    private _comparisonSurface(
-        side: CaptureSide,
-    ): { basemap: BasemapInstance } | { deck: Deck | null } | null {
+    private _comparisonSurface(side: CaptureSide): CaptureSurface | null {
         if (this._comparisonLayout === 'sideBySide') {
             const pane = this._sbsPanes?.[side === 'left' ? 0 : 1]
             if (!pane) return null
             return pane.map ? { basemap: pane.map } : { deck: pane.deck }
         }
-        if (side === 'base') {
-            return this._isOverlayMode && this._basemap ? { basemap: this._basemap } : { deck: this._deck }
-        }
+        if (side === 'base') return this._primarySurface()
         return { deck: side === 'left' ? this._comparisonLeftDeck : this._comparisonRightDeck }
     }
 
-    /**
-     * Draws one strip of a surface into the output. A basemap is read inside
-     * its `render` event after a repaint, a deck right after a synchronous
-     * redraw: the only moments their buffers hold pixels.
-     */
-    private _drawSurfaceInto(
+    /** Draws one strip of a surface into the output. */
+    private async _drawSurfaceInto(
         ctx: CanvasRenderingContext2D,
-        surface: { basemap: BasemapInstance } | { deck: Deck | null },
+        surface: CaptureSurface,
         rect: CropRect,
         height: number,
     ): Promise<void> {
-        const draw = (canvas: HTMLCanvasElement) =>
-            ctx.drawImage(canvas, rect.sx, 0, rect.sw, canvas.height, rect.dx, 0, rect.sw, height)
-        if ('deck' in surface) {
-            const deck = surface.deck
-            if (!deck) return Promise.resolve()
-            deck.redraw('screenshot')
-            const canvas = this._deckCanvas(deck)
-            if (canvas) draw(canvas)
-            return Promise.resolve()
-        }
-        const { basemap } = surface
-        return new Promise<void>((resolve, reject) => {
-            const onRender = () => {
-                clearTimeout(timeout)
-                try {
-                    draw(basemap.getCanvas())
-                    resolve()
-                } catch (err) {
-                    reject(err as Error)
-                }
-            }
-            const timeout = setTimeout(() => {
-                basemap.off('render', onRender)
-                reject(
-                    new Error(
-                        '[DeckGLAdapter] captureScreenshot: timed out waiting for a comparison surface to render'
-                    )
-                )
-            }, SCREENSHOT_RENDER_TIMEOUT_MS)
-            basemap.once('render', onRender)
-            basemap.triggerRepaint()
-        })
+        await this._readSurface(surface, (canvas) =>
+            ctx.drawImage(canvas, rect.sx, 0, rect.sw, canvas.height, rect.dx, 0, rect.sw, height),
+        )
     }
 
     /**
