@@ -100,7 +100,7 @@ The property key whose value should be the hover text of each feature. This is t
 
 #### Color by Value
 
-Colors each feature by the value of one of its properties, as a colormap or as ranges. See Color by Value on the Vector layer page. Vector tile layers are colored this way on deck.gl maps only; on Leaflet maps the setting is ignored.
+Colors each feature by the value of one of its properties, as a colormap or as ranges. See Color by Value on the Vector layer page. Vector tile layers are colored this way on deck.gl maps only, so these fields are not shown for Leaflet missions.
 
 #### Raw Variables
 
