@@ -246,7 +246,12 @@ export function ColorRampPicker({
                             <ColorRampSwatch
                                 key={name}
                                 name={name}
-                                reversed={reversed}
+                                // Previewed as it would be applied: forward when
+                                // the ramp has no reversed form.
+                                reversed={
+                                    reversed &&
+                                    canReverseColormap(name, availableColormaps)
+                                }
                                 selected={name.toLowerCase() === selectedBase}
                                 layerId={layerId}
                                 rootRef={listRef}
