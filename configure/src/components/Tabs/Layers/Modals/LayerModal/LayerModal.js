@@ -247,6 +247,28 @@ const LayerModal = (props) => {
   // Hide engine-specific or deck-only fields for all engines (including leaflet).
   config = stripHiddenFields(config, getHiddenFieldsForEngine(mapEngine, layer.type));
 
+  // The number fields store what was typed, so a factor arrives as a string;
+  // the saved config keeps numbers. Labels are saved exactly as written.
+  const normalizeUnit = (unit) => {
+    if (unit == null || typeof unit !== "object" || !Array.isArray(unit.options)) return unit;
+    const num = (v) =>
+      typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))
+        ? Number(v)
+        : v;
+    const blank = (v) => v == null || (typeof v === "string" && v.trim() === "");
+    return {
+      ...unit,
+      options: unit.options.map((o) => {
+        if (!o || typeof o !== "object") return o;
+        const { offset, ...rest } = o;
+        const next = { ...rest, scale: num(o.scale) };
+        // A blank offset means none, so the saved config leaves it out.
+        if (!blank(offset)) next.offset = num(offset);
+        return next;
+      }),
+    };
+  };
+
   const handleClose = (skipSetConfiguration) => {
     if (skipSetConfiguration !== true) {
       const nextConfiguration = JSON.parse(JSON.stringify(configuration));
@@ -312,6 +334,10 @@ const LayerModal = (props) => {
               });
             });
           });
+
+          const unit = getIn(completedLayer, ["variables", "unit"], null);
+          if (unit != null)
+            setIn(completedLayer, ["variables", "unit"], normalizeUnit(unit), true);
 
           // Clear and copy while maintaining reference
           Object.keys(l).forEach((key) => {
