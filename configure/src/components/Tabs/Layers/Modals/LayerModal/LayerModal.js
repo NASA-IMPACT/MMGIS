@@ -255,11 +255,17 @@ const LayerModal = (props) => {
       typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))
         ? Number(v)
         : v;
+    const blank = (v) => v == null || (typeof v === "string" && v.trim() === "");
     return {
       ...unit,
-      options: unit.options.map((o) =>
-        o && typeof o === "object" ? { ...o, scale: num(o.scale), offset: num(o.offset) } : o
-      ),
+      options: unit.options.map((o) => {
+        if (!o || typeof o !== "object") return o;
+        const { offset, ...rest } = o;
+        const next = { ...rest, scale: num(o.scale) };
+        // A blank offset means none, so the saved config leaves it out.
+        if (!blank(offset)) next.offset = num(offset);
+        return next;
+      }),
     };
   };
 

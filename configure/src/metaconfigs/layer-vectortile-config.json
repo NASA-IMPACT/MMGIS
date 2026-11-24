@@ -713,7 +713,7 @@
             {
               "field": "variables.unit.sourceUnit",
               "name": "Unit",
-              "description": "The unit the layer's data is in, e.g. 'μg/m³' or 'ppb'. Printed by the legend, the feature popup, the timeseries card and the Identifier. When set it wins over the raster Units field and over any unit written into the legend labels.",
+              "description": "The unit the layer's data is in, e.g. 'μg/m³' or 'ppb'. Printed by the legend, the feature popup, the timeseries card and the Identifier. When set it wins over any unit written into the legend labels.",
               "type": "textnotrim",
               "width": 3
             },
