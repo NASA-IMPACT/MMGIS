@@ -88,6 +88,16 @@ describe('layers:setUnit', () => {
         expect(emitted).toEqual([])
     })
 
+    test('picking the unit already shown answers true and announces nothing', async () => {
+        withLayers(mission())
+        expect(await providers['layers:setUnit']({ layerUUID: PM25, unit: 'µg/m³' })).toBe(true)
+        expect(L_.layers.data[PM25].currentUnit).toBeUndefined()
+        L_.layers.data[PM25].currentUnit = 'mg/m³'
+        expect(await providers['layers:setUnit']({ layerUUID: PM25, unit: ' MG/M³ ' })).toBe(true)
+        expect(L_.layers.data[PM25].currentUnit).toBe('mg/m³')
+        expect(emitted).toEqual([])
+    })
+
     test('never re-requests tiles or recompiles a style', async () => {
         withLayers(mission())
         await providers['layers:setUnit']({ layerUUID: PM25, unit: 'mg/m³' })

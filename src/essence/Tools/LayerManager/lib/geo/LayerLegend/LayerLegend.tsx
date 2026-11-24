@@ -150,6 +150,7 @@ export function LayerLegend({
     const runValueId = useId()
     const unitPopoverId = useId()
     const unitLabelId = useId()
+    const unitValueId = useId()
 
     // Only raster layers carry rescale/ramp settings to expose, and only those
     // whose colormap can actually be changed. A layer painting from a COG
@@ -552,9 +553,11 @@ export function LayerLegend({
                         aria-haspopup="menu"
                         aria-expanded={isUnitPickerOpen}
                         aria-controls={isUnitPickerOpen ? unitPopoverId : undefined}
-                        aria-labelledby={unitLabelId}
+                        aria-labelledby={`${unitLabelId} ${unitValueId}`}
                     >
-                        <span className="blocks-layer-legend__unit-value">{selectedUnit}</span>
+                        <span className="blocks-layer-legend__unit-value" id={unitValueId}>
+                            {selectedUnit}
+                        </span>
                         <i
                             className="mdi mdi-chevron-down blocks-layer-legend__unit-chevron"
                             aria-hidden="true"

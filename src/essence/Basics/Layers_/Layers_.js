@@ -44,7 +44,7 @@ import {
 } from '../TimeControl_/layerDataCoverage'
 import { buildLayerLegend } from './legend/buildLayerLegend'
 import { NO_LEGEND } from './legend/types'
-import { activeUnit, findUnitOption, layerUnitState } from './units/units'
+import { activeUnit, findUnitOption, layerUnitState, sameUnit } from './units/units'
 import { detached } from '../../mmgisAPI/providers/_shared'
 import { bbox } from '@turf/turf'
 import $ from 'jquery'
@@ -637,6 +637,8 @@ const L_ = {
                     if (!layerConfig) return false
                     const option = findUnitOption(layerConfig, unit)
                     if (!option) return false
+                    // Already shown in it: nothing to write, nothing to announce.
+                    if (sameUnit(activeUnit(layerConfig)?.label, option.label)) return true
                     layerConfig.currentUnit = option.label
                     window.mmgisAPI.emit('layers:configChanged', {
                         layerName: uuid,

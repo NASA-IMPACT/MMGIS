@@ -16,14 +16,12 @@ export type LayerLegend = {
      */
     stops: string[] | null
     /**
-     * The scale's bounds. Null where the layer declares none — nothing stands
-     * in for an unconfigured bound, so a label renders blank rather than
-     * announcing a range the layer was never scaled to.
-     */
-    /**
-     * The bounds in the unit the layer is shown in right now, and that unit
-     * with the affine map from the data's unit (`display = source × scale +
-     * offset`; `scale` 1 and `offset` 0 when the data's own unit is shown).
+     * The scale's bounds, in the unit the layer is shown in right now. Null
+     * where the layer declares none — nothing stands in for an unconfigured
+     * bound, so a label renders blank rather than announcing a range the
+     * layer was never scaled to. `unit` is that unit with the affine map from
+     * the data's unit (`shown = value × scale + offset`; `scale` 1 and
+     * `offset` 0 when the data's own unit is shown).
      */
     min: number | null
     max: number | null

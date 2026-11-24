@@ -81,7 +81,7 @@ export const getVisibleLayersWithLegends = async ({
             mmgisGetCogCapabilities(),
             mmgisGetTiTilerUrls(),
             mmgisGetDataCoverage(),
-            mmgisGetLayerUnits(),
+            mmgisGetLayerUnits().catch(() => null),
         ])
 
     return layers
