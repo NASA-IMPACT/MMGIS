@@ -119,6 +119,41 @@ test('lists the configured properties, and leaves the rest off', async () => {
     expect(html).not.toContain('internal_id')
 })
 
+test('prints the layer unit after its measured property, and nothing else changes', async () => {
+    api.requestImpl.set('layers:getUnit', () => ({
+        craters: {
+            sourceUnit: 'm',
+            property: 'depth_m',
+            active: { sourceUnit: 'm', label: 'm', scale: 1, offset: 0 },
+            options: [{ label: 'm', scale: 1, offset: 0 }],
+        },
+    }))
+    await start()
+
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+
+    const { html } = api.namesOf('map:showPopup')[0].payload
+    expect(html).toContain('<td>12 m</td>')
+    expect(html).toContain('<td>sedimentary</td>')
+})
+
+test('prints values bare when the layer declares no unit or core cannot say', async () => {
+    api.requestImpl.set('layers:getUnit', () => ({ craters: null }))
+    await start()
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+    expect(api.namesOf('map:showPopup')[0].payload.html).toContain('<td>12</td>')
+
+    api.reset()
+    api.unregister('layers:getUnit')
+    api.emit('layers:listChanged')
+    await flushBus()
+    api.emit('map:featureClick', clickOn('craters'))
+    await flushBus()
+    expect(api.namesOf('map:showPopup')[0].payload.html).toContain('<td>12</td>')
+})
+
 test('shows nothing for a pick that reports a layer but no feature', async () => {
     await start()
 

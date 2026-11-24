@@ -44,6 +44,7 @@ import {
 } from '../TimeControl_/layerDataCoverage'
 import { buildLayerLegend } from './legend/buildLayerLegend'
 import { NO_LEGEND } from './legend/types'
+import { layerUnitState } from './units/units'
 import { detached } from '../../mmgisAPI/providers/_shared'
 import { bbox } from '@turf/turf'
 import $ from 'jquery'
@@ -610,6 +611,20 @@ const L_ = {
                         legends[uuid] = resolved[i]
                     })
                     return legends
+                }),
+                // What unit each layer measures in, which unit it is shown in
+                // right now, and the units it can be switched to. Same call
+                // shapes as above.
+                window.mmgisAPI.provide('layers:getUnit', (layerUUID) => {
+                    if (layerUUID != null) {
+                        const uuid = L_.asLayerUUID(layerUUID)
+                        return uuid == null ? null : layerUnitState(L_.layers.data[uuid])
+                    }
+                    const units = {}
+                    Object.keys(L_.layers.data).forEach((uuid) => {
+                        units[uuid] = layerUnitState(L_.layers.data[uuid])
+                    })
+                    return units
                 }),
                 // When each layer has data, as ISO datetimes or null, and its
                 // parsed cadence (`interval`, or null). The config's

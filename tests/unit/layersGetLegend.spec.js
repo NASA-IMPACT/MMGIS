@@ -121,6 +121,32 @@ describe('layers:getLegend', () => {
         expect(legend.unit).toEqual({ label: 'm' })
     })
 
+    // One declared unit outranks both older fields, on a raster and on a
+    // vector alike, so every surface that asks core prints the same label.
+    test('prints a declared variables.unit over cogUnits and legend text', async () => {
+        withLayers({
+            [RASTER]: cogLayer({
+                cogMin: 0,
+                cogMax: 10,
+                cogUnits: 'm',
+                _legend: derivedLegend(' m'),
+                variables: { unit: { sourceUnit: 'ft' } },
+            }),
+            [VELOCITY]: {
+                type: 'velocity',
+                _legend: derivedLegend(' m/s'),
+                variables: { unit: { sourceUnit: 'knots' } },
+            },
+        })
+
+        expect((await providers['layers:getLegend'](RASTER)).unit).toEqual({
+            label: 'ft',
+        })
+        expect((await providers['layers:getLegend'](VELOCITY)).unit).toEqual({
+            label: 'knots',
+        })
+    })
+
     // A classified raster paints through a colormap and still declares what
     // its classes mean. No ramp can stand in for those, so live colormap state
     // replaces the bar, never the classes — and the controls over the ramp

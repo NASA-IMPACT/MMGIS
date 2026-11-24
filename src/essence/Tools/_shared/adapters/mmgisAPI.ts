@@ -1,4 +1,5 @@
 import type { LayerLegend } from '../../../Basics/Layers_/legend/types'
+import type { LayerUnitState } from '../../../Basics/Layers_/units/types'
 
 type EventCleanup = () => void
 
@@ -310,6 +311,18 @@ export type {
 } from '../../../Basics/Layers_/legend/types'
 
 /**
+ * A layer's unit as core resolves it: the unit its data is in, the unit it is
+ * shown in right now (`active`, what a plugin multiplies by), and every unit it
+ * can be shown in (`options`, the source first). Null for a layer that
+ * declares no unit, an unknown layer, or a core without the handler.
+ */
+export type {
+    ActiveUnit,
+    LayerUnitState,
+    UnitOption,
+} from '../../../Basics/Layers_/units/types'
+
+/**
  * Every layer's legend, keyed by layer UUID.
  *
  * Resolved at the moment of asking, against the colormap and rescale the layer
@@ -323,6 +336,23 @@ export const mmgisGetLayerLegends = (): Promise<Record<
 > | null> => {
     return mmgisRequestIfProvided<Record<string, LayerLegend>>(
         'layers:getLegend',
+    )
+}
+
+/** One layer's unit answer, by UUID or display name. */
+export const mmgisGetLayerUnit = (
+    layerUUID: string,
+): Promise<LayerUnitState | null> => {
+    return mmgisRequestIfProvided<LayerUnitState>('layers:getUnit', layerUUID)
+}
+
+/** Every layer's unit answer, keyed by layer UUID; null entries for layers without one. */
+export const mmgisGetLayerUnits = (): Promise<Record<
+    string,
+    LayerUnitState | null
+> | null> => {
+    return mmgisRequestIfProvided<Record<string, LayerUnitState | null>>(
+        'layers:getUnit',
     )
 }
 

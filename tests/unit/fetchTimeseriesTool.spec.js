@@ -47,6 +47,7 @@ describe('FetchTimeseriesTool', () => {
     let host
     let configGate
     let extents
+    let layerUnits
 
     const emittedFor = (event) =>
         emitted.filter(([e]) => e === event).map(([, p]) => p)
@@ -149,6 +150,7 @@ describe('FetchTimeseriesTool', () => {
         timeEnabled = false
         configGate = null
         extents = {}
+        layerUnits = {}
         layerConfigs = {
             [LAYER]: {
                 display_name: 'Air Stations',
@@ -171,6 +173,7 @@ describe('FetchTimeseriesTool', () => {
                     return layerConfigs[params] ?? null
                 }
                 if (name === 'layers:getTemporalExtent') return extents[params] ?? null
+                if (name === 'layers:getUnit') return layerUnits[params] ?? null
                 if (name === 'time:isEnabled') return timeEnabled
                 if (name === 'time:getStart') return '2018-01-01T00:00:00Z'
                 if (name === 'time:getEnd') return '2019-12-31T00:00:00Z'
@@ -239,6 +242,18 @@ describe('FetchTimeseriesTool', () => {
         expect(isChartSeriesPayload(ready)).toBe(true)
         expect(ready.chartId).toBe('vector-timeseries')
         expect(host.textContent).not.toContain('Fetching data…')
+    })
+
+    test("the series carry the layer's declared unit when core knows one", async () => {
+        layerUnits[LAYER] = {
+            sourceUnit: 'µg/m³',
+            property: 'value',
+            active: { sourceUnit: 'µg/m³', label: 'µg/m³', scale: 1, offset: 0 },
+            options: [{ label: 'µg/m³', scale: 1, offset: 0 }],
+        }
+        await request()
+        const [ready] = emittedFor(READY)
+        expect(ready.series.map((s) => s.unit)).toEqual(['µg/m³'])
     })
 
     test('without a layer extent, the range seeds from the mission time window, clipped to its last year', async () => {

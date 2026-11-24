@@ -18,14 +18,8 @@
 import { hasCogColormap } from '../tileUrlUtils'
 import { resolveColormapColors } from '../../Colormaps/resolveColormapColors'
 import { NO_LEGEND, type LayerLegend, type LegendSwatch } from './types'
-
-type LegendEntry = {
-    shape?: string
-    color?: string
-    value?: string | number
-    label?: string
-    hideFromLegend?: boolean
-}
+import { resolveLayerUnit } from '../units/units'
+import { isScale, readEntries, readScaleValues, type LegendEntry } from './entries'
 
 type LayerConfig = {
     type?: string
@@ -41,12 +35,7 @@ type LayerConfig = {
     [key: string]: unknown
 }
 
-/** The shapes that make an entry part of a continuous scale rather than a swatch. */
-const SCALE_SHAPES = ['continuous', 'discreet']
-
 const DEFAULT_COLORMAP = 'viridis'
-
-const NUMERIC_PREFIX = /^[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/
 
 /** A bound as a number, or null for anything that does not read as one. */
 const toBound = (value: unknown): number | null => {
@@ -54,52 +43,6 @@ const toBound = (value: unknown): number | null => {
     const num = Number(value)
     return Number.isFinite(num) ? num : null
 }
-
-type NumericValue = { number: number; unit: string }
-
-/**
- * Reads a legend value as a number plus an optional trailing unit
- * (`'0.5 ppm'` -> 0.5 + 'ppm'). Null for anything that is not a plain number:
- * a word (`'example'`), or a binned label (`'0.5-1.0 m'`) whose remainder
- * reads as another number rather than as a unit.
- */
-const parseNumericValue = (
-    value: string | number | undefined
-): NumericValue | null => {
-    const str = String(value ?? '').trim()
-    const match = str.match(NUMERIC_PREFIX)
-    if (!match) return null
-    const unit = str.slice(match[0].length).trim()
-    if (/^[+\-.\d]/.test(unit)) return null
-    return { number: parseFloat(match[0]), unit }
-}
-
-/**
- * The numbers and shared unit behind a run of scale entries, or null when the
- * run is not one honest numeric scale: some value is not a number, or the
- * entries disagree on their unit (which is what a set of binned labels looks
- * like once each bin's remainder is read as a unit).
- */
-const readScaleValues = (
-    entries: LegendEntry[]
-): { numbers: number[]; unit: string | null } | null => {
-    const parsed = entries.map((entry) => parseNumericValue(entry.value))
-    if (parsed.some((value) => value === null)) return null
-    const values = parsed as NumericValue[]
-    const units = new Set(values.map((value) => value.unit))
-    if (units.size > 1) return null
-    const [unit] = [...units]
-    return { numbers: values.map((value) => value.number), unit: unit || null }
-}
-
-/**
- * Whether every entry is part of a scale — a ramp, whatever its labels say.
- * An empty run is not one: `every` answers true for it, and a gradient read
- * off it would span Infinity.
- */
-const isScale = (entries: LegendEntry[]): boolean =>
-    entries.length > 0 &&
-    entries.every((entry) => SCALE_SHAPES.includes(entry.shape ?? ''))
 
 /**
  * A gradient bar can only stand in for a legend that is one uninterrupted
@@ -124,8 +67,13 @@ const readGradient = (entries: LegendEntry[]) => {
         stops,
         min: Math.min(...values.numbers),
         max: Math.max(...values.numbers),
-        unit: values.unit ? { label: values.unit } : null,
     }
+}
+
+/** The unit the layer declares, whichever field it declares it in, as the legend prints it. */
+const unitLabel = (layerConfig: LayerConfig): LayerLegend['unit'] => {
+    const unit = resolveLayerUnit(layerConfig)
+    return unit ? { label: unit.sourceUnit } : null
 }
 
 const hasSwatch = (entry: LegendEntry): boolean =>
@@ -143,22 +91,6 @@ const readSwatches = (entries: LegendEntry[]): LegendSwatch[] | null => {
         label: String(entry.value ?? entry.label ?? ''),
     }))
 }
-
-/**
- * The entries worth drawing: whatever the layer declared, minus the ones the
- * author hid and minus any hole a hand-written config left behind. A hidden
- * nodata class is not a swatch and its value is not a bound, so both are
- * dropped before anything is read off them.
- */
-const readEntries = (declared: unknown): LegendEntry[] =>
-    Array.isArray(declared)
-        ? declared.filter(
-              (entry): entry is LegendEntry =>
-                  entry != null &&
-                  typeof entry === 'object' &&
-                  (entry as LegendEntry).hideFromLegend !== true
-          )
-        : []
 
 /**
  * What the given layer's legend is, right now.
@@ -184,13 +116,7 @@ export const buildLayerLegend = async (
         const bounds = {
             min: toBound(layerConfig.currentCogMin ?? layerConfig.cogMin),
             max: toBound(layerConfig.currentCogMax ?? layerConfig.cogMax),
-            // `cogUnits` is where a raster names its unit, but plenty of
-            // missions only ever wrote it into the legend text ('0 m'), and
-            // dropping it there would leave the bar labelled with bare
-            // numbers.
-            unit: layerConfig.cogUnits
-                ? { label: layerConfig.cogUnits }
-                : declaredGradient?.unit ?? null,
+            unit: unitLabel(layerConfig),
         }
         // Classes the colormap cannot stand in for. The ramp and its bounds
         // still come along, so the controls over them survive. Entries that
@@ -222,6 +148,7 @@ export const buildLayerLegend = async (
         return {
             type: 'gradient',
             ...declaredGradient,
+            unit: unitLabel(layerConfig),
             swatches: null,
             colormap: null,
         }
