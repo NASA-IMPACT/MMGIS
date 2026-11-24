@@ -199,3 +199,80 @@ describe('constructVectorLayer colorBy styling', () => {
         expect(styleOf(options, { frp: 'n/a' }).fillColor).toBe('#00ff00')
     })
 })
+
+/**
+ * Time steps and filters rebuild a Leaflet vector layer from the same layer
+ * object, so styling one feature must not change the configured style the
+ * next build falls back to.
+ */
+describe('constructVectorLayer across rebuilds', () => {
+    beforeEach(() => {
+        installLeafletStub()
+    })
+
+    const colorBy = {
+        mode: 'ranges',
+        property: 'frp',
+        applyToStroke: true,
+        ranges: [
+            { min: 0, color: '#FEF0D9' },
+            { min: 350, color: '#B30000' },
+        ],
+    }
+
+    const rebuild = (layerObj) => {
+        capturedOptions = null
+        constructVectorLayer(
+            { type: 'FeatureCollection', features: [] },
+            layerObj,
+            () => {},
+            { map: {} }
+        )
+        return capturedOptions
+    }
+
+    const layer = (style) => {
+        const layerObj = {
+            name: 'fire',
+            type: 'vector',
+            style: { className: '', ...style },
+        }
+        L_.layers.data = { fire: layerObj }
+        return layerObj
+    }
+
+    test('a feature with no value keeps the configured colours after a rebuild', () => {
+        const layerObj = layer({ color: '#00ff00', fillColor: '#00ff00', colorBy })
+
+        expect(styleOf(rebuild(layerObj), { frp: 400 }).fillColor).toBe('#B30000')
+
+        const unplaced = styleOf(rebuild(layerObj), { frp: 'n/a' })
+        expect(unplaced.fillColor).toBe('#00ff00')
+        expect(unplaced.color).toBe('#00ff00')
+    })
+
+    test('styling features leaves the configured style unchanged', () => {
+        const layerObj = layer({ color: '#00ff00', fillColor: '#00ff00', radius: 4, colorBy })
+        const options = rebuild(layerObj)
+
+        styleOf(options, { frp: 400 })
+        styleOf(options, { frp: 10, style: { color: '#ff0000', radius: 9 } })
+
+        expect(layerObj.style).toMatchObject({
+            color: '#00ff00',
+            fillColor: '#00ff00',
+            radius: 4,
+        })
+    })
+
+    test('a style carried on one feature does not reach the next', () => {
+        const layerObj = layer({ color: '#00ff00', fillColor: '#00ff00' })
+        const options = rebuild(layerObj)
+
+        styleOf(options, { style: { color: '#ff0000', fillColor: '#ff00ff' } })
+        const next = styleOf(options, {})
+
+        expect(next.color).toBe('#00ff00')
+        expect(next.fillColor).toBe('#00ff00')
+    })
+})
