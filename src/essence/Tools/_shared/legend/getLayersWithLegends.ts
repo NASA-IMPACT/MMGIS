@@ -4,6 +4,7 @@ import {
     mmgisGetLayerLegends,
     mmgisGetLayerOrder,
     type LayerConfig,
+    type LayerLegend,
     type LegendType,
     type LegendSwatch,
 } from '../adapters/mmgisAPI'
@@ -26,7 +27,7 @@ export type LayerWithLegend = {
     /** Null where the layer declares no bound; labels render blank rather than 0. */
     min?: number | null
     max?: number | null
-    unit?: { label: string } | null
+    unit?: LayerLegend['unit']
     // categorical fields
     categoricalStops?: LegendSwatch[]
     /** The ramp the gradient was sampled from, for a consumer that names it. */

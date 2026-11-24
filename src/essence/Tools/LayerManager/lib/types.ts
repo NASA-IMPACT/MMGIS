@@ -83,6 +83,8 @@ export type Layer = {
   min?: number | null
   max?: number | null
   unit?: { label: string } | null
+  /** Every unit the layer can be shown in, when there is more than one. */
+  unitOptions?: string[]
   // categorical fields
   categoricalStops?: CategoricalStop[]
   // optional COG controls

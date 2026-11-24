@@ -97,7 +97,7 @@ describe('layers:getLegend', () => {
         expect(legend.colormap).toBe('plasma')
         expect(legend.min).toBe(2)
         expect(legend.max).toBe(8)
-        expect(legend.unit).toEqual({ label: 'm' })
+        expect(legend.unit).toEqual({ label: 'm', scale: 1, offset: 0 })
         // Resolved colors, not the stale snapshot's three stops.
         expect(legend.stops).toHaveLength(256)
         expect(legend.stops).not.toContain('#123456')
@@ -118,7 +118,7 @@ describe('layers:getLegend', () => {
         const legend = await providers['layers:getLegend'](RASTER)
 
         expect(legend.type).toBe('gradient')
-        expect(legend.unit).toEqual({ label: 'm' })
+        expect(legend.unit).toEqual({ label: 'm', scale: 1, offset: 0 })
     })
 
     // One declared unit outranks both older fields, on a raster and on a
@@ -139,12 +139,49 @@ describe('layers:getLegend', () => {
             },
         })
 
-        expect((await providers['layers:getLegend'](RASTER)).unit).toEqual({
-            label: 'ft',
+        expect((await providers['layers:getLegend'](RASTER)).unit.label).toBe('ft')
+        expect((await providers['layers:getLegend'](VELOCITY)).unit.label).toBe(
+            'knots'
+        )
+    })
+
+    // A switch is a lens over the same numbers: the bounds come back in the
+    // shown unit, with the map a consumer needs to go the other way, while
+    // the stored bounds the tiles are painted from never change.
+    test('answers bounds in the unit the layer is shown in', async () => {
+        const unit = {
+            sourceUnit: 'µg/m³',
+            options: [{ label: 'mg/m³', scale: 0.001 }],
+        }
+        withLayers({
+            [RASTER]: cogLayer({
+                cogMin: 0,
+                cogMax: 330,
+                currentUnit: 'mg/m³',
+                variables: { unit },
+            }),
+            [VELOCITY]: {
+                type: 'velocity',
+                _legend: derivedLegend(' µg/m³'),
+                currentUnit: 'mg/m³',
+                variables: { unit },
+            },
         })
-        expect((await providers['layers:getLegend'](VELOCITY)).unit).toEqual({
-            label: 'knots',
-        })
+
+        const raster = await providers['layers:getLegend'](RASTER)
+        expect([raster.min, raster.max]).toEqual([0, 0.33])
+        expect(raster.unit).toEqual({ label: 'mg/m³', scale: 0.001, offset: 0 })
+        expect(L_.layers.data[RASTER].cogMax).toBe(330)
+
+        const vector = await providers['layers:getLegend'](VELOCITY)
+        expect([vector.min, vector.max]).toEqual([0, 0.01])
+        expect(vector.unit.label).toBe('mg/m³')
+
+        // The source unit is the identity map, and the old `{ label }` reads.
+        delete L_.layers.data[RASTER].currentUnit
+        const source = await providers['layers:getLegend'](RASTER)
+        expect([source.min, source.max]).toEqual([0, 330])
+        expect(source.unit).toEqual({ label: 'µg/m³', scale: 1, offset: 0 })
     })
 
     // A classified raster paints through a colormap and still declares what
@@ -324,7 +361,7 @@ describe('layers:getLegend', () => {
         expect(legend.stops).toEqual(['#123456', '#123456', '#123456'])
         expect(legend.min).toBe(0)
         expect(legend.max).toBe(10)
-        expect(legend.unit).toEqual({ label: 'm/s' })
+        expect(legend.unit).toEqual({ label: 'm/s', scale: 1, offset: 0 })
     })
 
     // A scale can be authored either way round, and LayersTool writes its

@@ -16,13 +16,16 @@ export type LayerLegend = {
      */
     stops: string[] | null
     /**
-     * The scale's bounds. Null where the layer declares none — nothing stands
-     * in for an unconfigured bound, so a label renders blank rather than
-     * announcing a range the layer was never scaled to.
+     * The scale's bounds, in the unit the layer is shown in right now. Null
+     * where the layer declares none — nothing stands in for an unconfigured
+     * bound, so a label renders blank rather than announcing a range the
+     * layer was never scaled to. `unit` is that unit with the affine map from
+     * the data's unit (`shown = value × scale + offset`; `scale` 1 and
+     * `offset` 0 when the data's own unit is shown).
      */
     min: number | null
     max: number | null
-    unit: { label: string } | null
+    unit: { label: string; scale: number; offset: number } | null
     /** Categorical only: the labelled swatches, in order. */
     swatches: LegendSwatch[] | null
     /**
