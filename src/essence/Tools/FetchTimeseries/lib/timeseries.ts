@@ -592,10 +592,12 @@ export function buildPayload(args: {
      * which outranks what the response says, and the map into the shown one.
      */
     layerUnit?: LayerUnitShown | null
+    /** False when the response was already warned about, as on a unit switch. */
+    warnMismatch?: boolean
 }): ChartSeriesPayload {
     const mapped = mapResponseSeries(args.response, args.config)
     const layerUnit = args.layerUnit ?? undefined
-    if (layerUnit) {
+    if (layerUnit && args.warnMismatch !== false) {
         const differing = mapped
             .map((m) => m.unit)
             .filter((u): u is string => !!u && !looselySameLabel(u, layerUnit.sourceUnit))

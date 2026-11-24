@@ -653,6 +653,10 @@ describe('fetchTimeseries lib', () => {
             expect(spelled.series[0].unit).toBe('µg/m³')
             expect(warn).not.toHaveBeenCalled()
 
+            const rebuilt = buildPayload({ ...base, layerUnit: source, warnMismatch: false })
+            expect(rebuilt.series.every((s) => s.unit === 'µg/m³')).toBe(true)
+            expect(warn).not.toHaveBeenCalled()
+
             const undeclared = buildPayload({ ...base, layerUnit: null })
             expect(undeclared.series.map((s) => s.unit)).toEqual(
                 mapResponseSeries(AQS_RESPONSE, AQS_CONFIG).map((s) => s.unit),

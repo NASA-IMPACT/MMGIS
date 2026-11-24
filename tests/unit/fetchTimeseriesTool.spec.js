@@ -270,7 +270,11 @@ describe('FetchTimeseriesTool', () => {
         expect(fetchMock).toHaveBeenCalledTimes(1)
 
         const mg = { sourceUnit: 'µg/m³', label: 'mg/m³', scale: 0.001, offset: 0 }
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
         handlers['layer:unitChange'][0]({ layerName: LAYER, unit: mg })
+        // The response was warned about when it was fetched, not again here.
+        expect(warn).not.toHaveBeenCalled()
+        warn.mockRestore()
         const readies = emittedFor(READY)
         expect(readies).toHaveLength(2)
         expect(readies[1].series[0].unit).toBe('mg/m³')

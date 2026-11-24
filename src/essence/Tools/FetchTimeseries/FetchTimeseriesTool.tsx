@@ -341,10 +341,10 @@ const FetchTimeseriesTool = {
         if (!selection || change?.layerName !== selection.layerName || !change.unit) return
         selection.layerUnit = change.unit
         if (this._lastResponse == null) return
-        mmgisEmit(EVENTS.ready, this._payloadFor(selection, this._lastResponse))
+        mmgisEmit(EVENTS.ready, this._payloadFor(selection, this._lastResponse, false))
     },
 
-    _payloadFor(selection: Selection, response: unknown) {
+    _payloadFor(selection: Selection, response: unknown, warnMismatch = true) {
         return buildPayload({
             chartId: CHART_ID,
             response,
@@ -354,6 +354,7 @@ const FetchTimeseriesTool = {
             layerName: selection.layerName,
             featureId: selection.feature.id,
             layerUnit: selection.layerUnit,
+            warnMismatch,
         })
     },
 

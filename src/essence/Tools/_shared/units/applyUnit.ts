@@ -1,5 +1,5 @@
 /**
- * Applies the map core hands out with a layer's unit (`display = source ×
+ * Applies the map core hands out with a layer's unit (`shown = value ×
  * scale + offset`) to one number, and takes it back. Nothing here knows what
  * a unit is; core resolves that and plugins only do the arithmetic.
  */
