@@ -4,6 +4,7 @@
 // tool entry owns I/O, everything here is unit-testable.
 
 import type { TimeMode } from '../../Timeline/lib'
+import { applyUnit } from '../../_shared/units/applyUnit'
 import {
     type ChartCadence,
     isRecord,
@@ -524,6 +525,14 @@ export function mapResponseSeries(
     return series
 }
 
+/** What `layers:getUnit` answers as `active`; core owns the shape. */
+export type LayerUnitShown = {
+    sourceUnit: string
+    label: string
+    scale: number
+    offset: number
+}
+
 // Keeps the mismatch warning quiet over spelling: compatibility
 // normalization folds lookalike characters, then case and surrounding space.
 const looselySameLabel = (a: string, b: string) =>
@@ -578,22 +587,27 @@ export function buildPayload(args: {
     layerDisplayName: string
     layerName: string
     featureId?: string | number
-    /** The unit the layer declares; it outranks what the response says. */
-    layerUnit?: string | null
+    /**
+     * The unit the layer is shown in, as core answers it: the data's unit,
+     * which outranks what the response says, and the map into the shown one.
+     */
+    layerUnit?: LayerUnitShown | null
+    /** False when the response was already warned about, as on a unit switch. */
+    warnMismatch?: boolean
 }): ChartSeriesPayload {
     const mapped = mapResponseSeries(args.response, args.config)
-    const layerUnit = args.layerUnit || undefined
-    if (layerUnit) {
+    const layerUnit = args.layerUnit ?? undefined
+    if (layerUnit && args.warnMismatch !== false) {
         const differing = mapped
             .map((m) => m.unit)
-            .filter((u): u is string => !!u && !looselySameLabel(u, layerUnit))
+            .filter((u): u is string => !!u && !looselySameLabel(u, layerUnit.sourceUnit))
         if (differing.length) {
             console.warn(
                 `[FetchTimeseries] ${args.layerDisplayName}: the response names ${[
                     ...new Set(differing),
                 ]
                     .map((u) => `'${u}'`)
-                    .join(', ')} but the layer declares '${layerUnit}'; showing the layer's`,
+                    .join(', ')} but the layer declares '${layerUnit.sourceUnit}'; showing the layer's`,
             )
         }
     }
@@ -627,8 +641,10 @@ export function buildPayload(args: {
                     m.key !== ''
                         ? m.key
                         : args.config.label || args.layerDisplayName,
-                unit: layerUnit ?? m.unit,
-                points: m.points,
+                unit: layerUnit?.label ?? m.unit,
+                points: layerUnit
+                    ? m.points.map((p) => ({ ...p, y: applyUnit(p.y, layerUnit) }))
+                    : m.points,
                 ...(group?.label ? { displayLabel: group.label } : {}),
                 ...(group?.title ? { title: withNote(group.title) } : {}),
             }

@@ -635,7 +635,8 @@ describe('fetchTimeseries lib', () => {
                 layerDisplayName: 'AQS PM2.5',
                 layerName: 'uuid-1',
             }
-            const declared = buildPayload({ ...base, layerUnit: 'µg/m³' })
+            const source = { sourceUnit: 'µg/m³', label: 'µg/m³', scale: 1, offset: 0 }
+            const declared = buildPayload({ ...base, layerUnit: source })
             expect(declared.series.every((s) => s.unit === 'µg/m³')).toBe(true)
             expect(warn).toHaveBeenCalledTimes(1)
             expect(warn.mock.calls[0][0]).toContain("declares 'µg/m³'")
@@ -647,9 +648,13 @@ describe('fetchTimeseries lib', () => {
                     { datetime: '2026-01-01', value: 1, u: '\u00B5g/m³' },
                 ],
                 config: { url: 'x', unitKey: 'u' },
-                layerUnit: ' \u03BCG/M³ ',
+                layerUnit: { ...source, sourceUnit: ' \u03BCG/M³ ' },
             })
-            expect(spelled.series[0].unit).toBe(' \u03BCG/M³ ')
+            expect(spelled.series[0].unit).toBe('µg/m³')
+            expect(warn).not.toHaveBeenCalled()
+
+            const rebuilt = buildPayload({ ...base, layerUnit: source, warnMismatch: false })
+            expect(rebuilt.series.every((s) => s.unit === 'µg/m³')).toBe(true)
             expect(warn).not.toHaveBeenCalled()
 
             const undeclared = buildPayload({ ...base, layerUnit: null })
@@ -658,6 +663,26 @@ describe('fetchTimeseries lib', () => {
             )
             expect(warn).not.toHaveBeenCalled()
             warn.mockRestore()
+        })
+
+        test('converts every value into the shown unit and labels the series with it', () => {
+            const payload = buildPayload({
+                chartId: 'c',
+                response: [
+                    { datetime: '2026-01-01', value: 18 },
+                    { datetime: '2026-01-02', value: null },
+                ],
+                config: { url: 'x' },
+                title: 'Site',
+                layerDisplayName: 'PM2.5',
+                layerName: 'uuid-1',
+                layerUnit: { sourceUnit: 'µg/m³', label: 'mg/m³', scale: 0.001, offset: 0 },
+            })
+            expect(payload.series[0].unit).toBe('mg/m³')
+            expect(payload.series[0].points).toEqual([
+                { x: '2026-01-01', y: 0.018 },
+                { x: '2026-01-02', y: null },
+            ])
         })
 
         test('produces a valid single-series time payload with provenance', () => {

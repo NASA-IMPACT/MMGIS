@@ -39,6 +39,7 @@ import {
     mmgisGetLayerTemporalExtent,
     mmgisGetLayerUnit,
     mmgisHidePlugin,
+    mmgisOnLayerUnitChange,
     mmgisGetTimeEnd,
     mmgisGetTimeStart,
     mmgisIsTimeEnabled,
@@ -59,6 +60,7 @@ import {
     parseCadence,
     DEFAULT_TIME_MODE,
     TemplateError,
+    type LayerUnitShown,
     MappingError,
     type DateRange,
     type FeatureLike,
@@ -104,8 +106,8 @@ interface Selection {
     config: TimeseriesConfig
     title: string
     layerDisplayName: string
-    /** The unit the layer declares, or null when it declares none. */
-    layerUnit: string | null
+    /** The unit the layer is shown in, or null when it declares none. */
+    layerUnit: LayerUnitShown | null
 }
 
 const FetchTimeseriesTool = {
@@ -122,6 +124,9 @@ const FetchTimeseriesTool = {
     /** The pickers' step, from the seeded layer's cadence. */
     _timeMode: DEFAULT_TIME_MODE,
     _refetchTimer: null as number | null,
+    /** The merged response the chart shows, so a unit switch redraws it
+     *  without another trip to the service. */
+    _lastResponse: null as unknown,
     /** Bumped per fetch request, and by destroy and EXIT: a lookup that
      *  finishes after a newer request started, or after the card was torn
      *  down or closed, must not become the selection. */
@@ -144,6 +149,7 @@ const FetchTimeseriesTool = {
                         console.warn('[FetchTimeseries] fetch request failed', err),
                     )
                 }),
+                mmgisOnLayerUnitChange((change) => this._onUnitChange(change)),
             )
             this.made = true
         }
@@ -165,6 +171,7 @@ const FetchTimeseriesTool = {
         this._root?.unmount()
         this._root = null
         this._selection = null
+        this._lastResponse = null
         this._range = null
         this._rangeLayer = null
         this._timeMode = DEFAULT_TIME_MODE
@@ -239,6 +246,7 @@ const FetchTimeseriesTool = {
         this._abort?.abort()
         this._abort = null
         this._selection = null
+        this._lastResponse = null
         this._setStatus({ kind: 'idle' })
         mmgisEmit(EVENTS.cleared, { chartId: CHART_ID })
         mmgisHidePlugin(TOOL_ID)
@@ -307,6 +315,7 @@ const FetchTimeseriesTool = {
             (typeof layerConfig?.display_name === 'string' &&
                 layerConfig.display_name) ||
             layerName
+        this._lastResponse = null
         this._selection = {
             feature,
             layerName,
@@ -314,7 +323,7 @@ const FetchTimeseriesTool = {
             config,
             title: featureTitle(feature, config, layerDisplayName),
             layerDisplayName,
-            layerUnit: unitAnswer?.sourceUnit ?? null,
+            layerUnit: unitAnswer?.active ?? null,
         }
         await this._ensureRange(this._selection)
         if (seq !== this._fetchSeq) return
@@ -325,9 +334,32 @@ const FetchTimeseriesTool = {
         await this._fetchFor(this._selection)
     },
 
+    /** The chart redraws in the new unit from the response it already has;
+     *  a selection without one yet picks the unit up when it arrives. */
+    _onUnitChange(change: { layerName: string; unit: LayerUnitShown }) {
+        const selection = this._selection
+        if (!selection || change?.layerName !== selection.layerName || !change.unit) return
+        selection.layerUnit = change.unit
+        if (this._lastResponse == null) return
+        mmgisEmit(EVENTS.ready, this._payloadFor(selection, this._lastResponse, false))
+    },
+
+    _payloadFor(selection: Selection, response: unknown, warnMismatch = true) {
+        return buildPayload({
+            chartId: CHART_ID,
+            response,
+            config: selection.config,
+            title: selection.title,
+            layerDisplayName: selection.layerDisplayName,
+            layerName: selection.layerName,
+            featureId: selection.feature.id,
+            layerUnit: selection.layerUnit,
+            warnMismatch,
+        })
+    },
+
     async _fetchFor(selection: Selection) {
-        const { feature, layerName, latlng, config, title, layerDisplayName, layerUnit } =
-            selection
+        const { feature, layerName, latlng, config, title, layerDisplayName } = selection
         const range = await this._ensureRange(selection)
 
         this._abort?.abort()
@@ -410,16 +442,9 @@ const FetchTimeseriesTool = {
                 gathered += info.returned ?? 0
             }
 
-            const chartPayload = buildPayload({
-                chartId: CHART_ID,
-                response: mergePages(first, rest, config),
-                config,
-                title,
-                layerDisplayName,
-                layerName,
-                featureId: feature.id,
-                layerUnit,
-            })
+            const response = mergePages(first, rest, config)
+            const chartPayload = this._payloadFor(selection, response)
+            this._lastResponse = response
             this._setStatus({ kind: 'idle' })
             mmgisEmit(EVENTS.ready, chartPayload)
         } catch (err) {
