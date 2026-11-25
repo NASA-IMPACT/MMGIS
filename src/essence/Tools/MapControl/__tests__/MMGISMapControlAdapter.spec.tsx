@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { act } from 'react'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { MMGISMapControlAdapter } from '../MMGISMapControlAdapter'
 import { mount, click } from '../../_shared/__tests__/reactHarness'
@@ -25,6 +25,10 @@ const LINK = 'https://example.com/analysis'
 const MISSION_PATH = 'Missions/Test/'
 
 let request: ReturnType<typeof vi.fn>
+/** Bus subscribers, by event name, so a case can emit as the core would. */
+let listeners: Map<string, Set<(payload?: unknown) => void>>
+const emit = (event: string, payload?: unknown) =>
+    act(async () => listeners.get(event)?.forEach((h) => h(payload)))
 
 /** Answer the bus with one mission's tool variables. */
 const withVars = (vars: Record<string, unknown>) => {
@@ -38,8 +42,8 @@ const withVars = (vars: Record<string, unknown>) => {
                 return []
             case 'map:getBasemap':
                 return null
-            case 'map:supportsBasemapLabels':
-                return false
+            case 'map:getBasemapGroups':
+                return []
             default:
                 return { ok: true }
         }
@@ -51,12 +55,17 @@ const actionButton = (container: HTMLElement) =>
 
 beforeEach(() => {
     request = vi.fn()
+    listeners = new Map()
     withVars({})
     ;(window as { mmgisAPI?: unknown }).mmgisAPI = {
         request,
         hasHandler: () => true,
         emit: vi.fn(),
-        on: () => () => {},
+        on: (event: string, handler: (payload?: unknown) => void) => {
+            if (!listeners.has(event)) listeners.set(event, new Set())
+            listeners.get(event)!.add(handler)
+            return () => listeners.get(event)!.delete(handler)
+        },
     }
     vi.spyOn(window, 'open').mockImplementation(() => null)
 })
@@ -358,8 +367,13 @@ describe('MMGISMapControlAdapter action button icon', () => {
     })
 })
 
-/** The basemap popover, with the map answering the label questions. */
-const withBasemap = (support: boolean, labelsVisible = true) => {
+const GROUPS = [
+    { id: 'Borders', name: 'Borders', state: 'mixed' as const },
+    { id: 'Labels', name: 'Labels', state: 'on' as const },
+]
+
+/** The basemap popover, with the map answering with its groups. */
+const withBasemap = (groups: unknown[]) => {
     request.mockImplementation(async (name: string) => {
         switch (name) {
             case 'tool:getVars':
@@ -370,10 +384,8 @@ const withBasemap = (support: boolean, labelsVisible = true) => {
                 return [{ name: 'Light' }]
             case 'map:getBasemap':
                 return { name: 'Light' }
-            case 'map:supportsBasemapLabels':
-                return support
-            case 'map:getBasemapLabelsVisible':
-                return labelsVisible
+            case 'map:getBasemapGroups':
+                return groups
             default:
                 return true
         }
@@ -385,43 +397,58 @@ const openBasemapPopover = async (container: HTMLElement) => {
     )!
     await click(btn)
 }
-const labelsCheckbox = () =>
-    document.body.querySelector<HTMLInputElement>('.blocks-basemap-panel__labels input')
+const groupCheckbox = (name: string) =>
+    Array.from(document.body.querySelectorAll('.blocks-basemap-panel__group-label'))
+        .find((l) => l.textContent === name)
+        ?.querySelector('input') ?? null
 const requestsNamed = (name: string) =>
     request.mock.calls.filter(([n]) => n === name).map(([, payload]) => payload)
 
-describe('MMGISMapControlAdapter basemap labels', () => {
-    test('asks the map whether labels can be toggled, and reads their state only when they can', async () => {
-        withBasemap(true, false)
+describe('MMGISMapControlAdapter basemap groups', () => {
+    test('shows the groups the map reports', async () => {
+        withBasemap(GROUPS)
         const { container, unmount } = await mount(<MMGISMapControlAdapter />)
         await openBasemapPopover(container)
 
-        expect(requestsNamed('map:supportsBasemapLabels')).toHaveLength(1)
-        expect(requestsNamed('map:getBasemapLabelsVisible')).toHaveLength(1)
-        expect(labelsCheckbox()!.checked).toBe(false)
+        expect(groupCheckbox('Borders')!.indeterminate).toBe(true)
+        expect(groupCheckbox('Labels')!.checked).toBe(true)
 
         await unmount()
     })
 
-    test('sends the toggled value to the map', async () => {
-        withBasemap(true)
+    test('sends the toggled group to the map', async () => {
+        withBasemap(GROUPS)
         const { container, unmount } = await mount(<MMGISMapControlAdapter />)
         await openBasemapPopover(container)
-        await click(labelsCheckbox()!)
+        await click(groupCheckbox('Labels')!)
 
-        expect(requestsNamed('map:setBasemapLabelsVisible')).toEqual([false])
-        expect(labelsCheckbox()!.checked).toBe(false)
+        expect(requestsNamed('map:setBasemapGroupVisible')).toEqual([{ id: 'Labels', visible: false }])
 
         await unmount()
     })
 
-    test('renders no checkbox for a map that cannot toggle labels, and never asks their state', async () => {
-        withBasemap(false)
+    test('follows the map when the groups change, whoever changed them', async () => {
+        withBasemap(GROUPS)
         const { container, unmount } = await mount(<MMGISMapControlAdapter />)
         await openBasemapPopover(container)
 
-        expect(labelsCheckbox()).toBeNull()
-        expect(requestsNamed('map:getBasemapLabelsVisible')).toHaveLength(0)
+        // As mmgisAPI.setBasemapGroupVisible('Borders', true) would leave it.
+        await emit('map:basemapGroupsChanged', {
+            groups: [{ ...GROUPS[0], state: 'on' }, GROUPS[1]],
+        })
+        expect(groupCheckbox('Borders')!.indeterminate).toBe(false)
+        expect(groupCheckbox('Borders')!.checked).toBe(true)
+
+        await unmount()
+        expect(listeners.get('map:basemapGroupsChanged')!.size).toBe(0)
+    })
+
+    test('renders no group checkboxes when the map reports none', async () => {
+        withBasemap([])
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+        await openBasemapPopover(container)
+
+        expect(document.body.querySelector('.blocks-basemap-panel__groups')).toBeNull()
 
         await unmount()
     })

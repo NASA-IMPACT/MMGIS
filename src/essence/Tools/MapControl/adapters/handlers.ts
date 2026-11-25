@@ -2,6 +2,7 @@
 // MMGIS-coupled — stays in MMGIS.
 import { mmgisOn, mmgisRequest } from './mmgisAPI'
 import type {
+    BasemapGroup,
     BasemapStyle,
     GeocodeResult,
     LatLng,
@@ -16,9 +17,16 @@ export const selectBasemap = (style: BasemapStyle): void => {
     void mmgisRequest('map:setBasemap', style.name)
 }
 
-export const setBasemapLabelsVisible = (visible: boolean): void => {
-    void mmgisRequest('map:setBasemapLabelsVisible', visible)
+export const setBasemapGroupVisible = async (id: string, visible: boolean): Promise<void> => {
+    await mmgisRequest('map:setBasemapGroupVisible', { id, visible })
 }
+
+/** Calls back with the new groups whenever the map's group states change,
+ *  whoever changed them. */
+export const onBasemapGroupsChanged = (handler: (groups: BasemapGroup[]) => void) =>
+    mmgisOn('map:basemapGroupsChanged', (payload) =>
+        handler((payload as { groups?: BasemapGroup[] } | undefined)?.groups || [])
+    )
 
 export const zoomIn = (): void => {
     void mmgisRequest('map:zoomIn')

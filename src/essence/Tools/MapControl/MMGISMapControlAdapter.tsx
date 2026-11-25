@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MapControlBar, resolveActionIcon } from './lib'
-import type { ActionIcon, BasemapStyle } from './lib'
+import type { ActionIcon, BasemapGroup, BasemapStyle } from './lib'
 // The shared share-menu control (_shared/share) — same look
 // and behaves identically wherever it's hosted. Importing the lib barrel also
 // loads its (host-class-scoped) styles.
@@ -18,7 +18,8 @@ import {
 import { getBasemaps } from './adapters/getBasemaps'
 import {
     selectBasemap,
-    setBasemapLabelsVisible,
+    setBasemapGroupVisible,
+    onBasemapGroupsChanged,
     zoomIn,
     zoomOut,
     subscribeToMap,
@@ -74,7 +75,7 @@ function withResolvedIcon(
 export function MMGISMapControlAdapter() {
     const [basemapStyles, setBasemapStyles] = useState<BasemapStyle[]>([])
     const [activeBasemap, setActiveBasemap] = useState<BasemapStyle | null>(null)
-    const [basemapLabels, setBasemapLabels] = useState<boolean | null>(null)
+    const [basemapGroups, setBasemapGroups] = useState<BasemapGroup[]>([])
     const [shareBusy, setShareBusy] = useState(false)
     const [shareCopied, setShareCopied] = useState(false)
     const copiedTimer = useRef<number | null>(null)
@@ -171,10 +172,10 @@ export function MMGISMapControlAdapter() {
     // Fetch once the map registers its basemap handlers. An empty style list
     // then means the mission genuinely has no basemap — not "not ready yet".
     const fetchBasemaps = useCallback(() => {
-        getBasemaps().then(({ styles, active, labelsVisible }) => {
+        getBasemaps().then(({ styles, active, groups }) => {
             setBasemapStyles(styles)
             setActiveBasemap(active)
-            setBasemapLabels(labelsVisible)
+            setBasemapGroups(groups)
         })
     }, [])
     useMMGISHandlerReady('map:getBasemapStyles', fetchBasemaps)
@@ -184,9 +185,11 @@ export function MMGISMapControlAdapter() {
         selectBasemap(style)
     }, [])
 
-    const onToggleBasemapLabels = useCallback((visible: boolean) => {
-        setBasemapLabels(visible)
-        setBasemapLabelsVisible(visible)
+    // Take the groups from the map's change event rather than patch them
+    // here, so changes made by anyone else show too.
+    useEffect(() => onBasemapGroupsChanged(setBasemapGroups), [])
+    const onToggleBasemapGroup = useCallback((id: string, visible: boolean) => {
+        void setBasemapGroupVisible(id, visible)
     }, [])
 
     return (
@@ -194,8 +197,8 @@ export function MMGISMapControlAdapter() {
             basemapStyles={showBasemapSwitcher ? basemapStyles : []}
             activeBasemap={showBasemapSwitcher ? activeBasemap : null}
             onSelectBasemap={showBasemapSwitcher ? onSelectBasemap : undefined}
-            basemapLabelsVisible={showBasemapSwitcher ? basemapLabels : null}
-            onToggleBasemapLabels={showBasemapSwitcher ? onToggleBasemapLabels : undefined}
+            basemapGroups={showBasemapSwitcher ? basemapGroups : []}
+            onToggleBasemapGroup={showBasemapSwitcher ? onToggleBasemapGroup : undefined}
             onZoomIn={showZoom ? zoomIn : undefined}
             onZoomOut={showZoom ? zoomOut : undefined}
             subscribeToMap={showMeasure ? subscribeToMap : undefined}

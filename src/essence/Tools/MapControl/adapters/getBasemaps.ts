@@ -1,22 +1,18 @@
 import { mmgisRequest } from './mmgisAPI'
-import type { BasemapStyle } from '../lib'
+import type { BasemapGroup, BasemapStyle } from '../lib'
 
-/** Pull the basemap style list, the active style, and whether the labels
- *  show (null when the engine cannot toggle them) from the map via the bus. */
+/** Pull the basemap style list, the active style and the layer groups
+ *  (empty when the engine cannot toggle layers) from the map via the bus. */
 export async function getBasemaps(): Promise<{
     styles: BasemapStyle[]
     active: BasemapStyle | null
-    labelsVisible: boolean | null
+    groups: BasemapGroup[]
 }> {
-    const [styles, active, supportsLabels] = await Promise.all([
+    const [styles, active, groups] = await Promise.all([
         mmgisRequest<BasemapStyle[]>('map:getBasemapStyles'),
         mmgisRequest<BasemapStyle | null>('map:getBasemap'),
-        mmgisRequest<boolean>('map:supportsBasemapLabels'),
+        mmgisRequest<BasemapGroup[]>('map:getBasemapGroups'),
     ])
-    const labelsVisible =
-        supportsLabels === true
-            ? (await mmgisRequest<boolean>('map:getBasemapLabelsVisible')) !== false
-            : null
     const s = styles || []
-    return { styles: s, active: active || s[0] || null, labelsVisible }
+    return { styles: s, active: active || s[0] || null, groups: groups || [] }
 }
