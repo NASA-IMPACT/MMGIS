@@ -201,62 +201,98 @@ const openBasemapPopover = async (container: HTMLElement) => {
     )!
     await click(btn)
 }
-const labelsCheckbox = () =>
-    document.body.querySelector<HTMLInputElement>('.blocks-basemap-panel__labels input')
+/** A group's checkbox, by the name beside it. */
+const groupCheckbox = (name: string) =>
+    Array.from(document.body.querySelectorAll('.blocks-basemap-panel__group-label'))
+        .find((l) => l.textContent === name)
+        ?.querySelector('input') ?? null
 const basemapPanel = () => document.body.querySelector('.blocks-basemap-panel')
 
-describe('MapControlBar basemap labels', () => {
-    test('is a checked checkbox beside the heading when the labels show', async () => {
+const GROUPS = [
+    { id: 'Borders', name: 'Borders', state: 'mixed' as const },
+    { id: 'Labels', name: 'Labels', state: 'on' as const },
+]
+
+describe('MapControlBar basemap groups', () => {
+    test('a group with some layers on shows half-checked', async () => {
         const { container, unmount } = await mount(
-            <MapControlBar basemapStyles={STYLES} basemapLabelsVisible onToggleBasemapLabels={() => {}} />,
+            <MapControlBar basemapStyles={STYLES} basemapGroups={GROUPS} onToggleBasemapGroup={() => {}} />,
         )
         await openBasemapPopover(container)
-
-        const box = labelsCheckbox()!
-        expect(box.checked).toBe(true)
-        expect(box.closest('.blocks-basemap-panel__header')).not.toBeNull()
-        expect(box.closest('label')!.textContent).toBe('Labels')
-
+        const borders = groupCheckbox('Borders')!
+        expect(borders.indeterminate).toBe(true)
+        expect(borders.checked).toBe(false)
+        expect(groupCheckbox('Labels')!.checked).toBe(true)
         await unmount()
     })
 
-    test('is unchecked when the labels are hidden', async () => {
+    test('are left out without groups, and the styles still list', async () => {
         const { container, unmount } = await mount(
-            <MapControlBar
-                basemapStyles={STYLES}
-                basemapLabelsVisible={false}
-                onToggleBasemapLabels={() => {}}
-            />,
+            <MapControlBar basemapStyles={STYLES} basemapGroups={[]} onToggleBasemapGroup={() => {}} />,
         )
         await openBasemapPopover(container)
-        expect(labelsCheckbox()!.checked).toBe(false)
-        await unmount()
-    })
-
-    test('is left out when the map cannot toggle labels, and the styles still list', async () => {
-        const { container, unmount } = await mount(
-            <MapControlBar basemapStyles={STYLES} basemapLabelsVisible={null} onToggleBasemapLabels={() => {}} />,
-        )
-        await openBasemapPopover(container)
-        expect(labelsCheckbox()).toBeNull()
+        expect(basemapPanel()!.querySelector('.blocks-basemap-panel__groups')).toBeNull()
         expect(basemapPanel()!.querySelectorAll('.blocks-basemap-panel__row')).toHaveLength(2)
         await unmount()
     })
 
-    test('reports the new state and keeps the popover open', async () => {
-        const toggled: boolean[] = []
+    test('reports the group and its new state, and keeps the popover open', async () => {
+        const toggled: [string, boolean][] = []
         const { container, unmount } = await mount(
             <MapControlBar
                 basemapStyles={STYLES}
-                basemapLabelsVisible
-                onToggleBasemapLabels={(v) => toggled.push(v)}
+                basemapGroups={GROUPS}
+                onToggleBasemapGroup={(id, v) => toggled.push([id, v])}
             />,
         )
         await openBasemapPopover(container)
-        await click(labelsCheckbox()!)
+        await click(groupCheckbox('Borders')!)
+        await click(groupCheckbox('Labels')!)
 
-        expect(toggled).toEqual([false])
+        // A mixed group turns on; an on group turns off.
+        expect(toggled).toEqual([
+            ['Borders', true],
+            ['Labels', false],
+        ])
         expect(basemapPanel()).not.toBeNull()
+
+        await unmount()
+    })
+    test("lists a parent's children under it, each toggled by its own id", async () => {
+        const toggled: [string, boolean][] = []
+        const nested = [
+            {
+                id: 'Borders',
+                name: 'Borders',
+                state: 'mixed' as const,
+                children: [
+                    { id: 'Borders/Countries', name: 'Countries', state: 'on' as const },
+                    { id: 'Borders/States', name: 'States', state: 'off' as const },
+                ],
+            },
+        ]
+        const { container, unmount } = await mount(
+            <MapControlBar
+                basemapStyles={STYLES}
+                basemapGroups={nested}
+                onToggleBasemapGroup={(id, v) => toggled.push([id, v])}
+            />,
+        )
+        await openBasemapPopover(container)
+
+        const children = basemapPanel()!.querySelector('.blocks-basemap-panel__children')!
+        expect(Array.from(children.querySelectorAll('label')).map((l) => l.textContent)).toEqual([
+            'Countries',
+            'States',
+        ])
+        expect(groupCheckbox('Borders')!.indeterminate).toBe(true)
+
+        await click(groupCheckbox('States')!)
+        await click(groupCheckbox('Borders')!)
+        expect(toggled).toEqual([
+            ['Borders/States', true],
+            ['Borders', true],
+        ])
 
         await unmount()
     })
