@@ -70,6 +70,18 @@
           "required": true
         }
       ]
+    },
+    {
+      "name": "Services",
+      "components": [
+        {
+          "field": "msv.services.titilerUrl",
+          "name": "TiTiler URL",
+          "description": "The TiTiler every layer in this mission uses unless it sets its own 'titilerUrl' (e.g. https://example.com/api/raster). It serves raster tiles and the colormap ramps raster and vector layers can use. Leave empty to use MMGIS's bundled /titiler proxy when it is enabled.",
+          "type": "text",
+          "width": 6
+        }
+      ]
     }
   ]
 }

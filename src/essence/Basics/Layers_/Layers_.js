@@ -5031,6 +5031,7 @@ const L_ = {
 async function parseConfig(configData, urlOnLayers) {
     //Create parsed configData
     L_.configData = configData
+    ServiceUrls.setMissionServices(configData?.msv?.services)
 
     //find zero resolution
     if (
