@@ -98,6 +98,10 @@ Each feature of the vector tileset needs a property with a unique value to ident
 _type:_ string _optional_
 The property key whose value should be the hover text of each feature. This is the same as the `useKeyAsName` raw variable within Vector layers
 
+#### Color by Value
+
+Colors each feature by the value of one of its properties, as a colormap or as ranges. See Color by Value on the Vector layer page. Vector tile layers are colored this way on deck.gl maps only, so these fields are not shown for Leaflet missions.
+
 #### Raw Variables
 
 Vector Tiles are styled differently than Vectors. Raw variables here takes an object that maps internal vector tile layer names to styles. All raw variables are optional.
