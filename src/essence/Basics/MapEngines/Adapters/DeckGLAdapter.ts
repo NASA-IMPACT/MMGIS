@@ -730,6 +730,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._sbsPanes?.forEach((pane) => {
             if (!pane.map) return
             this._hiddenLayers.delete(pane.map)
+            this._panesLoading.add(pane.map)
             pane.map.setStyle(styleUrl)
         })
         return true
@@ -780,7 +781,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _applyLayerVisibility(map: BasemapInstance | null): void {
         if (!map?.setLayoutProperty) return
         // A map whose style has not loaded yet gets the choice on its load.
-        if (this._styleSwapping) return
+        if (map === this._basemap ? this._styleSwapping : this._panesLoading.has(map)) return
         let hidden = this._hiddenLayers.get(map)
         if (!hidden) this._hiddenLayers.set(map, (hidden = new Set()))
         for (const [id, visible] of this._layerVisibility) {
@@ -2273,14 +2274,21 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
         pane.map = map
         pane.overlay = overlay
+        this._panesLoading.add(map)
 
         const onMove = () => this._onPaneCameraChange(pane, false)
         const onMoveEnd = () => this._onPaneCameraChange(pane, true)
         // The interleaved overlay drops layers set before the style loads (see
         // `_onBasemapLoad`), so a pane re-sends its own once it is ready.
         const onLoad = () => {
+            this._panesLoading.delete(map)
             this._applyLayerVisibility(map)
             this._renderComparisonLayers()
+        }
+        // As for the main map (see `_onBasemapError`): a style that fails to
+        // download fires only `error`, so an error ends the pane's wait.
+        const onError = () => {
+            if (this._panesLoading.has(map)) onLoad()
         }
 
         map.on('move', onMove)
@@ -2289,11 +2297,13 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         // `load` fires once; `style.load` on every style, so a swap
         // re-anchors the pane's layers on the new style's labels.
         map.on('style.load', onLoad)
+        map.on('error', onError)
         pane.offMap = () => {
             map.off('move', onMove)
             map.off('moveend', onMoveEnd)
             map.off('load', onLoad)
             map.off('style.load', onLoad)
+            map.off('error', onError)
         }
     }
 
@@ -2589,6 +2599,11 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _missingLayersWarned = new Set<string>()
     /** Per map, the layers {@link setBasemapLayersVisible} hid; a new style starts empty. */
     private _hiddenLayers = new WeakMap<BasemapInstance, Set<string>>()
+    /**
+     * Pane maps whose style has not loaded yet. Each pane loads on its own
+     * clock, so the main map's {@link _styleSwapping} cannot stand in for it.
+     */
+    private _panesLoading = new WeakSet<BasemapInstance>()
 
     /**
      * Labels are always on top. Every text label of the style (a `symbol`

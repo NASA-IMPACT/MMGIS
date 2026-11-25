@@ -1895,6 +1895,59 @@ test.describe('DeckGLAdapter', () => {
                 expect(visibility(pane)).toEqual([['admin-0-label', 'none']])
             })
 
+            // A pane loads on its own clock: its style.load can land while the
+            // main map is still swapping, and the main map's load does not
+            // revisit the pane.
+            test('a pane whose style loads before the main map still gets the choice', () => {
+                const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
+                const map = adapter._basemap
+                map.getLayer = (id) => ({ id })
+                map.setStyle = vi.fn()
+                const pane = { div: document.createElement('div'), mapDiv: null, map: null }
+                adapter._buildPaneBasemap(pane)
+                adapter._sbsPanes = [pane, { map: null }]
+                pane.map.getLayer = (id) => ({ id })
+                pane.map.setStyle = vi.fn()
+                fireStyleLoad(pane.map)
+                adapter.setBasemapLayersVisible(['admin-0-label'], false)
+                expect(visibility(pane.map)).toEqual([['admin-0-label', 'none']])
+
+                adapter.setBasemapStyle('https://example.com/other.json')
+                pane.map._layout.length = 0
+                fireStyleLoad(pane.map)
+                expect(adapter._styleSwapping).toBe(true)
+                expect(visibility(pane.map)).toEqual([['admin-0-label', 'none']])
+            })
+
+            test('a pane still loading is left alone until its style arrives', () => {
+                const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
+                adapter._basemap.getLayer = (id) => ({ id })
+                const pane = { div: document.createElement('div'), mapDiv: null, map: null }
+                adapter._buildPaneBasemap(pane)
+                adapter._sbsPanes = [pane, { map: null }]
+                pane.map.getLayer = (id) => ({ id })
+
+                adapter.setBasemapLayersVisible(['admin-0-label'], false)
+                expect(visibility(pane.map)).toEqual([])
+                fireStyleLoad(pane.map)
+                expect(visibility(pane.map)).toEqual([['admin-0-label', 'none']])
+            })
+
+            // A style that fails to download fires only `error`, never
+            // style.load; the pane must not wait for it forever.
+            test('a pane whose style fails to load still takes later toggles', () => {
+                const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
+                adapter._basemap.getLayer = (id) => ({ id })
+                const pane = { div: document.createElement('div'), mapDiv: null, map: null }
+                adapter._buildPaneBasemap(pane)
+                adapter._sbsPanes = [pane, { map: null }]
+                pane.map.getLayer = (id) => ({ id })
+
+                pane.map._on.filter(([type]) => type === 'error').forEach(([, handler]) => handler())
+                adapter.setBasemapLayersVisible(['admin-0-label'], false)
+                expect(visibility(pane.map)).toEqual([['admin-0-label', 'none']])
+            })
+
             test('standalone mode has no basemap to toggle and says so', () => {
                 const { adapter } = initAdapter(null)
                 expect(adapter.setBasemapLayersVisible(['admin-0-label'], false)).toBe(false)
