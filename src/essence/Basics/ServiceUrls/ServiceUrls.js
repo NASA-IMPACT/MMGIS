@@ -2,7 +2,8 @@
  * ServiceUrls - Centralized utility for getting service URLs
  *
  * Supports both local proxied services and external endpoints.
- * External URLs can be configured per-layer or globally via mmgisglobal.options.
+ * External URLs can be configured per layer or for the whole mission, under
+ * the mission config's `msv.services`.
  *
  * Services supported:
  * - titiler: COG tile serving
@@ -41,8 +42,27 @@ const getLocalBaseUrl = () => {
 import { isStaticBuild } from '../../../pre/capabilities'
 
 /**
+ * The mission's default service URLs, keyed like a layer's own (`titilerUrl`,
+ * `stacUrl`, ...): its config's `msv.services`. Set whenever a mission config
+ * is parsed, so this module need not import the layer store that imports it.
+ */
+let missionServices = {}
+
+/**
+ * Set the mission-wide service URLs that layers without their own fall back to.
+ * @param {object|null|undefined} services - The mission config's `msv.services`.
+ */
+const setMissionServices = (services) => {
+    missionServices = services && typeof services === 'object' ? services : {}
+}
+
+/** A configured URL for a service key: the layer's own, else the mission's. */
+const configuredUrl = (configKey, layerConfig) =>
+    layerConfig?.[configKey] || missionServices[configKey] || null
+
+/**
  * Factory function to get a service URL
- * Priority: layerConfig > mmgisglobal.options.services > local proxy
+ * Priority: layerConfig > mission `msv.services` > local proxy
  * Static builds have no local proxy; an explicitly configured URL is required
  * and missing config returns null (with a warning) rather than a same-origin
  * path that would silently 404.
@@ -60,19 +80,12 @@ const getServiceUrl = (serviceName, layerConfig = null) => {
 
     const { configKey, localPath } = config
 
-    // Per-layer override
-    if (layerConfig?.[configKey]) {
-        return layerConfig[configKey].replace(/\/$/, '')
-    }
-
-    // Global override via mmgisglobal.options.services
-    if (window.mmgisglobal?.options?.services?.[configKey]) {
-        return window.mmgisglobal.options.services[configKey].replace(/\/$/, '')
-    }
+    const configured = configuredUrl(configKey, layerConfig)
+    if (configured) return configured.replace(/\/$/, '')
 
     if (isStaticBuild()) {
         console.warn(
-            `ServiceUrls: No "${configKey}" configured for service "${serviceName}". Static builds require an external service URL (per-layer or via options.services).`
+            `ServiceUrls: No "${configKey}" configured for service "${serviceName}". Static builds require an external service URL (per layer or in the mission's msv.services).`
         )
         return null
     }
@@ -93,10 +106,7 @@ const getServiceUrl = (serviceName, layerConfig = null) => {
 const hasExternalServiceUrl = (serviceName, layerConfig = null) => {
     const configKey = SERVICE_CONFIG[serviceName]?.configKey
     if (!configKey) return false
-    return Boolean(
-        layerConfig?.[configKey] ||
-            window.mmgisglobal?.options?.services?.[configKey]
-    )
+    return Boolean(configuredUrl(configKey, layerConfig))
 }
 
 /**
@@ -295,6 +305,7 @@ const ServiceUrls = {
     getServiceUrl,
     createServiceGetter,
     hasExternalServiceUrl,
+    setMissionServices,
 
     // Service-specific getters
     getTiTilerUrl,

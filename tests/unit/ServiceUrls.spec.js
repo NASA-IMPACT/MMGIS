@@ -54,3 +54,46 @@ test.describe('ServiceUrls builders in node mode still build real URLs', () => {
         expect(url).toContain('https://mmgis.test/site/titiler/colorMaps/viridis')
     })
 })
+
+test.describe('ServiceUrls resolution order: layer, then mission, then local proxy', () => {
+    test.beforeEach(() => {
+        global.window = global.window || {}
+        global.window.location = {
+            origin: 'https://mmgis.test',
+            pathname: '/site',
+        }
+        global.window.mmgisglobal = { SERVER: 'node' }
+        ServiceUrls.setMissionServices(null)
+    })
+
+    test('a layer without its own URL uses the mission one, trailing slash dropped', () => {
+        ServiceUrls.setMissionServices({ titilerUrl: 'https://mission.test/raster/' })
+        expect(ServiceUrls.getTiTilerUrl({})).toBe('https://mission.test/raster')
+        expect(ServiceUrls.hasExternalServiceUrl('titiler', {})).toBe(true)
+    })
+
+    test("a layer's own URL wins over the mission one", () => {
+        ServiceUrls.setMissionServices({ titilerUrl: 'https://mission.test/raster' })
+        expect(
+            ServiceUrls.getTiTilerUrl({ titilerUrl: 'https://layer.test/raster' })
+        ).toBe('https://layer.test/raster')
+    })
+
+    test('with neither set, the local proxy is used and counts as not external', () => {
+        expect(ServiceUrls.getTiTilerUrl({})).toBe('https://mmgis.test/site/titiler')
+        expect(ServiceUrls.hasExternalServiceUrl('titiler', {})).toBe(false)
+    })
+
+    test('a deployment-wide options.services URL is not consulted', () => {
+        global.window.mmgisglobal.options = {
+            services: { titilerUrl: 'https://deployment.test/raster' },
+        }
+        expect(ServiceUrls.getTiTilerUrl({})).toBe('https://mmgis.test/site/titiler')
+    })
+
+    test("loading another mission's config replaces the previous mission's URLs", () => {
+        ServiceUrls.setMissionServices({ titilerUrl: 'https://first.test' })
+        ServiceUrls.setMissionServices(undefined)
+        expect(ServiceUrls.getTiTilerUrl({})).toBe('https://mmgis.test/site/titiler')
+    })
+})
