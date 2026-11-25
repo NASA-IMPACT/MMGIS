@@ -4,6 +4,22 @@ export type LatLng = { lat: number; lng: number }
 
 export type BasemapStyle = { name: string }
 
+/**
+ * A named set of basemap layers shown or hidden together. Its state is
+ * 'mixed' when some of its layers are on and some off.
+ */
+export type BasemapGroupState = {
+    /** A group's name; a child's is `<parent>/<child>`. */
+    id: string
+    name: string
+    state: 'on' | 'off' | 'mixed'
+}
+
+/** A group, with its children when it has them; children do not nest. */
+export type BasemapGroup = BasemapGroupState & {
+    children?: BasemapGroupState[]
+}
+
 export type GeocodeResult = {
     id: string
     displayName: string
