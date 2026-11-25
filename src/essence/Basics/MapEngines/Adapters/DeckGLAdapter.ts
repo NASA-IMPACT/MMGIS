@@ -30,11 +30,11 @@ import { MapboxOverlay } from '@deck.gl/mapbox'
 import { Map as MaplibreGLMap, Popup as MaplibreGLPopup } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
-import type { 
-    IMapEngine, 
-    ComparisonConfig, 
+import type {
+    IMapEngine,
+    ComparisonConfig,
     ComparisonLayout,
-    MapScreenshotResult 
+    MapScreenshotResult
 } from '../IMapEngine'
 import { MAP_ENGINE } from '../types/engine'
 import type { MapEngineType } from '../types/engine'
@@ -181,6 +181,8 @@ interface BasemapInstance {
     getStyle?(): BasemapStyle | undefined
     /** Set a layout property of a style layer, `visibility` included (mapbox-gl + maplibre-gl). */
     setLayoutProperty?(layerId: string, name: string, value: unknown): unknown
+    /** Read a layout property of a style layer; `undefined` when the style leaves it unset (mapbox-gl + maplibre-gl). */
+    getLayoutProperty?(layerId: string, name: string): unknown
     /** Move a style layer before `beforeId`, or to the top of the style without one (mapbox-gl + maplibre-gl). */
     moveLayer?(layerId: string, beforeId?: string): unknown
     /** Return the WebGL canvas element the base map renders into. */
@@ -548,8 +550,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     private _onBasemapLoad = (): void => {
         this._styleSwapping = false
-        this._applyLabelVisibility(this._basemap)
+        this._applyLayerVisibility(this._basemap)
         this._syncLayers()
+        // The new style may show or hide different layers of its own.
+        this._emitEvent('basemaplayers')
     }
 
     // A style that fails to download fires only `error`, never `style.load`.
@@ -718,51 +722,87 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         // The label anchor names a layer of the outgoing style; push the
         // layers unanchored before the swap, and anchor again on load.
         this._styleSwapping = true
+        this._missingLayersWarned.clear()
+        this._hiddenLayers.delete(this._basemap)
         this._syncLayers()
         this._basemap.setStyle(styleUrl)
         this._basemapStyle = styleUrl
-        this._sbsPanes?.forEach((pane) => pane.map?.setStyle(styleUrl))
+        this._sbsPanes?.forEach((pane) => {
+            if (!pane.map) return
+            this._hiddenLayers.delete(pane.map)
+            pane.map.setStyle(styleUrl)
+        })
         return true
     }
 
     /**
-     * Show or hide the basemap's labels: every `symbol` layer of the style,
-     * which is the place names, road shields and POI glyphs. A hidden layer
-     * stays in the style, so the label anchor the data sits under still
-     * resolves. The choice outlives a style switch (see {@link _onBasemapLoad}).
+     * Show or hide the named style layers. The adapter knows layer ids only;
+     * which ids form a group is the caller's business. Ids the style lacks
+     * are skipped with a console warning, once per style, and the choice
+     * outlives a style switch (see {@link _onBasemapLoad}).
+     *
+     * Showing brings back only what this adapter hid: a style may hide a
+     * layer of its own (an alternate language's names, say), and a group
+     * coming back must not reveal it.
      */
-    setBasemapLabelsVisible(visible: boolean): boolean {
+    setBasemapLayersVisible(ids: string[], visible: boolean): boolean {
         if (!this._basemap?.setLayoutProperty) return false
-        this._labelsVisible = visible
-        this._applyLabelVisibility(this._basemap)
-        this._sbsPanes?.forEach((pane) => this._applyLabelVisibility(pane.map))
+        for (const id of ids) this._layerVisibility.set(id, visible)
+        this._applyLayerVisibility(this._basemap)
+        this._sbsPanes?.forEach((pane) => this._applyLayerVisibility(pane.map))
+        this._emitEvent('basemaplayers')
         return true
     }
 
-    getBasemapLabelsVisible(): boolean {
-        return this._labelsVisible
+    /**
+     * Whether the main map shows the layer: false when it was switched off
+     * with {@link setBasemapLayersVisible} or the style hides it itself. A
+     * layer the style lacks reads as the choice made for it.
+     */
+    getBasemapLayerVisible(id: string): boolean {
+        if (this._layerVisibility.get(id) === false) return false
+        const map = this._basemap
+        if (this._styleSwapping || !map?.getLayer(id)) return true
+        return map.getLayoutProperty?.(id, 'visibility') !== 'none'
     }
 
-    /** Hides the style's symbol layers, or shows the ones this adapter hid.
-     *  Only those: a style may hide a symbol layer of its own (an alternate
-     *  language's names, say), and labels coming back must not reveal it. */
-    private _applyLabelVisibility(map: BasemapInstance | null): void {
-        if (!map?.setLayoutProperty || this._styleSwapping) return
-        if (this._labelsVisible) {
-            for (const id of this._hiddenLabels.get(map) ?? []) {
-                if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'visible')
+    /**
+     * Whether the current basemap style has the layer. While a style swap is
+     * in flight the answer is unknown, and reads as true: the caller keeps
+     * what it shows rather than dropping it and bringing it back, since
+     * `basemaplayers` fires again once the new style loads.
+     */
+    hasBasemapLayer(id: string): boolean {
+        if (this._styleSwapping) return true
+        return Boolean(this._basemap?.getLayer(id))
+    }
+
+    private _applyLayerVisibility(map: BasemapInstance | null): void {
+        if (!map?.setLayoutProperty) return
+        // A map whose style has not loaded yet gets the choice on its load.
+        if (this._styleSwapping) return
+        let hidden = this._hiddenLayers.get(map)
+        if (!hidden) this._hiddenLayers.set(map, (hidden = new Set()))
+        for (const [id, visible] of this._layerVisibility) {
+            if (!map.getLayer(id)) {
+                if (!this._missingLayersWarned.has(id)) {
+                    this._missingLayersWarned.add(id)
+                    console.warn(
+                        `DeckGLAdapter: basemap layer "${id}" is not in the style ${this._basemapStyle}; skipped`
+                    )
+                }
+                continue
             }
-            this._hiddenLabels.delete(map)
-            return
+            if (visible) {
+                if (!hidden.delete(id)) continue
+                map.setLayoutProperty(id, 'visibility', 'visible')
+            } else {
+                // Hidden already, by the style or by an earlier call.
+                if (hidden.has(id) || map.getLayoutProperty?.(id, 'visibility') === 'none') continue
+                map.setLayoutProperty(id, 'visibility', 'none')
+                hidden.add(id)
+            }
         }
-        const hidden: string[] = []
-        for (const layer of map.getStyle?.()?.layers ?? []) {
-            if (layer.type !== 'symbol' || layer.layout?.visibility === 'none') continue
-            if (isTerraDrawLayer(layer.id)) continue
-            map.setLayoutProperty(layer.id, 'visibility', 'none')
-            hidden.push(layer.id)
-        }
-        this._hiddenLabels.set(map, hidden)
     }
 
     getContainer(): HTMLElement {
@@ -2239,7 +2279,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         // The interleaved overlay drops layers set before the style loads (see
         // `_onBasemapLoad`), so a pane re-sends its own once it is ready.
         const onLoad = () => {
-            this._applyLabelVisibility(map)
+            this._applyLayerVisibility(map)
             this._renderComparisonLayers()
         }
 
@@ -2543,9 +2583,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /** True from a style swap until the new style has loaded. */
     private _styleSwapping = false
-    private _labelsVisible = true
-    /** Per map, the symbol layers hidden by {@link setBasemapLabelsVisible}. */
-    private _hiddenLabels = new WeakMap<BasemapInstance, string[]>()
+    /** Style layer id to on/off, set by {@link setBasemapLayersVisible}. */
+    private _layerVisibility = new Map<string, boolean>()
+    /** Ids already reported missing from the current style; cleared on a swap. */
+    private _missingLayersWarned = new Set<string>()
+    /** Per map, the layers {@link setBasemapLayersVisible} hid; a new style starts empty. */
+    private _hiddenLayers = new WeakMap<BasemapInstance, Set<string>>()
 
     /**
      * Labels are always on top. Every text label of the style (a `symbol`

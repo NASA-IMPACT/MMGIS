@@ -5,6 +5,10 @@ import { DeckGLAdapter } from '../../src/essence/Basics/MapEngines/Adapters/Deck
 // `window` at module-eval time and fails in this Node test context.
 import { MAP_ENGINE } from '../../src/essence/Basics/MapEngines/types/engine.ts'
 import { drawModeKeyEvents } from '../../src/essence/Basics/MapEngines/Adapters/DrawingHelpers.ts'
+import {
+    basemapGroupStates,
+    parseBasemapGroups,
+} from '../../src/essence/Basics/Map_/basemapGroups.js'
 
 // Both init() branches build their engine through a real constructor, so the
 // props they wire the adapter's handlers into can only be read back off that
@@ -51,6 +55,12 @@ vi.mock('maplibre-gl', async (importOriginal) => {
         }
         setLayoutProperty(id, name, value) {
             ;(this._layout ||= []).push([id, name, value])
+        }
+        // The last value set wins over what the style ships with.
+        getLayoutProperty(id, name) {
+            const set = (this._layout ?? []).findLast(([i, n]) => i === id && n === name)
+            if (set) return set[2]
+            return this.getStyle?.()?.layers.find((l) => l.id === id)?.layout?.[name]
         }
         off() {}
         once() {}
@@ -1703,70 +1713,74 @@ test.describe('DeckGLAdapter', () => {
             expect(anchors()).toEqual(['city-names'])
         })
 
-        test.describe('basemap labels', () => {
+        test.describe('basemap layer visibility', () => {
             const STYLE = {
                 layers: [
                     { id: 'water', type: 'fill' },
-                    { id: 'roads', type: 'line' },
-                    { id: 'place-labels', type: 'symbol', layout: { 'text-field': '{name}' } },
-                    { id: 'road-shields', type: 'symbol' },
+                    { id: 'admin-0-boundary', type: 'line' },
+                    { id: 'admin-0-label', type: 'symbol', layout: { 'text-field': '{name}' } },
                 ],
             }
             const visibility = (map) => (map._layout ?? []).map(([id, , value]) => [id, value])
             const fireStyleLoad = (map) =>
                 map._on.filter(([type]) => type === 'style.load').forEach(([, handler]) => handler())
 
-            test('off hides every symbol layer of the style and nothing else; on shows them again', () => {
+            test('hides and shows only the named layers', () => {
                 const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
                 const map = adapter._basemap
                 map.getLayer = (id) => ({ id })
                 map.getStyle = () => STYLE
-                expect(adapter.getBasemapLabelsVisible()).toBe(true)
+                expect(adapter.getBasemapLayerVisible('admin-0-boundary')).toBe(true)
 
-                expect(adapter.setBasemapLabelsVisible(false)).toBe(true)
-                expect(visibility(map)).toEqual([
-                    ['place-labels', 'none'],
-                    ['road-shields', 'none'],
-                ])
-                expect(adapter.getBasemapLabelsVisible()).toBe(false)
+                expect(adapter.setBasemapLayersVisible(['admin-0-boundary'], false)).toBe(true)
+                expect(visibility(map)).toEqual([['admin-0-boundary', 'none']])
+                expect(adapter.getBasemapLayerVisible('admin-0-boundary')).toBe(false)
+                expect(adapter.getBasemapLayerVisible('admin-0-label')).toBe(true)
 
-                adapter.setBasemapLabelsVisible(true)
-                expect(visibility(map).slice(2)).toEqual([
-                    ['place-labels', 'visible'],
-                    ['road-shields', 'visible'],
-                ])
-                expect(adapter.getBasemapLabelsVisible()).toBe(true)
+                adapter.setBasemapLayersVisible(['admin-0-boundary'], true)
+                expect(visibility(map).at(-1)).toEqual(['admin-0-boundary', 'visible'])
+                expect(adapter.getBasemapLayerVisible('admin-0-boundary')).toBe(true)
             })
 
-            test('a new style arrives with its labels showing, so the choice is applied again on style.load', () => {
+            test('skips ids the style lacks, warning once per style', () => {
+                const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+                const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
+                const map = adapter._basemap
+                map.setStyle = vi.fn()
+                map.getLayer = (id) => (id === 'admin-0-label' ? { id } : undefined)
+                adapter.setBasemapLayersVisible(['admin-0-label', 'not-in-style'], false)
+                adapter.setBasemapLayersVisible(['admin-0-label', 'not-in-style'], true)
+                expect(visibility(map)).toEqual([
+                    ['admin-0-label', 'none'],
+                    ['admin-0-label', 'visible'],
+                ])
+                const missing = () => warn.mock.calls.filter(([m]) => m.includes('"not-in-style"'))
+                expect(missing()).toHaveLength(1)
+
+                // A new style is checked afresh.
+                adapter.setBasemapStyle('https://example.com/other.json')
+                map._on.filter(([type]) => type === 'style.load').forEach(([, handler]) => handler())
+                expect(missing()).toHaveLength(2)
+                warn.mockRestore()
+            })
+
+            test('a new style gets the choice again on style.load', () => {
                 const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
                 const map = adapter._basemap
                 map.getLayer = (id) => ({ id })
                 map.setStyle = vi.fn()
                 map.getStyle = () => STYLE
-                adapter.setBasemapLabelsVisible(false)
+                adapter.setBasemapLayersVisible(['admin-0-label'], false)
                 map._layout.length = 0
 
                 adapter.setBasemapStyle('https://example.com/other.json')
                 expect(visibility(map)).toEqual([])
 
-                map.getStyle = () => ({
-                    layers: [{ id: 'land', type: 'fill' }, { id: 'city-names', type: 'symbol', layout: { 'text-field': '{name}' } }],
-                })
                 fireStyleLoad(map)
-                expect(visibility(map)).toEqual([['city-names', 'none']])
+                expect(visibility(map)).toEqual([['admin-0-label', 'none']])
             })
 
-            test('labels left on ask nothing of a new style', () => {
-                const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
-                const map = adapter._basemap
-                map.getLayer = (id) => ({ id })
-                map.getStyle = () => STYLE
-                fireStyleLoad(map)
-                expect(visibility(map)).toEqual([])
-            })
-
-            test("a symbol layer the style hides itself stays hidden when the labels come back", () => {
+            test('a layer the style hides itself stays hidden when its group comes back, and reads as off', () => {
                 const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
                 const map = adapter._basemap
                 map.getLayer = (id) => ({ id })
@@ -1776,11 +1790,28 @@ test.describe('DeckGLAdapter', () => {
                         { id: 'place-labels-alt', type: 'symbol', layout: { visibility: 'none' } },
                     ],
                 })
-                adapter.setBasemapLabelsVisible(false)
-                adapter.setBasemapLabelsVisible(true)
+                const ids = ['place-labels', 'place-labels-alt']
+                adapter.setBasemapLayersVisible(ids, false)
+                adapter.setBasemapLayersVisible(ids, true)
                 expect(visibility(map)).toEqual([
                     ['place-labels', 'none'],
                     ['place-labels', 'visible'],
+                ])
+                expect(adapter.getBasemapLayerVisible('place-labels')).toBe(true)
+                expect(adapter.getBasemapLayerVisible('place-labels-alt')).toBe(false)
+            })
+
+            test('hiding twice and showing once brings the layer back', () => {
+                const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
+                const map = adapter._basemap
+                map.getLayer = (id) => ({ id })
+                map.getStyle = () => STYLE
+                adapter.setBasemapLayersVisible(['admin-0-label'], false)
+                adapter.setBasemapLayersVisible(['admin-0-label'], false)
+                adapter.setBasemapLayersVisible(['admin-0-label'], true)
+                expect(visibility(map)).toEqual([
+                    ['admin-0-label', 'none'],
+                    ['admin-0-label', 'visible'],
                 ])
             })
 
@@ -1790,61 +1821,159 @@ test.describe('DeckGLAdapter', () => {
                 map.setStyle = vi.fn()
                 map.getStyle = () => STYLE
                 map.getLayer = (id) => ({ id })
-                adapter.setBasemapLabelsVisible(false)
+                vi.spyOn(console, 'warn').mockImplementation(() => {})
+                adapter.setBasemapLayersVisible(['admin-0-label', 'city-names'], false)
                 adapter.setBasemapStyle('https://example.com/other.json')
+                map._layout.length = 0
                 map.getStyle = () => ({ layers: [{ id: 'city-names', type: 'symbol' }] })
                 map.getLayer = (id) => (id === 'city-names' ? { id } : undefined)
                 fireStyleLoad(map)
+                expect(visibility(map)).toEqual([['city-names', 'none']])
                 map._layout.length = 0
 
-                adapter.setBasemapLabelsVisible(true)
+                adapter.setBasemapLayersVisible(['admin-0-label', 'city-names'], true)
                 expect(visibility(map)).toEqual([['city-names', 'visible']])
+                console.warn.mockRestore()
             })
 
-            test("Labels off during a drawing leaves terra-draw's marker alone", () => {
+            // The old Labels toggle hid every symbol layer, terra-draw's
+            // marker included, so it skipped `td-*` ids. Groups name their
+            // layers, so a drawing's layers are touched only if a config
+            // names them, and no guard is needed.
+            test("a group toggled during a drawing leaves terra-draw's marker alone", () => {
                 const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
                 const map = adapter._basemap
                 map.getLayer = (id) => ({ id })
                 map.getStyle = () => ({
                     layers: STYLE.layers.concat([
-                        { id: 'td-polygon', type: 'fill' },
                         { id: 'td-point-marker', type: 'symbol', layout: { 'icon-image': 'td-marker' } },
                     ]),
                 })
-                adapter.setBasemapLabelsVisible(false)
-                adapter.setBasemapLabelsVisible(true)
-                expect(visibility(map)).toEqual([
-                    ['place-labels', 'none'],
-                    ['road-shields', 'none'],
-                    ['place-labels', 'visible'],
-                    ['road-shields', 'visible'],
-                ])
+                adapter.setBasemapLayersVisible(['admin-0-label'], false)
+                adapter.setBasemapLayersVisible(['admin-0-label'], true)
+                expect(visibility(map).map(([id]) => id)).not.toContain('td-point-marker')
+            })
+
+            test('tells listeners when a toggle or a new style may change what shows', () => {
+                const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
+                const map = adapter._basemap
+                map.getLayer = (id) => ({ id })
+                map.setStyle = vi.fn()
+                const heard = vi.fn()
+                adapter.on('basemaplayers', heard)
+
+                adapter.setBasemapLayersVisible(['admin-0-label'], false)
+                expect(heard).toHaveBeenCalledTimes(1)
+                adapter.setBasemapStyle('https://example.com/other.json')
+                expect(heard).toHaveBeenCalledTimes(1)
+                fireStyleLoad(map)
+                expect(heard).toHaveBeenCalledTimes(2)
+            })
+
+            test('nothing toggled asks nothing of a new style', () => {
+                const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
+                const map = adapter._basemap
+                map.getLayer = (id) => ({ id })
+                map.getStyle = () => STYLE
+                fireStyleLoad(map)
+                expect(visibility(map)).toEqual([])
             })
 
             test('side-by-side panes follow the main map', () => {
                 const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
-                adapter._basemap.getStyle = () => STYLE
+                adapter._basemap.getLayer = (id) => ({ id })
                 const pane = {
                     _layout: [],
                     getLayer: (id) => ({ id }),
-                    getStyle: () => STYLE,
                     setLayoutProperty(id, name, value) {
                         pane._layout.push([id, name, value])
                     },
                 }
                 adapter._sbsPanes = [{ map: pane }, { map: null }]
 
-                adapter.setBasemapLabelsVisible(false)
-                expect(visibility(pane)).toEqual([
-                    ['place-labels', 'none'],
-                    ['road-shields', 'none'],
-                ])
+                adapter.setBasemapLayersVisible(['admin-0-label'], false)
+                expect(visibility(pane)).toEqual([['admin-0-label', 'none']])
             })
 
             test('standalone mode has no basemap to toggle and says so', () => {
                 const { adapter } = initAdapter(null)
-                expect(adapter.setBasemapLabelsVisible(false)).toBe(false)
-                expect(adapter.getBasemapLabelsVisible()).toBe(true)
+                expect(adapter.setBasemapLayersVisible(['admin-0-label'], false)).toBe(false)
+                expect(adapter.getBasemapLayerVisible('admin-0-label')).toBe(true)
+            })
+
+            test('says whether the current style has a layer', () => {
+                const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
+                adapter._basemap.getLayer = (id) => (id === 'admin-0-label' ? { id } : undefined)
+                expect(adapter.hasBasemapLayer('admin-0-label')).toBe(true)
+                expect(adapter.hasBasemapLayer('not-in-style')).toBe(false)
+                expect(initAdapter(null).adapter.hasBasemapLayer('admin-0-label')).toBe(false)
+            })
+
+            // Mid-swap the answer is unknown; it reads as present so groups
+            // do not vanish and come back, and style.load settles it.
+            test('reads every layer as present while a style swap is in flight', () => {
+                const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
+                const map = adapter._basemap
+                map.setStyle = vi.fn()
+                map.getLayer = () => undefined
+                adapter.setBasemapStyle('https://example.com/other.json')
+                expect(adapter.hasBasemapLayer('admin-0-label')).toBe(true)
+
+                fireStyleLoad(map)
+                expect(adapter.hasBasemapLayer('admin-0-label')).toBe(false)
+            })
+
+            // Core's view of the groups, as Map_ builds it from the adapter.
+            // A toggle covers every id in the group, so a group whose ids
+            // span styles reads the same on each.
+            test('groups hide on a style without their layers and hold their choice across styles', () => {
+                const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
+                const map = adapter._basemap
+                map.setStyle = vi.fn()
+                const styleA = new Set(['admin-0-boundary', 'admin-0-label'])
+                const styleB = new Set(['water', 'place-label'])
+                const styleC = new Set(['land'])
+                const useStyle = (layers) => (map.getLayer = (id) => (layers.has(id) ? { id } : undefined))
+                const swapTo = (url, layers) => {
+                    map._layout.length = 0
+                    adapter.setBasemapStyle(url)
+                    useStyle(layers)
+                    fireStyleLoad(map)
+                }
+                const tree = parseBasemapGroups([
+                    { name: 'Borders', layers: ['admin-0-boundary'] },
+                    { name: 'Labels', layers: ['admin-0-label', 'place-label'] },
+                ])
+                const groups = () =>
+                    basemapGroupStates(
+                        tree,
+                        (id) => adapter.getBasemapLayerVisible(id),
+                        (id) => adapter.hasBasemapLayer(id)
+                    ).map((g) => [g.id, g.state])
+                vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+                useStyle(styleA)
+                adapter.setBasemapLayersVisible(tree[1].layers, false)
+                expect(groups()).toEqual([
+                    ['Borders', 'on'],
+                    ['Labels', 'off'],
+                ])
+
+                // Style B's label layer was never shown with Labels off.
+                swapTo('https://example.com/b.json', styleB)
+                expect(groups()).toEqual([['Labels', 'off']])
+                expect(visibility(map)).toEqual([['place-label', 'none']])
+
+                swapTo('https://example.com/c.json', styleC)
+                expect(groups()).toEqual([])
+
+                swapTo('https://example.com/a.json', styleA)
+                expect(groups()).toEqual([
+                    ['Borders', 'on'],
+                    ['Labels', 'off'],
+                ])
+                expect(visibility(map)).toEqual([['admin-0-label', 'none']])
+                console.warn.mockRestore()
             })
         })
 
