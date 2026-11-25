@@ -121,6 +121,8 @@ const validateLayers = (config) => {
         );
     }
 
+    errs = errs.concat(isValidColorBy(layer));
+
     if (layer.uuid != null) {
       if (existingUUIDs.includes(layer.uuid)) {
         errs = errs.concat([
@@ -364,6 +366,54 @@ const hasNonHeaderWithSublayers = (config) => {
           "layers[non-header-layer].!sublayer",
         ])
       );
+  });
+  return errs;
+};
+
+// A bound as saved: a number, or numeric text. A cleared Configure field is "".
+const isBound = (value) =>
+  value != null && value !== "" && Number.isFinite(Number(value));
+
+// A layer's `style.colorBy`, checked for what the map needs to draw it. Only
+// the colormap and ranges modes are read; any other mode draws the fixed color.
+const isValidColorBy = (layer) => {
+  const colorBy = layer.style?.colorBy;
+  const mode = colorBy?.mode;
+  if (mode !== "colormap" && mode !== "ranges") return [];
+
+  const errs = [];
+  const fail = (message, field) =>
+    errs.push(
+      err(`Layer '${layer.name}': ${message}`, [
+        `layers[layer].style.colorBy.${field}`,
+      ])
+    );
+
+  if (typeof colorBy.property !== "string" || colorBy.property.trim() === "")
+    fail("Color by Value needs a Value Property.", "property");
+
+  if (mode === "colormap") {
+    if (typeof colorBy.colormap !== "string" || colorBy.colormap === "")
+      fail("Color by Value needs a Colormap.", "colormap");
+    if (!isBound(colorBy.min) || !isBound(colorBy.max))
+      fail("Color by Value needs a Minimum and a Maximum Data Value.", "min");
+    else if (Number(colorBy.min) >= Number(colorBy.max))
+      fail(
+        "Color by Value's Minimum Data Value must be less than its Maximum Data Value.",
+        "min"
+      );
+    return errs;
+  }
+
+  const bands = Array.isArray(colorBy.ranges) ? colorBy.ranges : [];
+  if (bands.length === 0)
+    fail("Color by Value needs at least one range.", "ranges");
+  bands.forEach((band, i) => {
+    // A null lower bound is a first band open below.
+    if (band?.min !== null && !isBound(band?.min))
+      fail(`Color by Value range ${i + 1} needs a Lower Bound.`, `ranges.${i}.min`);
+    if (typeof band?.color !== "string" || band.color.trim() === "")
+      fail(`Color by Value range ${i + 1} needs a Color.`, `ranges.${i}.color`);
   });
   return errs;
 };

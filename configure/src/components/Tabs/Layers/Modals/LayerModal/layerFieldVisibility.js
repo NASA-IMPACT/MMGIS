@@ -42,6 +42,19 @@ export const ENGINE_HIDDEN_FIELDS = {
     },
 }
 
+// Color by Value on a vector tile layer. Leaflet draws vector tiles through a
+// plugin that does not read the setting; its vector (GeoJSON) layers do.
+const VECTOR_TILE_COLOR_BY_FIELDS = [
+    'style.colorBy.mode',
+    'style.colorBy.property',
+    'style.colorBy.applyToStroke',
+    'style.colorBy.min',
+    'style.colorBy.max',
+    'style.colorBy.unit',
+    'style.colorBy.colormap',
+    'style.colorBy.ranges',
+]
+
 // Fields that only make sense for deck.gl missions and must be ABSENT
 // (not just disabled) when the mission engine is leaflet.
 export const DECK_ONLY_FIELDS = {
@@ -63,6 +76,10 @@ export const DECK_ONLY_FIELDS = {
         'style.hoverHighlightColor',
         'style.hoverHighlightWidth',
     ],
+    // A vector tile layer is stored as either type, by the engine the
+    // mission was made for.
+    vectortile: VECTOR_TILE_COLOR_BY_FIELDS,
+    MVTLayer: VECTOR_TILE_COLOR_BY_FIELDS,
 }
 
 function unionForType(map, layerType) {

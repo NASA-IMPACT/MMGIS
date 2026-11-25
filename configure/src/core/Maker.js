@@ -1319,8 +1319,11 @@ const getComponent = (
         </div>
       );
     case "colordropdown":
+      // A `keepUnset` field is not given its first option when the layer is
+      // closed (see LayerModal), so with no ramp saved it shows none selected.
       let dropdown_value =
-        value || getIn(directConf, com.field, com.options?.[0]);
+        value ||
+        getIn(directConf, com.field, com.keepUnset ? "" : com.options?.[0]);
       inner = (
         <FormControl className={c.dropdown} variant="filled" size="small">
           <InputLabel>{com.name}</InputLabel>
@@ -1355,9 +1358,11 @@ const getComponent = (
           {inlineHelp ? (
             <>
               {inner}
-              <div className={c.textArrayHexes}>
-                <DrawColormap src={source} colormapName={dropdown_value} />
-              </div>
+              {dropdown_value && (
+                <div className={c.textArrayHexes}>
+                  <DrawColormap src={source} colormapName={dropdown_value} />
+                </div>
+              )}
               <Typography className={c.subtitle2}>
                 {com.description || ""}
               </Typography>

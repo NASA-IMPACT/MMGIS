@@ -8,6 +8,7 @@ import {
     constructVectorLayer,
     constructSublayers,
 } from '../Layers_/LayerConstructors'
+import { unpackFeatureProperties } from '../Layers_/packedProperties'
 import Filtering from '../Layers_/Filtering/Filtering'
 import Viewer_ from '../Viewer_/Viewer_'
 import Globe_ from '../Globe_/Globe_'
@@ -1996,12 +1997,7 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
         maxNativeZoom: layerObj.maxNativeZoom,
         getFeatureId: (function (vtId) {
             return function (f) {
-                if (
-                    f.properties.properties &&
-                    typeof f.properties.properties === 'string'
-                ) {
-                    f.properties = JSON.parse(f.properties.properties)
-                }
+                f.properties = unpackFeatureProperties(f.properties)
                 return f.properties[vtId]
             }
         })(layerObj.style.vtId),

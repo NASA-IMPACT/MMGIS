@@ -7,7 +7,8 @@ import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import { parseExtendedGeoJSON, getCoordProperties } from './ExtendedGeoJSON'
-import { compileLegendStyle, resolveLegendStyle } from './LegendStyle'
+import { compileLegendStyle } from './LegendStyle'
+import { compileColorBy, resolveFeatureColors } from './ColorBy'
 
 import { centroid } from '@turf/turf'
 
@@ -84,6 +85,10 @@ export const constructVectorLayer = (
         return memoisedCompiledLegend
     }
 
+    // Part of the layer's own configuration, so unlike the legend it is
+    // settled before the layer is built and compiles once.
+    const compiledColorBy = compileColorBy(layerObj.style.colorBy)
+
     let leafletLayerObject = {
         style: function (feature, preferredStyle) {
             if (preferredStyle) {
@@ -110,30 +115,37 @@ export const constructVectorLayer = (
                         : rad
             }
 
-            // Legend-driven styling wins over the layer's configured style,
-            // but not over a style carried on the feature itself (handled by
-            // the branch below). Resolved into locals rather than written back
-            // onto `col`/`fiC`: those are closure variables shared by every
-            // feature, so assigning to them leaked one feature's legend colour
-            // into the next feature's fallback.
-            const legendStyle = resolveLegendStyle(
+            // Value-driven styling — the `colorBy` setting, else legend rows
+            // (see resolveFeatureColors) — wins over the layer's configured
+            // style, but not over a style carried on the feature itself
+            // (handled by the branch below). Resolved into locals rather than
+            // written back onto `col`/`fiC`: those are closure variables
+            // shared by every feature, so assigning to them leaked one
+            // feature's colour into the next feature's fallback.
+            const legendStyle = resolveFeatureColors(
+                compiledColorBy,
                 compiledLegend(),
                 feature.properties
             )
             const resolvedCol = legendStyle?.color ?? col
             const resolvedFiC = legendStyle?.fillColor ?? fiC
 
+            // Each feature is styled on a copy of the configured style: the
+            // layer object outlives this build, and a rebuild (a time step,
+            // a filter) falls back to its style, so no feature's colours may
+            // be written into it.
+            let style = { ...layerObj.style }
+
             if (feature.properties.hasOwnProperty('style')) {
                 let className = layerObj.uuid
-                let layerName = layerObj.style.layerName
-                layerObj.style = Object.assign({}, layerObj.style)
-                layerObj.style = {
-                    ...layerObj.style,
+                let layerName = style.layerName
+                style = {
+                    ...style,
                     ...JSON.parse(JSON.stringify(feature.properties.style)),
                 }
 
-                if (className) layerObj.style.className = className
-                if (layerName) layerObj.style.layerName = layerName
+                if (className) style.className = className
+                if (layerName) style.layerName = layerName
             } else {
                 // Priority to prop, prop.color, then style color.
                 var finalCol =
@@ -193,40 +205,40 @@ export const constructVectorLayer = (
                         ? ' noPointerEvents'
                         : ''
 
-                layerObj.style.color = finalCol || '#FFF'
-                layerObj.style.opacity = finalOpa === 'undefined' ? 1 : finalOpa
-                layerObj.style.weight =
+                style.color = finalCol || '#FFF'
+                style.opacity = finalOpa === 'undefined' ? 1 : finalOpa
+                style.weight =
                     finalWei === 'undefined' ? '2' : finalWei
-                layerObj.style.fillColor = finalFiC || '#FFF'
-                layerObj.style.fillOpacity =
+                style.fillColor = finalFiC || '#FFF'
+                style.fillOpacity =
                     finalFiO === 'undefined' ? '1' : finalFiO
 
-                layerObj.style.radius = finalRad || 8
+                style.radius = finalRad || 8
             }
             if (
                 noPointerEventsClass != null &&
-                layerObj.style.className.indexOf(noPointerEventsClass) === -1
+                style.className.indexOf(noPointerEventsClass) === -1
             )
-                layerObj.style.className =
-                    layerObj.style.className + noPointerEventsClass
+                style.className =
+                    style.className + noPointerEventsClass
 
             // Add animation class if animation is enabled
             var animationClass = ''
             if (
-                layerObj.style.animation &&
-                layerObj.style.animation !== 'none'
+                style.animation &&
+                style.animation !== 'none'
             ) {
-                animationClass = ' mmgis-vector-' + layerObj.style.animation
+                animationClass = ' mmgis-vector-' + style.animation
             }
             if (
                 animationClass !== '' &&
-                layerObj.style.className.indexOf(animationClass) === -1
+                style.className.indexOf(animationClass) === -1
             ) {
-                layerObj.style.className =
-                    layerObj.style.className + animationClass
+                style.className =
+                    style.className + animationClass
             }
 
-            layerObj.style.metadata = geojson.metadata || {}
+            style.metadata = geojson.metadata || {}
 
             if (
                 feature.properties?.style?.geologic &&
@@ -236,10 +248,9 @@ export const constructVectorLayer = (
                     feature.geometry.type.toLowerCase() === 'multipolygon') &&
                 typeof LayerGeologic.getUrl === 'function'
             ) {
-                const style = feature.properties.style
-                const g = style.geologic
+                const g = feature.properties.style.geologic
 
-                layerObj.style.fillPattern = LayerGeologic.getFillPattern(
+                style.fillPattern = LayerGeologic.getFillPattern(
                     LayerGeologic.getUrl(
                         g.type,
                         LayerGeologic.getTag(g.tag, g.color)
@@ -256,7 +267,7 @@ export const constructVectorLayer = (
                     Map_.map
                 )
             }
-            return layerObj.style
+            return style
         },
         onEachFeature: (function (layerObjName) {
             return onEachFeatureDefault
@@ -444,14 +455,14 @@ export const constructVectorLayer = (
                     layer = L.circleMarker(
                         latlong,
                         circleMarkerStyle
-                    ).setRadius(layerObj.style.radius || layerObj.radius || 8)
+                    ).setRadius(circleMarkerStyle.radius || layerObj.radius || 8)
                     break
                 default:
                     svg = [
                         `<div style="color: ${
                             featureStyle.fillColor
                         }; transform: scale(${
-                            ((layerObj.style.radius || layerObj.radius || 8) *
+                            ((featureStyle.radius || layerObj.radius || 8) *
                                 2) /
                             24
                         }) rotate(${
@@ -459,7 +470,7 @@ export const constructVectorLayer = (
                                 ? parseFloat(layerObj.style.shapeRotationOffset)
                                 : 0) + (yaw || 0)
                         }deg); ${
-                            layerObj.style.weight != 0
+                            featureStyle.weight != 0
                                 ? `text-shadow:  
                             1px 1px 0px ${featureStyle.color}, 
                             -1px -1px 0px ${featureStyle.color}, 

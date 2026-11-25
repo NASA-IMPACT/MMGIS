@@ -267,6 +267,9 @@ const LayerModal = (props) => {
                 const currentValue = getIn(l, c.field.split("."), null);
                 if (currentValue != null)
                   setIn(completedLayer, c.field.split("."), currentValue, true);
+                // Left unset rather than given a default, for a field whose
+                // absence has its own meaning.
+                if (c.keepUnset) return;
 
                 if (c.type === "dropdown" || c.type === "colordropdown") {
                   const currentValue = getIn(l, c.field);

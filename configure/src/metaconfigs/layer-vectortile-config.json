@@ -210,6 +210,111 @@
           ]
         },
         {
+          "name": "Color by Value",
+          "components": [
+            {
+              "field": "style.colorBy.mode",
+              "name": "Color by Value",
+              "description": "Colors each feature by the value of one of its properties. 'none' leaves the layer colored as it would be without this setting: by its legend rows with Style Matching on, otherwise by Fill Color. 'colormap' spreads the value across a color ramp between a minimum and a maximum. 'ranges' places the value in bands, each with its own color. Takes priority over Fill Color and over legend-driven colors.",
+              "type": "dropdown",
+              "width": 3,
+              "options": [
+                "none",
+                "colormap",
+                "ranges"
+              ],
+              "default": "none",
+              "keepUnset": true
+            },
+            {
+              "field": "style.colorBy.property",
+              "name": "Value Property",
+              "description": "The feature property holding the value, for example 'sample_measurement'. Only numeric values are colored; a feature without one keeps the fixed color.",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "style.colorBy.applyToStroke",
+              "name": "Color the Stroke Too",
+              "description": "Also color each feature's stroke by its value. Off colors the fill only.",
+              "type": "switch",
+              "width": 3,
+              "defaultChecked": false,
+              "keepUnset": true
+            }
+          ]
+        },
+        {
+          "name": "Colormap",
+          "components": [
+            {
+              "field": "style.colorBy.min",
+              "name": "Minimum Data Value",
+              "description": "Colormap only. The value drawn with the first color of the ramp. Lower values take that color too.",
+              "type": "number",
+              "width": 2
+            },
+            {
+              "field": "style.colorBy.max",
+              "name": "Maximum Data Value",
+              "description": "Colormap only. The value drawn with the last color of the ramp. Higher values take that color too. Must be greater than the minimum.",
+              "type": "number",
+              "width": 2
+            },
+            {
+              "field": "style.colorBy.unit",
+              "name": "Units",
+              "description": "Colormap only. Units shown after the values in the legend, for example 'µg/m³'.",
+              "type": "textnotrim",
+              "width": 2
+            },
+            {
+              "field": "style.colorBy.colormap",
+              "name": "Colormap",
+              "description": "Colormap only. The color ramp, the same list raster layers offer. A name ending in '_r' is the reversed ramp.",
+              "type": "colordropdown",
+              "width": 3,
+              "options": "{{COLORMAP_NAMES}}",
+              "keepUnset": true
+            }
+          ]
+        },
+        {
+          "name": "Ranges",
+          "components": [
+            {
+              "field": "style.colorBy.ranges",
+              "name": "Ranges",
+              "description": "Ranges only. One row per band. A band runs from its lower bound up to the next band's lower bound, and the highest band has no upper limit. A value equal to a lower bound takes that band. Values below the lowest bound keep the fixed color. A band without a label is labeled from its bounds in the legend.",
+              "type": "objectarray",
+              "width": 12,
+              "object": [
+                {
+                  "field": "min",
+                  "name": "Lower Bound",
+                  "description": "The smallest value in this band.",
+                  "type": "number",
+                  "width": 3
+                },
+                {
+                  "field": "color",
+                  "name": "Color",
+                  "description": "The color of features in this band.",
+                  "type": "colorpicker",
+                  "width": 2
+                },
+                {
+                  "field": "label",
+                  "name": "Label",
+                  "description": "Legend text for this band, for example '50-149 MW'.",
+                  "type": "text",
+                  "width": 4
+                }
+              ]
+            }
+          ]
+        },
+        {
           "components": [
             {
               "field": "style.weight",

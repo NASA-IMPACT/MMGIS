@@ -22,7 +22,9 @@ import { Tiles3DLoader } from '@loaders.gl/3d-tiles'
 import { WMSImageSource } from '@loaders.gl/wms'
 import { color as parseColor } from 'd3'
 
-import { compileLegendStyle, resolveLegendStyle } from '../../Layers_/LegendStyle'
+import { compileLegendStyle } from '../../Layers_/LegendStyle'
+import { compileColorBy, resolveFeatureColors } from '../../Layers_/ColorBy'
+import { unpackFeatureProperties } from '../../Layers_/packedProperties'
 import { FLAT_LAYER_PARAMETERS } from './flatLayerParameters'
 
 import type { LatLng, LatLngLike, BoundsLike, PointLike, PaddingLike } from '../types/geometry'
@@ -159,15 +161,17 @@ export function pickInfoToResult(info: PickingInfo): FeaturePickResult {
 
 /**
  * The bag a feature's property names are looked up against: a GeoJSON
- * feature's `.properties`, or a plain data record read directly.
+ * feature's `.properties`, or a plain data record read directly. Properties a
+ * geodataset vector tile packs into one JSON string are unpacked, as the
+ * Leaflet engine unpacks them.
  * @param object - GeoJSON feature or plain data record.
  * @returns Null when there is nothing to read properties from.
  */
 function featureProperties(object: unknown): Record<string, unknown> | null {
     if (object == null || typeof object !== 'object') return null
-    return (
+    return unpackFeatureProperties(
         (object as { properties?: Record<string, unknown> }).properties ??
-        (object as Record<string, unknown>)
+            (object as Record<string, unknown>)
     )
 }
 
@@ -339,10 +343,11 @@ function parseWmsUrl(url: string): {
  * not carry that property. When no `*Prop` is configured the accessor is
  * returned as a plain constant, so deck.gl skips per-feature evaluation.
  *
- * `legendData` is the layer's legend, which doubles as a style specification
- * (see LegendStyle). Its colours outrank both the `*Prop` and the flat fields,
- * matching the precedence the Leaflet vector path has always applied. It is
- * compiled here, once per layer build, because deck.gl re-runs an accessor
+ * Value-driven colours come first: the style's `colorBy` setting (see
+ * ColorBy) when it has one, otherwise `legendData`, the layer's legend, which
+ * doubles as a style specification (see LegendStyle). Either outranks both
+ * the `*Prop` and the flat fields, matching the precedence the Leaflet vector
+ * path applies. Both are compiled here, once per layer build, because deck.gl re-runs an accessor
  * over every feature whenever it regenerates that attribute — on a data
  * change, on an updateTrigger change, and for each newly loaded tile — so
  * anything hoistable belongs outside the accessor. A legend that specifies no
@@ -353,13 +358,19 @@ function resolveStyleAccessors(
     legendData?: unknown,
     legendConfigured?: boolean
 ) {
+    const colorBy = compileColorBy(style.colorBy)
     const legend = compileLegendStyle(legendData)
+    const valueStyled = Boolean(colorBy || legend)
+    const valueColors = (feature: Record<string, unknown>) =>
+        valueStyled
+            ? resolveFeatureColors(colorBy, legend, featureProperties(feature))
+            : null
 
-    // A digest of the compiled legend, for the `vectortile` case's
-    // updateTriggers. deck.gl compares accessor props as always equal, so an
-    // accessor closing over a different legend needs a trigger value that
-    // differs before it is re-run. Legends are a handful of rows.
-    const legendFingerprint = legend ? JSON.stringify(legend) : ''
+    // A digest of the compiled colorBy setting and legend, for the
+    // `vectortile` case's updateTriggers. deck.gl compares accessor props as
+    // always equal, so an accessor closing over a different setting needs a
+    // trigger value that differs before it is re-run.
+    const legendFingerprint = valueStyled ? JSON.stringify([colorBy, legend]) : ''
 
     const staticFillColor = hexToRgba(
         style.fillColor as string | undefined,
@@ -382,15 +393,14 @@ function resolveStyleAccessors(
     const radiusProp = style.radiusProp as string | undefined
 
     const getFillColor =
-        fillColorProp || fillOpacityProp || legend
+        fillColorProp || fillOpacityProp || valueStyled
             ? (feature: Record<string, unknown>) => {
-                  // A feature the legend does not cover — no such property,
-                  // or a non-numeric value — resolves to undefined here and
-                  // drops through to the *Prop and flat colours below, so it
-                  // keeps the layer's fixed colour rather than drawing black.
-                  const legendVal = legend
-                      ? resolveLegendStyle(legend, featureProperties(feature))?.fillColor
-                      : undefined
+                  // A feature value styling does not cover — no such
+                  // property, or a non-numeric value — resolves to undefined
+                  // here and drops through to the *Prop and flat colours
+                  // below, so it keeps the layer's fixed colour rather than
+                  // drawing black.
+                  const legendVal = valueColors(feature)?.fillColor
                   const hexVal = fillColorProp
                       ? (getPropValue(feature, fillColorProp) as string | undefined)
                       : undefined
@@ -412,11 +422,9 @@ function resolveStyleAccessors(
             : staticFillColor
 
     const getLineColor =
-        colorProp || opacityProp || legend
+        colorProp || opacityProp || valueStyled
             ? (feature: Record<string, unknown>) => {
-                  const legendVal = legend
-                      ? resolveLegendStyle(legend, featureProperties(feature))?.color
-                      : undefined
+                  const legendVal = valueColors(feature)?.color
                   const hexVal = colorProp
                       ? (getPropValue(feature, colorProp) as string | undefined)
                       : undefined
@@ -457,7 +465,7 @@ function resolveStyleAccessors(
     // because the layer built without it is the one deck.gl settles the
     // format on.
     const readsFeatureProperties = Boolean(
-        legend ||
+        valueStyled ||
             legendConfigured ||
             fillColorProp ||
             fillOpacityProp ||
