@@ -555,8 +555,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     // A style that fails to download fires only `error`, never `style.load`.
     // Any error during a swap ends the wait: the anchor is checked against
     // the live style on every sync, so at worst one sync re-anchors early.
+    // maplibre drops the old style when a swap starts, so a failed swap
+    // leaves no style to name; forgetting the URL lets a retry go through.
     private _onBasemapError = (): void => {
-        if (this._styleSwapping) this._onBasemapLoad()
+        if (!this._styleSwapping) return
+        this._basemapStyle = null
+        this._onBasemapLoad()
     }
 
     /**

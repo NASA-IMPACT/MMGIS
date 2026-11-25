@@ -1889,6 +1889,17 @@ test.describe('DeckGLAdapter', () => {
             expect(anchors()).toEqual(['place-labels'])
         })
 
+        test('re-picking a style that failed to download tries it again', () => {
+            const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
+            const map = adapter._basemap
+            map.setStyle = vi.fn()
+
+            adapter.setBasemapStyle('https://example.com/missing.json')
+            map._on.filter(([type]) => type === 'error').forEach(([, handler]) => handler())
+            adapter.setBasemapStyle('https://example.com/missing.json')
+            expect(map.setStyle).toHaveBeenCalledTimes(2)
+        })
+
         test('an error outside a swap changes nothing', () => {
             const { adapter } = initAdapter(MAPLIBRE_BASEMAP)
             const map = adapter._basemap
