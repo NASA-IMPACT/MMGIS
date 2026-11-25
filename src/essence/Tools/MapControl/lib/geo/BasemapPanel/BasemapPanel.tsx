@@ -1,5 +1,5 @@
-import React from 'react'
-import type { BasemapStyle } from '../../types'
+import React, { useEffect, useRef } from 'react'
+import type { BasemapGroup, BasemapGroupState, BasemapStyle } from '../../types'
 import { basemapGradient } from '../../utils/basemap'
 
 export type BasemapPanelProps = {
@@ -9,35 +9,42 @@ export type BasemapPanelProps = {
     active: BasemapStyle | null
     /** Called when a style row is chosen. */
     onSelect: (style: BasemapStyle) => void
-    /** Whether the basemap's labels show; null or undefined when the map
-     *  cannot toggle them, which leaves the checkbox out. */
-    labelsVisible?: boolean | null
-    onToggleLabels?: (visible: boolean) => void
+    /** Named layer groups, one checkbox each, a parent's children indented
+     *  under it; empty leaves them out. */
+    groups?: BasemapGroup[]
+    onToggleGroup?: (id: string, visible: boolean) => void
 }
 
 export function BasemapPanel({
     styles,
     active,
     onSelect,
-    labelsVisible,
-    onToggleLabels,
+    groups = [],
+    onToggleGroup,
 }: BasemapPanelProps) {
-    const hasLabelsToggle = typeof labelsVisible === 'boolean' && Boolean(onToggleLabels)
     return (
         <div className="blocks-basemap-panel">
             <div className="blocks-basemap-panel__header">
                 <span>Basemap style</span>
-                {hasLabelsToggle && (
-                    <label className="blocks-basemap-panel__labels">
-                        <input
-                            type="checkbox"
-                            checked={labelsVisible}
-                            onChange={(e) => onToggleLabels?.(e.target.checked)}
-                        />
-                        Labels
-                    </label>
-                )}
             </div>
+            {groups.length > 0 && onToggleGroup && (
+                <div className="blocks-basemap-panel__groups">
+                    {groups.map((group) =>
+                        group.children ? (
+                            <div key={group.id} className="blocks-basemap-panel__group">
+                                <GroupCheckbox group={group} onToggle={onToggleGroup} />
+                                <div className="blocks-basemap-panel__children">
+                                    {group.children.map((child) => (
+                                        <GroupCheckbox key={child.id} group={child} onToggle={onToggleGroup} />
+                                    ))}
+                                </div>
+                            </div>
+                        ) : (
+                            <GroupCheckbox key={group.id} group={group} onToggle={onToggleGroup} />
+                        ),
+                    )}
+                </div>
+            )}
             {styles.map((entry) => {
                 const isActive = active?.name === entry.name
                 return (
@@ -56,5 +63,33 @@ export function BasemapPanel({
                 )
             })}
         </div>
+    )
+}
+
+/**
+ * One group's or child's checkbox. A mixed one shows half-checked; clicking
+ * it turns every layer on, a parent's children's included.
+ */
+function GroupCheckbox({
+    group,
+    onToggle,
+}: {
+    group: BasemapGroupState
+    onToggle: (id: string, visible: boolean) => void
+}) {
+    const ref = useRef<HTMLInputElement>(null)
+    useEffect(() => {
+        if (ref.current) ref.current.indeterminate = group.state === 'mixed'
+    }, [group.state])
+    return (
+        <label className="blocks-basemap-panel__group-label">
+            <input
+                ref={ref}
+                type="checkbox"
+                checked={group.state === 'on'}
+                onChange={() => onToggle(group.id, group.state !== 'on')}
+            />
+            {group.name}
+        </label>
     )
 }
