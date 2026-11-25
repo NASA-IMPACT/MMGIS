@@ -34,12 +34,14 @@
  *         "unit": "µg/m³"
  *     }
  *
- * A ramp named with an `_r` suffix is reversed as well.
+ * A ramp named with an `_r` suffix is reversed as well. A ramp the bundle
+ * does not hold is looked up from the layer's tiling service (see
+ * {@link loadColormapRamp}); until it arrives the setting places no feature.
  *
  * Only the fill is coloured unless `applyToStroke` is true. A feature the
  * setting cannot place (property missing or not a number, or below a closed
  * first band) keeps the layer's fixed colour. A setting this build cannot use
- * (unknown mode, no property, no usable band, an unknown ramp, `max <= min`)
+ * (unknown mode, no property, no usable band, `max <= min`)
  * compiles to null, and the layer styles as if it had none.
  *
  * `compileColorBy` digests the setting once per layer; `resolveColorBy` runs
@@ -55,7 +57,10 @@ import {
     type LegendStyleResult,
 } from './LegendStyle'
 import { toCanonicalLayerType, MAP_ENGINE } from '../MapEngines/types/engine'
-import { bundledColormapColors } from '../Colormaps/resolveColormapColors'
+import {
+    bundledColormapColors,
+    lookupColormapColors,
+} from '../Colormaps/resolveColormapColors'
 import {
     getBaseColormapName,
     isReversedColormap,
@@ -126,7 +131,8 @@ export interface CompiledColormap {
     min: number
     max: number
     unit: string | null
-    colors: string[]
+    /** Null while a service-defined ramp is still being looked up. */
+    colors: string[] | null
 }
 
 export type CompiledColorBy = CompiledRanges | CompiledColormap
@@ -287,6 +293,32 @@ export function colorByColormapName(config: unknown): string | null {
         : base
 }
 
+/**
+ * Service-defined ramps already looked up, keyed by lowercased name with any
+ * `_r` suffix, shared by every layer naming them.
+ */
+const ramps = new Map<string, string[]>()
+const rampKey = (name: string): string => name.toLowerCase()
+
+/**
+ * A ramp's colours: bundled, or looked up from the layer's tiling service and
+ * kept for every later compile. Null for a ramp no source defines, which is
+ * not kept, so it is asked for again later. Never rejects.
+ */
+export async function loadColormapRamp(
+    name: string,
+    titilerUrl: string | null
+): Promise<string[] | null> {
+    const known = bundledColormapColors(name) ?? ramps.get(rampKey(name))
+    if (known) return known
+    const defined = await lookupColormapColors(name, titilerUrl)
+    if (defined && defined.length > 0) {
+        ramps.set(rampKey(name), defined)
+        return defined
+    }
+    return null
+}
+
 const toFinite = (value: unknown): number | null => {
     if (value == null || value === '') return null
     const num = Number(value)
@@ -303,8 +335,6 @@ function compileColormap(
     const max = toFinite(config.max)
     if (colormap == null || min == null || max == null || !(max > min))
         return null
-    const colors = bundledColormapColors(colormap)
-    if (!colors) return null
     return {
         mode: 'colormap',
         property,
@@ -316,7 +346,8 @@ function compileColormap(
             typeof config.unit === 'string' && config.unit !== ''
                 ? config.unit
                 : null,
-        colors,
+        colors:
+            bundledColormapColors(colormap) ?? ramps.get(rampKey(colormap)) ?? null,
     }
 }
 
@@ -324,7 +355,8 @@ function compileColormap(
 function colormapColor(
     { colors, min, max }: CompiledColormap,
     value: number
-): string {
+): string | null {
+    if (!colors) return null
     const t = Math.min(1, Math.max(0, (value - min) / (max - min)))
     return colors[Math.floor(t * (colors.length - 1))]
 }

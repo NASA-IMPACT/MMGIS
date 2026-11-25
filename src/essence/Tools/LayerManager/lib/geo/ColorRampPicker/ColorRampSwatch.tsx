@@ -8,7 +8,7 @@ export type ColorRampSwatchProps = {
     name: string
     reversed: boolean
     selected: boolean
-    titilerUrl?: string | null
+    layerId: string
     /** Scroll container the visibility check measures against. */
     rootRef: RefObject<HTMLElement | null>
     onSelect: (name: string) => void
@@ -17,8 +17,8 @@ export type ColorRampSwatchProps = {
 /**
  * One selectable ramp, previewed as the gradient it produces.
  *
- * Every swatch costs a request for its color definition, and the service
- * offers upwards of a hundred ramps, so a row resolves its colors only once it
+ * Every swatch costs a lookup of its color definition, and a service can
+ * offer upwards of a hundred ramps, so a row resolves its colors only once it
  * scrolls into view. Having appeared, it stays resolved — scrolling back over
  * a row should not make it flicker through a loading state again.
  */
@@ -26,7 +26,7 @@ function ColorRampSwatchComponent({
     name,
     reversed,
     selected,
-    titilerUrl,
+    layerId,
     rootRef,
     onSelect,
 }: ColorRampSwatchProps) {
@@ -54,7 +54,7 @@ function ColorRampSwatchComponent({
         return () => observer.disconnect()
     }, [hasAppeared, rootRef])
 
-    const { colors } = useColormapColors(name, reversed, titilerUrl, hasAppeared)
+    const { colors } = useColormapColors(name, reversed, layerId, hasAppeared)
 
     return (
         <button

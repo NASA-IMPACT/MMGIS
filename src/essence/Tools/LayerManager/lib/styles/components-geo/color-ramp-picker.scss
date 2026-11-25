@@ -96,9 +96,15 @@ $ramp-picker-max-height: 380px;
         cursor: pointer;
         transition: background-color 0.15s ease, color 0.15s ease;
 
-        &:hover {
+        &:hover:not(:disabled) {
             background-color: var(--theme-color-primary-lightest, #0e7482);
             color: var(--theme-color-base-primary, #0e7482);
+        }
+
+        /* Offered only for a ramp with a reversed form; see canReverseColormap. */
+        &:disabled {
+            opacity: 0.5;
+            cursor: default;
         }
 
         &--active {

@@ -13,6 +13,7 @@ import { ColorRampSwatch } from './ColorRampSwatch'
 import { useAvailableColormaps } from '../../hooks/useAvailableColormaps'
 import {
     applyColormapDirection,
+    canReverseColormap,
     getBaseColormapName,
     isReversedColormap,
     toForwardColormapNames,
@@ -27,7 +28,6 @@ export type ColorRampPickerProps = {
     min: number | null
     max: number | null
     units?: string | null
-    titilerUrl?: string | null
     onColormapChange?: (layerId: string, colormap: string) => void
     onRescaleChange?: (layerId: string, min: number, max: number) => void
 }
@@ -46,7 +46,6 @@ export function ColorRampPicker({
     min,
     max,
     units,
-    titilerUrl,
     onColormapChange,
     onRescaleChange,
 }: ColorRampPickerProps) {
@@ -73,7 +72,7 @@ export function ColorRampPicker({
     const {
         colormaps: availableColormaps,
         loading: colormapsLoading,
-    } = useAvailableColormaps(titilerUrl)
+    } = useAvailableColormaps(layerId)
 
     // The service reports each ramp twice, forward and reversed; direction is
     // the toggle's job, so only the forward names are listed.
@@ -82,6 +81,9 @@ export function ColorRampPicker({
         [availableColormaps],
     )
     const rampsUnavailable = !colormapsLoading && rampNames.length === 0
+    // A reversed ramp can always be turned back.
+    const reversible =
+        reversed || canReverseColormap(selectedBase, availableColormaps)
 
     // Track what the layer reports, so an externally applied rescale shows up
     // here. A focused range is a half-finished edit and is left alone —
@@ -104,9 +106,11 @@ export function ColorRampPicker({
         [layerId, onColormapChange],
     )
 
+    // A ramp with no reversed form is applied forward whatever the toggle says.
     const handleSelect = useCallback(
-        (base: string) => applyRamp(base, reversed),
-        [applyRamp, reversed],
+        (base: string) =>
+            applyRamp(base, reversed && canReverseColormap(base, availableColormaps)),
+        [applyRamp, reversed, availableColormaps],
     )
 
     const handleReverseToggle = useCallback(() => {
@@ -210,7 +214,12 @@ export function ColorRampPicker({
                         reversed ? 'blocks-color-ramp-picker__reverse--active' : ''
                     }`}
                     onClick={handleReverseToggle}
-                    title="Reverse the ramp direction"
+                    disabled={!reversible}
+                    title={
+                        reversible
+                            ? 'Reverse the ramp direction'
+                            : 'This ramp has no reversed form'
+                    }
                 >
                     <i aria-hidden="true" className="mdi mdi-swap-horizontal mdi-14px" />
                     <span>Reverse</span>
@@ -237,9 +246,14 @@ export function ColorRampPicker({
                             <ColorRampSwatch
                                 key={name}
                                 name={name}
-                                reversed={reversed}
+                                // Previewed as it would be applied: forward when
+                                // the ramp has no reversed form.
+                                reversed={
+                                    reversed &&
+                                    canReverseColormap(name, availableColormaps)
+                                }
                                 selected={name.toLowerCase() === selectedBase}
-                                titilerUrl={titilerUrl}
+                                layerId={layerId}
                                 rootRef={listRef}
                                 onSelect={handleSelect}
                             />

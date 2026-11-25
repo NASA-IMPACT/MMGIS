@@ -525,6 +525,40 @@ export const mmgisGetTiTilerUrls = (): Promise<Record<
 }
 
 /**
+ * The ramp names a layer can be offered, forward and `_r`. Null for an
+ * unknown layer, or against a core without the handler.
+ */
+export const mmgisGetLayerColormaps = (layerId: string): Promise<string[] | null> =>
+    mmgisRequestIfProvided<string[]>('layers:getColormaps', layerId)
+
+/**
+ * One ramp's colours as the layer's sources define them, `_r` for reversed.
+ * Null for a ramp none holds, or against a core without the handler.
+ */
+export const mmgisGetLayerColormapColors = (
+    layerId: string,
+    colormap: string,
+): Promise<string[] | null> =>
+    mmgisRequestIfProvided<string[]>('layers:getColormapColors', {
+        layerUUID: layerId,
+        colormap,
+    })
+
+/**
+ * Change a layer's ramp (`_r` for reversed), its bounds, or both; core
+ * repaints it. False when the layer cannot take the change, or against a core
+ * without the handler.
+ */
+export const mmgisSetLayerColormap = async (
+    layerId: string,
+    change: { colormap?: string; min?: number; max?: number },
+): Promise<boolean> =>
+    (await mmgisRequestIfProvided<boolean>('layers:setColormap', {
+        layerUUID: layerId,
+        ...change,
+    })) === true
+
+/**
  * Where the active mission's files are served from, e.g. `Missions/MSL/`.
  * Uploads configured through the Configure page are stored as paths relative
  * to this. Null before a mission loads, or against a core without the handler.

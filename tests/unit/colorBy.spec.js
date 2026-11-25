@@ -1,6 +1,7 @@
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect, vi } from 'vitest'
 import {
     compileColorBy,
+    loadColormapRamp,
     resolveColorBy,
     resolveFeatureColors,
     readsColorBy,
@@ -41,7 +42,6 @@ describe('compileColorBy', () => {
         ['an unknown mode', { mode: 'categories', property: 'x' }],
         ['no property', { ...FRP, property: '' }],
         ['no usable band', { ...FRP, ranges: [{ min: 0, color: 'not-a-colour' }] }],
-        ['a ramp the bundle lacks', { ...PM25, colormap: 'naqfc_pm25' }],
         ['max not above min', { ...PM25, min: 5, max: 5 }],
         ['a missing bound', { ...PM25, max: undefined }],
     ])('is null for %s', (_, config) => {
@@ -103,6 +103,60 @@ describe('colormap', () => {
 
     test('leaves a missing value unplaced', () => {
         expect(fill(PM25, undefined)).toBeNull()
+    })
+
+    test('places nothing with a service-defined ramp until it is loaded, then keeps it', async () => {
+        const custom = { ...PM25, colormap: 'site_ramp' }
+        const ramp = ['rgba(255, 0, 0, 1)', 'rgba(0, 0, 255, 1)']
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => ({
+                ok: true,
+                json: async () => ({ 0: [255, 0, 0, 255], 1: [0, 0, 255, 255] }),
+            }))
+        )
+        try {
+            expect(fill(custom, 18)).toBeNull()
+            expect(await loadColormapRamp('site_ramp', 'https://titiler.test')).toEqual(ramp)
+            expect(fill(custom, 18)).toBe(ramp[1])
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
+    test('keeps no ramp the service failed to supply', async () => {
+        vi.spyOn(console, 'warn').mockImplementation(() => {})
+        vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 503 })))
+        try {
+            expect(await loadColormapRamp('down_ramp', 'https://titiler.test')).toBeNull()
+            expect(compileColorBy({ ...PM25, colormap: 'down_ramp' }).colors).toBeNull()
+        } finally {
+            vi.unstubAllGlobals()
+            vi.restoreAllMocks()
+        }
+    })
+
+    // The map paints such a layer its fixed colour, so the legend must not
+    // show a ramp. It keeps the name and range, so the ramp can be changed.
+    test('draws no gradient for a ramp no source defines', async () => {
+        vi.spyOn(console, 'warn').mockImplementation(() => {})
+        vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404 })))
+        try {
+            const legend = await buildLayerLegend(
+                { type: 'MVTLayer', style: { colorBy: { ...PM25, colormap: 'typo_ramp' } } },
+                'https://titiler.test'
+            )
+            expect(legend).toMatchObject({
+                type: 'none',
+                stops: null,
+                colormap: 'typo_ramp',
+                min: 1,
+                max: 18,
+            })
+        } finally {
+            vi.unstubAllGlobals()
+            vi.restoreAllMocks()
+        }
     })
 })
 
