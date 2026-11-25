@@ -13,10 +13,6 @@
 
     &__header {
         flex-shrink: 0;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: var(--theme-spacing-1, 0.5rem);
         padding: var(--theme-spacing-1, 0.5rem) var(--theme-spacing-105, 0.75rem) var(--theme-spacing-05, 0.25rem);
         font-size: var(--theme-font-size-3xs, 0.75rem);
         font-weight: var(--theme-font-weight-bold, 700);
@@ -25,15 +21,11 @@
         color: var(--theme-color-base, #77777a);
     }
 
-    /* The labels on/off checkbox at the end of the header row: plain case
-       and weight so it reads as a control, not a second heading. */
-    &__labels {
+    /* A group's checkbox and name. */
+    &__group-label {
         display: inline-flex;
         align-items: center;
         gap: var(--theme-spacing-05, 0.25rem);
-        font-weight: var(--theme-font-weight-normal, 400);
-        letter-spacing: 0;
-        text-transform: none;
         color: var(--theme-color-ink, #1b1b1b);
         cursor: pointer;
         white-space: nowrap;
@@ -48,6 +40,37 @@
                 outline-offset: 2px;
             }
         }
+    }
+
+    /* A parent group: its checkbox, then its children's. */
+    &__group {
+        display: flex;
+        flex-direction: column;
+        gap: var(--theme-spacing-05, 0.25rem);
+
+        > .blocks-basemap-panel__group-label {
+            font-weight: var(--theme-font-weight-bold, 700);
+        }
+    }
+
+    /* A parent's children, indented under it behind a guide line. */
+    &__children {
+        display: flex;
+        flex-direction: column;
+        gap: var(--theme-spacing-05, 0.25rem);
+        margin-left: var(--theme-spacing-05, 0.25rem);
+        padding-left: var(--theme-spacing-105, 0.75rem);
+        border-left: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    }
+
+    /* Group checkboxes (Labels, Country borders), one per line under the header. */
+    &__groups {
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        gap: var(--theme-spacing-05, 0.25rem);
+        padding: var(--theme-spacing-05, 0.25rem) var(--theme-spacing-105, 0.75rem) var(--theme-spacing-1, 0.5rem);
+        font-size: var(--theme-font-size-3xs, 0.75rem);
     }
 
     &__row {

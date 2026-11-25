@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type {
     ActionIcon,
+    BasemapGroup,
     BasemapStyle,
     GeocodeResult,
     LatLng,
@@ -19,9 +20,9 @@ export type MapControlBarProps = {
     basemapStyles?: BasemapStyle[]
     activeBasemap?: BasemapStyle | null
     onSelectBasemap?: (style: BasemapStyle) => void
-    /** Basemap labels on or off; null or undefined hides the control. */
-    basemapLabelsVisible?: boolean | null
-    onToggleBasemapLabels?: (visible: boolean) => void
+    /** Named basemap layer groups, one checkbox each; empty hides them. */
+    basemapGroups?: BasemapGroup[]
+    onToggleBasemapGroup?: (id: string, visible: boolean) => void
 
     // Zoom
     onZoomIn?: () => void
@@ -93,8 +94,8 @@ export function MapControlBar({
     basemapStyles = [],
     activeBasemap = null,
     onSelectBasemap,
-    basemapLabelsVisible = null,
-    onToggleBasemapLabels,
+    basemapGroups = [],
+    onToggleBasemapGroup,
     onZoomIn,
     onZoomOut,
     subscribeToMap,
@@ -274,8 +275,8 @@ export function MapControlBar({
                             onSelectBasemap?.(entry)
                             setBasemapOpen(false)
                         }}
-                        labelsVisible={basemapLabelsVisible}
-                        onToggleLabels={onToggleBasemapLabels}
+                        groups={basemapGroups}
+                        onToggleGroup={onToggleBasemapGroup}
                     />
                 </FloatingPopover>
             )}
