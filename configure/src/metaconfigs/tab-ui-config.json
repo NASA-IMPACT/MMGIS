@@ -417,6 +417,13 @@
           "description": "Mapbox GL access token. Required only when provider is set to 'mapbox'.",
           "type": "text",
           "width": 3
+        },
+        {
+          "field": "msv.basemap.groups",
+          "name": "Basemap Toggle Groups",
+          "description": "Groups of basemap style layers shown as checkboxes in the basemap panel. Only the groups listed here are shown. Each group has a unique 'name' and either lists the style layer ids it toggles in 'layers', or has 'children', each with its own unique 'name' and 'layers' (one level deep: children cannot have children). A parent's checkbox toggles all its children. Like: [{ \"name\": \"Borders\", \"children\": [{ \"name\": \"Countries\", \"layers\": [\"admin-0-boundary\"] }, { \"name\": \"States\", \"layers\": [\"admin-1-boundary\"] }] }, { \"name\": \"Water\", \"layers\": [\"water\"] }]. Layer ids come from the Style URL above; a group or child with none of its layers in the current basemap style is hidden, so groups for another style only show once that style is picked.",
+          "type": "json",
+          "width": 12
         }
       ]
     },
