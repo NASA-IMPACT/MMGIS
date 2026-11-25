@@ -4,6 +4,7 @@ import {
     hasCogColormap,
     supportsCogTransform,
 } from '../../src/essence/Basics/Layers_/tileUrlUtils.ts'
+import ServiceUrls from '../../src/essence/Basics/ServiceUrls/ServiceUrls.js'
 
 // Layers_ reaches Map_ transitively (Description -> TimeControl -> Map_), and
 // Map_ pulls in the JSX viewers that Vite will not parse from a .js file. The
@@ -295,6 +296,7 @@ describe('layers:getTiTilerUrl provider', () => {
     afterAll(() => {
         delete window.mmgisAPI
         delete window.mmgisglobal
+        ServiceUrls.setMissionServices(null)
         L_.layers.data = {}
         L_.layers.nameToUUID = {}
     })
@@ -318,6 +320,7 @@ describe('layers:getTiTilerUrl provider', () => {
         // A server-backed build running TiTiler; the same-origin proxy is the
         // last resort.
         window.mmgisglobal = { SERVER: 'node', WITH_TITILER: 'true' }
+        ServiceUrls.setMissionServices(null)
         L_.fina(null, null, null, null, null, null)
     })
 
@@ -363,10 +366,10 @@ describe('layers:getTiTilerUrl provider', () => {
     })
 
     test('resolves the configured service in a static build', () => {
-        window.mmgisglobal = {
-            SERVER: 'static',
-            options: { services: { titilerUrl: 'https://titiler.example.com/' } },
-        }
+        window.mmgisglobal = { SERVER: 'static' }
+        ServiceUrls.setMissionServices({
+            titilerUrl: 'https://titiler.example.com/',
+        })
 
         expect(providers['layers:getTiTilerUrl'](DISPLACEMENT)).toBe(
             'https://titiler.example.com',
@@ -403,11 +406,10 @@ describe('layers:getTiTilerUrl provider', () => {
     })
 
     test('resolves a mission-wide service without TiTiler running', () => {
-        window.mmgisglobal = {
-            SERVER: 'node',
-            WITH_TITILER: 'false',
-            options: { services: { titilerUrl: 'https://titiler.example.com/' } },
-        }
+        window.mmgisglobal = { SERVER: 'node', WITH_TITILER: 'false' }
+        ServiceUrls.setMissionServices({
+            titilerUrl: 'https://titiler.example.com/',
+        })
 
         expect(providers['layers:getTiTilerUrl'](DISPLACEMENT)).toBe(
             'https://titiler.example.com',

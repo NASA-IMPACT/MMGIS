@@ -349,8 +349,8 @@
             {
               "field": "cogColormap",
               "name": "Colormap",
-              "description": "",
-              "type": "colordropdown",
+              "description": "The name of a color ramp the layer's TiTiler serves, such as 'viridis' or a deployment's own ramp. A name ending in '_r' is the reversed ramp. Leave empty for no colormap.",
+              "type": "colormapinput",
               "width": 3,
               "options": "{{COLORMAP_NAMES}}"
             }
