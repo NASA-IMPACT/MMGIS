@@ -47,6 +47,11 @@ import {
     DeckGLAdapter,
 } from '../MapEngines/index'
 import { resolveInitialBasemap } from './basemapStyles'
+import {
+    basemapGroupStates,
+    findBasemapGroup,
+    parseBasemapGroups,
+} from './basemapGroups'
 import { buildDeckLayer, buildDeckCOGLayer } from '../MapEngines/Adapters/DeckGLHelpers'
 import MapComparison from './MapComparison'
 import MapPopup_ from '../MapPopup_/MapPopup_'
@@ -69,6 +74,32 @@ const IMAGE_DEFAULT_COLOR_RAMP = 'binary'
 let _providerCleanups = []
 
 let _basemap = { styles: [], activeIndex: 0 }
+// The basemap's toggle groups, read from msv.basemap.groups.
+let _basemapGroups = []
+
+/** Whether the engine can show, hide and look up basemap style layers. */
+function engineTogglesBasemapLayers() {
+    return Boolean(
+        Map_.engine &&
+            typeof Map_.engine.setBasemapLayersVisible === 'function' &&
+            typeof Map_.engine.getBasemapLayerVisible === 'function' &&
+            typeof Map_.engine.hasBasemapLayer === 'function'
+    )
+}
+
+/**
+ * The groups with each one's state, holding only the groups with a layer
+ * in the current style; empty when the engine cannot toggle basemap layers,
+ * so no checkboxes show.
+ */
+function currentBasemapGroups() {
+    if (!engineTogglesBasemapLayers()) return []
+    return basemapGroupStates(
+        _basemapGroups,
+        (id) => Map_.engine.getBasemapLayerVisible(id),
+        (id) => Map_.engine.hasBasemapLayer(id)
+    )
+}
 
 let Map_ = {
     /** The native map object (L.Map for Leaflet, Deck for deck.gl). Kept for backward compatibility with existing callers. */
@@ -152,6 +183,7 @@ let Map_ = {
             engineType,
             L_.FUTURES.basemap
         )
+        _basemapGroups = parseBasemapGroups(L_.configData.msv.basemap?.groups)
 
         const initOptions = {
             containerId: 'map',
@@ -347,26 +379,25 @@ let Map_ = {
                 window.mmgisAPI.provide('map:getBasemapStyles', () => {
                     return [..._basemap.styles]
                 }),
-                // Basemap labels can only be switched off on an engine whose
-                // basemap is a vector style (deck.gl); raster tiles carry
-                // theirs baked in. Three questions, one answer each.
-                window.mmgisAPI.provide('map:supportsBasemapLabels', () => {
-                    return Boolean(
-                        Map_.engine &&
-                            typeof Map_.engine.setBasemapLabelsVisible === 'function' &&
-                            typeof Map_.engine.getBasemapLabelsVisible === 'function'
-                    )
-                }),
-                window.mmgisAPI.provide('map:setBasemapLabelsVisible', (visible) => {
-                    if (!Map_.engine || typeof Map_.engine.setBasemapLabelsVisible !== 'function') {
-                        console.warn('[map:setBasemapLabelsVisible] The active engine cannot toggle basemap labels')
+                // Named groups of basemap layers, from the mission config.
+                // The core owns which ids form a group; the engine only
+                // shows or hides ids. Changes arrive as
+                // `map:basemapGroupsChanged` (see the engine re-emits below).
+                window.mmgisAPI.provide('map:getBasemapGroups', () => currentBasemapGroups()),
+                window.mmgisAPI.provide('map:setBasemapGroupVisible', ({ id, visible } = {}) => {
+                    const group = findBasemapGroup(_basemapGroups, id)
+                    if (!group) {
+                        console.warn(`[map:setBasemapGroupVisible] No basemap group "${id}"`)
                         return false
                     }
-                    return Map_.engine.setBasemapLabelsVisible(visible !== false) !== false
-                }),
-                window.mmgisAPI.provide('map:getBasemapLabelsVisible', () => {
-                    if (!Map_.engine || typeof Map_.engine.getBasemapLabelsVisible !== 'function') return true
-                    return Map_.engine.getBasemapLabelsVisible()
+                    if (!engineTogglesBasemapLayers()) {
+                        console.warn('[map:setBasemapGroupVisible] The active engine cannot toggle basemap layers')
+                        return false
+                    }
+                    // Every id in the group, the current style's or not: the
+                    // choice holds for the whole group, so a style that has
+                    // the others shows them the same way.
+                    return Map_.engine.setBasemapLayersVisible(group.layers, visible !== false) !== false
                 }),
                 window.mmgisAPI.provide('map:zoomIn', () => {
                     if (!Map_.engine || typeof Map_.engine.getZoom !== 'function') return false
@@ -418,6 +449,12 @@ let Map_ = {
             // Pointer streams consumed by plugins (e.g. measure tools, overlays).
             reEmit('click', 'map:click')
             reEmit('mousemove', 'map:mousemove')
+            // The engine says its basemap layers changed (a toggle from any
+            // caller, or a new style); the bus carries the groups' new states.
+            const onBasemapLayers = () =>
+                window.mmgisAPI.emit('map:basemapGroupsChanged', { groups: currentBasemapGroups() })
+            engine.on('basemaplayers', onBasemapLayers)
+            _providerCleanups.push(() => engine.off('basemaplayers', onBasemapLayers))
 
             // Feature click → bus. Plugins (e.g. AOI Inspect) consume
             // `map:featureClick` to react to clicks on layers created via

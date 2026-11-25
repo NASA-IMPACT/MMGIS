@@ -871,22 +871,28 @@ var mmgisAPI = {
      */
     getBasemapStyles: () => mmgisAPI.request('map:getBasemapStyles'),
 
-    /** supportsBasemapLabels - whether the active engine can show or hide the
-     * basemap's labels (vector-style basemaps only).
-     * @returns {Promise<boolean>}
+    /** getBasemapGroups - the basemap's layer groups, each with its state;
+     * empty when the active engine cannot toggle layers. Groups whose layers
+     * are not in the current basemap style are hidden, and a state counts
+     * only the layers the style has. A group with children carries them in
+     * `children`, one level deep; a child's id is `<parent>/<child>`.
+     * @returns {Promise<Array<{id: string, name: string, state: 'on'|'off'|'mixed', children?: Array<{id: string, name: string, state: 'on'|'off'|'mixed'}>}>>}
      */
-    supportsBasemapLabels: () => mmgisAPI.request('map:supportsBasemapLabels'),
+    getBasemapGroups: () => mmgisAPI.request('map:getBasemapGroups'),
 
-    /** setBasemapLabelsVisible - shows or hides the basemap's labels.
+    /** setBasemapGroupVisible - shows or hides every layer in a group or a
+     * child; a parent's covers all of its children.
+     * Any change to the groups' states, from this call or a new basemap
+     * style, emits `map:basemapGroupsChanged` with `{ groups }` in the shape
+     * getBasemapGroups returns.
+     * The choice covers all of the group's layers, including those the
+     * current style lacks, so it holds across basemap styles.
+     * @param {string} id - the group's name, or `<parent>/<child>` for a child
      * @param {boolean} visible
-     * @returns {Promise<boolean>} - true if applied, false if the engine cannot
+     * @returns {Promise<boolean>} - true if applied, false if no such group or the engine cannot
      */
-    setBasemapLabelsVisible: (visible) => mmgisAPI.request('map:setBasemapLabelsVisible', visible),
-
-    /** getBasemapLabelsVisible - whether the basemap's labels are showing.
-     * @returns {Promise<boolean>}
-     */
-    getBasemapLabelsVisible: () => mmgisAPI.request('map:getBasemapLabelsVisible'),
+    setBasemapGroupVisible: (id, visible) =>
+        mmgisAPI.request('map:setBasemapGroupVisible', { id, visible }),
 
     /** zoomIn - increments the map zoom by 1 level, clamped to the max zoom.
      * @returns {Promise<boolean>} - true if zoom changed, false if already at max
