@@ -152,6 +152,27 @@ describe('layers:setColormap', () => {
         expect(L_.layers.data.PM25.style.colorBy).toEqual({ ...COLOR_BY, min: 3, max: 5 })
     })
 
+    // A range sent with a ramp is part of the same change: a bad one refuses
+    // the whole call rather than applying the ramp alone.
+    test.each([
+        ['inverted', { min: 18, max: 1 }],
+        ['equal', { min: 5, max: 5 }],
+        ['missing its maximum', { min: 1 }],
+        ['not numeric', { min: 'low', max: 18 }],
+    ])('refuses a ramp sent with a range that is %s, changing nothing', async (_label, range) => {
+        withLayers(RASTER, VECTOR)
+
+        for (const layerUUID of ['Displacement', 'PM25']) {
+            expect(
+                await providers['layers:setColormap']({ layerUUID, colormap: 'jet_r', ...range })
+            ).toBe(false)
+        }
+        expect(L_.layers.data.Displacement.currentCogColormap).toBeUndefined()
+        expect(L_.layers.data.PM25.style.colorBy).toEqual(COLOR_BY)
+        expect(refreshLayer).not.toHaveBeenCalled()
+        expect(configChanges).toEqual([])
+    })
+
     test('refuses a layer with nothing to change, an empty change, or an inverted range', async () => {
         withLayers(RASTER, { name: 'Plain', type: 'vector', style: {} })
 
