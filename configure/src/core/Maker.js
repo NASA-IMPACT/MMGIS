@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { getApiBase } from "./urls";
 import { useSelector, useDispatch } from "react-redux";
 import { makeStyles } from "@mui/styles";
@@ -349,7 +349,8 @@ const ColormapHelper = ({ colormapName }) => {
 }
 
 const DrawColormap = ({ src, colormapName }) => {
-  const [error, setError] = useState(false);
+  // With no image to load, draw from the bundled ramps straight away.
+  const [error, setError] = useState(!src);
 
   const handleError = () => {
     setError(true);
@@ -370,6 +371,82 @@ const DrawColormap = ({ src, colormapName }) => {
           </div>
       }
     </>
+  );
+};
+
+// The TiTiler the dashboard uses for a layer: its own `titilerUrl`, else the
+// mission's `msv.services.titilerUrl`, else the bundled /titiler proxy. Null
+// when none of them is available.
+const titilerBaseFor = (layer, configuration) => {
+  const url =
+    layer?.titilerUrl || getIn(configuration, "msv.services.titilerUrl", null);
+  if (url) return url.replace(/\/$/, "");
+  return window.mmgisglobal.WITH_TITILER === "true"
+    ? `${getApiBase()}titiler`
+    : null;
+};
+
+// A colormap name typed freely, suggesting the names Configure knows. Any name
+// is accepted, so a deployment's own ramps can be set. The ramp is drawn from
+// the layer's TiTiler underneath, and a name that TiTiler does not serve draws
+// nothing, which is how a typo shows. The name is saved on selection, Enter or
+// blur rather than per keystroke, so the preview loads once per name.
+const ColormapInput = ({
+  com,
+  savedValue,
+  disabled,
+  onCommit,
+  layer,
+  configuration,
+  inlineHelp,
+}) => {
+  const c = useStyles();
+  const [inputValue, setInputValue] = useState(savedValue || "");
+  useEffect(() => setInputValue(savedValue || ""), [savedValue]);
+
+  const commit = (v) => {
+    const trimmed = (v || "").trim();
+    if (trimmed !== (savedValue || "")) onCommit(trimmed);
+  };
+
+  const base = titilerBaseFor(layer, configuration);
+  const source = base && savedValue
+    ? `${base}/colorMaps/${encodeURIComponent(savedValue.toLowerCase())}?format=png`
+    : "";
+
+  const inner = (
+    <Autocomplete
+      className={c.autocomplete}
+      freeSolo
+      disabled={disabled}
+      options={com.options || []}
+      value={savedValue || null}
+      inputValue={inputValue}
+      onInputChange={(e, v) => setInputValue(v)}
+      onChange={(e, v) => commit(v)}
+      onBlur={() => commit(inputValue)}
+      renderInput={(params) => (
+        <TextField {...params} label={com.name} variant="filled" size="small" />
+      )}
+    />
+  );
+
+  if (!inlineHelp)
+    return (
+      <Tooltip title={com.description || ""} placement="top" arrow>
+        <div>{inner}</div>
+      </Tooltip>
+    );
+  return (
+    <div>
+      {inner}
+      {savedValue && (
+        <div className={c.textArrayHexes}>
+          <DrawColormap key={source} src={source} colormapName={savedValue} />
+        </div>
+      )}
+      <Typography className={c.subtitle2}>{com.description || ""}</Typography>
+    </div>
   );
 };
 
@@ -1317,6 +1394,18 @@ const getComponent = (
             </Tooltip>
           )}
         </div>
+      );
+    case "colormapinput":
+      return (
+        <ColormapInput
+          com={com}
+          savedValue={value || getIn(directConf, com.field, "")}
+          disabled={disabled}
+          onCommit={(v) => updateConfiguration(forceField || com.field, v, layer)}
+          layer={layer}
+          configuration={configuration}
+          inlineHelp={inlineHelp}
+        />
       );
     case "colordropdown":
       // A `keepUnset` field is not given its first option when the layer is

@@ -290,8 +290,8 @@
             {
               "field": "style.colorBy.colormap",
               "name": "Colormap",
-              "description": "Colormap only. The color ramp, the same list raster layers offer. A name ending in '_r' is the reversed ramp.",
-              "type": "colordropdown",
+              "description": "Colormap only. The name of a color ramp the layer's TiTiler serves, such as 'viridis' or a deployment's own ramp. A name ending in '_r' is the reversed ramp. A name the TiTiler does not serve leaves the layer in its fixed color.",
+              "type": "colormapinput",
               "width": 3,
               "options": "{{COLORMAP_NAMES}}",
               "keepUnset": true
